@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Environments and secrets
+.venv/
+venv/
+env/
+.env
+!.env.example
+backend/.env
+dbt/**/.env
+infrastructure/azure-postgres/bootstrap/
+
+# Local editor and tool state
+.vscode/
+.idea/
+*.code-workspace
+dbt/**/.user.yml
+
+# Runtime logs
+*.log
+backend/**/logs/
+
+# dbt
+dbt/**/target/
+dbt/**/dbt_packages/
+dbt/**/logs/

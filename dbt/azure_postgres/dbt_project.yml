@@ -1,0 +1,38 @@
+name: helioscta_platform
+version: "0.1.0"
+config-version: 2
+
+profile: helioscta_platform
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  helioscta_platform:
+    power:
+      +schema: power
+      +materialized: ephemeral
+      pjm:
+        +materialized: ephemeral
+        da_hrl_lmps:
+          +materialized: ephemeral
+          index_pjm_da_hrl_lmps:
+            +enabled: false
+    alerts:
+      +schema: alerts
+      +materialized: ephemeral
+      index_alerts_events:
+        +enabled: false
+
+tests:
+  helioscta_platform:
+    +store_failures: false
