@@ -6,7 +6,7 @@ boundary, or log path changes.
 
 ## helios-da-hrl-lmps
 
-- Status: VM provisioned; service verification pending.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Workflow: PJM Day-Ahead Hourly LMP orchestration.
 - Runtime module: `backend.orchestration.power.pjm.da_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.da_hrl_lmps`.
@@ -30,9 +30,11 @@ boundary, or log path changes.
 - Schedule: daily at `16:00 UTC`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- First enabled at: TBD.
-- Deployed commit: TBD.
-- Deployed by: TBD.
+- First enabled at: `2026-06-12 20:13:05 UTC`.
+- Deployed commit: `a234d8d3b8ae4b693849e625486e9e482ef8b78c`.
+- Deployed by: Aidan Keaveny via Codex.
+- Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
+  `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
 
 Verification SQL:
 
