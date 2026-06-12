@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import json
+from datetime import date
+
 import pandas as pd
 
 from backend.scrapes.power.pjm import da_hrl_lmps as scrape_da_hrl_lmps
 from backend.orchestration.power.pjm import da_hrl_lmps as orchestrated_da_hrl_lmps
 from backend.utils import db, script_logging
+from backend.utils import data_availability
 from backend.utils.ops_logging import redact_secrets
 
 
@@ -182,3 +186,129 @@ def test_upsert_dataframe_uses_temp_staging_not_target_ddl(monkeypatch):
     assert "CREATE TABLE IF NOT EXISTS" not in executed_text
     assert "CREATE TEMP TABLE temp" in executed_text
     assert copied
+
+
+def test_emit_data_availability_event_is_idempotent(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_execute_sql(query, params=None, database=None, fetch=False):
+        captured["query"] = query
+        captured["params"] = params
+        captured["database"] = database
+        captured["fetch"] = fetch
+        return [{"id": 10, "event_key": params[0], "created": True}]
+
+    monkeypatch.setattr(data_availability.db, "execute_sql", fake_execute_sql)
+
+    result = data_availability.emit_data_availability_event(
+        event_key="pjm_da_hrl_lmps:data_ready:2026-06-13:hub",
+        dataset="pjm_da_hrl_lmps",
+        source_system="pjm",
+        availability_type="data_ready",
+        business_date=date(2026, 6, 13),
+        source_table="pjm.da_hrl_lmps",
+        row_count=48,
+        entity_count=2,
+        period_count=24,
+        completeness_status="complete",
+        run_id="run-1",
+        payload={"expected_period_count": 24},
+        database="stage_db",
+    )
+
+    assert result == {
+        "id": 10,
+        "event_key": "pjm_da_hrl_lmps:data_ready:2026-06-13:hub",
+        "created": True,
+    }
+    assert "ops.data_availability_events" in captured["query"]
+    assert "ON CONFLICT (event_key) DO NOTHING" in captured["query"]
+    assert captured["database"] == "stage_db"
+    assert captured["fetch"] is True
+    params = captured["params"]
+    assert params[0] == "pjm_da_hrl_lmps:data_ready:2026-06-13:hub"
+    assert json.loads(params[-2]) == {"expected_period_count": 24}
+    assert params[-1] == "pjm_da_hrl_lmps:data_ready:2026-06-13:hub"
+
+
+def test_orchestrated_da_emits_readiness_event_for_complete_current_rows(monkeypatch):
+    captured: list[dict[str, object]] = []
+
+    def fake_emit_data_availability_event(**kwargs):
+        captured.append(kwargs)
+        return {"id": 1, "event_key": kwargs["event_key"], "created": True}
+
+    monkeypatch.setattr(
+        orchestrated_da_hrl_lmps,
+        "emit_data_availability_event",
+        fake_emit_data_availability_event,
+    )
+
+    events = orchestrated_da_hrl_lmps._emit_data_availability_events(
+        df=_da_availability_frame(hours=24),
+        run_id="run-1",
+        database="stage_db",
+    )
+
+    assert events == [
+        {
+            "id": 1,
+            "event_key": "pjm_da_hrl_lmps:data_ready:2026-06-13:hub",
+            "created": True,
+        }
+    ]
+    assert len(captured) == 1
+    event = captured[0]
+    assert event["event_key"] == "pjm_da_hrl_lmps:data_ready:2026-06-13:hub"
+    assert event["dataset"] == "pjm_da_hrl_lmps"
+    assert event["source_system"] == "pjm"
+    assert event["availability_type"] == "data_ready"
+    assert event["business_date"] == date(2026, 6, 13)
+    assert event["scope"] == "hub"
+    assert event["grain"] == "date_hour_hub"
+    assert event["source_table"] == "pjm.da_hrl_lmps"
+    assert event["row_count"] == 48
+    assert event["entity_count"] == 2
+    assert event["period_count"] == 24
+    assert event["completeness_status"] == "complete"
+    assert event["run_id"] == "run-1"
+    assert event["database"] == "stage_db"
+    assert event["payload"]["expected_period_count"] == 24
+    assert event["payload"]["expected_row_count"] == 48
+
+
+def test_orchestrated_da_skips_readiness_event_for_incomplete_current_rows(monkeypatch):
+    captured: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        orchestrated_da_hrl_lmps,
+        "emit_data_availability_event",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    events = orchestrated_da_hrl_lmps._emit_data_availability_events(
+        df=_da_availability_frame(hours=23),
+        run_id="run-1",
+        database="stage_db",
+    )
+
+    assert events == []
+    assert captured == []
+
+
+def _da_availability_frame(hours: int) -> pd.DataFrame:
+    rows = []
+    for hour in range(hours):
+        for pnode_id, pnode_name in [(1, "WESTERN HUB"), (2, "EASTERN HUB")]:
+            ept = pd.Timestamp("2026-06-13") + pd.Timedelta(hours=hour)
+            rows.append(
+                {
+                    "datetime_beginning_utc": ept + pd.Timedelta(hours=4),
+                    "datetime_beginning_ept": ept,
+                    "pnode_id": pnode_id,
+                    "pnode_name": pnode_name,
+                    "row_is_current": True,
+                    "version_nbr": 1,
+                }
+            )
+    return pd.DataFrame(rows)

@@ -25,33 +25,41 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
+
+def _get_first_env(*names: str, default: str | None = None) -> str | None:
+    for name in names:
+        value = os.getenv(name)
+        if value is not None:
+            return value.strip()
+    return default
+
 # ────── Azure PostgreSQL ──────
-AZURE_POSTGRESQL_DB_HOST = (
-    os.getenv("AZURE_POSTGRES_WRITER_HOST")
-    or os.getenv("AZURE_POSTGRESQL_DB_HOST")
+AZURE_POSTGRESQL_DB_HOST = _get_first_env(
+    "AZURE_POSTGRES_WRITER_HOST",
+    "AZURE_POSTGRESQL_DB_HOST",
 )
-AZURE_POSTGRESQL_DB_USER = (
-    os.getenv("AZURE_POSTGRES_WRITER_USER")
-    or os.getenv("AZURE_POSTGRESQL_DB_USER")
+AZURE_POSTGRESQL_DB_USER = _get_first_env(
+    "AZURE_POSTGRES_WRITER_USER",
+    "AZURE_POSTGRESQL_DB_USER",
 )
-AZURE_POSTGRESQL_DB_PASSWORD = (
-    os.getenv("AZURE_POSTGRES_WRITER_PASSWORD")
-    or os.getenv("AZURE_POSTGRESQL_DB_PASSWORD")
+AZURE_POSTGRESQL_DB_PASSWORD = _get_first_env(
+    "AZURE_POSTGRES_WRITER_PASSWORD",
+    "AZURE_POSTGRESQL_DB_PASSWORD",
 )
-AZURE_POSTGRESQL_DB_PORT = (
-    os.getenv("AZURE_POSTGRES_WRITER_PORT")
-    or os.getenv("AZURE_POSTGRESQL_DB_PORT")
-    or "5432"
+AZURE_POSTGRESQL_DB_PORT = _get_first_env(
+    "AZURE_POSTGRES_WRITER_PORT",
+    "AZURE_POSTGRESQL_DB_PORT",
+    default="5432",
 )
-AZURE_POSTGRESQL_DB_NAME = (
-    os.getenv("AZURE_POSTGRES_WRITER_DBNAME")
-    or os.getenv("AZURE_POSTGRESQL_DB_NAME")
-    or "helios_prod"
+AZURE_POSTGRESQL_DB_NAME = _get_first_env(
+    "AZURE_POSTGRES_WRITER_DBNAME",
+    "AZURE_POSTGRESQL_DB_NAME",
+    default="helios_prod",
 )
-AZURE_POSTGRESQL_DB_SSLMODE = (
-    os.getenv("AZURE_POSTGRES_WRITER_SSLMODE")
-    or os.getenv("AZURE_POSTGRESQL_DB_SSLMODE")
-    or "require"
+AZURE_POSTGRESQL_DB_SSLMODE = _get_first_env(
+    "AZURE_POSTGRES_WRITER_SSLMODE",
+    "AZURE_POSTGRESQL_DB_SSLMODE",
+    default="require",
 )
 
 # ────── AWS PostgreSQL (read-only) ──────

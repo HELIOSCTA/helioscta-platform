@@ -2,10 +2,11 @@ import requests
 import time
 from io import BytesIO
 import logging
-from datetime import datetime
+from datetime import date, datetime, timezone
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
 import sys
+from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -20,11 +21,11 @@ from backend.orchestration.power.pjm._policies import (
     DataNotYetAvailable,
     api_poll_policy,
 )
-from backend.orchestration.power.pjm import alerts as pjm_alerts
 from backend.utils import (
     db,
     script_logging,
 )
+from backend.utils.data_availability import emit_data_availability_event
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 API_SCRAPE_NAME: str = "da_hrl_lmps"
@@ -32,6 +33,12 @@ TARGET_DATABASE: str | None = None
 TARGET_SCHEMA = "pjm"
 TARGET_TABLE = API_SCRAPE_NAME
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
+DATASET_NAME = "pjm_da_hrl_lmps"
+DATA_SOURCE_SYSTEM = "pjm"
+DATA_AVAILABILITY_TYPE = "data_ready"
+DATA_SCOPE = "hub"
+DATA_GRAIN = "date_hour_hub"
+LOCAL_MARKET_TIMEZONE = "America/New_York"
 
 logger = logging.getLogger(__name__)
 
@@ -78,8 +85,8 @@ def _wait_for_data(url: str, params: dict[str, str | int]) -> requests.Response:
     why we poll on `DataNotYetAvailable` rather than on a status code.
     Don't add Retry-After handling here unless PJM's behavior changes.
 
-    Aggressive 1s polling is intentional: DA latency to user-visible
-    alerts matters, the API is not rate-limited, and the 3h ceiling caps
+    Aggressive 1s polling is intentional: DA latency to user-visible data
+    readiness matters, the API is not rate-limited, and the 3h ceiling caps
     total request volume per cron tick.
     """
     response = requests.get(url, params=params, timeout=60)
@@ -225,16 +232,169 @@ def _upsert(
     )
 
 
-def handle_event(payload: dict) -> None:
-    """Emit a PJM DA HRL LMP arrival alert from a structured payload.
+def _emit_data_availability_events(
+    df: pd.DataFrame,
+    run_id: str | None,
+    database: str | None = TARGET_DATABASE,
+) -> list[dict[str, Any]]:
+    """Emit one readiness event per complete current DA business date."""
+    if df.empty:
+        logger.info("No DA HRL LMP rows available for readiness emission")
+        return []
 
-    Args:
-        payload: JSON-like payload containing da_date, row_count,
-            pnode_count, hour_count, and any source-specific metadata.
-    """
-    da_date = payload.get("da_date")
-    logger.info(f"Event received for da_date={da_date}: {payload}")
-    pjm_alerts.handle_da_hrl_lmp_arrival_payload(payload)
+    required_columns = {
+        "datetime_beginning_utc",
+        "datetime_beginning_ept",
+        "pnode_id",
+        "row_is_current",
+    }
+    missing_columns = required_columns - set(df.columns)
+    if missing_columns:
+        raise ValueError(
+            "Cannot assess DA HRL LMP data readiness; missing columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    current_df = df.loc[_is_current_mask(df)].copy()
+    if current_df.empty:
+        logger.info("No current DA HRL LMP rows available for readiness emission")
+        return []
+
+    current_df["datetime_beginning_utc"] = pd.to_datetime(
+        current_df["datetime_beginning_utc"]
+    )
+    current_df["datetime_beginning_ept"] = pd.to_datetime(
+        current_df["datetime_beginning_ept"]
+    )
+    current_df["business_date"] = current_df["datetime_beginning_ept"].dt.date
+
+    emitted: list[dict[str, Any]] = []
+    for business_date, date_df in sorted(current_df.groupby("business_date")):
+        event = _emit_data_availability_event_for_date(
+            business_date=business_date,
+            date_df=date_df,
+            run_id=run_id,
+            database=database,
+        )
+        if event:
+            emitted.append(event)
+
+    return emitted
+
+
+def _emit_data_availability_event_for_date(
+    *,
+    business_date: date,
+    date_df: pd.DataFrame,
+    run_id: str | None,
+    database: str | None,
+) -> dict[str, Any] | None:
+    expected_period_count = _expected_period_count_for_date(business_date)
+    row_count = int(len(date_df))
+    entity_count = int(date_df["pnode_id"].nunique())
+    period_count = int(date_df["datetime_beginning_utc"].nunique())
+    periods_per_entity = date_df.groupby("pnode_id")["datetime_beginning_utc"].nunique()
+    min_periods_per_entity = int(periods_per_entity.min()) if entity_count else 0
+    max_periods_per_entity = int(periods_per_entity.max()) if entity_count else 0
+    duplicate_entity_period_rows = int(
+        date_df.duplicated(["pnode_id", "datetime_beginning_utc"]).sum()
+    )
+    expected_row_count = entity_count * expected_period_count
+
+    is_complete = (
+        entity_count > 0
+        and period_count == expected_period_count
+        and min_periods_per_entity == expected_period_count
+        and max_periods_per_entity == expected_period_count
+        and row_count == expected_row_count
+        and duplicate_entity_period_rows == 0
+    )
+    if not is_complete:
+        logger.warning(
+            "Skipping DA HRL LMP readiness event for %s; incomplete current rows "
+            "(rows=%s, entities=%s, periods=%s, expected_periods=%s, "
+            "min_periods_per_entity=%s, max_periods_per_entity=%s, duplicates=%s)",
+            business_date,
+            row_count,
+            entity_count,
+            period_count,
+            expected_period_count,
+            min_periods_per_entity,
+            max_periods_per_entity,
+            duplicate_entity_period_rows,
+        )
+        return None
+
+    event_key = _data_availability_event_key(business_date)
+    window_start = _utc_timestamp(date_df["datetime_beginning_utc"].min())
+    window_end = _utc_timestamp(
+        date_df["datetime_beginning_utc"].max() + pd.Timedelta(hours=1)
+    )
+    payload = {
+        "business_date": business_date.isoformat(),
+        "expected_period_count": expected_period_count,
+        "expected_row_count": expected_row_count,
+        "min_periods_per_entity": min_periods_per_entity,
+        "max_periods_per_entity": max_periods_per_entity,
+        "duplicate_entity_period_rows": duplicate_entity_period_rows,
+        "window_end_convention": "exclusive",
+    }
+
+    return emit_data_availability_event(
+        event_key=event_key,
+        dataset=DATASET_NAME,
+        source_system=DATA_SOURCE_SYSTEM,
+        availability_type=DATA_AVAILABILITY_TYPE,
+        business_date=business_date,
+        window_start=window_start,
+        window_end=window_end,
+        scope=DATA_SCOPE,
+        grain=DATA_GRAIN,
+        source_table=TARGET_TABLE_FQN,
+        row_count=row_count,
+        entity_count=entity_count,
+        period_count=period_count,
+        completeness_status="complete",
+        run_id=run_id,
+        payload=payload,
+        database=database,
+    )
+
+
+def _is_current_mask(df: pd.DataFrame) -> pd.Series:
+    values = df["row_is_current"]
+    if pd.api.types.is_bool_dtype(values):
+        return values.fillna(False)
+    return (
+        values.astype(str)
+        .str.strip()
+        .str.lower()
+        .isin({"true", "t", "1", "yes", "y"})
+    )
+
+
+def _data_availability_event_key(business_date: date) -> str:
+    return (
+        f"{DATASET_NAME}:{DATA_AVAILABILITY_TYPE}:"
+        f"{business_date.isoformat()}:{DATA_SCOPE}"
+    )
+
+
+def _expected_period_count_for_date(business_date: date) -> int:
+    start = pd.Timestamp(business_date).tz_localize(LOCAL_MARKET_TIMEZONE)
+    end = (pd.Timestamp(business_date) + pd.Timedelta(days=1)).tz_localize(
+        LOCAL_MARKET_TIMEZONE
+    )
+    return int((end - start) / pd.Timedelta(hours=1))
+
+
+def _utc_timestamp(value: Any) -> datetime:
+    timestamp = pd.Timestamp(value)
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize(timezone.utc)
+    else:
+        timestamp = timestamp.tz_convert(timezone.utc)
+    return timestamp.to_pydatetime()
 
 
 def main(
@@ -276,22 +436,26 @@ def main(
         run_logger.section("Formatting data ...")
         df = _format(df=df)
 
-        run_logger.section("Checking for new DA HRL LMP rows ...")
-        missing_counts_by_date = (
-            pjm_alerts.count_missing_da_hrl_lmp_rows_by_date(df)
-        )
-
         run_logger.section("Upserting data ...")
         _upsert(df=df, database=database)
 
-        if missing_counts_by_date:
-            run_logger.section("Emitting DA HRL LMP arrival alerts ...")
-            pjm_alerts.emit_da_hrl_lmp_arrival_alerts_for_new_rows(
-                df=df,
-                missing_counts_by_date=missing_counts_by_date,
-            )
+        run_logger.section("Emitting data availability event(s) ...")
+        events = _emit_data_availability_events(
+            df=df,
+            run_id=run_id,
+            database=database,
+        )
+        if events:
+            for event in events:
+                status = "created" if event.get("created") else "already existed"
+                run_logger.info(
+                    f"Data availability event {event['event_key']} {status}."
+                )
         else:
-            logger.info("No new DA HRL LMP rows detected; no alert emitted")
+            run_logger.info(
+                "No complete DA HRL LMP business date detected; "
+                "no data availability event emitted."
+            )
 
         run_logger.success(f"{API_SCRAPE_NAME} completed; {len(df)} rows processed.")
 

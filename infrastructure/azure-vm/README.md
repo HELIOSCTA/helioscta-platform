@@ -12,8 +12,24 @@ backend.orchestration.power.pjm.da_hrl_lmps
 ```
 
 The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
-`ops.pipeline_runs` and `ops.api_fetch_log`, and emits arrival alerts through
-`alerts.events`.
+`ops.api_fetch_log`, and emits readiness events through
+`ops.data_availability_events`.
+
+## Current VM
+
+- Hostname: `helioscta-prod-vm-01`.
+- Public SSH endpoint: `azureuser@20.59.106.155`.
+- Private VM IP: `10.42.1.4`.
+- OS: Ubuntu 22.04.5 LTS.
+- Repo path: `/opt/helioscta-platform`.
+- Operator SSH user: `azureuser`.
+- Service user: `helios`.
+
+`/opt/helioscta-platform` is intentionally not directly accessible to
+`azureuser`. Stay in the `azureuser` shell for commands that need sudo, and run
+repo commands as the service user with `sudo -u helios -H ...`. If you enter a
+`helios` shell with `sudo -u helios -H bash`, use it only for non-sudo commands;
+the `helios` user is not in sudoers.
 
 ## Target Operating Model
 
@@ -77,10 +93,10 @@ sudo install -d -o helios -g helios -m 0750 /opt/helioscta-platform
 sudo install -d -o root -g helios -m 0750 /etc/helioscta
 sudo install -d -o helios -g helios -m 0750 /var/log/helioscta
 
-sudo -u helios git clone <repo-url> /opt/helioscta-platform
-sudo -u helios python3 -m venv /opt/helioscta-platform/.venv
-sudo -u helios /opt/helioscta-platform/.venv/bin/python -m pip install --upgrade pip
-sudo -u helios /opt/helioscta-platform/.venv/bin/pip install \
+sudo -u helios -H git clone <repo-url> /opt/helioscta-platform
+sudo -u helios -H python3 -m venv /opt/helioscta-platform/.venv
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/python -m pip install --upgrade pip
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/pip install \
   -r /opt/helioscta-platform/backend/requirements.txt \
   -e /opt/helioscta-platform/backend
 ```
@@ -121,11 +137,10 @@ test. Production systemd jobs should consume `/etc/helioscta/backend.env`.
 Run these before installing timers:
 
 ```bash
-cd /opt/helioscta-platform
-sudo -u helios git rev-parse HEAD
-sudo -u helios git status --short
+sudo -u helios -H git -C /opt/helioscta-platform rev-parse HEAD
+sudo -u helios -H git -C /opt/helioscta-platform status --short
 
-sudo -u helios /opt/helioscta-platform/.venv/bin/python -c \
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/python -c \
   "from backend.orchestration.power.pjm import da_hrl_lmps; print(da_hrl_lmps.API_SCRAPE_NAME)"
 ```
 
@@ -133,7 +148,7 @@ Install the service unit and run the full workflow manually only during the PJM
 publish window unless you intend to wait through the polling ceiling:
 
 ```bash
-sudo cp infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl status helios-da-hrl-lmps.service
@@ -154,9 +169,8 @@ helios-da-hrl-lmps.timer
 Install and start the timer:
 
 ```bash
-cd /opt/helioscta-platform
-sudo cp infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
-sudo cp infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 ```
@@ -176,22 +190,10 @@ systemctl status helios-da-hrl-lmps.service
 journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
 ```
 
-Verify database telemetry with `helios_readonly` or another read-only
-inspection user:
+Verify API telemetry with `helios_readonly` or another read-only inspection
+user:
 
 ```sql
-SELECT
-    pipeline_name,
-    event_type,
-    status,
-    event_timestamp,
-    rows_processed,
-    error_type
-FROM ops.pipeline_runs
-WHERE pipeline_name = 'da_hrl_lmps'
-ORDER BY event_timestamp DESC
-LIMIT 10;
-
 SELECT
     provider,
     operation_name,
@@ -205,6 +207,9 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+Use `journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager` for process
+status and `/var/log/helioscta` for retained scrape log files.
+
 After the first successful run, record the host, deployed commit, schedule, and
 logs in `docs/deployments.md`.
 
@@ -213,13 +218,12 @@ logs in `docs/deployments.md`.
 Use this steady-state deploy path after the VM is bootstrapped:
 
 ```bash
-cd /opt/helioscta-platform
-sudo -u helios git pull --ff-only
-sudo -u helios git rev-parse HEAD
-sudo -u helios git status --short
-sudo -u helios /opt/helioscta-platform/.venv/bin/pip install \
-  -r backend/requirements.txt \
-  -e backend
+sudo -u helios -H git -C /opt/helioscta-platform pull --ff-only
+sudo -u helios -H git -C /opt/helioscta-platform rev-parse HEAD
+sudo -u helios -H git -C /opt/helioscta-platform status --short
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/pip install \
+  -r /opt/helioscta-platform/backend/requirements.txt \
+  -e /opt/helioscta-platform/backend
 sudo systemctl restart helios-da-hrl-lmps.timer
 systemctl list-timers 'helios-*'
 ```

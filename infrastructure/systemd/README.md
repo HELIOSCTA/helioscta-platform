@@ -7,7 +7,7 @@ Each promoted scheduled script should have:
 - one `.service` file for the script command
 - one `.timer` file for the schedule
 - a matching entry in `docs/deployments.md`
-- pipeline run logging inside the script or wrapper
+- script logging plus API telemetry inside the script or wrapper
 
 Set the service environment from a root-owned env file, for example:
 
@@ -31,7 +31,7 @@ helios-da-hrl-lmps.timer
 
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
-pipeline run logging, and DA LMP arrival alert emission.
+terminal/file logging, and DA LMP data readiness event emission.
 
 ## Naming
 
@@ -44,15 +44,19 @@ helios-<workflow>.timer
 
 ## Install Or Update Units
 
-From the checked-out repo on the VM:
+From the `azureuser` shell on the VM:
 
 ```bash
-cd /opt/helioscta-platform
-sudo cp infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
-sudo cp infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 ```
+
+`/opt/helioscta-platform` is owned for the `helios` service user. Run repo
+commands from the sudo-capable `azureuser` shell with
+`sudo -u helios -H git -C /opt/helioscta-platform ...`; the `helios` user
+itself should not have sudo.
 
 Run the workflow once on demand:
 
@@ -77,6 +81,10 @@ systemctl status helios-da-hrl-lmps.timer
 journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
 systemctl list-timers 'helios-*'
 ```
+
+On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs
+delete their file log by default; failure logs are retained there while full
+process output remains available in journald.
 
 ## Disable A Timer
 
