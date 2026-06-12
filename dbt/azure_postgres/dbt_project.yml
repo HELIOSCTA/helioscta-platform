@@ -18,6 +18,22 @@ clean-targets:
 
 models:
   helioscta_platform:
+    setup:
+      +schema: setup
+      +materialized: ephemeral
+      schemas:
+        +enabled: false
+    ops:
+      +schema: ops
+      +materialized: ephemeral
+      table_ops_api_fetch_log:
+        +enabled: false
+      table_ops_data_availability_events:
+        +enabled: false
+      index_ops_api_fetch_log:
+        +enabled: false
+      index_ops_data_availability_events:
+        +enabled: false
     power:
       +schema: power
       +materialized: ephemeral
@@ -25,14 +41,28 @@ models:
         +materialized: ephemeral
         da_hrl_lmps:
           +materialized: ephemeral
+          table_pjm_da_hrl_lmps:
+            +enabled: false
           index_pjm_da_hrl_lmps:
             +enabled: false
-    alerts:
-      +schema: alerts
-      +materialized: ephemeral
-      index_alerts_events:
-        +enabled: false
-
+        rt_hrl_lmps:
+          +materialized: ephemeral
+          table_pjm_rt_hrl_lmps:
+            +enabled: false
+          index_pjm_rt_hrl_lmps:
+            +enabled: false
+        unverified_five_min_lmps:
+          +materialized: ephemeral
+          table_pjm_unverified_five_min_lmps:
+            +enabled: false
+          index_pjm_unverified_five_min_lmps:
+            +enabled: false
+        rt_fivemin_mnt_lmps:
+          +materialized: ephemeral
+          table_pjm_rt_fivemin_mnt_lmps:
+            +enabled: false
+          index_pjm_rt_fivemin_mnt_lmps:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

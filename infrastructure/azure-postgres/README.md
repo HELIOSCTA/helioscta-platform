@@ -11,9 +11,17 @@ passwords before execution. Do not commit real passwords.
 1. Connect to the maintenance database, usually `postgres`, and run:
    - `bootstrap/01_roles.sql`
    - `bootstrap/02_databases.sql`
-2. Connect to `helios_prod` as `helios_admin` and run:
+2. Connect to `helios_prod` as `helios_admin` and run the disabled dbt
+   operator SQL needed for application objects:
+   - `dbt/azure_postgres/models/setup/schemas.sql`
+   - `dbt/azure_postgres/models/ops/table_ops_api_fetch_log.sql`
+   - `dbt/azure_postgres/models/ops/table_ops_data_availability_events.sql`
+   - required feed `table_*.sql` files, such as
+     `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/table_pjm_da_hrl_lmps.sql`
+   - required `index_*.sql` files, including matching `ops` and feed indexes
+3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`
-3. Verify `helios_prod` with:
+4. Verify `helios_prod` with:
    - `permissions/02_verify_permissions.sql`
 
 If tables already existed before these grants were cleaned up, connect as
@@ -47,10 +55,15 @@ existing Azure Postgres server
 
 - `CREATE DATABASE` cannot run inside a transaction block.
 - `CREATE INDEX CONCURRENTLY` also cannot run inside a transaction block.
-- `permissions/01_apply_database_permissions.sql` creates the standard
-  application schemas, creates base tables the backend inserts into directly,
-  applies read-only grants, and installs read-only defaults for future schemas,
-  tables, and sequences created by `helios_admin`.
+- Application schema, table, and index DDL is documented under
+  `dbt/azure_postgres/models/` as disabled operator reference SQL. Run those
+  files manually with `helios_admin`.
+- Shared runtime observability tables in `models/ops/` are application objects,
+  not dbt runtime models. Apply them before enabling workflows that emit API
+  telemetry or data-availability events.
+- `permissions/01_apply_database_permissions.sql` applies read-only grants to
+  existing application schemas and installs read-only defaults for future
+  schemas, tables, and sequences created by `helios_admin`.
 - `ALTER DEFAULT PRIVILEGES FOR ROLE helios_admin` should be run by
   `helios_admin` or a role that is a member of `helios_admin`.
 - Use `helios_readonly` for dbt. It should not own or mutate objects.
@@ -61,16 +74,15 @@ existing Azure Postgres server
 After the initial permission script has been run, new schemas and tables do not
 need a permission script rerun when they are created by `helios_admin`.
 
-- Create schemas as `helios_admin`.
-- Create migration/admin tables as `helios_admin`.
-- Add direct-write backend tables to versioned setup SQL before deploying code
-  that writes them.
+- Add application schemas to `dbt/azure_postgres/models/setup/schemas.sql`.
+- Add direct-write backend tables to disabled dbt `table_*.sql` operator SQL
+  before deploying code that writes them.
+- Add indexes to disabled dbt `index_*.sql` operator SQL.
+- Add or update shared observability tables in `models/ops/` before deploying
+  orchestration that depends on them.
 
-To add a schema, connect to `helios_prod` as `helios_admin` and run:
-
-```sql
-CREATE SCHEMA IF NOT EXISTS new_schema;
-```
+To add a schema, update `dbt/azure_postgres/models/setup/schemas.sql` and run
+that operator SQL manually with `helios_admin`.
 
 The default privileges installed during setup grant `helios_readonly` and
 backend access automatically.
