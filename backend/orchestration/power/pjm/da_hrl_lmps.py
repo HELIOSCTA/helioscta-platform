@@ -83,7 +83,13 @@ def _wait_for_data(url: str, params: dict[str, str | int]) -> requests.Response:
     total request volume per cron tick.
     """
     response = requests.get(url, params=params, timeout=60)
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError:
+        raise RuntimeError(
+            "PJM DA HRL LMPs API returned "
+            f"HTTP {response.status_code}: {response.reason}"
+        ) from None
 
     if not response.content:
         raise DataNotYetAvailable(

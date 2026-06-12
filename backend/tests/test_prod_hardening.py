@@ -21,6 +21,39 @@ def test_build_request_keeps_pjm_key_out_of_url(monkeypatch):
     assert params["subscription-key"] == "secret-key"
 
 
+def test_wait_for_data_http_error_does_not_expose_request_url(monkeypatch):
+    class FakeResponse:
+        content = b""
+        status_code = 401
+        reason = "Unauthorized"
+
+        def raise_for_status(self):
+            raise orchestrated_da_hrl_lmps.requests.HTTPError(
+                "401 Client Error for url: "
+                "https://api.pjm.com/api/v1/da_hrl_lmps?subscription-key=secret-key"
+            )
+
+    monkeypatch.setattr(
+        orchestrated_da_hrl_lmps.requests,
+        "get",
+        lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    try:
+        orchestrated_da_hrl_lmps._wait_for_data(
+            url="https://api.pjm.com/api/v1/da_hrl_lmps",
+            params={"subscription-key": "secret-key"},
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("Expected sanitized HTTP failure")
+
+    assert "secret-key" not in message
+    assert "subscription-key" not in message
+    assert message == "PJM DA HRL LMPs API returned HTTP 401: Unauthorized"
+
+
 def test_redact_secrets_scrubs_query_values():
     message = (
         "403 Client Error for url: "
