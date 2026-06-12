@@ -15,7 +15,7 @@ Promote one backend script or workflow at a time:
 2. Define the source/table contract and grain in dbt.
 3. Add read-only dbt tests and analysis SQL.
 4. Add validation checks before and after writes.
-5. Add pipeline run logging and failure visibility.
+5. Add runtime telemetry, data availability, and failure visibility.
 6. Deploy the script as a scheduled Azure VM job.
 7. Document the deployed commit, host, schedule, and logs.
 
@@ -23,7 +23,7 @@ Promote one backend script or workflow at a time:
 
 - `backend/` - promoted Python scrapes, orchestration, and runtime helpers.
 - `dbt/azure_postgres/` - read-only dbt models, source definitions, tests,
-  and disabled index reference SQL.
+  and disabled operator SQL for application tables and indexes.
 - `frontend/` - dashboard code when promoted into this repo.
 - `infrastructure/` - Azure VM setup, systemd timers, and deployment notes.
 - `docs/` - migration, deployment, and operating playbooks.
@@ -32,4 +32,12 @@ Promote one backend script or workflow at a time:
 
 Nothing should enter this repo just because it exists in the legacy system.
 Code is promoted when it has a clear owner, a documented dbt source contract, a
-safe rerun story, and read-only verification that proves the output is usable.
+safe rerun story, runtime telemetry or data-availability visibility, and
+read-only verification that proves the output is usable.
+
+## Current Production Runtime
+
+The first scheduled VM workflow is `backend.orchestration.power.pjm.da_hrl_lmps`
+on `helioscta-prod-vm-01`. See `docs/deployments.md`,
+`infrastructure/azure-vm/README.md`, and `infrastructure/systemd/README.md` for
+the live host, timer, deployment, logging, and verification notes.

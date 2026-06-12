@@ -35,8 +35,9 @@ boundary, or log path changes.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
+- Next scheduled run observed: `2026-06-13 16:00:00 UTC`.
 
-Verification SQL:
+Verification SQL for API telemetry:
 
 ```sql
 SELECT
@@ -48,6 +49,27 @@ SELECT
     created_at
 FROM ops.api_fetch_log
 WHERE pipeline_name = 'da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_da_hrl_lmps'
 ORDER BY created_at DESC
 LIMIT 10;
 ```
@@ -64,4 +86,8 @@ Operational notes:
   to work after switching into a `helios` shell.
 - Keep the deployment on the orchestration module so the scheduled path emits
   API telemetry and data readiness events.
-- Record the actual deployed commit after `git pull --ff-only` on the VM.
+- Keep one `KEY=value` per line in `/etc/helioscta/backend.env` and leave a
+  trailing newline. Do not print the environment file or secrets in terminals,
+  logs, or command history.
+- After future `git pull --ff-only` deployments, update this register with the
+  VM commit, timer state, and verification result.

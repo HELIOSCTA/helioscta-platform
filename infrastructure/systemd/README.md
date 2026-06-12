@@ -7,7 +7,8 @@ Each promoted scheduled script should have:
 - one `.service` file for the script command
 - one `.timer` file for the schedule
 - a matching entry in `docs/deployments.md`
-- script logging plus API telemetry inside the script or wrapper
+- script logging plus API telemetry or data-availability visibility inside the
+  script or wrapper
 
 Set the service environment from a root-owned env file, for example:
 
@@ -32,6 +33,10 @@ helios-da-hrl-lmps.timer
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
 terminal/file logging, and DA LMP data readiness event emission.
+
+The live production VM currently has `helios-da-hrl-lmps.timer` enabled on
+`helioscta-prod-vm-01` at `16:00 UTC` with `Persistent=true`. The deployment
+register records the exact deployed commit and verification state.
 
 ## Naming
 
@@ -85,6 +90,10 @@ systemctl list-timers 'helios-*'
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs
 delete their file log by default; failure logs are retained there while full
 process output remains available in journald.
+
+Use read-only SQL against `ops.api_fetch_log` for fetch status and against
+`ops.data_availability_events` once the deployed runtime emits
+data-availability events.
 
 ## Disable A Timer
 

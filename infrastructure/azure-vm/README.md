@@ -24,6 +24,9 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Repo path: `/opt/helioscta-platform`.
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
+- Live deployed commit: `a234d8d3b8ae4b693849e625486e9e482ef8b78c`.
+- Timer: `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`,
+  `Persistent=true`.
 
 `/opt/helioscta-platform` is intentionally not directly accessible to
 `azureuser`. Stay in the `azureuser` shell for commands that need sudo, and run
@@ -131,6 +134,8 @@ PJM_API_KEY=
 
 Do not create `backend/.env` on the VM unless you are doing an emergency manual
 test. Production systemd jobs should consume `/etc/helioscta/backend.env`.
+Keep one `KEY=value` per line and leave the file with a trailing newline. Do
+not print this file to the terminal or copy secrets into shell history.
 
 ## Manual Smoke Checks
 
@@ -207,11 +212,32 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+Verify data-availability events after deploying a runtime that emits them:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 Use `journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager` for process
 status and `/var/log/helioscta` for retained scrape log files.
 
-After the first successful run, record the host, deployed commit, schedule, and
-logs in `docs/deployments.md`.
+After future deploys, record the deployed commit, schedule, credential boundary,
+and verification result in `docs/deployments.md`.
 
 ## Deployment Commands
 
