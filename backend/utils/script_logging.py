@@ -40,6 +40,17 @@ def mountain_now() -> datetime:
     return datetime.now(ZoneInfo("America/Denver"))
 
 
+def utc_now() -> datetime:
+    return datetime.now(ZoneInfo("UTC"))
+
+
+def get_log_dir(default: Union[str, Path]) -> Path:
+    configured = os.environ.get("HELIOS_LOG_DIR")
+    if configured:
+        return Path(configured)
+    return Path(default)
+
+
 def init_logging(
     name: str = "logger",
     log_dir: Union[str, Path] = "logs",

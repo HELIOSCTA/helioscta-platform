@@ -22,11 +22,36 @@ Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
 environment variable names still say `WRITER`, but the configured database user
 is now the app owner role, `helios_admin`.
 
+Set `HELIOS_LOG_DIR=/var/log/helioscta` on Linux VMs if you want file logs
+outside the git checkout. Without it, scripts write under their local `logs/`
+folder.
+
 ## Permissions Contract
 
-Schemas are created by `helios_admin`. Backend scripts may create or upsert
-tables inside any non-system application schema.
+Schemas and direct-write tables are created by the Azure Postgres init SQL.
+Backend scripts assume those tables exist and only perform application writes.
 
 After the Azure Postgres permission defaults have been installed, new schemas
 and tables created by `helios_admin` inherit the expected read-only grants
 automatically.
+
+## Dependencies
+
+For VM runtime jobs:
+
+```bash
+pip install -r backend/requirements.txt -e backend
+```
+
+For dbt compilation:
+
+```bash
+pip install -r backend/requirements-dbt.txt
+```
+
+For local tests:
+
+```bash
+pip install -r backend/requirements-dev.txt -e backend
+pytest backend/tests
+```

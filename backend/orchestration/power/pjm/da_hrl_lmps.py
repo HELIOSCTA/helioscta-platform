@@ -1,12 +1,13 @@
 import requests
 import time
-from io import StringIO
+from io import BytesIO
 import logging
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from pathlib import Path
 import sys
 from urllib.parse import urlsplit
+from uuid import uuid4
 
 import pandas as pd
 
@@ -24,10 +25,10 @@ from backend.utils import (
     db,
     script_logging,
 )
-from backend.utils.ops_logging import PipelineRunLogger, log_api_fetch
+from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 API_SCRAPE_NAME: str = "da_hrl_lmps"
-TARGET_DATABASE = "helios_prod"
+TARGET_DATABASE: str | None = None
 TARGET_SCHEMA = "pjm"
 TARGET_TABLE = API_SCRAPE_NAME
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
@@ -38,33 +39,36 @@ logger = logging.getLogger(__name__)
 POLL_CEILING_SECONDS = 3 * 60 * 60  # 3 hours
 
 
-def _build_url(
+def _build_request(
     start_date: str,
     end_date: str,
     base_url: str = "https://api.pjm.com/api/v1/da_hrl_lmps",
-) -> str:
-    """Build the PJM API URL for DA LMPs."""
+) -> tuple[str, dict[str, str | int]]:
+    """Build the PJM API request for DA LMPs without embedding secrets."""
+    if not credentials.PJM_API_KEY:
+        raise RuntimeError(
+            "Missing PJM credentials. Configure PJM_API_KEY in backend/.env."
+        )
 
-    url = (
-        f"{base_url}"
-        f"?rowCount=50000"
-        f"&startRow=1"
-        f"&datetime_beginning_ept={start_date}%20to%20{end_date}"
-        f"&type=hub"
-        f"&format=csv"
-        f"&subscription-key={credentials.PJM_API_KEY}"
-    )
+    params = {
+        "rowCount": 50000,
+        "startRow": 1,
+        "datetime_beginning_ept": f"{start_date} to {end_date}",
+        "type": "hub",
+        "format": "csv",
+        "subscription-key": credentials.PJM_API_KEY,
+    }
     logger.info(
-        "Built PJM URL for %s from %s to %s",
+        "Built PJM request for %s from %s to %s",
         urlsplit(base_url).path,
         start_date,
         end_date,
     )
-    return url
+    return base_url, params
 
 
 @api_poll_policy(max_seconds=POLL_CEILING_SECONDS, wait_seconds=1)
-def _wait_for_data(url: str) -> requests.Response:
+def _wait_for_data(url: str, params: dict[str, str | int]) -> requests.Response:
     """Poll the PJM API until a non-empty response is returned.
 
     PJM rate-limit note: PJM Data Miner 2 does *not* return HTTP 429 on
@@ -78,7 +82,7 @@ def _wait_for_data(url: str) -> requests.Response:
     alerts matters, the API is not rate-limited, and the 3h ceiling caps
     total request volume per cron tick.
     """
-    response = requests.get(url, timeout=60)
+    response = requests.get(url, params=params, timeout=60)
     response.raise_for_status()
 
     if not response.content:
@@ -92,8 +96,9 @@ def _wait_for_data(url: str) -> requests.Response:
 
 def _wait_for_data_logged(
     url: str,
+    params: dict[str, str | int],
     run_id: str | None = None,
-    database: str = TARGET_DATABASE,
+    database: str | None = TARGET_DATABASE,
 ) -> requests.Response:
     """Run the polling fetch and write one resolved ops.api_fetch_log row.
 
@@ -112,7 +117,7 @@ def _wait_for_data_logged(
         return int(stats.get("attempt_number", 1))
 
     try:
-        response = _wait_for_data(url=url)
+        response = _wait_for_data(url=url, params=params)
     except Exception as exc:
         elapsed_ms = round((time.perf_counter() - started) * 1000)
         log_api_fetch(
@@ -129,7 +134,7 @@ def _wait_for_data_logged(
             elapsed_ms=elapsed_ms,
             attempt=_poll_count(),
             error_type=type(exc).__name__,
-            error_message=str(exc),
+            error_message=redact_secrets(str(exc)),
             metadata={"poll_count": _poll_count(), "poll_seconds": round(elapsed_ms / 1000, 1)},
             database=database,
         )
@@ -174,8 +179,7 @@ def _pull(
         First Available: 6/1/2000 00:00
     """
 
-    # read data
-    df = pd.read_csv(StringIO(response.text))
+    df = pd.read_csv(BytesIO(response.content), encoding="utf-8-sig")
 
     return df
 
@@ -230,38 +234,34 @@ def handle_event(payload: dict) -> None:
 def main(
     start_date: str | None = None,
     end_date: str | None = None,
+    database: str | None = None,
 ) -> pd.DataFrame:
 
     target_day = datetime.now() + relativedelta(days=1)
     start_date = start_date or target_day.strftime("%Y-%m-%d 00:00")
     end_date = end_date or target_day.strftime("%Y-%m-%d 23:00")
+    database = database or credentials.AZURE_POSTGRESQL_DB_NAME
     run_logger = script_logging.init_logging(
         name=API_SCRAPE_NAME,
-        log_dir=Path(__file__).parent / "logs",
+        log_dir=script_logging.get_log_dir(Path(__file__).parent / "logs"),
         log_to_file=True,
         delete_if_no_errors=True,
     )
-    run = PipelineRunLogger(
-        pipeline_name=API_SCRAPE_NAME,
-        source="power",
-        target_table=TARGET_TABLE_FQN,
-        operation_type="upsert",
-        log_file_path=run_logger.log_file_path,
-        database=TARGET_DATABASE,
-    )
-    run.start()
+    run_id = str(uuid4())
 
     run_logger.header(API_SCRAPE_NAME)
+    run_logger.info(f"Run ID: {run_id}")
     try:
 
-        run_logger.section("Building URL ...")
-        url: str = _build_url(start_date=start_date, end_date=end_date)
+        run_logger.section("Building request ...")
+        url, params = _build_request(start_date=start_date, end_date=end_date)
 
         run_logger.section("Waiting for data ...")
         response = _wait_for_data_logged(
             url=url,
-            run_id=run.run_id,
-            database=TARGET_DATABASE,
+            params=params,
+            run_id=run_id,
+            database=database,
         )
 
         run_logger.section("Pulling data ...")
@@ -276,7 +276,7 @@ def main(
         )
 
         run_logger.section("Upserting data ...")
-        _upsert(df=df)
+        _upsert(df=df, database=database)
 
         if missing_counts_by_date:
             run_logger.section("Emitting DA HRL LMP arrival alerts ...")
@@ -287,11 +287,10 @@ def main(
         else:
             logger.info("No new DA HRL LMP rows detected; no alert emitted")
 
-        run.success(rows_processed=len(df))
+        run_logger.success(f"{API_SCRAPE_NAME} completed; {len(df)} rows processed.")
 
     except Exception as e:
-        run_logger.exception(f"Error pulling data: {e}")
-        run.failure(error=e)
+        run_logger.exception(f"Error pulling data: {redact_secrets(str(e))}")
         raise
 
     finally:

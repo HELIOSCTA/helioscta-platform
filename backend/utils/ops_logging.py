@@ -12,7 +12,7 @@ from typing import Any, Optional, Union
 import pandas as pd
 
 from backend.utils import db
-from backend.utils.script_logging import mountain_now
+from backend.utils.script_logging import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ PIPELINE_RUN_DATA_TYPES = [
     "VARCHAR",
     "VARCHAR",
     "VARCHAR",
-    "TIMESTAMP",
+    "TIMESTAMPTZ",
     "FLOAT",
     "VARCHAR",
     "VARCHAR",
@@ -61,7 +61,7 @@ PIPELINE_RUN_DATA_TYPES = [
     "VARCHAR",
     "VARCHAR",
     "VARCHAR",
-    "TEXT",
+    "JSONB",
     "VARCHAR",
     "VARCHAR",
 ]
@@ -147,7 +147,7 @@ class PipelineRunLogger:
             self._files_processed = files_processed
 
         error_type = type(error).__name__ if error else ""
-        error_message = f"{error_type}: {error}" if error else ""
+        error_message = _redact_secrets(f"{error_type}: {error}" if error else "") or ""
         self._write_event(
             event_type="RUN_FAILURE",
             status="failure",
@@ -195,7 +195,7 @@ class PipelineRunLogger:
             "run_id": self.run_id,
             "pipeline_name": self.pipeline_name,
             "event_type": event_type,
-            "event_timestamp": mountain_now().replace(tzinfo=None),
+            "event_timestamp": utc_now(),
             "duration_seconds": duration_seconds,
             "status": status,
             "error_type": error_type,
@@ -209,7 +209,7 @@ class PipelineRunLogger:
             "hostname": self.hostname,
             "notification_channel": notification_channel,
             "notification_recipient": notification_recipient,
-            "metadata": json.dumps(metadata) if metadata else "",
+            "metadata": json.dumps(metadata or {}, default=str),
             "target_table": self.target_table,
             "operation_type": self.operation_type,
         }
@@ -321,6 +321,11 @@ def log_api_fetch(
             operation_name,
             exc_info=True,
         )
+
+
+def redact_secrets(value: str | None) -> str | None:
+    return _redact_secrets(value)
+
 
 def _redact_secrets(value: str | None) -> str | None:
     if value is None:

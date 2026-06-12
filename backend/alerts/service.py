@@ -15,7 +15,7 @@ import logging
 from typing import Any
 
 from backend.utils import db
-from backend.utils.script_logging import mountain_now
+from backend.utils.script_logging import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ def emit_alert(
             f"Expected one of {sorted(VALID_EMAIL_STATUSES)}."
         )
 
-    now = mountain_now().replace(tzinfo=None)
+    now = utc_now()
     recipients = recipient_emails or []
 
     rows = db.execute_sql(

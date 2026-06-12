@@ -127,29 +127,24 @@ def upsert_dataframe(
         connection = connect(database=database)
         cursor = connection.cursor()
 
+        cursor.execute(_assert_target_table_sql(schema=schema, table_name=table_name))
+        _validate_target_columns(
+            cursor=cursor,
+            schema=schema,
+            table_name=table_name,
+            columns=columns,
+            audit_columns=["created_at", "updated_at"],
+        )
         cursor.execute(
-            _create_table_sql(
-                schema=schema,
+            _create_temp_table_sql(
                 table_name=temp_table,
                 columns=columns,
                 data_types=data_types,
-                primary_key=primary_key,
-                temporary=False,
-            )
-        )
-        cursor.execute(
-            _create_table_sql(
-                schema=schema,
-                table_name=table_name,
-                columns=columns,
-                data_types=data_types,
-                primary_key=primary_key,
-                temporary=False,
             )
         )
 
         df_temp = df.copy()
-        now_sql = pd.Timestamp.now(tz="America/Denver")
+        now_sql = pd.Timestamp.now(tz="UTC")
         df_temp["created_at"] = now_sql
         df_temp["updated_at"] = now_sql
 
@@ -164,11 +159,7 @@ def upsert_dataframe(
         )
         buffer.seek(0)
 
-        copy_sql = sql.SQL("COPY {}.{} FROM STDIN WITH (FORMAT CSV)").format(
-                sql.Identifier(schema),
-                sql.Identifier(temp_table),
-        )
-        cursor.copy_expert(copy_sql.as_string(connection), buffer)
+        cursor.copy_expert(_copy_sql(temp_table).as_string(connection), buffer)
         cursor.execute(
             _upsert_sql(
                 schema=schema,
@@ -179,8 +170,7 @@ def upsert_dataframe(
             )
         )
         cursor.execute(
-            sql.SQL("DROP TABLE IF EXISTS {}.{}").format(
-                sql.Identifier(schema),
+            sql.SQL("DROP TABLE IF EXISTS {}").format(
                 sql.Identifier(temp_table),
             )
         )
@@ -199,34 +189,63 @@ def upsert_dataframe(
             connection.close()
 
 
-def _create_table_sql(
+def _assert_target_table_sql(*, schema: str, table_name: str) -> sql.Composed:
+    return sql.SQL("SELECT 1 FROM {}.{} LIMIT 0").format(
+        sql.Identifier(schema),
+        sql.Identifier(table_name),
+    )
+
+
+def _validate_target_columns(
     *,
+    cursor: psycopg2.extensions.cursor,
     schema: str,
     table_name: str,
     columns: list[str],
+    audit_columns: list[str],
+) -> None:
+    cursor.execute(
+        """
+        SELECT column_name
+        FROM information_schema.columns
+        WHERE table_schema = %s
+          AND table_name = %s;
+        """,
+        (schema, table_name),
+    )
+    existing = {row[0] for row in cursor.fetchall()}
+    missing = [column for column in columns + audit_columns if column not in existing]
+    if missing:
+        raise ValueError(
+            f"Target table {schema}.{table_name} is missing required columns: {missing}"
+        )
+
+
+def _create_temp_table_sql(
+    *,
+    table_name: str,
+    columns: list[str],
     data_types: list[str],
-    primary_key: list[str],
-    temporary: bool = False,
 ) -> sql.Composed:
-    table_keyword = sql.SQL("CREATE TEMP TABLE IF NOT EXISTS") if temporary else sql.SQL("CREATE TABLE IF NOT EXISTS")
     column_defs = [
         sql.SQL("{} {}").format(sql.Identifier(column), sql.SQL(data_type))
         for column, data_type in zip(columns, data_types)
     ]
     column_defs.extend(
         [
-            sql.SQL("created_at TIMESTAMPTZ DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Denver')"),
-            sql.SQL("updated_at TIMESTAMPTZ DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'America/Denver')"),
-            sql.SQL("PRIMARY KEY ({})").format(
-                sql.SQL(", ").join(sql.Identifier(col) for col in primary_key)
-            ),
+            sql.SQL("created_at TIMESTAMPTZ"),
+            sql.SQL("updated_at TIMESTAMPTZ"),
         ]
     )
-    return sql.SQL("{} {}.{} ({})").format(
-        table_keyword,
-        sql.Identifier(schema),
+    return sql.SQL("CREATE TEMP TABLE {} ({}) ON COMMIT DROP").format(
         sql.Identifier(table_name),
         sql.SQL(", ").join(column_defs),
+    )
+
+
+def _copy_sql(table_name: str) -> sql.Composed:
+    return sql.SQL("COPY {} FROM STDIN WITH (FORMAT CSV)").format(
+        sql.Identifier(table_name),
     )
 
 
@@ -244,19 +263,19 @@ def _upsert_sql(
         sql.SQL("source.{}").format(sql.Identifier(column))
         for column in columns
     ] + [
-        sql.SQL("NOW() AT TIME ZONE 'America/Denver'"),
-        sql.SQL("NOW() AT TIME ZONE 'America/Denver'"),
+        sql.SQL("NOW()"),
+        sql.SQL("NOW()"),
     ]
     update_assignments = [
         sql.SQL("{} = EXCLUDED.{}").format(sql.Identifier(column), sql.Identifier(column))
         for column in update_columns
     ]
-    update_assignments.append(sql.SQL("updated_at = NOW() AT TIME ZONE 'America/Denver'"))
+    update_assignments.append(sql.SQL("updated_at = NOW()"))
 
     return sql.SQL(
         """
         INSERT INTO {}.{} ({})
-        SELECT {} FROM {}.{} AS source
+        SELECT {} FROM {} AS source
         ON CONFLICT ({})
         DO UPDATE SET {};
         """
@@ -265,7 +284,6 @@ def _upsert_sql(
         sql.Identifier(table_name),
         sql.SQL(", ").join(sql.Identifier(column) for column in insert_columns),
         sql.SQL(", ").join(select_columns),
-        sql.Identifier(schema),
         sql.Identifier(temp_table),
         sql.SQL(", ").join(sql.Identifier(column) for column in primary_key),
         sql.SQL(", ").join(update_assignments),

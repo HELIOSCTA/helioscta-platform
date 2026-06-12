@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
-from io import StringIO
+from io import BytesIO
 from urllib.parse import urlsplit
 
 import pandas as pd
@@ -250,7 +250,7 @@ def fetch_csv(
             truncated = False
             break
 
-        page_df = pd.read_csv(StringIO(text))
+        page_df = pd.read_csv(BytesIO(response.content), encoding="utf-8-sig")
         if page_df.empty:
             truncated = False
             break

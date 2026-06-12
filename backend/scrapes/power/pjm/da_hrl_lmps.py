@@ -36,6 +36,7 @@ import logging
 from datetime import datetime
 from pathlib import Path
 import sys
+from uuid import uuid4
 from dateutil.relativedelta import relativedelta
 
 import pandas as pd
@@ -44,15 +45,15 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from backend import credentials
 from backend.scrapes.power.pjm import client
 from backend.utils import (
     db,
     script_logging,
 )
-from backend.utils.ops_logging import PipelineRunLogger
 
 API_SCRAPE_NAME = "da_hrl_lmps"
-TARGET_DATABASE = "helios_prod"
+TARGET_DATABASE: str | None = None
 TARGET_SCHEMA = "pjm"
 TARGET_TABLE = API_SCRAPE_NAME
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
@@ -70,6 +71,7 @@ def _pull(
         start_date: str,
         end_date: str,
         run_id: str | None = None,
+        database: str | None = None,
     ) -> pd.DataFrame:
     """Pull PJM day-ahead hourly hub LMPs."""
 
@@ -82,7 +84,7 @@ def _pull(
         pipeline_name=API_SCRAPE_NAME,
         run_id=run_id,
         target_table=TARGET_TABLE_FQN,
-        database=TARGET_DATABASE,
+        database=database,
         log_fetch=True,
     )
 
@@ -122,31 +124,26 @@ def main(
         start_date: datetime | None = None,
         end_date: datetime | None = None,
         delta: relativedelta = relativedelta(days=1),
+        database: str | None = None,
     ):
 
     now = datetime.now()
     start_date = start_date or (now - relativedelta(days=7))
     end_date = end_date or (now + relativedelta(days=2))
+    database = database or credentials.AZURE_POSTGRESQL_DB_NAME
     run_logger = script_logging.init_logging(
         name=API_SCRAPE_NAME,
-        log_dir=Path(__file__).parent / "logs",
+        log_dir=script_logging.get_log_dir(Path(__file__).parent / "logs"),
         log_to_file=True,
         delete_if_no_errors=True,
     )
-    run = PipelineRunLogger(
-        pipeline_name=API_SCRAPE_NAME,
-        source="power",
-        target_table=TARGET_TABLE_FQN,
-        operation_type="upsert",
-        log_file_path=run_logger.log_file_path,
-        database=TARGET_DATABASE,
-    )
-    run.start()
+    run_id = str(uuid4())
     rows_processed = 0
 
     try:
 
         run_logger.header(f"{API_SCRAPE_NAME}")
+        run_logger.info(f"Run ID: {run_id}")
 
         current_date = start_date
         while current_date <= end_date:
@@ -162,7 +159,8 @@ def main(
             df = _pull(
                 start_date=params['start_date'],
                 end_date=params['end_date'],
-                run_id=run.run_id,
+                run_id=run_id,
+                database=database,
             )
 
             # upsert
@@ -170,7 +168,7 @@ def main(
                 run_logger.section(f"No data returned for {params['start_date']} to {params['end_date']}, skipping upsert.")
             else:
                 run_logger.section(f"Upserting {len(df)} rows...")
-                _upsert(df)
+                _upsert(df, database=database)
                 rows_processed += len(df)
 
                 run_logger.success(f"Successfully pulled and upserted data for {params['start_date']} to {params['end_date']}!")
@@ -178,12 +176,11 @@ def main(
             # increment
             current_date += delta
 
-        run.success(rows_processed=rows_processed)
+        run_logger.success(f"{API_SCRAPE_NAME} completed; {rows_processed} rows processed.")
 
     except Exception as e:
 
         run_logger.exception(f"Pipeline failed: {e}")
-        run.failure(error=e, rows_processed=rows_processed)
 
         # raise exception
         raise

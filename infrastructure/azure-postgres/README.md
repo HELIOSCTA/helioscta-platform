@@ -31,8 +31,8 @@ table ...`, inspect and transfer ownership first:
 
 ## Intended Roles
 
-- `helios_admin` - backend/app role. Owns schemas, creates tables, and runs
-  migrations/cleanup.
+- `helios_admin` - backend/app role. Owns schemas, runs setup SQL, and executes
+  scheduled backend writes.
 - `helios_readonly` - dbt, frontend read paths, and inspection queries.
 
 ## Database Shape
@@ -63,7 +63,8 @@ need a permission script rerun when they are created by `helios_admin`.
 
 - Create schemas as `helios_admin`.
 - Create migration/admin tables as `helios_admin`.
-- Let backend runtime tables be created by `helios_admin`.
+- Add direct-write backend tables to versioned setup SQL before deploying code
+  that writes them.
 
 To add a schema, connect to `helios_prod` as `helios_admin` and run:
 
