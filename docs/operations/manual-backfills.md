@@ -38,7 +38,14 @@ date does not create a duplicate readiness event.
 From the `azureuser` shell:
 
 ```bash
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main; print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))'
+cat > /tmp/helios_da_backfill.py <<'PY'
+from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))
+PY
+
+sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+rm -f /tmp/helios_da_backfill.py
 ```
 
 Use `systemd-run` instead of sourcing `/etc/helioscta/backend.env` in a shell.
@@ -50,19 +57,40 @@ would alter if sourced directly.
 Dry run:
 
 ```bash
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main; print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))'
+cat > /tmp/helios_da_backfill.py <<'PY'
+from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))
+PY
+
+sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+rm -f /tmp/helios_da_backfill.py
 ```
 
 Run one day:
 
 ```bash
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main; print(main(start_date="2026-06-10", end_date="2026-06-10"))'
+cat > /tmp/helios_da_backfill.py <<'PY'
+from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-10", end_date="2026-06-10"))
+PY
+
+sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+rm -f /tmp/helios_da_backfill.py
 ```
 
 Run a small window:
 
 ```bash
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main; print(main(start_date="2026-06-01", end_date="2026-06-07"))'
+cat > /tmp/helios_da_backfill.py <<'PY'
+from backend.orchestration.power.pjm.da_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-01", end_date="2026-06-07"))
+PY
+
+sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+rm -f /tmp/helios_da_backfill.py
 ```
 
 ## RT Verified Five-Minute HRL LMP Backfill
@@ -70,19 +98,40 @@ sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pty --pro
 Dry run:
 
 ```bash
-sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main; print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))'
+cat > /tmp/helios_rt_backfill.py <<'PY'
+from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))
+PY
+
+sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_rt_backfill.py
+rm -f /tmp/helios_rt_backfill.py
 ```
 
 Run one day:
 
 ```bash
-sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main; print(main(start_date="2026-06-10", end_date="2026-06-10"))'
+cat > /tmp/helios_rt_backfill.py <<'PY'
+from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-10", end_date="2026-06-10"))
+PY
+
+sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_rt_backfill.py
+rm -f /tmp/helios_rt_backfill.py
 ```
 
 Run a small window:
 
 ```bash
-sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pty --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c 'from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main; print(main(start_date="2026-06-01", end_date="2026-06-03"))'
+cat > /tmp/helios_rt_backfill.py <<'PY'
+from backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill import main
+
+print(main(start_date="2026-06-01", end_date="2026-06-03"))
+PY
+
+sudo systemd-run --unit=helios-rt-fivemin-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_rt_backfill.py
+rm -f /tmp/helios_rt_backfill.py
 ```
 
 ## Verification
