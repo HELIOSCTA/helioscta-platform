@@ -18,6 +18,7 @@ jobs:
       DBT_POSTGRES_READONLY_PASSWORD: ci_dummy_password
       DBT_POSTGRES_PORT: "5432"
       DBT_POSTGRES_DBNAME: helios_prod
+      DBT_POSTGRES_SSLMODE: disable
 
     services:
       postgres:
