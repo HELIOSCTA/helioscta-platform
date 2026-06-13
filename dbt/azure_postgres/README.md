@@ -108,11 +108,17 @@ models/power/ercot/dam_stlmnt_pnt_prices/ercot_lmps_da_daily/
 models/power/ercot/settlement_point_prices/
 models/power/ercot/settlement_point_prices/ercot_lmps_rt_15min/
 models/power/ercot/settlement_point_prices/ercot_lmps_rt_hourly/
+models/power/ercot/actual_system_load/
+models/power/ercot/actual_system_load/ercot_actual_load_hourly/
+models/power/ercot/seven_day_load_forecast/
+models/power/ercot/seven_day_load_forecast/ercot_load_forecast_hourly/
+models/power/ercot/seven_day_load_forecast/ercot_load_forecast_latest_hourly/
 ```
 
 `table_ercot_dam_stlmnt_pnt_prices.sql` and
 `index_ercot_dam_stlmnt_pnt_prices.sql`, plus the matching
-`settlement_point_prices` table/index files, are disabled operator SQL. The
+`settlement_point_prices`, `actual_system_load`, and
+`seven_day_load_forecast` table/index files, are disabled operator SQL. The
 enabled models are read-only validation/query shaping only.
 
 ## Load Environment
@@ -198,9 +204,13 @@ models/setup/schemas.sql
 models/ops/table_ops_api_fetch_log.sql
 models/ops/table_ops_data_availability_events.sql
 models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
+models/power/ercot/actual_system_load/table_ercot_actual_system_load.sql
+models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
+models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql
+models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

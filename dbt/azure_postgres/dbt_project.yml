@@ -239,6 +239,18 @@ models:
             +enabled: false
           index_ercot_settlement_point_prices:
             +enabled: false
+        actual_system_load:
+          +materialized: ephemeral
+          table_ercot_actual_system_load:
+            +enabled: false
+          index_ercot_actual_system_load:
+            +enabled: false
+        seven_day_load_forecast:
+          +materialized: ephemeral
+          table_ercot_seven_day_load_forecast:
+            +enabled: false
+          index_ercot_seven_day_load_forecast:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

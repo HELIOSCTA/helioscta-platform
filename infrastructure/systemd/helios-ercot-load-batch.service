@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA ERCOT load support scrape batch
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-ercot-load-batch.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.ercot.load_batch
+TimeoutStartSec=1h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-ercot-load-batch
+
+[Install]
+WantedBy=multi-user.target

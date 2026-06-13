@@ -25,8 +25,10 @@ there is a clear consumer for all nodes, zones, or resources.
 ## Current Production Criticality
 
 - `dam_stlmnt_pnt_prices` provides day-ahead hub price readiness.
-- `settlement_point_prices` is scaffolded as the next real-time hub price feed
-  but is not yet deployed or scheduled.
+- `settlement_point_prices` provides real-time hub price collection and
+  complete-day readiness.
+- `actual_system_load` and `seven_day_load_forecast` are support feeds in the
+  daily ERCOT load batch; they are not critical readiness gates.
 
 ## Pull Tiers
 
@@ -34,17 +36,17 @@ there is a clear consumer for all nodes, zones, or resources.
 
 | Feed | ERCOT product | Endpoint | Runtime stance |
 |---|---|---|---|
-| dam_stlmnt_pnt_prices | NP4-190-CD | np4-190-cd/dam_stlmnt_pnt_prices | Promoted; manual smoke complete; unscheduled |
-| settlement_point_prices | NP6-905-CD | np6-905-cd/spp_node_zone_hub | Promoted; manual smoke complete; unscheduled |
+| dam_stlmnt_pnt_prices | NP4-190-CD | np4-190-cd/dam_stlmnt_pnt_prices | Deployed; daily critical timer |
+| settlement_point_prices | NP6-905-CD | np6-905-cd/spp_node_zone_hub | Deployed; 15-minute critical timer |
+| actual_system_load | NP6-346-CD | np6-346-cd/act_sys_load_by_fzn | Promoted; daily load support batch |
+| seven_day_load_forecast | NP3-565-CD | np3-565-cd/lf_by_model_weather_zone | Promoted; daily load support batch |
 
 ### Tier 1 - Promote Next
 
 | Feed area | Why pull |
 |---|---|
-| RT settlement point prices | Completes ERCOT DA/RT hub basis and intraday price history |
 | DAM shadow prices | Day-ahead congestion drivers |
 | SCED shadow prices | Real-time congestion drivers |
-| System-wide load and load forecast | Core demand driver for price moves |
 | Wind and solar actuals | Renewable actual context for RT price and congestion |
 | Wind and solar forecasts | Forecast error and net-load signal |
 | Generation outages / capacity availability | Supply stack and risk context |
@@ -63,13 +65,11 @@ there is a clear consumer for all nodes, zones, or resources.
 
 1. DAM shadow prices
 2. SCED shadow prices
-3. ERCOT load actuals
-4. ERCOT load forecast
-5. Wind actuals
-6. Solar actuals
-7. Wind forecast
-8. Solar forecast
-9. Generation outage or capacity availability feed
+3. Wind actuals
+4. Solar actuals
+5. Wind forecast
+6. Solar forecast
+7. Generation outage or capacity availability feed
 
 ## Per-Feed Promotion Contract
 

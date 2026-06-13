@@ -65,3 +65,50 @@ workspace.
   `2026-06-13` on `2026-06-13 17:02 UTC`, upserted 188 hub rows across 47
   published intervals, and wrote successful ERCOT API telemetry for all four
   hubs.
+
+## Actual System Load
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP6-346-CD`, Actual System Load by Forecast Zone.
+- Endpoint: `np6-346-cd/act_sys_load_by_fzn`.
+- Runtime: `backend.scrapes.power.ercot.actual_system_load`.
+- Batch orchestration: `backend.orchestration.power.ercot.load_batch`.
+- Destination: `ercot.actual_system_load`.
+- Primary grain: operating day x hour ending.
+- Primary key: `operatingday`, `hourending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/actual_system_load/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/actual_system_load/table_ercot_actual_system_load.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql`.
+- Production schedule: through `helios-ercot-load-batch.timer`, daily at
+  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+- Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
+  `2026-06-12` on `2026-06-13 17:48 UTC`, upserted 24 hourly rows, and wrote
+  successful ERCOT API telemetry.
+
+## Seven-Day Load Forecast
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP3-565-CD`, Seven-Day Load Forecast by Model and Weather
+  Zone.
+- Endpoint: `np3-565-cd/lf_by_model_weather_zone`.
+- Runtime: `backend.scrapes.power.ercot.seven_day_load_forecast`.
+- Batch orchestration: `backend.orchestration.power.ercot.load_batch`.
+- Destination: `ercot.seven_day_load_forecast`.
+- Primary grain: posted datetime x delivery date x hour ending x model.
+- Primary key: `posteddatetime`, `deliverydate`, `hourending`, `model`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/seven_day_load_forecast/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql`.
+- Production schedule: through `helios-ercot-load-batch.timer`, daily at
+  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+- Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
+  delivery date `2026-06-13` on `2026-06-13 17:48 UTC`, upserted 4,344 rows,
+  and wrote successful ERCOT API telemetry.

@@ -225,6 +225,42 @@ LIMIT 10;
   skipped readiness for incomplete delivery date `2026-06-13`.
 - Next scheduled run observed: `2026-06-13 17:46:55 UTC`.
 
+## ercot-load-batch
+
+- Status: promoted; local smoke succeeded; VM timer files are versioned.
+- Workflow: ERCOT load support scrape batch.
+- Runtime module: `backend.orchestration.power.ercot.load_batch`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.ercot.actual_system_load`
+  - `backend.scrapes.power.ercot.seven_day_load_forecast`
+- Source systems:
+  - ERCOT Public Reports `NP6-346-CD`, Actual System Load by Forecast Zone.
+  - ERCOT Public Reports `NP3-565-CD`, Seven-Day Load Forecast by Model and
+    Weather Zone.
+- Destination tables:
+  - `ercot.actual_system_load`
+  - `ercot.seven_day_load_forecast`
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-ercot-load-batch.service`
+  - `infrastructure/systemd/helios-ercot-load-batch.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-ercot-load-batch.service`.
+- Schedule: daily at `12:20 UTC` with `RandomizedDelaySec=10min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-ercot-load-batch.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Manual verification: `2026-06-13 17:48 UTC`; conda env
+  `helioscta-platform-backend` ran `actual_system_load` for operating day
+  `2026-06-12`, upserted 24 rows, ran `seven_day_load_forecast` for delivery
+  date `2026-06-13`, upserted 4,344 rows, and wrote successful ERCOT API
+  telemetry for both feeds.
+
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.

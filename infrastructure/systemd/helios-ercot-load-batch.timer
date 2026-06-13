@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA ERCOT load support scrape batch timer
+
+[Timer]
+OnCalendar=*-*-* 12:20:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+AccuracySec=1min
+Unit=helios-ercot-load-batch.service
+
+[Install]
+WantedBy=timers.target
