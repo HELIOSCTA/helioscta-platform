@@ -38,6 +38,7 @@ read-only verification that proves the output is usable.
 ## Current Production Runtime
 
 The first scheduled VM workflow is `backend.orchestration.power.pjm.da_hrl_lmps`
-on `helioscta-prod-vm-01`. See `docs/deployments.md`,
-`infrastructure/azure-vm/README.md`, and `infrastructure/systemd/README.md` for
-the live host, timer, deployment, logging, and verification notes.
+on `helioscta-prod-vm-01`. See `docs/production-readiness.md` for the backend
+production standard and gap tracker, `docs/deployments.md` for the deployment
+register, and `infrastructure/azure-vm/README.md` plus
+`infrastructure/systemd/README.md` for VM and timer operations.

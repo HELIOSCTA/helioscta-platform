@@ -39,6 +39,12 @@ models:
       +materialized: ephemeral
       pjm:
         +materialized: ephemeral
+        pnode:
+          +materialized: ephemeral
+          table_pjm_pnode:
+            +enabled: false
+          index_pjm_pnode:
+            +enabled: false
         da_hrl_lmps:
           +materialized: ephemeral
           table_pjm_da_hrl_lmps:
@@ -62,6 +68,162 @@ models:
           table_pjm_rt_fivemin_mnt_lmps:
             +enabled: false
           index_pjm_rt_fivemin_mnt_lmps:
+            +enabled: false
+        rt_fivemin_hrl_lmps:
+          +materialized: ephemeral
+          table_pjm_rt_fivemin_hrl_lmps:
+            +enabled: false
+          index_pjm_rt_fivemin_hrl_lmps:
+            +enabled: false
+        five_min_tie_flows:
+          +materialized: ephemeral
+          table_pjm_five_min_tie_flows:
+            +enabled: false
+          index_pjm_five_min_tie_flows:
+            +enabled: false
+        act_sch_interchange:
+          +materialized: ephemeral
+          table_pjm_act_sch_interchange:
+            +enabled: false
+          index_pjm_act_sch_interchange:
+            +enabled: false
+        agg_definitions:
+          +materialized: ephemeral
+          table_pjm_agg_definitions:
+            +enabled: false
+          index_pjm_agg_definitions:
+            +enabled: false
+        ancillary_services:
+          +materialized: ephemeral
+          table_pjm_ancillary_services:
+            +enabled: false
+          index_pjm_ancillary_services:
+            +enabled: false
+        da_interface_flows_and_limits:
+          +materialized: ephemeral
+          table_pjm_da_interface_flows_and_limits:
+            +enabled: false
+          index_pjm_da_interface_flows_and_limits:
+            +enabled: false
+        da_marginal_value:
+          +materialized: ephemeral
+          table_pjm_da_marginal_value:
+            +enabled: false
+          index_pjm_da_marginal_value:
+            +enabled: false
+        da_transconstraints:
+          +materialized: ephemeral
+          table_pjm_da_transconstraints:
+            +enabled: false
+          index_pjm_da_transconstraints:
+            +enabled: false
+        day_gen_capacity:
+          +materialized: ephemeral
+          table_pjm_day_gen_capacity:
+            +enabled: false
+          index_pjm_day_gen_capacity:
+            +enabled: false
+        dispatched_reserves:
+          +materialized: ephemeral
+          table_pjm_dispatched_reserves:
+            +enabled: false
+          index_pjm_dispatched_reserves:
+            +enabled: false
+        five_min_solar_generation:
+          +materialized: ephemeral
+          table_pjm_five_min_solar_generation:
+            +enabled: false
+          index_pjm_five_min_solar_generation:
+            +enabled: false
+        load_frcstd_hist:
+          +materialized: ephemeral
+          table_pjm_load_frcstd_hist:
+            +enabled: false
+          index_pjm_load_frcstd_hist:
+            +enabled: false
+        hrl_load_metered:
+          +materialized: ephemeral
+          table_pjm_hrl_load_metered:
+            +enabled: false
+          index_pjm_hrl_load_metered:
+            +enabled: false
+        hrl_load_prelim:
+          +materialized: ephemeral
+          table_pjm_hrl_load_prelim:
+            +enabled: false
+          index_pjm_hrl_load_prelim:
+            +enabled: false
+        hrl_dmd_bids:
+          +materialized: ephemeral
+          table_pjm_hrl_dmd_bids:
+            +enabled: false
+          index_pjm_hrl_dmd_bids:
+            +enabled: false
+        frcstd_gen_outages:
+          +materialized: ephemeral
+          table_pjm_frcstd_gen_outages:
+            +enabled: false
+          index_pjm_frcstd_gen_outages:
+            +enabled: false
+        rt_dispatch_reserves:
+          +materialized: ephemeral
+          table_pjm_rt_dispatch_reserves:
+            +enabled: false
+          index_pjm_rt_dispatch_reserves:
+            +enabled: false
+        reserve_market_results:
+          +materialized: ephemeral
+          table_pjm_reserve_market_results:
+            +enabled: false
+          index_pjm_reserve_market_results:
+            +enabled: false
+        rt_default_mv_override:
+          +materialized: ephemeral
+          table_pjm_rt_default_mv_override:
+            +enabled: false
+          index_pjm_rt_default_mv_override:
+            +enabled: false
+        rt_marginal_value:
+          +materialized: ephemeral
+          table_pjm_rt_marginal_value:
+            +enabled: false
+          index_pjm_rt_marginal_value:
+            +enabled: false
+        rt_short_term_mv_override:
+          +materialized: ephemeral
+          table_pjm_rt_short_term_mv_override:
+            +enabled: false
+          index_pjm_rt_short_term_mv_override:
+            +enabled: false
+        rt_unverified_hrl_lmps:
+          +materialized: ephemeral
+          table_pjm_rt_unverified_hrl_lmps:
+            +enabled: false
+          index_pjm_rt_unverified_hrl_lmps:
+            +enabled: false
+        load_frcstd_7_day:
+          +materialized: ephemeral
+          table_pjm_load_frcstd_7_day:
+            +enabled: false
+          index_pjm_load_frcstd_7_day:
+            +enabled: false
+        gen_outages_by_type:
+          +materialized: ephemeral
+          table_pjm_gen_outages_by_type:
+            +enabled: false
+          index_pjm_gen_outages_by_type:
+            +enabled: false
+        solar_gen:
+          +materialized: ephemeral
+          table_pjm_solar_gen:
+            +enabled: false
+          index_pjm_solar_gen:
+            +enabled: false
+        wind_gen:
+          +materialized: ephemeral
+          table_pjm_wind_gen:
+            +enabled: false
+          index_pjm_wind_gen:
             +enabled: false
 tests:
   helioscta_platform:
