@@ -113,7 +113,7 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_from_param="deliveryDateFrom",
         date_to_param="deliveryDateTo",
         default_lookback_days=1,
-        default_lookahead_days=-1,
+        default_lookahead_days=0,
     ),
     "actual_system_load": ErcotPublicReportConfig(
         feed_name="actual_system_load",
@@ -221,7 +221,7 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_from_param="deliveryDateFrom",
         date_to_param="deliveryDateTo",
         default_lookback_days=1,
-        default_lookahead_days=0,
+        default_lookahead_days=-1,
     ),
     "sced_shadow_prices": ErcotPublicReportConfig(
         feed_name="sced_shadow_prices",

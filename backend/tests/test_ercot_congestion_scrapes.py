@@ -19,6 +19,7 @@ def test_dam_shadow_prices_config_contract():
     )
     assert config.date_from_param == "deliveryDateFrom"
     assert config.date_to_param == "deliveryDateTo"
+    assert config.default_lookahead_days == -1
     assert dam_shadow_prices.API_SCRAPE_NAME == "dam_shadow_prices"
 
 
@@ -82,6 +83,7 @@ def test_sced_shadow_prices_config_contract():
     assert config.date_to_param == "SCEDTimestampTo"
     assert config.date_from_format == "%Y-%m-%dT00:00:00"
     assert config.date_to_format == "%Y-%m-%dT23:59:59"
+    assert config.default_lookahead_days == -1
     assert sced_shadow_prices.API_SCRAPE_NAME == "sced_shadow_prices"
 
 
