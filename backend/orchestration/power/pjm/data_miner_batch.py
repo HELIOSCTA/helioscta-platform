@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
@@ -67,7 +68,8 @@ def _run_feed(feed_name: str) -> FeedRunResult:
         module.main()
     except Exception as exc:
         elapsed = perf_counter() - started
-        LOGGER.exception("PJM Data Miner feed failed: %s", feed_name)
+        print(f"PJM Data Miner feed failed: {feed_name}", flush=True)
+        traceback.print_exc()
         return FeedRunResult(
             feed_name=feed_name,
             status="failed",
@@ -82,10 +84,10 @@ def _run_feed(feed_name: str) -> FeedRunResult:
 def main(feed_names: tuple[str, ...] = DEFAULT_FEEDS) -> int:
     _configure_logging()
     batch_started = datetime.now(timezone.utc)
-    LOGGER.info(
-        "Starting PJM Data Miner batch at %s with %s feeds",
-        batch_started.isoformat(),
-        len(feed_names),
+    print(
+        "Starting PJM Data Miner batch at "
+        f"{batch_started.isoformat()} with {len(feed_names)} feeds",
+        flush=True,
     )
 
     results = [_run_feed(feed_name) for feed_name in feed_names]
@@ -94,23 +96,21 @@ def main(feed_names: tuple[str, ...] = DEFAULT_FEEDS) -> int:
 
     for result in results:
         if result.status == "succeeded":
-            LOGGER.info(
-                "PJM Data Miner feed succeeded: %s in %.1fs",
-                result.feed_name,
-                result.elapsed_seconds,
+            print(
+                "PJM Data Miner feed succeeded: "
+                f"{result.feed_name} in {result.elapsed_seconds:.1f}s",
+                flush=True,
             )
         else:
-            LOGGER.error(
-                "PJM Data Miner feed failed: %s in %.1fs: %s",
-                result.feed_name,
-                result.elapsed_seconds,
-                result.error,
+            print(
+                "PJM Data Miner feed failed: "
+                f"{result.feed_name} in {result.elapsed_seconds:.1f}s: {result.error}",
+                flush=True,
             )
 
-    LOGGER.info(
-        "Completed PJM Data Miner batch: %s succeeded, %s failed",
-        succeeded,
-        len(failures),
+    print(
+        f"Completed PJM Data Miner batch: {succeeded} succeeded, {len(failures)} failed",
+        flush=True,
     )
     return 1 if failures else 0
 
