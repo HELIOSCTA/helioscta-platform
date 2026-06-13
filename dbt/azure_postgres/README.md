@@ -124,6 +124,8 @@ models/power/ercot/solar_power_actual_5min/
 models/power/ercot/solar_power_actual_5min/ercot_solar_power_actual_5min/
 models/power/ercot/hourly_resource_outage_capacity/
 models/power/ercot/hourly_resource_outage_capacity/ercot_resource_outage_capacity_hourly/
+models/power/ercot/short_term_system_adequacy/
+models/power/ercot/short_term_system_adequacy/ercot_short_term_system_adequacy/
 models/power/ercot/seven_day_load_forecast/
 models/power/ercot/seven_day_load_forecast/ercot_load_forecast_hourly/
 models/power/ercot/seven_day_load_forecast/ercot_load_forecast_latest_hourly/
@@ -135,8 +137,9 @@ models/power/ercot/seven_day_load_forecast/ercot_load_forecast_latest_hourly/
 `seven_day_load_forecast`, `dam_shadow_prices`, `sced_shadow_prices`,
 `wind_power_production_hourly`, and `solar_power_production_hourly` table/index
 files, plus `wind_power_actual_5min`, `solar_power_actual_5min`, and
-`hourly_resource_outage_capacity`, are disabled operator SQL. The enabled
-models are read-only validation/query shaping only.
+`hourly_resource_outage_capacity` and `short_term_system_adequacy`, are
+disabled operator SQL. The enabled models are read-only validation/query
+shaping only.
 
 ## Load Environment
 
@@ -229,6 +232,7 @@ models/power/ercot/solar_power_production_hourly/table_ercot_solar_power_product
 models/power/ercot/wind_power_actual_5min/table_ercot_wind_power_actual_5min.sql
 models/power/ercot/solar_power_actual_5min/table_ercot_solar_power_actual_5min.sql
 models/power/ercot/hourly_resource_outage_capacity/table_ercot_hourly_resource_outage_capacity.sql
+models/power/ercot/short_term_system_adequacy/table_ercot_short_term_system_adequacy.sql
 models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
@@ -241,6 +245,7 @@ models/power/ercot/solar_power_production_hourly/index_ercot_solar_power_product
 models/power/ercot/wind_power_actual_5min/index_ercot_wind_power_actual_5min.sql
 models/power/ercot/solar_power_actual_5min/index_ercot_solar_power_actual_5min.sql
 models/power/ercot/hourly_resource_outage_capacity/index_ercot_hourly_resource_outage_capacity.sql
+models/power/ercot/short_term_system_adequacy/index_ercot_short_term_system_adequacy.sql
 models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql

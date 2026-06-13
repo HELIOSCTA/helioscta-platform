@@ -4,7 +4,10 @@ from backend.orchestration.power.ercot import outage_capacity_batch
 
 
 def test_ercot_outage_capacity_batch_default_feeds():
-    assert outage_capacity_batch.DEFAULT_FEEDS == ("hourly_resource_outage_capacity",)
+    assert outage_capacity_batch.DEFAULT_FEEDS == (
+        "hourly_resource_outage_capacity",
+        "short_term_system_adequacy",
+    )
 
 
 def test_ercot_outage_capacity_batch_returns_zero_when_all_feeds_succeed(monkeypatch):
@@ -25,7 +28,9 @@ def test_ercot_outage_capacity_batch_returns_zero_when_all_feeds_succeed(monkeyp
         fake_import_module,
     )
 
-    assert outage_capacity_batch.main(feed_names=("hourly_resource_outage_capacity",)) == 0
+    assert outage_capacity_batch.main(
+        feed_names=("hourly_resource_outage_capacity",)
+    ) == 0
     assert captured == [
         "backend.scrapes.power.ercot.hourly_resource_outage_capacity",
     ]

@@ -46,13 +46,14 @@ there is a clear consumer for all nodes, zones, or resources.
 | wind_power_actual_5min | NP4-733-CD | np4-733-cd/wpp_actual_5min_avg_values | Promoted; daily 5-minute renewables actual support batch |
 | solar_power_actual_5min | NP4-738-CD | np4-738-cd/spp_actual_5min_avg_values | Promoted; daily 5-minute renewables actual support batch |
 | hourly_resource_outage_capacity | NP3-233-CD | np3-233-cd/hourly_res_outage_cap | Promoted; daily outage/capacity support batch |
+| short_term_system_adequacy | NP3-763-CD | np3-763-cd/st_sys_adequacy | Promoted; daily outage/capacity support batch |
 | seven_day_load_forecast | NP3-565-CD | np3-565-cd/lf_by_model_weather_zone | Promoted; daily load support batch |
 
 ### Tier 1 - Promote Next
 
 | Feed area | Why pull |
 |---|---|
-| Capacity availability refinement | Additional resource availability context when a consumer needs it |
+| Ancillary service prices and awards | Reserve market analytics |
 
 ### Tier 2 - Promote When The Use Case Needs It
 
@@ -66,7 +67,7 @@ there is a clear consumer for all nodes, zones, or resources.
 
 ## Recommended Promotion Order
 
-1. Capacity availability refinement feed
+1. Ancillary service prices and awards
 
 ## Per-Feed Promotion Contract
 

@@ -287,6 +287,12 @@ models:
             +enabled: false
           index_ercot_hourly_resource_outage_capacity:
             +enabled: false
+        short_term_system_adequacy:
+          +materialized: ephemeral
+          table_ercot_short_term_system_adequacy:
+            +enabled: false
+          index_ercot_short_term_system_adequacy:
+            +enabled: false
         seven_day_load_forecast:
           +materialized: ephemeral
           table_ercot_seven_day_load_forecast:

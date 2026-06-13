@@ -157,12 +157,15 @@ LIMIT 10;
 
 - Status: deployed; timer enabled and latest manual run succeeded.
 - Runtime module: `backend.orchestration.power.ercot.outage_capacity_batch`.
-- Lower-level scrape module:
+- Lower-level scrape modules:
   - `backend.scrapes.power.ercot.hourly_resource_outage_capacity`
-- Destination table: `ercot.hourly_resource_outage_capacity`.
+  - `backend.scrapes.power.ercot.short_term_system_adequacy`
+- Destination tables:
+  - `ercot.hourly_resource_outage_capacity`
+  - `ercot.short_term_system_adequacy`
 - Schedule: daily at `13:35 UTC` with `Persistent=true` and
-  `RandomizedDelaySec=10min`; scheduled default pulls the prior complete
-  operating day.
+  `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
+  outage/capacity operating day and STSA delivery date.
 - Systemd units:
   - `infrastructure/systemd/helios-ercot-outage-capacity-batch.service`
   - `infrastructure/systemd/helios-ercot-outage-capacity-batch.timer`

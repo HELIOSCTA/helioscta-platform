@@ -12,7 +12,10 @@ from time import perf_counter
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_FEEDS: tuple[str, ...] = ("hourly_resource_outage_capacity",)
+DEFAULT_FEEDS: tuple[str, ...] = (
+    "hourly_resource_outage_capacity",
+    "short_term_system_adequacy",
+)
 
 
 @dataclass(frozen=True)

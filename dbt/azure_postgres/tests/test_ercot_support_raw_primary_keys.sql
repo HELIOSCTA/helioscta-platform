@@ -96,6 +96,17 @@ WITH key_issues AS (
     FROM "{{ target.database }}"."ercot"."hourly_resource_outage_capacity"
     GROUP BY 1, 2
     HAVING COUNT(*) > 1
+
+    UNION ALL
+    SELECT 'short_term_system_adequacy', posteddatetime::text || '|' || deliverydate::text || '|' || hourending::text || '|' || repeathourflag::text, COUNT(*)
+    FROM "{{ target.database }}"."ercot"."short_term_system_adequacy"
+    WHERE posteddatetime IS NULL OR deliverydate IS NULL OR hourending IS NULL OR repeathourflag IS NULL
+    GROUP BY 1, 2
+    UNION ALL
+    SELECT 'short_term_system_adequacy', posteddatetime::text || '|' || deliverydate::text || '|' || hourending::text || '|' || repeathourflag::text, COUNT(*)
+    FROM "{{ target.database }}"."ercot"."short_term_system_adequacy"
+    GROUP BY 1, 2
+    HAVING COUNT(*) > 1
 )
 
 SELECT *

@@ -96,6 +96,11 @@ ERCOT_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
         "ercot",
         "hourly_resource_outage_capacity",
     ),
+    SupportFeed(
+        "short_term_system_adequacy",
+        "ercot",
+        "short_term_system_adequacy",
+    ),
 )
 SUPPORT_FEEDS: tuple[SupportFeed, ...] = PJM_SUPPORT_FEEDS + ERCOT_SUPPORT_FEEDS
 SUPPORT_BATCH_PIPELINES: tuple[str, ...] = tuple(

@@ -306,3 +306,31 @@ workspace.
   those fields into hourly type x load-zone rows.
 - Manual smoke: VM service ran the outage/capacity batch for operating date
   `2026-06-12` on `2026-06-13 18:49 UTC` and upserted 4,598 rows.
+
+## Short-Term System Adequacy
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP3-763-CD`, Short-Term System Adequacy Report.
+- Report Type ID: `12315`.
+- Endpoint: `np3-763-cd/st_sys_adequacy`.
+- Runtime: `backend.scrapes.power.ercot.short_term_system_adequacy`.
+- Batch orchestration: `backend.orchestration.power.ercot.outage_capacity_batch`.
+- Destination: `ercot.short_term_system_adequacy`.
+- Primary grain: posted datetime x delivery date x hour ending x repeated hour
+  flag.
+- Primary key: `posteddatetime`, `deliverydate`, `hourending`,
+  `repeathourflag`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/short_term_system_adequacy/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/short_term_system_adequacy/table_ercot_short_term_system_adequacy.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/short_term_system_adequacy/index_ercot_short_term_system_adequacy.sql`.
+- Production schedule: through `helios-ercot-outage-capacity-batch.timer`,
+  daily at `13:35 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  delivery date.
+- Data shape note: the raw ERCOT payload contains available online generation
+  resource capacity, load resource capacity, offline available MW by load zone,
+  system-wide available capacity, and ancillary-service capability rollups.

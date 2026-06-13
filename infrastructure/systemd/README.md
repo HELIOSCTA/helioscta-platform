@@ -189,8 +189,9 @@ helios-ercot-outage-capacity-batch.timer
 ```
 
 It runs `backend.orchestration.power.ercot.outage_capacity_batch`, which
-executes `hourly_resource_outage_capacity`. The timer runs daily at `13:35 UTC`
-with `Persistent=true` and `RandomizedDelaySec=10min`.
+executes `hourly_resource_outage_capacity` and `short_term_system_adequacy`.
+The timer runs daily at `13:35 UTC` with `Persistent=true` and
+`RandomizedDelaySec=10min`.
 
 ## Manual DA/RT Backfills
 
