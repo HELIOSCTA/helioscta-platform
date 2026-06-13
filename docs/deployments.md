@@ -104,6 +104,25 @@ LIMIT 10;
   failed`.
 - Next scheduled run observed: `2026-06-14 12:52:17 UTC`.
 
+## ercot-renewables-batch
+
+- Status: promoted for VM deployment.
+- Runtime module: `backend.orchestration.power.ercot.renewables_batch`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.ercot.wind_power_production_hourly`
+  - `backend.scrapes.power.ercot.solar_power_production_hourly`
+- Destination tables:
+  - `ercot.wind_power_production_hourly`
+  - `ercot.solar_power_production_hourly`
+- Schedule: daily at `13:10 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; scheduled defaults pull yesterday through seven
+  days forward to capture actuals plus the forecast curve.
+- Systemd units:
+  - `infrastructure/systemd/helios-ercot-renewables-batch.service`
+  - `infrastructure/systemd/helios-ercot-renewables-batch.timer`
+- Journal logs: `journalctl -u helios-ercot-renewables-batch.service`.
+- Safe rerun story: upsert on each feed's source primary key.
+
 Verification SQL for data-availability events:
 
 ```sql

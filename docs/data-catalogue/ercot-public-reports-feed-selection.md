@@ -41,14 +41,14 @@ there is a clear consumer for all nodes, zones, or resources.
 | actual_system_load | NP6-346-CD | np6-346-cd/act_sys_load_by_fzn | Promoted; daily load support batch |
 | dam_shadow_prices | NP4-191-CD | np4-191-cd/dam_shadow_prices | Promoted; daily congestion support batch |
 | sced_shadow_prices | NP6-86-CD | np6-86-cd/shdw_prices_bnd_trns_const | Promoted; daily congestion support batch |
+| wind_power_production_hourly | NP4-732-CD | np4-732-cd/wpp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
+| solar_power_production_hourly | NP4-737-CD | np4-737-cd/spp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
 | seven_day_load_forecast | NP3-565-CD | np3-565-cd/lf_by_model_weather_zone | Promoted; daily load support batch |
 
 ### Tier 1 - Promote Next
 
 | Feed area | Why pull |
 |---|---|
-| Wind and solar actuals | Renewable actual context for RT price and congestion |
-| Wind and solar forecasts | Forecast error and net-load signal |
 | Generation outages / capacity availability | Supply stack and risk context |
 
 ### Tier 2 - Promote When The Use Case Needs It
@@ -63,11 +63,7 @@ there is a clear consumer for all nodes, zones, or resources.
 
 ## Recommended Promotion Order
 
-1. Wind actuals
-2. Solar actuals
-3. Wind forecast
-4. Solar forecast
-5. Generation outage or capacity availability feed
+1. Generation outage or capacity availability feed
 
 ## Per-Feed Promotion Contract
 

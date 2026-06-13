@@ -149,6 +149,21 @@ It runs `backend.orchestration.power.ercot.congestion_batch`, which executes
 feeds rather than critical readiness gates. The timer runs daily at `12:45 UTC`
 with `Persistent=true` and `RandomizedDelaySec=10min`.
 
+## ERCOT Renewables Batch
+
+The ERCOT renewable production support feeds run through one daily batch timer:
+
+```text
+helios-ercot-renewables-batch.service
+helios-ercot-renewables-batch.timer
+```
+
+It runs `backend.orchestration.power.ercot.renewables_batch`, which executes
+`wind_power_production_hourly` and `solar_power_production_hourly`. The batch
+pulls yesterday through seven days forward so the same source payload captures
+completed actual generation and the current forecast curve. The timer runs
+daily at `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+
 ## Manual DA/RT Backfills
 
 DA hourly LMP and RT verified five-minute HRL LMP backfills are manual
@@ -192,6 +207,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.s
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-batch.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-batch.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-batch.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -201,6 +218,7 @@ sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
+sudo systemctl enable --now helios-ercot-renewables-batch.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -218,6 +236,7 @@ sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
+sudo systemctl start helios-ercot-renewables-batch.service
 sudo systemctl start helios-prod-health-check.service
 ```
 
@@ -288,6 +307,14 @@ For the ERCOT congestion batch:
 systemctl status helios-ercot-congestion-batch.service
 systemctl status helios-ercot-congestion-batch.timer
 journalctl -u helios-ercot-congestion-batch.service -n 200 --no-pager
+```
+
+For the ERCOT renewables batch:
+
+```bash
+systemctl status helios-ercot-renewables-batch.service
+systemctl status helios-ercot-renewables-batch.timer
+journalctl -u helios-ercot-renewables-batch.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

@@ -257,6 +257,18 @@ models:
             +enabled: false
           index_ercot_sced_shadow_prices:
             +enabled: false
+        wind_power_production_hourly:
+          +materialized: ephemeral
+          table_ercot_wind_power_production_hourly:
+            +enabled: false
+          index_ercot_wind_power_production_hourly:
+            +enabled: false
+        solar_power_production_hourly:
+          +materialized: ephemeral
+          table_ercot_solar_power_production_hourly:
+            +enabled: false
+          index_ercot_solar_power_production_hourly:
+            +enabled: false
         seven_day_load_forecast:
           +materialized: ephemeral
           table_ercot_seven_day_load_forecast:

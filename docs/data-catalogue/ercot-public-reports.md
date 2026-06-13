@@ -167,3 +167,55 @@ workspace.
   scheduled default pulls the prior complete SCED day.
 - Manual smoke: VM service ran the congestion batch for SCED day `2026-06-12`
   on `2026-06-13 18:06 UTC` and upserted 2,618 SCED shadow price rows.
+
+## Wind Power Production Hourly
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP4-732-CD`, Wind Power Production - Hourly Averaged Actual
+  and Forecasted Values.
+- Report Type ID: `13028`.
+- Endpoint: `np4-732-cd/wpp_hrly_avrg_actl_fcast`.
+- Runtime: `backend.scrapes.power.ercot.wind_power_production_hourly`.
+- Batch orchestration: `backend.orchestration.power.ercot.renewables_batch`.
+- Destination: `ercot.wind_power_production_hourly`.
+- Primary grain: posted datetime x delivery date x hour ending.
+- Primary key: `posteddatetime`, `deliverydate`, `hourending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/wind_power_production_hourly/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/wind_power_production_hourly/table_ercot_wind_power_production_hourly.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/wind_power_production_hourly/index_ercot_wind_power_production_hourly.sql`.
+- Production schedule: through `helios-ercot-renewables-batch.timer`, daily at
+  `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
+  scheduled default pulls yesterday through seven days forward.
+- Data shape note: the raw ERCOT payload contains actual wind generation,
+  COP HSL, STWPF, WGRPP, and HSL fields. dbt staging unpivots system-wide and
+  load-zone values into hourly region rows.
+
+## Solar Power Production Hourly
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP4-737-CD`, Solar Power Production - Hourly Averaged Actual
+  and Forecasted Values.
+- Report Type ID: `13483`.
+- Endpoint: `np4-737-cd/spp_hrly_avrg_actl_fcast`.
+- Runtime: `backend.scrapes.power.ercot.solar_power_production_hourly`.
+- Batch orchestration: `backend.orchestration.power.ercot.renewables_batch`.
+- Destination: `ercot.solar_power_production_hourly`.
+- Primary grain: posted datetime x delivery date x hour ending.
+- Primary key: `posteddatetime`, `deliverydate`, `hourending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/solar_power_production_hourly/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/solar_power_production_hourly/table_ercot_solar_power_production_hourly.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/solar_power_production_hourly/index_ercot_solar_power_production_hourly.sql`.
+- Production schedule: through `helios-ercot-renewables-batch.timer`, daily at
+  `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
+  scheduled default pulls yesterday through seven days forward.
+- Data shape note: the raw ERCOT payload contains actual solar generation,
+  COP HSL, STPPF, PVGRPP, and HSL fields. dbt staging exposes a system-wide
+  hourly actual/forecast row.

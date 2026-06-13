@@ -114,6 +114,10 @@ models/power/ercot/dam_shadow_prices/
 models/power/ercot/dam_shadow_prices/ercot_dam_shadow_prices/
 models/power/ercot/sced_shadow_prices/
 models/power/ercot/sced_shadow_prices/ercot_sced_shadow_prices/
+models/power/ercot/wind_power_production_hourly/
+models/power/ercot/wind_power_production_hourly/ercot_wind_power_hourly/
+models/power/ercot/solar_power_production_hourly/
+models/power/ercot/solar_power_production_hourly/ercot_solar_power_hourly/
 models/power/ercot/seven_day_load_forecast/
 models/power/ercot/seven_day_load_forecast/ercot_load_forecast_hourly/
 models/power/ercot/seven_day_load_forecast/ercot_load_forecast_latest_hourly/
@@ -122,8 +126,9 @@ models/power/ercot/seven_day_load_forecast/ercot_load_forecast_latest_hourly/
 `table_ercot_dam_stlmnt_pnt_prices.sql` and
 `index_ercot_dam_stlmnt_pnt_prices.sql`, plus the matching
 `settlement_point_prices`, `actual_system_load`,
-`seven_day_load_forecast`, `dam_shadow_prices`, and `sced_shadow_prices`
-table/index files, are disabled operator SQL. The
+`seven_day_load_forecast`, `dam_shadow_prices`, `sced_shadow_prices`,
+`wind_power_production_hourly`, and `solar_power_production_hourly` table/index
+files, are disabled operator SQL. The
 enabled models are read-only validation/query shaping only.
 
 ## Load Environment
@@ -212,6 +217,8 @@ models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
 models/power/ercot/actual_system_load/table_ercot_actual_system_load.sql
 models/power/ercot/dam_shadow_prices/table_ercot_dam_shadow_prices.sql
 models/power/ercot/sced_shadow_prices/table_ercot_sced_shadow_prices.sql
+models/power/ercot/wind_power_production_hourly/table_ercot_wind_power_production_hourly.sql
+models/power/ercot/solar_power_production_hourly/table_ercot_solar_power_production_hourly.sql
 models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
@@ -219,6 +226,8 @@ models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
 models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql
 models/power/ercot/dam_shadow_prices/index_ercot_dam_shadow_prices.sql
 models/power/ercot/sced_shadow_prices/index_ercot_sced_shadow_prices.sql
+models/power/ercot/wind_power_production_hourly/index_ercot_wind_power_production_hourly.sql
+models/power/ercot/solar_power_production_hourly/index_ercot_solar_power_production_hourly.sql
 models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
