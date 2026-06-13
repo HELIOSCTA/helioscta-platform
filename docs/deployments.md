@@ -31,7 +31,7 @@ boundary, or log path changes.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
-- Deployed commit: `ce465412d912a934063860e1107d6b03ba58b9fa`.
+- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
@@ -105,7 +105,7 @@ Operational notes:
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: `ce465412d912a934063860e1107d6b03ba58b9fa`.
+- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
 - Deployed by: Aidan Keaveny via Codex.
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
@@ -124,7 +124,7 @@ Operational notes:
 
 ## helios-rt-fivemin-hrl-lmps
 
-- Status: pending deployment; unit files committed and ready to install.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Workflow: PJM verified five-minute Real-Time HRL LMP orchestration.
 - Runtime module: `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_fivemin_hrl_lmps`.
@@ -146,8 +146,14 @@ Operational notes:
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: pending.
-- Verification: pending.
+- First enabled at: `2026-06-13 02:48:32 UTC`.
+- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
+- Deployed by: Aidan Keaveny via Codex.
+- Last manual verification: `2026-06-13 02:49:41 UTC`; service exited
+  `status=0/SUCCESS`, upserted 12,096 rows for business date `2026-06-11`,
+  and emitted
+  `pjm_rt_fivemin_hrl_lmps:data_ready:2026-06-11:hub_zone_interface`.
+- Next scheduled run observed: `2026-06-13 09:33:32 UTC`.
 
 Verification SQL for API telemetry:
 
