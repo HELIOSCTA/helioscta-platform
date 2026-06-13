@@ -247,6 +247,13 @@ LIMIT 10;
 Use `journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager` for process
 status and `/var/log/helioscta` for retained scrape log files.
 
+Run the read-only production health digest for morning operator review:
+
+```bash
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/python \
+  -m backend.orchestration.health.prod_health_check
+```
+
 After future deploys, record the deployed commit, schedule, credential boundary,
 and verification result in `docs/deployments.md`.
 

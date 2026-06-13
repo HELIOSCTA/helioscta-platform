@@ -46,6 +46,7 @@ A backend workflow is production-ready when it has:
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
+| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for morning review. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
 | Deployment register | In place | `docs/deployments.md` records host, commit, timer, and verification. |
 | Operator SQL | In progress | Application DDL is moving to disabled dbt operator SQL. |
@@ -56,12 +57,13 @@ These are not blockers for the first DA workflow, but they are blockers for a
 mature production backend platform:
 
 - No automated deploy pipeline.
-- No systemd failure notification path.
+- No systemd failure notification path; alerts are intentionally deferred.
 - No documented journald retention policy.
 - No standardized overlap protection for all timers; the PJM Data Miner batch
   uses `flock`.
 - No formal database migration tool.
-- No centralized freshness or pipeline-health dashboard.
+- No centralized freshness or pipeline-health dashboard; use the operator
+  health digest until a dashboard is promoted.
 - No Vercel/report consumer for `ops.data_availability_events`.
 - No disaster recovery runbook for rebuilding the VM.
 - No standard deploy checklist per future workflow.
@@ -71,11 +73,11 @@ mature production backend platform:
 
 Recommended order:
 
-1. Add systemd failure notifications or a lightweight health check.
-2. Add overlap protection to service units.
-3. Create a workflow deployment checklist and use it for every new timer.
-4. Decide which PJM scrapes deserve schedules and at what cadence.
-5. Build the Vercel/report consumer from `ops.data_availability_events`.
+1. Add overlap protection to service units.
+2. Create a workflow deployment checklist and use it for every new timer.
+3. Decide which PJM scrapes deserve schedules and at what cadence.
+4. Build the Vercel/report consumer from `ops.data_availability_events`.
+5. Add systemd failure notifications when an alert channel is selected.
 6. Document journald and `/var/log/helioscta` retention.
 7. Add VM rebuild and recovery instructions.
 8. Evaluate whether manual operator SQL is sufficient or a migration tool is
@@ -113,6 +115,28 @@ on downstream value, feed update cadence, and database cost.
 | `rt_hrl_lmps` | Scheduled daily in the PJM Data Miner batch | Useful, but not yet promoted to its own readiness workflow. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |
+
+## Morning Health Digest
+
+Run this from the production VM when an operator asks for the current backend
+state:
+
+```bash
+sudo -u helios -H /opt/helioscta-platform/.venv/bin/python \
+  -m backend.orchestration.health.prod_health_check
+```
+
+The digest is read-only. It checks the latest DA and RT verified five-minute
+readiness events, RT five-minute table shape, duplicate keys, recent critical
+API fetch failures, systemd service results, and `helios-*` timer schedule.
+
+Exit codes:
+
+- `0`: no critical failures.
+- `1`: one or more critical DA or RT verified five-minute checks failed.
+
+Warnings are printed for non-critical gaps, such as missing telemetry in the
+selected lookback window or support-batch issues.
 
 ## Review Cadence
 
