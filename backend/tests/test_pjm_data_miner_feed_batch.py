@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import warnings
 
 import pandas as pd
 
@@ -95,6 +96,44 @@ def test_normalize_feed_frame_coerces_and_dedupes():
     assert df["load_area"].iloc[0] == "RTO"
     assert bool(df["is_verified"].iloc[0]) is True
     assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
+
+
+def test_normalize_feed_frame_parses_pjm_datetimes_without_inference_warning():
+    config = FEED_CONFIGS["wind_gen"]
+    with warnings.catch_warnings(record=True) as captured_warnings:
+        warnings.simplefilter("always")
+        df = normalize_feed_frame(
+            pd.DataFrame(
+                [
+                    {
+                        "area": "RTO",
+                        "datetime_beginning_ept": "6/10/2026 12:00:00 AM",
+                        "datetime_beginning_utc": "2026-06-10T04:00:00",
+                        "wind_generation_mw": "100.5",
+                    },
+                    {
+                        "area": "MIDATL",
+                        "datetime_beginning_ept": "2026-06-10 01:00:00",
+                        "datetime_beginning_utc": "2026-06-10 05:00",
+                        "wind_generation_mw": "200.5",
+                    },
+                    {
+                        "area": "BAD",
+                        "datetime_beginning_ept": "not a timestamp",
+                        "datetime_beginning_utc": "",
+                        "wind_generation_mw": "0",
+                    },
+                ]
+            ),
+            config,
+        )
+
+    warning_messages = [str(warning.message) for warning in captured_warnings]
+    assert not any("Could not infer format" in message for message in warning_messages)
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_ept"])
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
+    assert df["datetime_beginning_ept"].isna().sum() == 1
+    assert df["datetime_beginning_utc"].isna().sum() == 1
 
 
 def test_agg_definitions_preserves_bigint_ids_and_active_dates(monkeypatch):

@@ -106,7 +106,7 @@ def normalize_feed_frame(
 
     for column in config.datetime_columns:
         if column in df:
-            df[column] = pd.to_datetime(df[column], errors="coerce")
+            df[column] = _coerce_datetime(df[column])
     for column in config.date_columns:
         if column in df:
             df[column] = _coerce_date(df[column])
@@ -265,6 +265,31 @@ def _coerce_bool(values: pd.Series) -> pd.Series:
         .str.lower()
         .isin({"true", "t", "1", "yes", "y"})
     )
+
+
+def _coerce_datetime(values: pd.Series) -> pd.Series:
+    """Parse PJM datetime fields without relying on pandas format inference."""
+    if pd.api.types.is_datetime64_any_dtype(values):
+        return values
+
+    parsed = pd.Series(pd.NaT, index=values.index, dtype="datetime64[ns]")
+    text_values = values.astype("string").str.strip()
+    remaining = text_values.notna() & text_values.ne("")
+
+    for fmt in (
+        "%m/%d/%Y %I:%M:%S %p",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+    ):
+        if not remaining.any():
+            break
+
+        parsed_values = pd.to_datetime(text_values[remaining], format=fmt, errors="coerce")
+        parsed.loc[remaining] = parsed_values
+        remaining = remaining & parsed.isna()
+
+    return parsed
 
 
 def _coerce_date(values: pd.Series) -> pd.Series:
