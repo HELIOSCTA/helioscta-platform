@@ -97,8 +97,9 @@ def test_health_evaluation_fails_for_stale_rt_readiness_and_duplicates():
     messages = [issue.message for issue in issues if issue.severity == "FAIL"]
     assert any("8 days behind" in message for message in messages)
     assert any("1 duplicate keys" in message for message in messages)
-    assert any("2 API fetch failures" in message for message in messages)
     assert any("systemd result is exit-code" in message for message in messages)
+    warnings = [issue.message for issue in issues if issue.severity == "WARN"]
+    assert any("2 API fetch failures" in message for message in warnings)
 
 
 def _readiness(

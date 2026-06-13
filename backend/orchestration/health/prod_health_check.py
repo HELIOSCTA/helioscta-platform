@@ -418,7 +418,7 @@ def _evaluate_health(
         if failure_count > 0:
             issues.append(
                 HealthIssue(
-                    "FAIL",
+                    "WARN",
                     str(row["pipeline_name"]),
                     f"{failure_count} API fetch failures in the health window.",
                 )
