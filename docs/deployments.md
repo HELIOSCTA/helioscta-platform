@@ -171,11 +171,12 @@ LIMIT 10;
   - `infrastructure/systemd/helios-ercot-outage-capacity-batch.timer`
 - Journal logs: `journalctl -u helios-ercot-outage-capacity-batch.service`.
 - Safe rerun story: upsert on the source primary key.
-- Deployed commit: `a5f7393`.
-- Latest manual verification: `2026-06-13 18:49:57 UTC`; service exited
-  `status=0/SUCCESS`, ran operating date `2026-06-12`, upserted 4,598 rows,
-  and completed with `1 succeeded, 0 failed`.
-- Next scheduled run observed: `2026-06-14 13:42:43 UTC`.
+- Deployed commit: `40280af`.
+- Latest manual verification: `2026-06-13 20:22:46 UTC`; service exited
+  `status=0/SUCCESS`, ran operating/delivery date `2026-06-12`, upserted
+  4,600 hourly resource outage capacity rows and 4,032 short-term system
+  adequacy rows, and completed with `2 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-14 13:40:00 UTC`.
 
 Verification SQL for data-availability events:
 
@@ -453,12 +454,12 @@ LIMIT 10;
 - First enabled at: `2026-06-13 03:08 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
-- Last manual verification: `2026-06-13 19:06:23 UTC`; service exited
+- Last manual verification: `2026-06-13 20:22:55 UTC`; service exited
   `status=0/SUCCESS`, reported complete DA readiness for `2026-06-14`,
   complete RT verified five-minute HRL readiness for `2026-06-11`, complete
   ERCOT DAM SPP readiness for `2026-06-13`, complete ERCOT RT SPP readiness
-  for `2026-06-12`, zero duplicate keys, support-batch coverage of `api=38/38`
-  and `tables=38/38`, all support API latest statuses as `success`, and all
+  for `2026-06-12`, zero duplicate keys, support-batch coverage of `api=39/39`
+  and `tables=39/39`, all support API latest statuses as `success`, and all
   critical/support service results as `success`. Findings result was
   `PASS: no critical failures or warnings detected`.
 - API failure findings now warn only when the latest fetch failed or recovered
