@@ -193,6 +193,9 @@ workspace.
 - Data shape note: the raw ERCOT payload contains actual wind generation,
   COP HSL, STWPF, WGRPP, and HSL fields. dbt staging unpivots system-wide and
   load-zone values into hourly region rows.
+- Manual smoke: VM service ran the renewables batch for delivery dates
+  `2026-06-12` through `2026-06-20` on `2026-06-13 18:32 UTC` and upserted
+  20,910 wind rows.
 
 ## Solar Power Production Hourly
 
@@ -219,3 +222,6 @@ workspace.
 - Data shape note: the raw ERCOT payload contains actual solar generation,
   COP HSL, STPPF, PVGRPP, and HSL fields. dbt staging exposes a system-wide
   hourly actual/forecast row.
+- Manual smoke: VM service ran the renewables batch for delivery dates
+  `2026-06-12` through `2026-06-20` on `2026-06-13 18:32 UTC` and upserted
+  20,910 solar rows.

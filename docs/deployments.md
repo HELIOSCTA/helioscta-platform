@@ -106,7 +106,7 @@ LIMIT 10;
 
 ## ercot-renewables-batch
 
-- Status: promoted for VM deployment.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Runtime module: `backend.orchestration.power.ercot.renewables_batch`.
 - Lower-level scrape modules:
   - `backend.scrapes.power.ercot.wind_power_production_hourly`
@@ -122,6 +122,12 @@ LIMIT 10;
   - `infrastructure/systemd/helios-ercot-renewables-batch.timer`
 - Journal logs: `journalctl -u helios-ercot-renewables-batch.service`.
 - Safe rerun story: upsert on each feed's source primary key.
+- Deployed commit: `4d5e4ce`.
+- Latest manual verification: `2026-06-13 18:32:57 UTC`; service exited
+  `status=0/SUCCESS`, ran delivery dates `2026-06-12` through `2026-06-20`,
+  upserted 20,910 wind rows and 20,910 solar rows, and completed with
+  `2 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-14 13:11:44 UTC`.
 
 Verification SQL for data-availability events:
 
