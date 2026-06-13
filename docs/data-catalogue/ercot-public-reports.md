@@ -250,3 +250,5 @@ workspace.
 - Data shape note: the raw ERCOT payload contains outage capacity by load zone
   for total resources, IRR resources, and new equipment. dbt staging unpivots
   those fields into hourly type x load-zone rows.
+- Manual smoke: VM service ran the outage/capacity batch for operating date
+  `2026-06-12` on `2026-06-13 18:49 UTC` and upserted 4,598 rows.

@@ -131,7 +131,7 @@ LIMIT 10;
 
 ## ercot-outage-capacity-batch
 
-- Status: promoted for VM deployment.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Runtime module: `backend.orchestration.power.ercot.outage_capacity_batch`.
 - Lower-level scrape module:
   - `backend.scrapes.power.ercot.hourly_resource_outage_capacity`
@@ -144,6 +144,11 @@ LIMIT 10;
   - `infrastructure/systemd/helios-ercot-outage-capacity-batch.timer`
 - Journal logs: `journalctl -u helios-ercot-outage-capacity-batch.service`.
 - Safe rerun story: upsert on the source primary key.
+- Deployed commit: `a5f7393`.
+- Latest manual verification: `2026-06-13 18:49:57 UTC`; service exited
+  `status=0/SUCCESS`, ran operating date `2026-06-12`, upserted 4,598 rows,
+  and completed with `1 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-14 13:42:43 UTC`.
 
 Verification SQL for data-availability events:
 
