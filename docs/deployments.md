@@ -205,10 +205,12 @@ Operational notes:
 - First enabled at: `2026-06-13 03:08 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
-- Last manual verification: `2026-06-13 03:08:36 UTC`; service exited
+- Last manual verification: `2026-06-13 04:08:05 UTC`; service exited
   `status=0/SUCCESS`, reported complete DA readiness for `2026-06-13`,
   complete RT verified five-minute HRL readiness for `2026-06-11`, zero
-  duplicate keys, and all critical service results as `success`.
+  duplicate keys, support-batch coverage of `api=29/29` and `tables=29/29`,
+  and all critical service results as `success`. Findings were warning-only
+  historical critical API fetch failures in the 24-hour window.
 - Next scheduled run observed: `2026-06-13 10:16:43 UTC`.
 
 Verification SQL for API telemetry:
