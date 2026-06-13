@@ -66,7 +66,8 @@ available on the VM and their database tables/indexes have been applied in
 `helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
 data-readiness events. `helios-pjm-data-miner-batch.timer` runs the remaining
 29 support lower-level scrape modules daily. `helios-prod-health-check.timer`
-keeps a post-RT and post-DA read-only health digest in journald.
+keeps a post-RT and post-DA read-only health digest in journald, including
+support-batch API and table freshness.
 
 ## Design Defaults
 
@@ -278,7 +279,7 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-prod-health-check.timer
 sudo systemctl start helios-prod-health-check.service
-journalctl -u helios-prod-health-check.service -n 120 --no-pager
+journalctl -u helios-prod-health-check.service -n 220 --no-pager
 ```
 
 After future deploys, record the deployed commit, schedule, credential boundary,

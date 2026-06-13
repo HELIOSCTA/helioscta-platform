@@ -47,7 +47,7 @@ A backend workflow is production-ready when it has:
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
-| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for morning review. |
+| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical DA/RT readiness and support-batch freshness. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
@@ -129,14 +129,14 @@ state:
 
 ```bash
 sudo systemctl start helios-prod-health-check.service
-journalctl -u helios-prod-health-check.service -n 120 --no-pager
+journalctl -u helios-prod-health-check.service -n 220 --no-pager
 ```
 
 The service uses `/etc/helioscta/backend.env`, matching the production scrape
 jobs. The digest is read-only. It checks the latest DA and RT verified
 five-minute readiness events, RT five-minute table shape, duplicate keys,
-recent critical API fetch failures, systemd service results, and `helios-*`
-timer schedule.
+recent critical API fetch failures, support-batch API/table freshness,
+systemd service results, and `helios-*` timer schedule.
 
 Exit codes:
 

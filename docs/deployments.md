@@ -186,7 +186,8 @@ Operational notes:
 ## helios-prod-health-check
 
 - Status: deployed; timer enabled and latest manual run succeeded.
-- Workflow: read-only production health digest.
+- Workflow: read-only production health digest covering critical DA/RT
+  readiness and support-batch API/table freshness.
 - Runtime module: `backend.orchestration.health.prod_health_check`.
 - Unit files:
   - `infrastructure/systemd/helios-prod-health-check.service`

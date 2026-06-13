@@ -98,7 +98,8 @@ helios-prod-health-check.timer
 It runs `backend.orchestration.health.prod_health_check` with the same
 `/etc/helioscta/backend.env` credential boundary as scheduled scrapes. It does
 not send alerts; use `journalctl` to read the digest after a manual or
-scheduled run. The timer runs at `10:15 UTC` and `16:30 UTC`.
+scheduled run. The digest checks critical DA/RT readiness plus support-batch
+API and table freshness. The timer runs at `10:15 UTC` and `16:30 UTC`.
 
 ## Naming
 
@@ -180,7 +181,7 @@ For the production health digest:
 ```bash
 systemctl show helios-prod-health-check.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
 systemctl status helios-prod-health-check.timer
-journalctl -u helios-prod-health-check.service -n 120 --no-pager
+journalctl -u helios-prod-health-check.service -n 220 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

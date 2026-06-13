@@ -41,11 +41,13 @@ def test_health_evaluation_passes_for_fresh_critical_readiness():
                 "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
             },
         ],
+        support_api_summary=_support_api_summary(),
+        support_table_summary=_support_table_summary(),
         service_statuses=[
             _service("helios-da-hrl-lmps.service", "success"),
             _service("helios-rt-fivemin-hrl-lmps.service", "success"),
         ],
-        today=date(2026, 6, 13),
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
     )
 
     assert issues == []
@@ -87,11 +89,13 @@ def test_health_evaluation_fails_for_stale_rt_readiness_and_duplicates():
                 "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
             },
         ],
+        support_api_summary=[],
+        support_table_summary=[],
         service_statuses=[
             _service("helios-da-hrl-lmps.service", "success"),
             _service("helios-rt-fivemin-hrl-lmps.service", "exit-code", "1"),
         ],
-        today=date(2026, 6, 13),
+        generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
     )
 
     messages = [issue.message for issue in issues if issue.severity == "FAIL"]
@@ -100,6 +104,74 @@ def test_health_evaluation_fails_for_stale_rt_readiness_and_duplicates():
     assert any("systemd result is exit-code" in message for message in messages)
     warnings = [issue.message for issue in issues if issue.severity == "WARN"]
     assert any("2 API fetch failures" in message for message in warnings)
+
+
+def test_health_evaluation_warns_for_support_batch_gaps_only():
+    issues = prod_health_check._evaluate_health(
+        da_readiness=_readiness("pjm_da_hrl_lmps", date(2026, 6, 13), 288, 12, 24),
+        rt_readiness=_readiness(
+            "pjm_rt_fivemin_hrl_lmps",
+            date(2026, 6, 11),
+            12096,
+            42,
+            288,
+        ),
+        rt_shape={
+            "business_date": date(2026, 6, 11),
+            "row_count": 12096,
+            "pnode_count": 42,
+            "type_count": 3,
+            "period_count": 288,
+            "min_utc": datetime(2026, 6, 11, 10, tzinfo=timezone.utc),
+            "max_utc": datetime(2026, 6, 12, 9, 55, tzinfo=timezone.utc),
+        },
+        duplicate_key_count=0,
+        api_summary=[
+            {
+                "pipeline_name": "da_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 288,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+            {
+                "pipeline_name": "rt_fivemin_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 12096,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+        ],
+        support_api_summary=[
+            {
+                "pipeline_name": "wind_gen",
+                "failure_count": 1,
+                "fetch_count": 2,
+                "rows_returned": 144,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            }
+        ],
+        support_table_summary=[
+            {
+                "feed_name": "wind_gen",
+                "row_count": 0,
+                "latest_updated_at": datetime(2026, 6, 11, tzinfo=timezone.utc),
+            }
+        ],
+        service_statuses=[
+            _service("helios-da-hrl-lmps.service", "success"),
+            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+            _service("helios-pjm-data-miner-batch.service", "exit-code", "1"),
+        ],
+        generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
+    )
+
+    assert not [issue for issue in issues if issue.severity == "FAIL"]
+    warnings = [issue.message for issue in issues if issue.severity == "WARN"]
+    assert any("support-batch API fetch failures" in message for message in warnings)
+    assert any("Support table has zero rows" in message for message in warnings)
+    assert any("latest updated_at" in message for message in warnings)
+    assert any("support batch systemd result is exit-code" in message for message in warnings)
 
 
 def _readiness(
@@ -134,3 +206,27 @@ def _service(
         "result": result,
         "exec_main_status": exec_main_status,
     }
+
+
+def _support_api_summary() -> list[dict[str, object]]:
+    return [
+        {
+            "pipeline_name": pipeline_name,
+            "failure_count": 0,
+            "fetch_count": 1,
+            "rows_returned": 144,
+            "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+        }
+        for pipeline_name in prod_health_check.SUPPORT_BATCH_PIPELINES
+    ]
+
+
+def _support_table_summary() -> list[dict[str, object]]:
+    return [
+        {
+            "feed_name": pipeline_name,
+            "row_count": 1440,
+            "latest_updated_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+        }
+        for pipeline_name in prod_health_check.SUPPORT_BATCH_PIPELINES
+    ]

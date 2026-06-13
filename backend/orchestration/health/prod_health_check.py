@@ -21,6 +21,37 @@ CRITICAL_SERVICES: tuple[str, ...] = (
 SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-data-miner-batch.service",
 )
+SUPPORT_BATCH_PIPELINES: tuple[str, ...] = (
+    "act_sch_interchange",
+    "agg_definitions",
+    "ancillary_services",
+    "da_interface_flows_and_limits",
+    "da_marginal_value",
+    "da_transconstraints",
+    "day_gen_capacity",
+    "dispatched_reserves",
+    "five_min_solar_generation",
+    "five_min_tie_flows",
+    "frcstd_gen_outages",
+    "gen_outages_by_type",
+    "hrl_dmd_bids",
+    "hrl_load_metered",
+    "hrl_load_prelim",
+    "load_frcstd_7_day",
+    "load_frcstd_hist",
+    "pnode",
+    "reserve_market_results",
+    "rt_default_mv_override",
+    "rt_dispatch_reserves",
+    "rt_fivemin_mnt_lmps",
+    "rt_hrl_lmps",
+    "rt_marginal_value",
+    "rt_short_term_mv_override",
+    "rt_unverified_hrl_lmps",
+    "solar_gen",
+    "unverified_five_min_lmps",
+    "wind_gen",
+)
 HELIOS_TIMER_PATTERN = "helios-*"
 DA_DATASET = "pjm_da_hrl_lmps"
 RT_FIVEMIN_HRL_DATASET = "pjm_rt_fivemin_hrl_lmps"
@@ -28,6 +59,7 @@ RT_FIVEMIN_HRL_TABLE = "pjm.rt_fivemin_hrl_lmps"
 DEFAULT_LOOKBACK_HOURS = 24
 MAX_DA_BUSINESS_DATE_LAG_DAYS = 1
 MAX_RT_BUSINESS_DATE_LAG_DAYS = 4
+MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
 
 
 @dataclass(frozen=True)
@@ -49,6 +81,7 @@ def main(
         lookback_hours=lookback_hours,
         database=database,
         include_systemd=include_systemd,
+        generated_at=generated_at,
     )
     report = format_health_report(
         checks=checks,
@@ -63,8 +96,10 @@ def collect_health(
     lookback_hours: int = DEFAULT_LOOKBACK_HOURS,
     database: str | None = None,
     include_systemd: bool = True,
+    generated_at: datetime | None = None,
 ) -> dict[str, Any]:
     """Collect read-only health data from Postgres and optional systemd."""
+    generated_at = generated_at or datetime.now(timezone.utc)
     da_readiness = _latest_readiness_event(
         dataset=DA_DATASET,
         database=database,
@@ -79,6 +114,12 @@ def collect_health(
         lookback_hours=lookback_hours,
         database=database,
     )
+    support_api_summary = _api_fetch_summary(
+        pipeline_names=SUPPORT_BATCH_PIPELINES,
+        lookback_hours=lookback_hours,
+        database=database,
+    )
+    support_table_summary = _support_table_summary(database=database)
     duplicate_key_count = _rt_fivemin_hrl_duplicate_key_count(database=database)
     service_statuses = (
         _systemd_service_statuses(CRITICAL_SERVICES + SUPPORT_SERVICES)
@@ -93,8 +134,10 @@ def collect_health(
         rt_shape=rt_shape,
         duplicate_key_count=duplicate_key_count,
         api_summary=api_summary,
+        support_api_summary=support_api_summary,
+        support_table_summary=support_table_summary,
         service_statuses=service_statuses,
-        today=date.today(),
+        generated_at=generated_at,
     )
 
     return {
@@ -103,6 +146,8 @@ def collect_health(
         "rt_shape": rt_shape,
         "duplicate_key_count": duplicate_key_count,
         "api_summary": api_summary,
+        "support_api_summary": support_api_summary,
+        "support_table_summary": support_table_summary,
         "service_statuses": service_statuses,
         "timers": timers,
         "issues": issues,
@@ -130,6 +175,12 @@ def format_health_report(
         "",
         "API fetch health",
         *_format_api_summary(checks["api_summary"]),
+        "",
+        "Support batch health",
+        *_format_support_batch_summary(
+            checks["support_api_summary"],
+            checks["support_table_summary"],
+        ),
         "",
         "Service status",
         *_format_service_statuses(checks["service_statuses"]),
@@ -259,6 +310,28 @@ def _api_fetch_summary(
     return rows or []
 
 
+def _support_table_summary(database: str | None) -> list[dict[str, Any]]:
+    union_sql = " UNION ALL\n".join(
+        (
+            "SELECT "
+            f"'{pipeline_name}' AS feed_name, "
+            "COUNT(*)::bigint AS row_count, "
+            "MAX(updated_at) AS latest_updated_at "
+            f"FROM pjm.{pipeline_name}"
+        )
+        for pipeline_name in SUPPORT_BATCH_PIPELINES
+    )
+    rows = db.execute_sql(
+        f"""
+        {union_sql}
+        ORDER BY feed_name;
+        """,
+        database=database,
+        fetch=True,
+    )
+    return rows or []
+
+
 def _systemd_service_statuses(service_names: tuple[str, ...]) -> list[dict[str, str]]:
     statuses: list[dict[str, str]] = []
     for service_name in service_names:
@@ -345,10 +418,13 @@ def _evaluate_health(
     rt_shape: dict[str, Any] | None,
     duplicate_key_count: int | None,
     api_summary: list[dict[str, Any]],
+    support_api_summary: list[dict[str, Any]],
+    support_table_summary: list[dict[str, Any]],
     service_statuses: list[dict[str, str]],
-    today: date,
+    generated_at: datetime,
 ) -> list[HealthIssue]:
     issues: list[HealthIssue] = []
+    today = generated_at.date()
 
     issues.extend(
         _evaluate_readiness(
@@ -432,6 +508,79 @@ def _evaluate_health(
                     "WARN",
                     pipeline_name,
                     "No API fetch telemetry in the health window.",
+                )
+            )
+
+    support_api_by_pipeline = {
+        str(row["pipeline_name"]): row for row in support_api_summary
+    }
+    for pipeline_name in SUPPORT_BATCH_PIPELINES:
+        row = support_api_by_pipeline.get(pipeline_name)
+        if row is None:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    "No support-batch API fetch telemetry in the health window.",
+                )
+            )
+            continue
+
+        failure_count = int(row["failure_count"])
+        if failure_count > 0:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    f"{failure_count} support-batch API fetch failures in the health window.",
+                )
+            )
+
+    support_tables_by_feed = {
+        str(row["feed_name"]): row for row in support_table_summary
+    }
+    for pipeline_name in SUPPORT_BATCH_PIPELINES:
+        row = support_tables_by_feed.get(pipeline_name)
+        if row is None:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    "Support table summary unavailable.",
+                )
+            )
+            continue
+
+        row_count = int(row["row_count"])
+        latest_updated_at = row["latest_updated_at"]
+        if row_count == 0:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    "Support table has zero rows.",
+                )
+            )
+        if latest_updated_at is None:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    "Support table has no updated_at timestamp.",
+                )
+            )
+            continue
+
+        lag_hours = _hours_between(generated_at, latest_updated_at)
+        if lag_hours > MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    pipeline_name,
+                    (
+                        "Support table latest updated_at is "
+                        f"{lag_hours:.1f} hours behind digest generation."
+                    ),
                 )
             )
 
@@ -537,6 +686,46 @@ def _format_api_summary(rows: list[dict[str, Any]]) -> list[str]:
     ]
 
 
+def _format_support_batch_summary(
+    api_rows: list[dict[str, Any]],
+    table_rows: list[dict[str, Any]],
+) -> list[str]:
+    api_by_pipeline = {str(row["pipeline_name"]): row for row in api_rows}
+    table_by_feed = {str(row["feed_name"]): row for row in table_rows}
+    lines = [
+        (
+            "- Coverage: "
+            f"api={len(api_by_pipeline)}/{len(SUPPORT_BATCH_PIPELINES)}, "
+            f"tables={len(table_by_feed)}/{len(SUPPORT_BATCH_PIPELINES)}"
+        )
+    ]
+    for pipeline_name in SUPPORT_BATCH_PIPELINES:
+        api_row = api_by_pipeline.get(pipeline_name)
+        table_row = table_by_feed.get(pipeline_name)
+        api_status = "missing"
+        last_fetch_at = "NULL"
+        failure_count = "NULL"
+        if api_row is not None:
+            api_status = "ok" if int(api_row["failure_count"]) == 0 else "warn"
+            last_fetch_at = _format_value(api_row["last_fetch_at"])
+            failure_count = str(api_row["failure_count"])
+
+        row_count = "NULL"
+        latest_updated_at = "NULL"
+        if table_row is not None:
+            row_count = str(table_row["row_count"])
+            latest_updated_at = _format_value(table_row["latest_updated_at"])
+
+        lines.append(
+            (
+                f"- {pipeline_name}: api={api_status}, failures={failure_count}, "
+                f"last_fetch_at={last_fetch_at}, rows={row_count}, "
+                f"updated_at={latest_updated_at}"
+            )
+        )
+    return lines
+
+
 def _format_service_statuses(rows: list[dict[str, str]]) -> list[str]:
     if not rows:
         return ["- systemd status not collected."]
@@ -579,6 +768,18 @@ def _format_value(value: Any) -> str:
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     return str(value)
+
+
+def _hours_between(generated_at: datetime, value: Any) -> float:
+    if isinstance(value, datetime):
+        observed_at = value
+    else:
+        observed_at = datetime.fromisoformat(str(value))
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=timezone.utc)
+    if generated_at.tzinfo is None:
+        generated_at = generated_at.replace(tzinfo=timezone.utc)
+    return (generated_at - observed_at).total_seconds() / 3600
 
 
 if __name__ == "__main__":
