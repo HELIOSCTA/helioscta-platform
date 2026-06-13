@@ -205,12 +205,13 @@ Operational notes:
 - First enabled at: `2026-06-13 03:08 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
-- Last manual verification: `2026-06-13 04:08:05 UTC`; service exited
+- Last manual verification: `2026-06-13 04:19:39 UTC`; service exited
   `status=0/SUCCESS`, reported complete DA readiness for `2026-06-13`,
   complete RT verified five-minute HRL readiness for `2026-06-11`, zero
   duplicate keys, support-batch coverage of `api=29/29` and `tables=29/29`,
-  and all critical service results as `success`. Findings were warning-only
-  historical critical API fetch failures in the 24-hour window.
+  all support API latest statuses as `success`, and all critical service
+  results as `success`. Findings result was `PASS: no critical failures or
+  warnings detected`.
 - API failure findings now warn only when the latest fetch failed or recovered
   failures dominate the health window.
 - Next scheduled run observed: `2026-06-13 10:16:43 UTC`.
