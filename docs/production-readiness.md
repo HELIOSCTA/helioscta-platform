@@ -43,6 +43,7 @@ A backend workflow is production-ready when it has:
 | DA LMP schedule | In place | `helios-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
 | RT verified five-minute HRL LMP schedule | In place | `helios-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 29 support scrapes daily at `04:30 UTC`. |
+| Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
@@ -59,8 +60,8 @@ mature production backend platform:
 - No automated deploy pipeline.
 - No systemd failure notification path; alerts are intentionally deferred.
 - No documented journald retention policy.
-- No standardized overlap protection for all timers; the PJM Data Miner batch
-  uses `flock`.
+- No standardized overlap protection for every future timer; current critical
+  DA, RT five-minute HRL, and PJM batch jobs use `flock`.
 - No formal database migration tool.
 - No centralized freshness or pipeline-health dashboard; use the operator
   health digest until a dashboard is promoted.
@@ -73,11 +74,11 @@ mature production backend platform:
 
 Recommended order:
 
-1. Add overlap protection to service units.
-2. Create a workflow deployment checklist and use it for every new timer.
-3. Decide which PJM scrapes deserve schedules and at what cadence.
-4. Build the Vercel/report consumer from `ops.data_availability_events`.
-5. Add systemd failure notifications when an alert channel is selected.
+1. Create a workflow deployment checklist and use it for every new timer.
+2. Decide which PJM scrapes deserve schedules and at what cadence.
+3. Build the Vercel/report consumer from `ops.data_availability_events`.
+4. Add systemd failure notifications when an alert channel is selected.
+5. Add CI validation for backend tests and dbt parse/compile.
 6. Document journald and `/var/log/helioscta` retention.
 7. Add VM rebuild and recovery instructions.
 8. Evaluate whether manual operator SQL is sufficient or a migration tool is
@@ -139,6 +140,17 @@ Exit codes:
 
 Warnings are printed for non-critical gaps, such as missing telemetry in the
 selected lookback window or support-batch issues.
+
+Scheduling:
+
+- `helios-prod-health-check.timer` runs at `10:15 UTC` after the RT verified
+  five-minute workflow and at `16:30 UTC` after the DA workflow.
+
+RT verified five-minute HRL LMP API note:
+
+- PJM accepts the feed when queried one `pnode_id` at a time, but rejects
+  comma-separated multi-ID requests for this endpoint. Keep
+  `DEFAULT_PNODE_ID_BATCH_SIZE = 1` unless PJM changes that behavior.
 
 ## Review Cadence
 

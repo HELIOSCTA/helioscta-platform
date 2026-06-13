@@ -1,0 +1,13 @@
+[Unit]
+Description=Scheduled HeliosCTA production health digest timer
+
+[Timer]
+OnCalendar=*-*-* 10:15:00 UTC
+OnCalendar=*-*-* 16:30:00 UTC
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-prod-health-check.service
+
+[Install]
+WantedBy=timers.target

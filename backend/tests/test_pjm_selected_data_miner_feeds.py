@@ -43,6 +43,7 @@ def test_rt_fivemin_hrl_lmps_target_matches_pjm_feed_name():
     assert rt_fivemin_hrl_lmps.API_SCRAPE_NAME == "rt_fivemin_hrl_lmps"
     assert rt_fivemin_hrl_lmps.TARGET_TABLE == "rt_fivemin_hrl_lmps"
     assert rt_fivemin_hrl_lmps.TARGET_TABLE_FQN == "pjm.rt_fivemin_hrl_lmps"
+    assert rt_fivemin_hrl_lmps.DEFAULT_PNODE_ID_BATCH_SIZE == 1
     assert rt_fivemin_hrl_lmps.PRIMARY_KEY == [
         "datetime_beginning_utc",
         "pnode_id",

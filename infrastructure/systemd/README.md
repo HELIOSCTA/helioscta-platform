@@ -15,7 +15,7 @@ Set the service environment from a root-owned env file, for example:
 ```ini
 EnvironmentFile=/etc/helioscta/backend.env
 WorkingDirectory=/opt/helioscta-platform
-ExecStart=/opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.da_hrl_lmps
+ExecStart=/usr/bin/flock -n /tmp/helios-da-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.da_hrl_lmps
 ```
 
 Use `HELIOS_LOG_DIR=/var/log/helioscta` in that env file if file logs should
@@ -33,6 +33,7 @@ helios-da-hrl-lmps.timer
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
 terminal/file logging, and DA LMP data readiness event emission.
+The service uses `flock` with `/tmp/helios-da-hrl-lmps.lock`.
 
 The live production VM currently has `helios-da-hrl-lmps.timer` enabled on
 `helioscta-prod-vm-01` at `16:00 UTC` with `Persistent=true`. The deployment
@@ -70,15 +71,18 @@ readiness events for hub, zone, and interface pricing nodes. The service uses
 
 ## Production Health Digest
 
-The read-only operator health digest is available as an on-demand service:
+The read-only operator health digest is available as an on-demand service and
+scheduled timer:
 
 ```text
 helios-prod-health-check.service
+helios-prod-health-check.timer
 ```
 
 It runs `backend.orchestration.health.prod_health_check` with the same
 `/etc/helioscta/backend.env` credential boundary as scheduled scrapes. It does
-not send alerts; use `journalctl` to read the digest after a manual run.
+not send alerts; use `journalctl` to read the digest after a manual or
+scheduled run. The timer runs at `10:15 UTC` and `16:30 UTC`.
 
 ## Naming
 
@@ -99,9 +103,11 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer 
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
 `/opt/helioscta-platform` is owned for the `helios` service user. Run repo
@@ -155,6 +161,7 @@ For the production health digest:
 
 ```bash
 systemctl show helios-prod-health-check.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
+systemctl status helios-prod-health-check.timer
 journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
 

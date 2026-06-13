@@ -74,6 +74,8 @@ PRIMARY_KEY = [
 DEFAULT_LOOKBACK_DAYS = 10
 DEFAULT_LOOKAHEAD_DAYS = 0
 DEFAULT_DELTA = relativedelta(days=1)
+# PJM returns HTTP 400 when this feed is queried with comma-separated pnode_id
+# values, so keep the default at one ID per request.
 DEFAULT_PNODE_ID_BATCH_SIZE = 1
 PJM_REQUEST_TIMEOUT_SECONDS = 60
 

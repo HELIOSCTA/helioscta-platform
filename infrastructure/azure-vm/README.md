@@ -24,13 +24,15 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Repo path: `/opt/helioscta-platform`.
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
-- Live deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
+- Live deployed commit: `e56e2cddeacf55a00b6ba9a4ac046bc291596401`.
 - Timers:
   - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
   - `helios-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
+  - `helios-prod-health-check.timer`, daily at `10:15 UTC` and `16:30 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=2min`.
 
 `/opt/helioscta-platform` is intentionally not directly accessible to
 `azureuser`. Stay in the `azureuser` shell for commands that need sudo, and run
@@ -59,7 +61,8 @@ available on the VM and their database tables/indexes have been applied in
 `helios_prod`. `helios-da-hrl-lmps.timer` and
 `helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
 data-readiness events. `helios-pjm-data-miner-batch.timer` runs the remaining
-29 support lower-level scrape modules daily.
+29 support lower-level scrape modules daily. `helios-prod-health-check.timer`
+keeps a post-RT and post-DA read-only health digest in journald.
 
 ## Design Defaults
 
@@ -251,7 +254,9 @@ Run the read-only production health digest for morning operator review:
 
 ```bash
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now helios-prod-health-check.timer
 sudo systemctl start helios-prod-health-check.service
 journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
@@ -273,6 +278,7 @@ sudo -u helios -H /opt/helioscta-platform/.venv/bin/pip install \
 sudo systemctl restart helios-da-hrl-lmps.timer
 sudo systemctl restart helios-rt-fivemin-hrl-lmps.timer
 sudo systemctl restart helios-pjm-data-miner-batch.timer
+sudo systemctl restart helios-prod-health-check.timer
 systemctl list-timers 'helios-*'
 ```
 

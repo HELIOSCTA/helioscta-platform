@@ -29,6 +29,8 @@ boundary, or log path changes.
 - Journal logs: `journalctl -u helios-da-hrl-lmps.service`.
 - Schedule: daily at `16:00 UTC`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-da-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
 - Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
@@ -154,6 +156,30 @@ Operational notes:
   and emitted
   `pjm_rt_fivemin_hrl_lmps:data_ready:2026-06-11:hub_zone_interface`.
 - Next scheduled run observed: `2026-06-13 09:33:32 UTC`.
+- API batching note: PJM rejected comma-separated multi-ID `pnode_id` requests
+  during production optimization testing, so the runtime intentionally keeps
+  `pnode_id_batch_size=1`.
+
+## helios-prod-health-check
+
+- Status: deployed; timer enabled and latest manual run succeeded.
+- Workflow: read-only production health digest.
+- Runtime module: `backend.orchestration.health.prod_health_check`.
+- Unit files:
+  - `infrastructure/systemd/helios-prod-health-check.service`
+  - `infrastructure/systemd/helios-prod-health-check.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-prod-health-check.service`.
+- Schedule: daily at `10:15 UTC` and `16:30 UTC` with
+  `RandomizedDelaySec=2min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Alerting: intentionally disabled; digest is reviewed on demand.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Deployed commit: pending update after deploy.
+- Verification: pending update after deploy.
 
 Verification SQL for API telemetry:
 
