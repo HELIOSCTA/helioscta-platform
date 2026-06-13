@@ -81,7 +81,7 @@ LIMIT 10;
 
 ## ercot-congestion-batch
 
-- Status: promoted for VM deployment.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Runtime module: `backend.orchestration.power.ercot.congestion_batch`.
 - Lower-level scrape modules:
   - `backend.scrapes.power.ercot.dam_shadow_prices`
@@ -97,6 +97,12 @@ LIMIT 10;
   - `infrastructure/systemd/helios-ercot-congestion-batch.timer`
 - Journal logs: `journalctl -u helios-ercot-congestion-batch.service`.
 - Safe rerun story: upsert on each feed's source primary key.
+- Deployed commit: `3181193`.
+- Latest manual verification: `2026-06-13 18:06:48 UTC`; service exited
+  `status=0/SUCCESS`, upserted 1,128 DAM shadow price rows and 2,618 SCED
+  shadow price rows for `2026-06-12`, and completed with `2 succeeded, 0
+  failed`.
+- Next scheduled run observed: `2026-06-14 12:52:17 UTC`.
 
 Verification SQL for data-availability events:
 

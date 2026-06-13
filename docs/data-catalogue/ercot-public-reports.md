@@ -137,6 +137,9 @@ workspace.
 - Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
   `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
   scheduled default pulls the prior complete delivery date.
+- Manual smoke: VM service ran the congestion batch for delivery date
+  `2026-06-12` on `2026-06-13 18:06 UTC` and upserted 1,128 DAM shadow price
+  rows.
 
 ## SCED Shadow Prices
 
@@ -162,3 +165,5 @@ workspace.
 - Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
   `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
   scheduled default pulls the prior complete SCED day.
+- Manual smoke: VM service ran the congestion batch for SCED day `2026-06-12`
+  on `2026-06-13 18:06 UTC` and upserted 2,618 SCED shadow price rows.
