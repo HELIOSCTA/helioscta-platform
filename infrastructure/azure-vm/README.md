@@ -24,7 +24,7 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Repo path: `/opt/helioscta-platform`.
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
-- Live deployed commit: `e56e2cddeacf55a00b6ba9a4ac046bc291596401`.
+- Live deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Timers:
   - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
   - `helios-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,

@@ -33,7 +33,7 @@ boundary, or log path changes.
   `/tmp/helios-da-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
-- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
+- Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
@@ -107,7 +107,7 @@ Operational notes:
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
+- Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
@@ -149,7 +149,7 @@ Operational notes:
   `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-13 02:48:32 UTC`.
-- Deployed commit: `8cf2791407161d359bb53b8f3b8f5eb3de262292`.
+- Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-13 02:49:41 UTC`; service exited
   `status=0/SUCCESS`, upserted 12,096 rows for business date `2026-06-11`,
@@ -178,8 +178,14 @@ Operational notes:
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Alerting: intentionally disabled; digest is reviewed on demand.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: pending update after deploy.
-- Verification: pending update after deploy.
+- First enabled at: `2026-06-13 03:08 UTC`.
+- Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
+- Deployed by: Aidan Keaveny via Codex.
+- Last manual verification: `2026-06-13 03:08:36 UTC`; service exited
+  `status=0/SUCCESS`, reported complete DA readiness for `2026-06-13`,
+  complete RT verified five-minute HRL readiness for `2026-06-11`, zero
+  duplicate keys, and all critical service results as `success`.
+- Next scheduled run observed: `2026-06-13 10:16:43 UTC`.
 
 Verification SQL for API telemetry:
 
