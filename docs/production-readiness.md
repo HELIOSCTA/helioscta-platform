@@ -122,13 +122,15 @@ Run this from the production VM when an operator asks for the current backend
 state:
 
 ```bash
-sudo -u helios -H /opt/helioscta-platform/.venv/bin/python \
-  -m backend.orchestration.health.prod_health_check
+sudo systemctl start helios-prod-health-check.service
+journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
 
-The digest is read-only. It checks the latest DA and RT verified five-minute
-readiness events, RT five-minute table shape, duplicate keys, recent critical
-API fetch failures, systemd service results, and `helios-*` timer schedule.
+The service uses `/etc/helioscta/backend.env`, matching the production scrape
+jobs. The digest is read-only. It checks the latest DA and RT verified
+five-minute readiness events, RT five-minute table shape, duplicate keys,
+recent critical API fetch failures, systemd service results, and `helios-*`
+timer schedule.
 
 Exit codes:
 

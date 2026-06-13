@@ -68,6 +68,18 @@ lower-level scrape, upserts `pjm.rt_fivemin_hrl_lmps`, and emits complete-day
 readiness events for hub, zone, and interface pricing nodes. The service uses
 `flock` with `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
 
+## Production Health Digest
+
+The read-only operator health digest is available as an on-demand service:
+
+```text
+helios-prod-health-check.service
+```
+
+It runs `backend.orchestration.health.prod_health_check` with the same
+`/etc/helioscta/backend.env` credential boundary as scheduled scrapes. It does
+not send alerts; use `journalctl` to read the digest after a manual run.
+
 ## Naming
 
 Use predictable names:
@@ -86,6 +98,7 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.servic
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
@@ -101,6 +114,7 @@ Run the workflow once on demand:
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-prod-health-check.service
 ```
 
 ## Verification
@@ -135,6 +149,13 @@ For the RT verified five-minute HRL LMP workflow:
 systemctl status helios-rt-fivemin-hrl-lmps.service
 systemctl status helios-rt-fivemin-hrl-lmps.timer
 journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
+```
+
+For the production health digest:
+
+```bash
+systemctl status helios-prod-health-check.service
+journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

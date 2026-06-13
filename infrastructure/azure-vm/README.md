@@ -250,8 +250,10 @@ status and `/var/log/helioscta` for retained scrape log files.
 Run the read-only production health digest for morning operator review:
 
 ```bash
-sudo -u helios -H /opt/helioscta-platform/.venv/bin/python \
-  -m backend.orchestration.health.prod_health_check
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-prod-health-check.service
+journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
 
 After future deploys, record the deployed commit, schedule, credential boundary,
