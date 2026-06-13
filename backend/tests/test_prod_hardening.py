@@ -128,6 +128,7 @@ def test_scrape_main_defaults_database_and_generates_run_id(monkeypatch):
 def test_upsert_dataframe_uses_temp_staging_not_target_ddl(monkeypatch):
     executed: list[object] = []
     copied: list[str] = []
+    copied_payloads: list[str] = []
 
     class FakeCursor:
         def execute(self, query, params=None):
@@ -141,8 +142,9 @@ def test_upsert_dataframe_uses_temp_staging_not_target_ddl(monkeypatch):
                 ("updated_at",),
             ]
 
-        def copy_expert(self, query, _buffer):
+        def copy_expert(self, query, buffer):
             copied.append(query)
+            copied_payloads.append(buffer.getvalue())
 
         def close(self):
             pass
@@ -186,6 +188,64 @@ def test_upsert_dataframe_uses_temp_staging_not_target_ddl(monkeypatch):
     assert "CREATE TABLE IF NOT EXISTS" not in executed_text
     assert "CREATE TEMP TABLE temp" in executed_text
     assert copied
+    assert copied_payloads[0].startswith("1,x,")
+
+
+def test_upsert_dataframe_serializes_numeric_nulls_for_copy(monkeypatch):
+    copied_payloads: list[str] = []
+
+    class FakeCursor:
+        def execute(self, _query, _params=None):
+            pass
+
+        def fetchall(self):
+            return [
+                ("id",),
+                ("value",),
+                ("created_at",),
+                ("updated_at",),
+            ]
+
+        def copy_expert(self, _query, buffer):
+            copied_payloads.append(buffer.getvalue())
+
+        def close(self):
+            pass
+
+    class FakeConnection:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    class FakeCopySql:
+        def as_string(self, _connection):
+            return "COPY temp"
+
+    monkeypatch.setattr(db, "connect", lambda database=None: FakeConnection())
+    monkeypatch.setattr(db, "_assert_target_table_sql", lambda **_kwargs: "ASSERT TARGET")
+    monkeypatch.setattr(db, "_create_temp_table_sql", lambda **_kwargs: "CREATE TEMP TABLE temp")
+    monkeypatch.setattr(db, "_copy_sql", lambda _table_name: FakeCopySql())
+    monkeypatch.setattr(db, "_upsert_sql", lambda **_kwargs: "UPSERT")
+
+    db.upsert_dataframe(
+        schema="test_schema",
+        table_name="test_table",
+        df=pd.DataFrame([{"id": 1, "value": pd.NA}]),
+        columns=["id", "value"],
+        primary_key=["id"],
+        data_types=["INTEGER", "DOUBLE PRECISION"],
+    )
+
+    assert copied_payloads
+    assert copied_payloads[0].startswith("1,,")
 
 
 def test_emit_data_availability_event_is_idempotent(monkeypatch):

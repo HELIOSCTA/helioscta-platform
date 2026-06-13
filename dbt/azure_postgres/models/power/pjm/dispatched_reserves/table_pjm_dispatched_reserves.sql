@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS pjm.dispatched_reserves (
     reserve_quantity DOUBLE PRECISION,
     reserve_requirement DOUBLE PRECISION,
     reserve_type VARCHAR NOT NULL,
-    shortage_indicator INTEGER,
+    shortage_indicator BOOLEAN,
     extended_requirement DOUBLE PRECISION,
     mw_adjustment DOUBLE PRECISION,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

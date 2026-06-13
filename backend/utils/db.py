@@ -153,7 +153,7 @@ def upsert_dataframe(
             buffer,
             index=False,
             header=False,
-            quoting=csv.QUOTE_NONNUMERIC,
+            quoting=csv.QUOTE_MINIMAL,
             sep=",",
             na_rep="",
         )

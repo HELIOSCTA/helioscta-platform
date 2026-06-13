@@ -138,7 +138,7 @@ def upsert_feed_frame(
 ) -> None:
     data_types = db.infer_sql_data_types(df=df)
     data_types = [
-        config.sql_data_types.get(column, inferred_type)
+        _configured_sql_data_type(config, column, inferred_type)
         for column, inferred_type in zip(df.columns, data_types)
     ]
     db.upsert_dataframe(
@@ -150,6 +150,26 @@ def upsert_feed_frame(
         data_types=data_types,
         primary_key=list(config.primary_key),
     )
+
+
+def _configured_sql_data_type(
+    config: DataMinerFeedConfig,
+    column: str,
+    inferred_type: str,
+) -> str:
+    if column in config.sql_data_types:
+        return config.sql_data_types[column]
+    if column in config.datetime_columns:
+        return "TIMESTAMP"
+    if column in config.date_columns:
+        return "DATE"
+    if column in config.numeric_columns:
+        return "DOUBLE PRECISION"
+    if column in config.bool_columns:
+        return "BOOLEAN"
+    if column in config.text_columns:
+        return "VARCHAR"
+    return inferred_type
 
 
 def run_feed(

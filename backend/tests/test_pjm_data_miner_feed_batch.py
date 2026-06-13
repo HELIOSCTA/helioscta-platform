@@ -150,3 +150,62 @@ def test_agg_definitions_preserves_bigint_ids_and_active_dates(monkeypatch):
         "VARCHAR",
         "DATE",
     ]
+
+
+def test_configured_numeric_type_wins_for_all_null_columns(monkeypatch):
+    config = FEED_CONFIGS["reserve_market_results"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "as_mw": "1.5",
+                    "as_req_mw": "2.5",
+                    "datetime_beginning_ept": "6/10/2026 12:00:00 AM",
+                    "datetime_beginning_utc": "6/10/2026 4:00:00 AM",
+                    "dsr_as_mw": "",
+                    "ircmwt2": "",
+                    "locale": " RTO ",
+                    "mcp": "3.5",
+                    "mcp_capped": "",
+                    "nsr_mw": "",
+                    "reg_ccp": "",
+                    "reg_pcp": "",
+                    "regd_mw": "",
+                    "service": " SYNCH ",
+                    "ss_mw": "",
+                    "tier1_mw": "",
+                    "total_mw": "4.5",
+                }
+            ]
+        ),
+        config,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_upsert_dataframe(**kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(data_miner_feed.db, "upsert_dataframe", fake_upsert_dataframe)
+
+    upsert_feed_frame(df, config, database="stage_db")
+
+    assert captured["data_types"] == [
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "TIMESTAMP",
+        "TIMESTAMP",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "VARCHAR",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "VARCHAR",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+        "DOUBLE PRECISION",
+    ]
