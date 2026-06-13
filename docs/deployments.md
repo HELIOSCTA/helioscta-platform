@@ -94,8 +94,7 @@ Operational notes:
 
 ## pjm-data-miner-scrape-modules
 
-- Status: code deployed to VM; tables and indexes applied in `helios_prod`;
-  no additional timers enabled.
+- Status: deployed; daily batch timer enabled.
 - Scope: 31 promoted PJM Data Miner scrape modules under
   `backend.scrapes.power.pjm`.
 - Destination schema: `pjm`.
@@ -109,6 +108,13 @@ Operational notes:
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
   a server-side import smoke check loaded all 31 PJM scrape modules.
-- Scheduling posture: only `helios-da-hrl-lmps.timer` remains enabled. Do not
-  schedule the rest of the scrape modules until their production cadence,
-  overlap behavior, and data-readiness/telemetry requirements are selected.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-data-miner-batch.service`
+  - `infrastructure/systemd/helios-pjm-data-miner-batch.timer`
+- Schedule: daily at `04:30 UTC` with `RandomizedDelaySec=10min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-data-miner-batch.lock`.
+- Scheduling posture: the batch keeps all 30 non-DA lower-level scrape tables
+  fresh daily. `helios-da-hrl-lmps.timer` remains separate for the DA workflow
+  because it emits data-readiness events.

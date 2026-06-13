@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM Data Miner scrape batch timer
+
+[Timer]
+OnCalendar=*-*-* 04:30:00 UTC
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=10min
+Unit=helios-pjm-data-miner-batch.service
+
+[Install]
+WantedBy=timers.target

@@ -38,6 +38,22 @@ The live production VM currently has `helios-da-hrl-lmps.timer` enabled on
 `helioscta-prod-vm-01` at `16:00 UTC` with `Persistent=true`. The deployment
 register records the exact deployed commit and verification state.
 
+## PJM Data Miner Batch
+
+The promoted non-DA PJM Data Miner scrape modules are scheduled through one
+daily batch timer:
+
+```text
+helios-pjm-data-miner-batch.service
+helios-pjm-data-miner-batch.timer
+```
+
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes the
+30 lower-level scrape modules that are not covered by
+`helios-da-hrl-lmps.timer`. The service uses `flock` with
+`/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
+batch.
+
 ## Naming
 
 Use predictable names:
@@ -85,6 +101,14 @@ systemctl status helios-da-hrl-lmps.service
 systemctl status helios-da-hrl-lmps.timer
 journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
 systemctl list-timers 'helios-*'
+```
+
+For the PJM Data Miner batch:
+
+```bash
+systemctl status helios-pjm-data-miner-batch.service
+systemctl status helios-pjm-data-miner-batch.timer
+journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

@@ -39,6 +39,7 @@ A backend workflow is production-ready when it has:
 | --- | --- | --- |
 | VM runtime | In place | `helioscta-prod-vm-01` runs committed code from `/opt/helioscta-platform`. |
 | DA LMP schedule | In place | `helios-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 30 non-DA promoted scrapes daily at `04:30 UTC`. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | DA orchestration writes `ops.api_fetch_log`. |
 | Data readiness | In place | DA orchestration writes `ops.data_availability_events`. |
@@ -54,7 +55,8 @@ mature production backend platform:
 - No automated deploy pipeline.
 - No systemd failure notification path.
 - No documented journald retention policy.
-- No overlap protection for long-running timers.
+- No standardized overlap protection for all timers; the PJM Data Miner batch
+  uses `flock`.
 - No formal database migration tool.
 - No centralized freshness or pipeline-health dashboard.
 - No Vercel/report consumer for `ops.data_availability_events`.
@@ -104,9 +106,9 @@ on downstream value, feed update cadence, and database cost.
 | Feed | Default Posture | Rationale |
 | --- | --- | --- |
 | `da_hrl_lmps` | Scheduled daily with readiness event | Daily published data drives downstream reporting. |
-| `rt_hrl_lmps` | Candidate for hourly or daily schedule | Useful, but cadence should match reporting needs. |
-| `unverified_five_min_lmps` | Do not schedule until use case is clear | High-frequency data can create volume and telemetry noise. |
-| `rt_fivemin_mnt_lmps` | Candidate for daily or hourly schedule | Settlement-verified feed is less urgent than live operations. |
+| `rt_hrl_lmps` | Scheduled daily in the PJM Data Miner batch | Useful, but not yet promoted to its own readiness workflow. |
+| `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
+| `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |
 
 ## Review Cadence
 

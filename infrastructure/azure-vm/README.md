@@ -25,8 +25,10 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
 - Live deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
-- Timer: `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`,
-  `Persistent=true`.
+- Timers:
+  - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
+  - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=10min`.
 
 `/opt/helioscta-platform` is intentionally not directly accessible to
 `azureuser`. Stay in the `azureuser` shell for commands that need sudo, and run
@@ -52,8 +54,9 @@ Git immediately.
 
 As of the deployed commit above, the promoted PJM Data Miner scrape modules are
 available on the VM and their database tables/indexes have been applied in
-`helios_prod`. Only `helios-da-hrl-lmps.timer` is enabled until feed-specific
-cadences and readiness/telemetry requirements are selected.
+`helios_prod`. `helios-pjm-data-miner-batch.timer` runs the 30 non-DA lower-level
+scrape modules daily; `helios-da-hrl-lmps.timer` remains the DA workflow because
+it emits the richer data-readiness event.
 
 ## Design Defaults
 
