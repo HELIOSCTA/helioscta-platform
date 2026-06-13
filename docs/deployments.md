@@ -4,6 +4,28 @@ Use this file to track production runtime deployments. Update the relevant
 entry whenever a VM host, deployed commit, schedule, unit file, credential
 boundary, or log path changes.
 
+## production-vm-operations
+
+- Status: deployed; CI/checklist discipline, log retention policy, and VM
+  rebuild runbook are versioned.
+- Host: `helioscta-prod-vm-01`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: `helios`.
+- Operator SSH user: `azureuser`.
+- Log retention unit: `infrastructure/systemd/journald-helioscta.conf`.
+- Installed path: `/etc/systemd/journald.conf.d/helioscta.conf`.
+- Deployed commit: `c155f47cb0eeda3faea15792ca7d2bffb8aaa17c`.
+- Policy: journald capped at `1G` and `30day`; runtime journal capped at
+  `256M`; failed scrape file logs retained under `/var/log/helioscta`.
+- Operator docs:
+  - `docs/workflow-promotion-checklist.md`
+  - `docs/operations/log-retention.md`
+  - `docs/operations/vm-rebuild-runbook.md`
+- Verification:
+  - GitHub Actions CI validates backend tests and dbt parse/critical compile.
+  - VM verification commands: `journalctl --disk-usage` and
+    `systemctl list-timers 'helios-*'`.
+
 ## helios-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.

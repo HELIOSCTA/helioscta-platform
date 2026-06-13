@@ -21,6 +21,22 @@ ExecStart=/usr/bin/flock -n /tmp/helios-da-hrl-lmps.lock /opt/helioscta-platform
 Use `HELIOS_LOG_DIR=/var/log/helioscta` in that env file if file logs should
 be retained outside journald.
 
+## Log Retention
+
+Install the versioned journald drop-in on the VM:
+
+```bash
+sudo install -d -m 0755 /etc/systemd/journald.conf.d
+sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage
+```
+
+The production policy is documented in
+`docs/operations/log-retention.md`: journald is capped at `1G` and `30day`,
+runtime journal storage is capped at `256M`, and failed scrape file logs are
+kept under `/var/log/helioscta` for operator review.
+
 ## First Job
 
 The first production timer is:
@@ -104,6 +120,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmp
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
+sudo install -d -m 0755 /etc/systemd/journald.conf.d
+sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer

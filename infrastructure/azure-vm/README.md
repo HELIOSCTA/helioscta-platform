@@ -24,7 +24,7 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Repo path: `/opt/helioscta-platform`.
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
-- Live deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
+- Live deployed commit: `c155f47cb0eeda3faea15792ca7d2bffb8aaa17c`.
 - Timers:
   - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
   - `helios-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
@@ -33,6 +33,9 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=10min`.
   - `helios-prod-health-check.timer`, daily at `10:15 UTC` and `16:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=2min`.
+- Log retention: journald drop-in installed from
+  `infrastructure/systemd/journald-helioscta.conf`; see
+  `docs/operations/log-retention.md`.
 
 `/opt/helioscta-platform` is intentionally not directly accessible to
 `azureuser`. Stay in the `azureuser` shell for commands that need sudo, and run
@@ -78,6 +81,8 @@ keeps a post-RT and post-DA read-only health digest in journald.
 - Store secrets in `/etc/helioscta/backend.env`, never in Git.
 - Put long-lived file logs under `/var/log/helioscta`.
 - Manage scheduled jobs with `systemd` timers after manual smoke testing.
+- Apply the journald retention drop-in from
+  `infrastructure/systemd/journald-helioscta.conf`.
 
 ## Azure Baseline
 
@@ -150,6 +155,20 @@ Do not create `backend/.env` on the VM unless you are doing an emergency manual
 test. Production systemd jobs should consume `/etc/helioscta/backend.env`.
 Keep one `KEY=value` per line and leave the file with a trailing newline. Do
 not print this file to the terminal or copy secrets into shell history.
+
+## Log Retention
+
+Install the journald retention drop-in:
+
+```bash
+sudo install -d -m 0755 /etc/systemd/journald.conf.d
+sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage
+```
+
+The policy is documented in `docs/operations/log-retention.md`. The VM rebuild
+path is documented in `docs/operations/vm-rebuild-runbook.md`.
 
 ## Manual Smoke Checks
 

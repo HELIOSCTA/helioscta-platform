@@ -49,9 +49,11 @@ A backend workflow is production-ready when it has:
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for morning review. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
+| Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
 | Deployment register | In place | `docs/deployments.md` records host, commit, timer, and verification. |
 | Workflow promotion checklist | In place | `docs/workflow-promotion-checklist.md` is the default checklist for new timers. |
+| VM rebuild runbook | In place | `docs/operations/vm-rebuild-runbook.md` documents rebuilding the scheduler VM from committed code. |
 | Operator SQL | In progress | Application DDL is moving to disabled dbt operator SQL. |
 
 ## Current Gaps
@@ -61,14 +63,12 @@ mature production backend platform:
 
 - No automated deploy pipeline.
 - No systemd failure notification path; alerts are intentionally deferred.
-- No documented journald retention policy.
 - No standardized overlap protection for every future timer; current critical
   DA, RT five-minute HRL, and PJM batch jobs use `flock`.
 - No formal database migration tool.
 - No centralized freshness or pipeline-health dashboard; use the operator
   health digest until a dashboard is promoted.
 - No Vercel/report consumer for `ops.data_availability_events`.
-- No disaster recovery runbook for rebuilding the VM.
 
 ## Hardening Backlog
 
@@ -76,9 +76,8 @@ Recommended order:
 
 1. Build the Vercel/report consumer from `ops.data_availability_events`.
 2. Add systemd failure notifications when an alert channel is selected.
-3. Document journald and `/var/log/helioscta` retention.
-4. Add VM rebuild and recovery instructions.
-5. Evaluate whether manual operator SQL is sufficient or a migration tool is
+3. Standardize overlap protection for future dedicated timers.
+4. Evaluate whether manual operator SQL is sufficient or a migration tool is
    needed.
 
 ## Workflow Promotion Checklist
