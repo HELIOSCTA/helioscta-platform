@@ -27,6 +27,20 @@ pulls until the consuming model needs that grain.
 
 ## Pull Tiers
 
+## Current Production Criticality
+
+The current production-critical price workflows are:
+
+- `da_hrl_lmps` for day-ahead hourly LMP readiness.
+- `rt_fivemin_hrl_lmps` for operational verified five-minute real-time LMP
+  readiness across hub, zone, and interface pricing nodes.
+
+All other promoted PJM Data Miner feeds currently stay in the support batch
+unless a downstream consumer requires a dedicated readiness event or tighter
+schedule. `rt_fivemin_mnt_lmps` remains support-batch by default because the
+current priority is operational verified five-minute HRL prices, not a separate
+settlement-final five-minute readiness workflow.
+
 ### Tier 0 - Already Promoted Or In Flight
 
 These feeds define the current PJM pricing foundation.

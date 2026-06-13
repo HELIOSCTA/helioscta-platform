@@ -48,8 +48,10 @@ A backend workflow is production-ready when it has:
 | API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for morning review. |
+| CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
 | Deployment register | In place | `docs/deployments.md` records host, commit, timer, and verification. |
+| Workflow promotion checklist | In place | `docs/workflow-promotion-checklist.md` is the default checklist for new timers. |
 | Operator SQL | In progress | Application DDL is moving to disabled dbt operator SQL. |
 
 ## Current Gaps
@@ -67,21 +69,16 @@ mature production backend platform:
   health digest until a dashboard is promoted.
 - No Vercel/report consumer for `ops.data_availability_events`.
 - No disaster recovery runbook for rebuilding the VM.
-- No standard deploy checklist per future workflow.
-- No explicit decision log for which PJM feeds deserve timers.
 
 ## Hardening Backlog
 
 Recommended order:
 
-1. Create a workflow deployment checklist and use it for every new timer.
-2. Decide which PJM scrapes deserve schedules and at what cadence.
-3. Build the Vercel/report consumer from `ops.data_availability_events`.
-4. Add systemd failure notifications when an alert channel is selected.
-5. Add CI validation for backend tests and dbt parse/compile.
-6. Document journald and `/var/log/helioscta` retention.
-7. Add VM rebuild and recovery instructions.
-8. Evaluate whether manual operator SQL is sufficient or a migration tool is
+1. Build the Vercel/report consumer from `ops.data_availability_events`.
+2. Add systemd failure notifications when an alert channel is selected.
+3. Document journald and `/var/log/helioscta` retention.
+4. Add VM rebuild and recovery instructions.
+5. Evaluate whether manual operator SQL is sufficient or a migration tool is
    needed.
 
 ## Workflow Promotion Checklist
@@ -116,6 +113,15 @@ on downstream value, feed update cadence, and database cost.
 | `rt_hrl_lmps` | Scheduled daily in the PJM Data Miner batch | Useful, but not yet promoted to its own readiness workflow. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |
+
+Current criticality decision:
+
+- Critical dedicated timers: `da_hrl_lmps` and `rt_fivemin_hrl_lmps`.
+- Support batch: all other currently promoted PJM Data Miner feeds, including
+  `rt_fivemin_mnt_lmps`.
+- Promote `rt_fivemin_mnt_lmps` only when a downstream consumer needs
+  settlement-final five-minute readiness separate from the operational
+  verified RT five-minute HRL feed.
 
 ## Morning Health Digest
 
