@@ -8,7 +8,7 @@
 CREATE TABLE IF NOT EXISTS pjm.rt_fivemin_mnt_lmps (
     datetime_beginning_utc TIMESTAMP NOT NULL,
     datetime_beginning_ept TIMESTAMP NOT NULL,
-    pnode_id INTEGER NOT NULL,
+    pnode_id BIGINT NOT NULL,
     pnode_name VARCHAR NOT NULL,
     voltage VARCHAR,
     equipment VARCHAR,

@@ -119,6 +119,10 @@ def _upsert(
 ) -> None:
     primary_key = primary_key or PRIMARY_KEY
     data_types = db.infer_sql_data_types(df=df)
+    data_types = [
+        "BIGINT" if column == "pnode_id" else data_type
+        for column, data_type in zip(df.columns, data_types)
+    ]
 
     db.upsert_dataframe(
         database=database,
