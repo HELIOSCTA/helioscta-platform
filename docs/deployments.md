@@ -14,7 +14,7 @@ boundary, or log path changes.
 - Operator SSH user: `azureuser`.
 - Log retention unit: `infrastructure/systemd/journald-helioscta.conf`.
 - Installed path: `/etc/systemd/journald.conf.d/helioscta.conf`.
-- Deployed commit: `c155f47cb0eeda3faea15792ca7d2bffb8aaa17c`.
+- Deployed commit: `b095c24477c6674e6cd6fdfce9dd3eb8c5cc979b`.
 - Policy: journald capped at `1G` and `30day`; runtime journal capped at
   `256M`; failed scrape file logs retained under `/var/log/helioscta`.
 - Operator docs:
