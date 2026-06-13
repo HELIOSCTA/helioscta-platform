@@ -84,7 +84,8 @@ workspace.
   and
   `dbt/azure_postgres/models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql`.
 - Production schedule: through `helios-ercot-load-batch.timer`, daily at
-  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
+  scheduled default pulls complete operating days through yesterday.
 - Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
   `2026-06-12` on `2026-06-13 17:48 UTC`, upserted 24 hourly rows, and wrote
   successful ERCOT API telemetry.

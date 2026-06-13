@@ -227,7 +227,7 @@ LIMIT 10;
 
 ## ercot-load-batch
 
-- Status: promoted; local smoke succeeded; VM timer files are versioned.
+- Status: deployed; timer enabled and latest manual VM run succeeded.
 - Workflow: ERCOT load support scrape batch.
 - Runtime module: `backend.orchestration.power.ercot.load_batch`.
 - Lower-level scrape modules:
@@ -260,6 +260,12 @@ LIMIT 10;
   `2026-06-12`, upserted 24 rows, ran `seven_day_load_forecast` for delivery
   date `2026-06-13`, upserted 4,344 rows, and wrote successful ERCOT API
   telemetry for both feeds.
+- Deployed runtime commit: `1184fc0`.
+- Last VM verification: `2026-06-13 17:50 UTC`; service exited
+  `status=0/SUCCESS`, ran both load feeds, upserted 168 actual-load rows for
+  complete operating days and 18,624 forecast rows for the seven-day forecast
+  window, and reported `2 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-14 12:25:49 UTC`.
 
 ## pjm-data-miner-scrape-modules
 

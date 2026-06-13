@@ -152,7 +152,7 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_from_param="operatingDayFrom",
         date_to_param="operatingDayTo",
         default_lookback_days=7,
-        default_lookahead_days=0,
+        default_lookahead_days=-1,
     ),
     "seven_day_load_forecast": ErcotPublicReportConfig(
         feed_name="seven_day_load_forecast",
