@@ -31,7 +31,7 @@ boundary, or log path changes.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
-- Deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
+- Deployed commit: `ce465412d912a934063860e1107d6b03ba58b9fa`.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
@@ -103,7 +103,7 @@ Operational notes:
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
+- Deployed commit: `ce465412d912a934063860e1107d6b03ba58b9fa`.
 - Deployed by: Aidan Keaveny via Codex.
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
