@@ -17,6 +17,10 @@ AZURE_POSTGRES_WRITER_DBNAME=helios_prod
 AZURE_POSTGRES_WRITER_SSLMODE=require
 
 PJM_API_KEY=
+
+ERCOT_USERNAME=
+ERCOT_PASSCODE=
+ERCOT_API_KEY=
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -36,6 +40,13 @@ The script logger writes the same structured sections to the terminal and to a
 file. Production systemd jobs should rely on journald for process status and
 `/var/log/helioscta` for retained failure logs; successful file logs are
 deleted by default when scripts initialize logging with `delete_if_no_errors`.
+
+ERCOT Public API helpers use the existing `ERCOT_USERNAME`,
+`ERCOT_PASSCODE`, and `ERCOT_API_KEY` environment variables. The first ERCOT
+runtime module is `backend.scrapes.power.ercot.dam_stlmnt_pnt_prices`, backed
+by disabled operator SQL under `dbt/azure_postgres/models/power/ercot/`.
+Promoted ERCOT schedules run orchestration modules through systemd so API
+telemetry and data-readiness events are emitted with the database writes.
 
 ## Permissions Contract
 

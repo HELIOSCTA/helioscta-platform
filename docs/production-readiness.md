@@ -42,12 +42,14 @@ A backend workflow is production-ready when it has:
 | VM runtime | In place | `helioscta-prod-vm-01` runs committed code from `/opt/helioscta-platform`. |
 | DA LMP schedule | In place | `helios-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
 | RT verified five-minute HRL LMP schedule | In place | `helios-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
+| ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
+| ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 29 support scrapes daily at `04:30 UTC`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
-| Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
-| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical DA/RT readiness and support-batch freshness. |
+| API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
+| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and support-batch freshness. |
 | Manual DA/RT backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
@@ -116,7 +118,8 @@ on downstream value, feed update cadence, and database cost.
 
 Current criticality decision:
 
-- Critical dedicated timers: `da_hrl_lmps` and `rt_fivemin_hrl_lmps`.
+- Critical dedicated timers: `da_hrl_lmps`, `rt_fivemin_hrl_lmps`,
+  `ercot-dam-stlmnt-pnt-prices`, and `ercot-settlement-point-prices`.
 - Support batch: all other currently promoted PJM Data Miner feeds, including
   `rt_fivemin_mnt_lmps`.
 - Promote `rt_fivemin_mnt_lmps` only when a downstream consumer needs
@@ -134,10 +137,10 @@ journalctl -u helios-prod-health-check.service -n 220 --no-pager
 ```
 
 The service uses `/etc/helioscta/backend.env`, matching the production scrape
-jobs. The digest is read-only. It checks the latest DA and RT verified
-five-minute readiness events, RT five-minute table shape, duplicate keys,
-recent critical API fetch failures, support-batch API/table freshness,
-systemd service results, and `helios-*` timer schedule.
+jobs. The digest is read-only. It checks the latest PJM DA, PJM RT verified
+five-minute, ERCOT DAM SPP, and ERCOT RT SPP readiness events, RT five-minute
+table shape, duplicate keys, recent critical API fetch failures, support-batch
+API/table freshness, systemd service results, and `helios-*` timer schedule.
 
 Recovered API failures are not findings when the latest fetch succeeded and
 the failure rate is low. The digest warns on an API path when the latest fetch
@@ -146,7 +149,7 @@ is still failed or when failures dominate the health window.
 Exit codes:
 
 - `0`: no critical failures.
-- `1`: one or more critical DA or RT verified five-minute checks failed.
+- `1`: one or more critical PJM or ERCOT price checks failed.
 
 Warnings are printed for non-critical gaps, such as missing telemetry in the
 selected lookback window or support-batch issues.
@@ -154,7 +157,7 @@ selected lookback window or support-batch issues.
 Scheduling:
 
 - `helios-prod-health-check.timer` runs at `10:15 UTC` after the RT verified
-  five-minute workflow and at `16:30 UTC` after the DA workflow.
+  five-minute workflow and at `16:30 UTC` after the DA workflows.
 
 ## Manual Backfills
 

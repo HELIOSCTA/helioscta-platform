@@ -225,6 +225,20 @@ models:
             +enabled: false
           index_pjm_wind_gen:
             +enabled: false
+      ercot:
+        +materialized: ephemeral
+        dam_stlmnt_pnt_prices:
+          +materialized: ephemeral
+          table_ercot_dam_stlmnt_pnt_prices:
+            +enabled: false
+          index_ercot_dam_stlmnt_pnt_prices:
+            +enabled: false
+        settlement_point_prices:
+          +materialized: ephemeral
+          table_ercot_settlement_point_prices:
+            +enabled: false
+          index_ercot_settlement_point_prices:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

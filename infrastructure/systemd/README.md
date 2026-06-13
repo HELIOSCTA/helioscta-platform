@@ -103,6 +103,24 @@ API and table freshness. Recovered low-rate API failures are not surfaced as
 findings when the latest fetch succeeded. The timer runs at `10:15 UTC` and
 `16:30 UTC`.
 
+## ERCOT Settlement Point Prices
+
+The ERCOT price workflows have dedicated timers:
+
+```text
+helios-ercot-dam-stlmnt-pnt-prices.service
+helios-ercot-dam-stlmnt-pnt-prices.timer
+helios-ercot-settlement-point-prices.service
+helios-ercot-settlement-point-prices.timer
+```
+
+The DAM workflow runs `backend.orchestration.power.ercot.dam_stlmnt_pnt_prices`
+daily at `16:15 UTC`, upserts current-delivery-date hub settlement point
+prices, and emits complete delivery-date readiness events. The RT workflow runs
+`backend.orchestration.power.ercot.settlement_point_prices` every 15 minutes,
+upserts published hub intervals, and emits readiness only when a full delivery
+date is present. Both services use `flock` to avoid overlap.
+
 ## Manual DA/RT Backfills
 
 DA hourly LMP and RT verified five-minute HRL LMP backfills are manual
@@ -138,11 +156,17 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmp
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
+sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -156,6 +180,8 @@ Run the workflow once on demand:
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
+sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-prod-health-check.service
 ```
 
@@ -199,6 +225,17 @@ For the production health digest:
 systemctl show helios-prod-health-check.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
 systemctl status helios-prod-health-check.timer
 journalctl -u helios-prod-health-check.service -n 220 --no-pager
+```
+
+For ERCOT settlement point prices:
+
+```bash
+systemctl status helios-ercot-dam-stlmnt-pnt-prices.service
+systemctl status helios-ercot-dam-stlmnt-pnt-prices.timer
+journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service -n 200 --no-pager
+systemctl status helios-ercot-settlement-point-prices.service
+systemctl status helios-ercot-settlement-point-prices.timer
+journalctl -u helios-ercot-settlement-point-prices.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

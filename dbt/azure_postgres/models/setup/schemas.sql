@@ -6,5 +6,6 @@
 -- files that create objects in these schemas.
 
 CREATE SCHEMA IF NOT EXISTS pjm AUTHORIZATION helios_admin;
+CREATE SCHEMA IF NOT EXISTS ercot AUTHORIZATION helios_admin;
 CREATE SCHEMA IF NOT EXISTS ops AUTHORIZATION helios_admin;
 CREATE SCHEMA IF NOT EXISTS alerts AUTHORIZATION helios_admin;

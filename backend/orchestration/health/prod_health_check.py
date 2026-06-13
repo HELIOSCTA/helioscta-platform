@@ -13,10 +13,14 @@ from backend.utils import db
 CRITICAL_PIPELINES: tuple[str, ...] = (
     "da_hrl_lmps",
     "rt_fivemin_hrl_lmps",
+    "dam_stlmnt_pnt_prices",
+    "settlement_point_prices",
 )
 CRITICAL_SERVICES: tuple[str, ...] = (
     "helios-da-hrl-lmps.service",
     "helios-rt-fivemin-hrl-lmps.service",
+    "helios-ercot-dam-stlmnt-pnt-prices.service",
+    "helios-ercot-settlement-point-prices.service",
 )
 SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-data-miner-batch.service",
@@ -56,9 +60,13 @@ HELIOS_TIMER_PATTERN = "helios-*"
 DA_DATASET = "pjm_da_hrl_lmps"
 RT_FIVEMIN_HRL_DATASET = "pjm_rt_fivemin_hrl_lmps"
 RT_FIVEMIN_HRL_TABLE = "pjm.rt_fivemin_hrl_lmps"
+ERCOT_DAM_SPP_DATASET = "ercot_dam_stlmnt_pnt_prices"
+ERCOT_RT_SPP_DATASET = "ercot_settlement_point_prices"
 DEFAULT_LOOKBACK_HOURS = 24
 MAX_DA_BUSINESS_DATE_LAG_DAYS = 1
 MAX_RT_BUSINESS_DATE_LAG_DAYS = 4
+MAX_ERCOT_DAM_BUSINESS_DATE_LAG_DAYS = 1
+MAX_ERCOT_RT_BUSINESS_DATE_LAG_DAYS = 2
 MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
 MAX_RECOVERED_API_FAILURE_RATE = 0.5
 
@@ -109,6 +117,14 @@ def collect_health(
         dataset=RT_FIVEMIN_HRL_DATASET,
         database=database,
     )
+    ercot_dam_readiness = _latest_readiness_event(
+        dataset=ERCOT_DAM_SPP_DATASET,
+        database=database,
+    )
+    ercot_rt_readiness = _latest_readiness_event(
+        dataset=ERCOT_RT_SPP_DATASET,
+        database=database,
+    )
     rt_shape = _rt_fivemin_hrl_latest_shape(database=database)
     api_summary = _api_fetch_summary(
         pipeline_names=CRITICAL_PIPELINES,
@@ -132,6 +148,9 @@ def collect_health(
     issues = _evaluate_health(
         da_readiness=da_readiness,
         rt_readiness=rt_readiness,
+        ercot_dam_readiness=ercot_dam_readiness,
+        ercot_rt_readiness=ercot_rt_readiness,
+        require_ercot_readiness=True,
         rt_shape=rt_shape,
         duplicate_key_count=duplicate_key_count,
         api_summary=api_summary,
@@ -144,6 +163,8 @@ def collect_health(
     return {
         "da_readiness": da_readiness,
         "rt_readiness": rt_readiness,
+        "ercot_dam_readiness": ercot_dam_readiness,
+        "ercot_rt_readiness": ercot_rt_readiness,
         "rt_shape": rt_shape,
         "duplicate_key_count": duplicate_key_count,
         "api_summary": api_summary,
@@ -170,6 +191,8 @@ def format_health_report(
         "Critical readiness",
         _format_readiness("DA hourly LMPs", checks["da_readiness"]),
         _format_readiness("RT verified 5-min HRL LMPs", checks["rt_readiness"]),
+        _format_readiness("ERCOT DAM SPP hubs", checks["ercot_dam_readiness"]),
+        _format_readiness("ERCOT RT SPP hubs", checks["ercot_rt_readiness"]),
         "",
         "RT verified 5-min HRL table shape",
         _format_rt_shape(checks["rt_shape"], checks["duplicate_key_count"]),
@@ -448,6 +471,9 @@ def _evaluate_health(
     support_table_summary: list[dict[str, Any]],
     service_statuses: list[dict[str, str]],
     generated_at: datetime,
+    ercot_dam_readiness: dict[str, Any] | None = None,
+    ercot_rt_readiness: dict[str, Any] | None = None,
+    require_ercot_readiness: bool = False,
 ) -> list[HealthIssue]:
     issues: list[HealthIssue] = []
     today = generated_at.date()
@@ -468,6 +494,24 @@ def _evaluate_health(
             today=today,
         )
     )
+    if require_ercot_readiness or ercot_dam_readiness is not None:
+        issues.extend(
+            _evaluate_readiness(
+                subject="ERCOT DAM SPP hubs",
+                readiness=ercot_dam_readiness,
+                max_lag_days=MAX_ERCOT_DAM_BUSINESS_DATE_LAG_DAYS,
+                today=today,
+            )
+        )
+    if require_ercot_readiness or ercot_rt_readiness is not None:
+        issues.extend(
+            _evaluate_readiness(
+                subject="ERCOT RT SPP hubs",
+                readiness=ercot_rt_readiness,
+                max_lag_days=MAX_ERCOT_RT_BUSINESS_DATE_LAG_DAYS,
+                today=today,
+            )
+        )
 
     if rt_shape is None:
         issues.append(

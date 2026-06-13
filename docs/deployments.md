@@ -118,6 +118,109 @@ Operational notes:
 - After future `git pull --ff-only` deployments, update this register with the
   VM commit, timer state, and verification result.
 
+## ercot-dam-stlmnt-pnt-prices
+
+- Status: deployed; timer enabled and latest manual VM run succeeded.
+- Workflow: ERCOT DAM Settlement Point Prices orchestration.
+- Runtime module: `backend.orchestration.power.ercot.dam_stlmnt_pnt_prices`.
+- Lower-level scrape module:
+  `backend.scrapes.power.ercot.dam_stlmnt_pnt_prices`.
+- Source system: ERCOT Public Reports `NP4-190-CD`.
+- Report Type ID: `12331`.
+- Destination table: `ercot.dam_stlmnt_pnt_prices`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service`
+  - `infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service`.
+- Schedule: daily at `16:15 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-ercot-dam-stlmnt-pnt-prices.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Manual verification: `2026-06-13 16:52 UTC`; conda env
+  `helioscta-platform-backend` ran the orchestration for business date
+  `2026-06-13`, upserted 96 hub rows, and emitted
+  `ercot_dam_stlmnt_pnt_prices:data_ready:2026-06-13:hub`.
+- VM deployment: working-tree overlay installed on `2026-06-13 17:30 UTC`;
+  commit/push still pending.
+- Last VM verification: `2026-06-13 17:31 UTC`; service exited
+  `status=0/SUCCESS`, upserted 96 hub rows for delivery date `2026-06-13`,
+  and observed existing readiness event
+  `ercot_dam_stlmnt_pnt_prices:data_ready:2026-06-13:hub`.
+- Next scheduled run observed: `2026-06-14 16:15:08 UTC`.
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'ercot_dam_stlmnt_pnt_prices'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+## ercot-settlement-point-prices
+
+- Status: deployed; timer enabled and latest manual VM/timer run succeeded.
+- Workflow: ERCOT RT Settlement Point Prices orchestration.
+- Runtime module: `backend.orchestration.power.ercot.settlement_point_prices`.
+- Lower-level scrape module:
+  `backend.scrapes.power.ercot.settlement_point_prices`.
+- Source system: ERCOT Public Reports `NP6-905-CD`.
+- Report Type ID: `12301`.
+- Destination table: `ercot.settlement_point_prices`.
+- Default runtime scope: `HB_NORTH`, `HB_SOUTH`, `HB_WEST`, `HB_HOUSTON`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-ercot-settlement-point-prices.service`
+  - `infrastructure/systemd/helios-ercot-settlement-point-prices.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-ercot-settlement-point-prices.service`.
+- Schedule: every 15 minutes with `RandomizedDelaySec=2min`.
+- Timer behavior: `Persistent=false`; missed intraday runs do not replay after
+  VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-ercot-settlement-point-prices.lock`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/settlement_point_prices/table_ercot_settlement_point_prices.sql`
+  and matching index SQL.
+- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Manual verification: `2026-06-13 17:02 UTC`; conda env
+  `helioscta-platform-backend` ran the scrape for delivery date
+  `2026-06-13`, upserted 188 hub rows across 47 published intervals, and wrote
+  successful ERCOT API telemetry for all four hubs.
+- VM deployment: working-tree overlay installed on `2026-06-13 17:30 UTC`;
+  commit/push still pending.
+- Last VM verification: `2026-06-13 17:31 UTC`; manual service run and first
+  timer run exited `status=0/SUCCESS`, upserted 384 hub rows for complete
+  delivery date `2026-06-12`, upserted 196 currently published hub rows for
+  delivery date `2026-06-13`, observed existing readiness event
+  `ercot_settlement_point_prices:data_ready:2026-06-12:hub`, and correctly
+  skipped readiness for incomplete delivery date `2026-06-13`.
+- Next scheduled run observed: `2026-06-13 17:46:55 UTC`.
+
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.

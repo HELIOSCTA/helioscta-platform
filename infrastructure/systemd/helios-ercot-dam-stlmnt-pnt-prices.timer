@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA ERCOT DAM Settlement Point Prices orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 16:15:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-ercot-dam-stlmnt-pnt-prices.service
+
+[Install]
+WantedBy=timers.target

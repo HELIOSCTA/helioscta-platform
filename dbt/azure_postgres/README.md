@@ -97,6 +97,24 @@ models/power/pjm/wind_gen/pjm_wind_gen/
 This mirrors the legacy power-model folder style while using the shorter
 `models/power/pjm/<feed_short_name>/` path in this repo.
 
+## ERCOT Public Reports Layout
+
+The first ERCOT Public Reports feed uses the same one-folder-per-feed pattern:
+
+```text
+models/power/ercot/dam_stlmnt_pnt_prices/
+models/power/ercot/dam_stlmnt_pnt_prices/ercot_lmps_da_hourly/
+models/power/ercot/dam_stlmnt_pnt_prices/ercot_lmps_da_daily/
+models/power/ercot/settlement_point_prices/
+models/power/ercot/settlement_point_prices/ercot_lmps_rt_15min/
+models/power/ercot/settlement_point_prices/ercot_lmps_rt_hourly/
+```
+
+`table_ercot_dam_stlmnt_pnt_prices.sql` and
+`index_ercot_dam_stlmnt_pnt_prices.sql`, plus the matching
+`settlement_point_prices` table/index files, are disabled operator SQL. The
+enabled models are read-only validation/query shaping only.
+
 ## Load Environment
 
 Git Bash:
@@ -179,8 +197,10 @@ Run order for a new database:
 models/setup/schemas.sql
 models/ops/table_ops_api_fetch_log.sql
 models/ops/table_ops_data_availability_events.sql
+models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
+models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

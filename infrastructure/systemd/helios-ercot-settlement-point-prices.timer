@@ -1,0 +1,12 @@
+[Unit]
+Description=Intraday HeliosCTA ERCOT Real-Time Settlement Point Prices orchestration timer
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=30s
+Unit=helios-ercot-settlement-point-prices.service
+
+[Install]
+WantedBy=timers.target

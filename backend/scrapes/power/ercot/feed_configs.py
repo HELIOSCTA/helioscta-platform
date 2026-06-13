@@ -1,0 +1,115 @@
+"""ERCOT Public Reports reference feed contracts.
+
+These configs describe source shape for future promoted scrapes. They are not
+runtime entry points and do not imply that a destination table exists.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class ErcotPublicReportConfig:
+    feed_name: str
+    emil_id: str
+    report_type_id: int
+    endpoint: str
+    display_name: str
+    category: str
+    posting_frequency: str
+    retention_time: str
+    columns: tuple[str, ...]
+    primary_key: tuple[str, ...]
+    date_columns: tuple[str, ...] = ()
+    datetime_columns: tuple[str, ...] = ()
+    numeric_columns: tuple[str, ...] = ()
+    text_columns: tuple[str, ...] = ()
+    default_params: dict[str, object] = field(default_factory=dict)
+    sql_data_types: dict[str, str] = field(default_factory=dict)
+    date_from_param: str | None = None
+    date_to_param: str | None = None
+    default_lookback_days: int = 0
+    default_lookahead_days: int = 1
+    target_schema: str = "ercot"
+    target_database: str | None = None
+
+    @property
+    def target_table(self) -> str:
+        return self.feed_name
+
+    @property
+    def target_table_fqn(self) -> str:
+        return f"{self.target_schema}.{self.target_table}"
+
+
+FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
+    "dam_stlmnt_pnt_prices": ErcotPublicReportConfig(
+        feed_name="dam_stlmnt_pnt_prices",
+        emil_id="NP4-190-CD",
+        report_type_id=12331,
+        endpoint="np4-190-cd/dam_stlmnt_pnt_prices",
+        display_name="DAM Settlement Point Prices",
+        category="Day-Ahead Market, Settlement Point Prices",
+        posting_frequency="Event - Per DAM Run",
+        retention_time="N/A",
+        columns=(
+            "deliverydate",
+            "hourending",
+            "settlementpoint",
+            "settlementpointprice",
+        ),
+        primary_key=("deliverydate", "hourending", "settlementpoint"),
+        date_columns=("deliverydate",),
+        numeric_columns=("hourending", "settlementpointprice"),
+        text_columns=("settlementpoint",),
+        default_params={"DSTFlag": "false"},
+        sql_data_types={
+            "hourending": "INTEGER",
+            "settlementpointprice": "DOUBLE PRECISION",
+        },
+        date_from_param="deliveryDateFrom",
+        date_to_param="deliveryDateTo",
+    ),
+    "settlement_point_prices": ErcotPublicReportConfig(
+        feed_name="settlement_point_prices",
+        emil_id="NP6-905-CD",
+        report_type_id=12301,
+        endpoint="np6-905-cd/spp_node_zone_hub",
+        display_name="Settlement Point Prices at Resource Nodes, Hubs and Load Zones",
+        category="Real-Time Market, Settlement Point Prices",
+        posting_frequency="Chron - 15 Minutes",
+        retention_time="N/A",
+        columns=(
+            "deliverydate",
+            "deliveryhour",
+            "deliveryinterval",
+            "settlementpoint",
+            "settlementpointtype",
+            "settlementpointprice",
+        ),
+        primary_key=(
+            "deliverydate",
+            "deliveryhour",
+            "deliveryinterval",
+            "settlementpoint",
+        ),
+        date_columns=("deliverydate",),
+        numeric_columns=(
+            "deliveryhour",
+            "deliveryinterval",
+            "settlementpointprice",
+        ),
+        text_columns=("settlementpoint", "settlementpointtype"),
+        default_params={"DSTFlag": "false"},
+        sql_data_types={
+            "deliveryhour": "INTEGER",
+            "deliveryinterval": "INTEGER",
+            "settlementpointprice": "DOUBLE PRECISION",
+        },
+        date_from_param="deliveryDateFrom",
+        date_to_param="deliveryDateTo",
+        default_lookback_days=1,
+        default_lookahead_days=0,
+    ),
+}
