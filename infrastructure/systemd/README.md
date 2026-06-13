@@ -154,7 +154,7 @@ journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 For the production health digest:
 
 ```bash
-systemctl status helios-prod-health-check.service
+systemctl show helios-prod-health-check.service -p Result -p ExecMainStatus -p ActiveState -p SubState --no-pager
 journalctl -u helios-prod-health-check.service -n 120 --no-pager
 ```
 
