@@ -48,6 +48,7 @@ A backend workflow is production-ready when it has:
 | API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical DA/RT readiness and support-batch freshness. |
+| Manual DA/RT backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
@@ -154,6 +155,19 @@ Scheduling:
 
 - `helios-prod-health-check.timer` runs at `10:15 UTC` after the RT verified
   five-minute workflow and at `16:30 UTC` after the DA workflow.
+
+## Manual Backfills
+
+Manual backfills are available for the two priority price workflows:
+
+- `backend.orchestration.power.pjm.da_hrl_lmps_backfill`
+- `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill`
+
+They call the same production orchestration/upsert paths as the scheduled
+jobs, write to the same canonical `pjm` tables, and tag PJM API telemetry with
+`run_mode=backfill` in `ops.api_fetch_log.metadata`. Use
+`docs/operations/manual-backfills.md` for exact VM commands and verification
+SQL. No separate backfill tables or timers are used.
 
 RT verified five-minute HRL LMP API note:
 

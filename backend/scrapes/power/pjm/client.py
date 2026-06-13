@@ -209,6 +209,7 @@ def fetch_csv(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     retry_delay_seconds: int = DEFAULT_RETRY_DELAY_SECONDS,
+    metadata: dict | None = None,
 ) -> pd.DataFrame:
     """Fetch a full CSV result set from PJM, iterating pages until exhausted.
 
@@ -229,6 +230,12 @@ def fetch_csv(
     truncated = True
     for page in range(1, max_pages + 1):
         page_params = {**base_params, "rowCount": page_size, "startRow": start_row}
+        request_metadata = {
+            **(metadata or {}),
+            "page": page,
+            "start_row": start_row,
+            "page_size": page_size,
+        }
         response = make_get_request(
             feed,
             page_params,
@@ -242,7 +249,7 @@ def fetch_csv(
             timeout=timeout,
             max_attempts=max_attempts,
             retry_delay_seconds=retry_delay_seconds,
-            metadata={"page": page, "start_row": start_row, "page_size": page_size},
+            metadata=request_metadata,
         )
 
         text = response.text

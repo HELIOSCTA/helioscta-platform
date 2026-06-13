@@ -112,6 +112,7 @@ def _wait_for_data_logged(
     params: dict[str, str | int],
     run_id: str | None = None,
     database: str | None = TARGET_DATABASE,
+    metadata: dict[str, Any] | None = None,
 ) -> requests.Response:
     """Run the polling fetch and write one resolved ops.api_fetch_log row.
 
@@ -148,7 +149,11 @@ def _wait_for_data_logged(
             attempt=_poll_count(),
             error_type=type(exc).__name__,
             error_message=redact_secrets(str(exc)),
-            metadata={"poll_count": _poll_count(), "poll_seconds": round(elapsed_ms / 1000, 1)},
+            metadata={
+                **(metadata or {}),
+                "poll_count": _poll_count(),
+                "poll_seconds": round(elapsed_ms / 1000, 1),
+            },
             database=database,
         )
         raise
@@ -172,7 +177,11 @@ def _wait_for_data_logged(
         elapsed_ms=elapsed_ms,
         attempt=poll_count,
         rows_returned=rows,
-        metadata={"poll_count": poll_count, "poll_seconds": round(elapsed_ms / 1000, 1)},
+        metadata={
+            **(metadata or {}),
+            "poll_count": poll_count,
+            "poll_seconds": round(elapsed_ms / 1000, 1),
+        },
         database=database,
     )
     return response
@@ -401,6 +410,8 @@ def main(
     start_date: str | None = None,
     end_date: str | None = None,
     database: str | None = None,
+    run_mode: str = "scheduled",
+    metadata: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
 
     target_day = datetime.now() + relativedelta(days=1)
@@ -417,6 +428,8 @@ def main(
 
     run_logger.header(API_SCRAPE_NAME)
     run_logger.info(f"Run ID: {run_id}")
+    run_logger.info(f"Run mode: {run_mode}")
+    fetch_metadata = {"run_mode": run_mode, **(metadata or {})}
     try:
 
         run_logger.section("Building request ...")
@@ -428,6 +441,7 @@ def main(
             params=params,
             run_id=run_id,
             database=database,
+            metadata=fetch_metadata,
         )
 
         run_logger.section("Pulling data ...")

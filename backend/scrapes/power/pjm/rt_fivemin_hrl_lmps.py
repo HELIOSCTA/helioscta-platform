@@ -89,12 +89,14 @@ def _pull(
     pnode_id_batch_size: int = DEFAULT_PNODE_ID_BATCH_SIZE,
     run_id: str | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame:
     """Pull one window of current verified five-minute RT LMP rows."""
     pnode_ids = _active_pricing_node_ids(
         pnode_types=pnode_types,
         run_id=run_id,
         database=database,
+        metadata=metadata,
     )
     if not pnode_ids:
         return pd.DataFrame()
@@ -114,6 +116,7 @@ def _pull(
             database=database,
             log_fetch=True,
             timeout=PJM_REQUEST_TIMEOUT_SECONDS,
+            metadata=metadata,
         )
         if not frame.empty:
             frames.append(frame)
@@ -149,9 +152,10 @@ def _active_pricing_node_ids(
     pnode_types: str | Iterable[str] | None = DEFAULT_PRICING_NODE_TYPES,
     run_id: str | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> list[int]:
     """Resolve active pnode IDs for the requested aggregate pricing-node scope."""
-    nodes = pnode._pull(run_id=run_id, database=database)
+    nodes = pnode._pull(run_id=run_id, database=database, metadata=metadata)
     if nodes.empty:
         return []
 

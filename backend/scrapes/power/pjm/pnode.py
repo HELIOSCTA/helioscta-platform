@@ -78,9 +78,15 @@ CONFIG = DataMinerFeedConfig(
 def _pull(
     run_id: str | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ):
     """Pull the active PJM pricing-node reference table."""
-    return pull_feed_window(CONFIG, run_id=run_id, database=database)
+    return pull_feed_window(
+        CONFIG,
+        run_id=run_id,
+        database=database,
+        metadata=metadata,
+    )
 
 
 def _upsert(

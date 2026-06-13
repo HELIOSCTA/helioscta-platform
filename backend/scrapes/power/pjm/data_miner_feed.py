@@ -62,6 +62,7 @@ def pull_feed_window(
     pnode_types: str | Iterable[str] | None = None,
     run_id: str | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame:
     """Pull and normalize one PJM Data Miner 2 feed window."""
     params = dict(config.static_params)
@@ -80,6 +81,7 @@ def pull_feed_window(
         "database": database,
         "log_fetch": True,
         "timeout": client.DEFAULT_TIMEOUT_SECONDS,
+        "metadata": metadata,
     }
     if config.pricing_node_types is not None:
         df = fetch_csv_for_pricing_node_types(

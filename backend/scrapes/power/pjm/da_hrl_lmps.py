@@ -72,6 +72,7 @@ def _pull(
         end_date: str,
         run_id: str | None = None,
         database: str | None = None,
+        metadata: dict | None = None,
     ) -> pd.DataFrame:
     """Pull PJM day-ahead hourly hub LMPs."""
 
@@ -86,6 +87,7 @@ def _pull(
         target_table=TARGET_TABLE_FQN,
         database=database,
         log_fetch=True,
+        metadata=metadata,
     )
 
     if df.empty:

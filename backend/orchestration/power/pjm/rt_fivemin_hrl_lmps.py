@@ -53,6 +53,8 @@ def main(
     pnode_types: str | Iterable[str] | None = DEFAULT_PRICING_NODE_TYPES,
     pnode_id_batch_size: int = scrape.DEFAULT_PNODE_ID_BATCH_SIZE,
     database: str | None = None,
+    run_mode: str = "scheduled",
+    metadata: dict[str, Any] | None = None,
 ) -> pd.DataFrame | None:
     """Run the verified five-minute RT LMP workflow and emit readiness events."""
     now = datetime.now()
@@ -73,7 +75,9 @@ def main(
     try:
         run_logger.header(API_SCRAPE_NAME)
         run_logger.info(f"Run ID: {run_id}")
+        run_logger.info(f"Run mode: {run_mode}")
         run_logger.info(f"Pricing node scope: {node_scope}")
+        fetch_metadata = {"run_mode": run_mode, **(metadata or {})}
 
         current_date = start_date
         while current_date <= end_date:
@@ -92,6 +96,7 @@ def main(
                 pnode_id_batch_size=pnode_id_batch_size,
                 run_id=run_id,
                 database=database,
+                metadata=fetch_metadata,
             )
 
             if df.empty:

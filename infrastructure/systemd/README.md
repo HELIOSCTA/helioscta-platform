@@ -103,6 +103,21 @@ API and table freshness. Recovered low-rate API failures are not surfaced as
 findings when the latest fetch succeeded. The timer runs at `10:15 UTC` and
 `16:30 UTC`.
 
+## Manual DA/RT Backfills
+
+DA hourly LMP and RT verified five-minute HRL LMP backfills are manual
+operator workflows, not timers:
+
+```text
+backend.orchestration.power.pjm.da_hrl_lmps_backfill
+backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill
+```
+
+Run them with `systemd-run` so `/etc/helioscta/backend.env` is loaded by
+systemd instead of shell-sourced. This avoids corrupting secrets that contain
+characters such as `$`. See `docs/operations/manual-backfills.md` for exact
+commands and verification SQL.
+
 ## Naming
 
 Use predictable names:

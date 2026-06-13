@@ -21,6 +21,7 @@ boundary, or log path changes.
 - Operator docs:
   - `docs/workflow-promotion-checklist.md`
   - `docs/operations/log-retention.md`
+  - `docs/operations/manual-backfills.md`
   - `docs/operations/vm-rebuild-runbook.md`
 - Verification:
   - GitHub Actions CI validates backend tests and dbt parse/critical compile.
