@@ -31,7 +31,7 @@ boundary, or log path changes.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
-- Deployed commit: `a234d8d3b8ae4b693849e625486e9e482ef8b78c`.
+- Deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
@@ -91,3 +91,24 @@ Operational notes:
   logs, or command history.
 - After future `git pull --ff-only` deployments, update this register with the
   VM commit, timer state, and verification result.
+
+## pjm-data-miner-scrape-modules
+
+- Status: code deployed to VM; tables and indexes applied in `helios_prod`;
+  no additional timers enabled.
+- Scope: 31 promoted PJM Data Miner scrape modules under
+  `backend.scrapes.power.pjm`.
+- Destination schema: `pjm`.
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
+- Deployed by: Aidan Keaveny via Codex.
+- Deployed at: `2026-06-13 02:17 UTC`.
+- Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
+  a server-side import smoke check loaded all 31 PJM scrape modules.
+- Scheduling posture: only `helios-da-hrl-lmps.timer` remains enabled. Do not
+  schedule the rest of the scrape modules until their production cadence,
+  overlap behavior, and data-readiness/telemetry requirements are selected.

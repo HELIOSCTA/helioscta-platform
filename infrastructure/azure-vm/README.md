@@ -24,7 +24,7 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Repo path: `/opt/helioscta-platform`.
 - Operator SSH user: `azureuser`.
 - Service user: `helios`.
-- Live deployed commit: `a234d8d3b8ae4b693849e625486e9e482ef8b78c`.
+- Live deployed commit: `1f20a127785fdfb83223a703a70fbd65828bd2b7`.
 - Timer: `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`,
   `Persistent=true`.
 
@@ -49,6 +49,11 @@ local Codex workspace
 The VM should run committed code only. Avoid editing production files directly
 on the server unless it is an emergency, and bring any emergency fix back into
 Git immediately.
+
+As of the deployed commit above, the promoted PJM Data Miner scrape modules are
+available on the VM and their database tables/indexes have been applied in
+`helios_prod`. Only `helios-da-hrl-lmps.timer` is enabled until feed-specific
+cadences and readiness/telemetry requirements are selected.
 
 ## Design Defaults
 
