@@ -1,0 +1,11 @@
+[Unit]
+Description=Run HeliosCTA ERCOT congestion support batch daily
+
+[Timer]
+OnCalendar=*-*-* 12:45:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+Unit=helios-ercot-congestion-batch.service
+
+[Install]
+WantedBy=timers.target

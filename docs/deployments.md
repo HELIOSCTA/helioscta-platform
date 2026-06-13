@@ -79,6 +79,25 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## ercot-congestion-batch
+
+- Status: promoted for VM deployment.
+- Runtime module: `backend.orchestration.power.ercot.congestion_batch`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.ercot.dam_shadow_prices`
+  - `backend.scrapes.power.ercot.sced_shadow_prices`
+- Destination tables:
+  - `ercot.dam_shadow_prices`
+  - `ercot.sced_shadow_prices`
+- Schedule: daily at `12:45 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
+  congestion day.
+- Systemd units:
+  - `infrastructure/systemd/helios-ercot-congestion-batch.service`
+  - `infrastructure/systemd/helios-ercot-congestion-batch.timer`
+- Journal logs: `journalctl -u helios-ercot-congestion-batch.service`.
+- Safe rerun story: upsert on each feed's source primary key.
+
 Verification SQL for data-availability events:
 
 ```sql

@@ -56,6 +56,9 @@ def normalize_public_report_frame(
     for column in config.datetime_columns:
         if column in df:
             df[column] = _coerce_datetime(df[column])
+    for column in config.boolean_columns:
+        if column in df:
+            df[column] = _coerce_boolean(df[column])
     for column in config.numeric_columns:
         if column in df:
             df[column] = _coerce_numeric(df[column])
@@ -167,10 +170,9 @@ def _date_window_params(
 ) -> dict[str, object]:
     if not config.date_from_param or not config.date_to_param:
         return {}
-    date_text = current_date.strftime("%Y-%m-%d")
     return {
-        config.date_from_param: date_text,
-        config.date_to_param: date_text,
+        config.date_from_param: current_date.strftime(config.date_from_format),
+        config.date_to_param: current_date.strftime(config.date_to_format),
     }
 
 
@@ -185,6 +187,8 @@ def _configured_sql_data_type(
         return "DATE"
     if column in config.datetime_columns:
         return "TIMESTAMP"
+    if column in config.boolean_columns:
+        return "BOOLEAN"
     if column in config.numeric_columns:
         return "DOUBLE PRECISION"
     if column in config.text_columns:
@@ -209,3 +213,13 @@ def _coerce_datetime(values: pd.Series) -> pd.Series:
 def _coerce_numeric(values: pd.Series) -> pd.Series:
     text_values = values.astype("string").str.strip().str.replace(":00", "", regex=False)
     return pd.to_numeric(text_values, errors="coerce")
+
+
+def _coerce_boolean(values: pd.Series) -> pd.Series:
+    return values.map(
+        lambda value: (
+            value
+            if isinstance(value, bool)
+            else str(value).strip().lower() in {"true", "t", "1", "yes", "y"}
+        )
+    )

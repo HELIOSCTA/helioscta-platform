@@ -39,14 +39,14 @@ there is a clear consumer for all nodes, zones, or resources.
 | dam_stlmnt_pnt_prices | NP4-190-CD | np4-190-cd/dam_stlmnt_pnt_prices | Deployed; daily critical timer |
 | settlement_point_prices | NP6-905-CD | np6-905-cd/spp_node_zone_hub | Deployed; 15-minute critical timer |
 | actual_system_load | NP6-346-CD | np6-346-cd/act_sys_load_by_fzn | Promoted; daily load support batch |
+| dam_shadow_prices | NP4-191-CD | np4-191-cd/dam_shadow_prices | Promoted; daily congestion support batch |
+| sced_shadow_prices | NP6-86-CD | np6-86-cd/shdw_prices_bnd_trns_const | Promoted; daily congestion support batch |
 | seven_day_load_forecast | NP3-565-CD | np3-565-cd/lf_by_model_weather_zone | Promoted; daily load support batch |
 
 ### Tier 1 - Promote Next
 
 | Feed area | Why pull |
 |---|---|
-| DAM shadow prices | Day-ahead congestion drivers |
-| SCED shadow prices | Real-time congestion drivers |
 | Wind and solar actuals | Renewable actual context for RT price and congestion |
 | Wind and solar forecasts | Forecast error and net-load signal |
 | Generation outages / capacity availability | Supply stack and risk context |
@@ -63,13 +63,11 @@ there is a clear consumer for all nodes, zones, or resources.
 
 ## Recommended Promotion Order
 
-1. DAM shadow prices
-2. SCED shadow prices
-3. Wind actuals
-4. Solar actuals
-5. Wind forecast
-6. Solar forecast
-7. Generation outage or capacity availability feed
+1. Wind actuals
+2. Solar actuals
+3. Wind forecast
+4. Solar forecast
+5. Generation outage or capacity availability feed
 
 ## Per-Feed Promotion Contract
 

@@ -113,3 +113,52 @@ workspace.
 - Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
   delivery date `2026-06-13` on `2026-06-13 17:48 UTC`, upserted 4,344 rows,
   and wrote successful ERCOT API telemetry.
+
+## DAM Shadow Prices
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP4-191-CD`, DAM Shadow Prices.
+- Report Type ID: `12332`.
+- Endpoint: `np4-191-cd/dam_shadow_prices`.
+- Runtime: `backend.scrapes.power.ercot.dam_shadow_prices`.
+- Batch orchestration: `backend.orchestration.power.ercot.congestion_batch`.
+- Destination: `ercot.dam_shadow_prices`.
+- Primary grain: delivery timestamp x constraint id x constraint name x
+  contingency name.
+- Primary key: `deliverytime`, `constraintid`, `constraintname`,
+  `contingencyname`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/dam_shadow_prices/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/dam_shadow_prices/table_ercot_dam_shadow_prices.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/dam_shadow_prices/index_ercot_dam_shadow_prices.sql`.
+- Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
+  `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
+  scheduled default pulls the prior complete delivery date.
+
+## SCED Shadow Prices
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP6-86-CD`, SCED Shadow Prices and Binding Transmission
+  Constraints.
+- Report Type ID: `12302`.
+- Endpoint: `np6-86-cd/shdw_prices_bnd_trns_const`.
+- Runtime: `backend.scrapes.power.ercot.sced_shadow_prices`.
+- Batch orchestration: `backend.orchestration.power.ercot.congestion_batch`.
+- Destination: `ercot.sced_shadow_prices`.
+- Primary grain: SCED timestamp x constraint id x constraint name x
+  contingency name.
+- Primary key: `scedtimestamp`, `constraintid`, `constraintname`,
+  `contingencyname`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/sced_shadow_prices/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/sced_shadow_prices/table_ercot_sced_shadow_prices.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/sced_shadow_prices/index_ercot_sced_shadow_prices.sql`.
+- Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
+  `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
+  scheduled default pulls the prior complete SCED day.
