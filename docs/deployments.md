@@ -148,8 +148,9 @@ Operational notes:
   `helioscta-platform-backend` ran the orchestration for business date
   `2026-06-13`, upserted 96 hub rows, and emitted
   `ercot_dam_stlmnt_pnt_prices:data_ready:2026-06-13:hub`.
-- VM deployment: working-tree overlay installed on `2026-06-13 17:30 UTC`;
-  commit/push still pending.
+- Deployed commit: `172be4d`.
+- VM deployment: working-tree overlay verified, committed, pushed, and
+  fast-forwarded on `/opt/helioscta-platform` on `2026-06-13 17:35 UTC`.
 - Last VM verification: `2026-06-13 17:31 UTC`; service exited
   `status=0/SUCCESS`, upserted 96 hub rows for delivery date `2026-06-13`,
   and observed existing readiness event
@@ -211,8 +212,9 @@ LIMIT 10;
   `helioscta-platform-backend` ran the scrape for delivery date
   `2026-06-13`, upserted 188 hub rows across 47 published intervals, and wrote
   successful ERCOT API telemetry for all four hubs.
-- VM deployment: working-tree overlay installed on `2026-06-13 17:30 UTC`;
-  commit/push still pending.
+- Deployed commit: `172be4d`.
+- VM deployment: working-tree overlay verified, committed, pushed, and
+  fast-forwarded on `/opt/helioscta-platform` on `2026-06-13 17:35 UTC`.
 - Last VM verification: `2026-06-13 17:31 UTC`; manual service run and first
   timer run exited `status=0/SUCCESS`, upserted 384 hub rows for complete
   delivery date `2026-06-12`, upserted 196 currently published hub rows for
