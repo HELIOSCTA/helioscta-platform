@@ -27,6 +27,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Live deployed commit: `ce465412d912a934063860e1107d6b03ba58b9fa`.
 - Timers:
   - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
+  - `helios-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
 
@@ -54,9 +56,10 @@ Git immediately.
 
 As of the deployed commit above, the promoted PJM Data Miner scrape modules are
 available on the VM and their database tables/indexes have been applied in
-`helios_prod`. `helios-pjm-data-miner-batch.timer` runs the 30 non-DA lower-level
-scrape modules daily; `helios-da-hrl-lmps.timer` remains the DA workflow because
-it emits the richer data-readiness event.
+`helios_prod`. `helios-da-hrl-lmps.timer` and
+`helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
+data-readiness events. `helios-pjm-data-miner-batch.timer` runs the remaining
+29 support lower-level scrape modules daily.
 
 ## Design Defaults
 
@@ -259,6 +262,8 @@ sudo -u helios -H /opt/helioscta-platform/.venv/bin/pip install \
   -r /opt/helioscta-platform/backend/requirements.txt \
   -e /opt/helioscta-platform/backend
 sudo systemctl restart helios-da-hrl-lmps.timer
+sudo systemctl restart helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl restart helios-pjm-data-miner-batch.timer
 systemctl list-timers 'helios-*'
 ```
 

@@ -7,12 +7,14 @@ factual deployment state in `docs/deployments.md`; keep VM mechanics in
 
 ## Current Maturity
 
-- DA hourly LMP workflow: production-ready first scheduled workflow.
+- DA hourly LMP workflow: production-ready scheduled workflow.
+- RT verified five-minute HRL LMP workflow: dedicated production workflow.
 - Backend repo: early production foundation.
 
-This means the DA workflow can run as a scheduled production job, but the repo
-is not yet a mature backend platform with automated deploys, monitoring,
-recovery, and full workflow lifecycle controls.
+This means the DA and priority verified five-minute RT LMP workflows can run as
+scheduled production jobs, but the repo is not yet a mature backend platform
+with automated deploys, monitoring, recovery, and full workflow lifecycle
+controls.
 
 ## Production-Ready Criteria
 
@@ -39,10 +41,11 @@ A backend workflow is production-ready when it has:
 | --- | --- | --- |
 | VM runtime | In place | `helioscta-prod-vm-01` runs committed code from `/opt/helioscta-platform`. |
 | DA LMP schedule | In place | `helios-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 30 non-DA promoted scrapes daily at `04:30 UTC`. |
+| RT verified five-minute HRL LMP schedule | In place | `helios-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 29 support scrapes daily at `04:30 UTC`. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | DA orchestration writes `ops.api_fetch_log`. |
-| Data readiness | In place | DA orchestration writes `ops.data_availability_events`. |
+| API telemetry | In place | Scheduled PJM API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | DA and priority RT verified five-minute orchestration write `ops.data_availability_events`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
 | Deployment register | In place | `docs/deployments.md` records host, commit, timer, and verification. |
 | Operator SQL | In progress | Application DDL is moving to disabled dbt operator SQL. |
@@ -106,6 +109,7 @@ on downstream value, feed update cadence, and database cost.
 | Feed | Default Posture | Rationale |
 | --- | --- | --- |
 | `da_hrl_lmps` | Scheduled daily with readiness event | Daily published data drives downstream reporting. |
+| `rt_fivemin_hrl_lmps` | Scheduled daily with readiness event | Priority verified five-minute RT price feed for hub, zone, and interface prices. |
 | `rt_hrl_lmps` | Scheduled daily in the PJM Data Miner batch | Useful, but not yet promoted to its own readiness workflow. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |

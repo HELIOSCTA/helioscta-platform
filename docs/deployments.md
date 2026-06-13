@@ -96,7 +96,9 @@ Operational notes:
 
 - Status: deployed; daily batch timer enabled.
 - Scope: 31 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`.
+  `backend.scrapes.power.pjm`; 29 support scrapes run through the shared batch
+  after `da_hrl_lmps` and `rt_fivemin_hrl_lmps` were promoted to dedicated
+  orchestration timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -115,6 +117,71 @@ Operational notes:
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-data-miner-batch.lock`.
-- Scheduling posture: the batch keeps all 30 non-DA lower-level scrape tables
-  fresh daily. `helios-da-hrl-lmps.timer` remains separate for the DA workflow
-  because it emits data-readiness events.
+- Scheduling posture: the batch keeps the non-priority support scrape tables
+  fresh daily. `helios-da-hrl-lmps.timer` and
+  `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
+  workflows emit data-readiness events.
+
+## helios-rt-fivemin-hrl-lmps
+
+- Status: pending deployment; unit files committed and ready to install.
+- Workflow: PJM verified five-minute Real-Time HRL LMP orchestration.
+- Runtime module: `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.rt_fivemin_hrl_lmps`.
+- Source system: PJM Data Miner 2 `rt_fivemin_hrl_lmps`.
+- Destination table: `pjm.rt_fivemin_hrl_lmps`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service`
+  - `infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- File log path: `/var/log/helioscta`.
+- Journal logs: `journalctl -u helios-rt-fivemin-hrl-lmps.service`.
+- Schedule: daily at `09:30 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Deployed commit: pending.
+- Verification: pending.
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'rt_fivemin_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_rt_fivemin_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```

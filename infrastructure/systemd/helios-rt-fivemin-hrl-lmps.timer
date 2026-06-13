@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM verified five-minute RT HRL LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 09:30:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-rt-fivemin-hrl-lmps.service
+
+[Install]
+WantedBy=timers.target

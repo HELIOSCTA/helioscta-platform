@@ -40,7 +40,7 @@ register records the exact deployed commit and verification state.
 
 ## PJM Data Miner Batch
 
-The promoted non-DA PJM Data Miner scrape modules are scheduled through one
+The promoted support PJM Data Miner scrape modules are scheduled through one
 daily batch timer:
 
 ```text
@@ -48,11 +48,25 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes the
-30 lower-level scrape modules that are not covered by
-`helios-da-hrl-lmps.timer`. The service uses `flock` with
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 29
+lower-level scrape modules that are not covered by dedicated priority timers.
+The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
+
+## RT Verified Five-Minute HRL LMPs
+
+The priority verified five-minute RT price workflow has its own timer:
+
+```text
+helios-rt-fivemin-hrl-lmps.service
+helios-rt-fivemin-hrl-lmps.timer
+```
+
+It runs `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`, which reuses the
+lower-level scrape, upserts `pjm.rt_fivemin_hrl_lmps`, and emits complete-day
+readiness events for hub, zone, and interface pricing nodes. The service uses
+`flock` with `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
 
 ## Naming
 
@@ -70,8 +84,11 @@ From the `azureuser` shell on the VM:
 ```bash
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
+sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
 ```
 
 `/opt/helioscta-platform` is owned for the `helios` service user. Run repo
@@ -83,6 +100,7 @@ Run the workflow once on demand:
 
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
+sudo systemctl start helios-rt-fivemin-hrl-lmps.service
 ```
 
 ## Verification
@@ -109,6 +127,14 @@ For the PJM Data Miner batch:
 systemctl status helios-pjm-data-miner-batch.service
 systemctl status helios-pjm-data-miner-batch.timer
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
+```
+
+For the RT verified five-minute HRL LMP workflow:
+
+```bash
+systemctl status helios-rt-fivemin-hrl-lmps.service
+systemctl status helios-rt-fivemin-hrl-lmps.timer
+journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

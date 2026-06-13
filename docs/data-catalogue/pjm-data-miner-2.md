@@ -185,7 +185,14 @@ Feed selection and promotion priority are documented in
   the `pnode` feed and queries `rt_fivemin_hrl_lmps` by `pnode_id` batches.
 - Uniqueness key: `datetime_beginning_utc`, `pnode_id`, `pnode_name`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.rt_fivemin_hrl_lmps`.
+- Scheduled orchestration:
+  `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.rt_fivemin_hrl_lmps`.
+- VM timer: `helios-rt-fivemin-hrl-lmps.timer`.
+- Runtime observability: `ops.api_fetch_log`.
+- Data availability output: `ops.data_availability_events` with event keys in
+  the shape
+  `pjm_rt_fivemin_hrl_lmps:data_ready:<YYYY-MM-DD>:hub_zone_interface`.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/rt_fivemin_hrl_lmps/`.
 - Manual table DDL:
