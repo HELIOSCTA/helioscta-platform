@@ -129,6 +129,22 @@ LIMIT 10;
   `2 succeeded, 0 failed`.
 - Next scheduled run observed: `2026-06-14 13:11:44 UTC`.
 
+## ercot-outage-capacity-batch
+
+- Status: promoted for VM deployment.
+- Runtime module: `backend.orchestration.power.ercot.outage_capacity_batch`.
+- Lower-level scrape module:
+  - `backend.scrapes.power.ercot.hourly_resource_outage_capacity`
+- Destination table: `ercot.hourly_resource_outage_capacity`.
+- Schedule: daily at `13:35 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; scheduled default pulls the prior complete
+  operating day.
+- Systemd units:
+  - `infrastructure/systemd/helios-ercot-outage-capacity-batch.service`
+  - `infrastructure/systemd/helios-ercot-outage-capacity-batch.timer`
+- Journal logs: `journalctl -u helios-ercot-outage-capacity-batch.service`.
+- Safe rerun story: upsert on the source primary key.
+
 Verification SQL for data-availability events:
 
 ```sql

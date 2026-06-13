@@ -43,13 +43,14 @@ there is a clear consumer for all nodes, zones, or resources.
 | sced_shadow_prices | NP6-86-CD | np6-86-cd/shdw_prices_bnd_trns_const | Promoted; daily congestion support batch |
 | wind_power_production_hourly | NP4-732-CD | np4-732-cd/wpp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
 | solar_power_production_hourly | NP4-737-CD | np4-737-cd/spp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
+| hourly_resource_outage_capacity | NP3-233-CD | np3-233-cd/hourly_res_outage_cap | Promoted; daily outage/capacity support batch |
 | seven_day_load_forecast | NP3-565-CD | np3-565-cd/lf_by_model_weather_zone | Promoted; daily load support batch |
 
 ### Tier 1 - Promote Next
 
 | Feed area | Why pull |
 |---|---|
-| Generation outages / capacity availability | Supply stack and risk context |
+| Capacity availability refinement | Additional resource availability context when a consumer needs it |
 
 ### Tier 2 - Promote When The Use Case Needs It
 
@@ -63,7 +64,7 @@ there is a clear consumer for all nodes, zones, or resources.
 
 ## Recommended Promotion Order
 
-1. Generation outage or capacity availability feed
+1. Capacity availability refinement feed
 
 ## Per-Feed Promotion Contract
 

@@ -225,3 +225,28 @@ workspace.
 - Manual smoke: VM service ran the renewables batch for delivery dates
   `2026-06-12` through `2026-06-20` on `2026-06-13 18:32 UTC` and upserted
   20,910 solar rows.
+
+## Hourly Resource Outage Capacity
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP3-233-CD`, Hourly Resource Outage Capacity.
+- Endpoint: `np3-233-cd/hourly_res_outage_cap`.
+- Runtime: `backend.scrapes.power.ercot.hourly_resource_outage_capacity`.
+- Batch orchestration: `backend.orchestration.power.ercot.outage_capacity_batch`.
+- Destination: `ercot.hourly_resource_outage_capacity`.
+- Primary grain: posted datetime x operating date x hour ending.
+- Primary key: `posteddatetime`, `operatingdate`, `hourending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/hourly_resource_outage_capacity/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/hourly_resource_outage_capacity/table_ercot_hourly_resource_outage_capacity.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/hourly_resource_outage_capacity/index_ercot_hourly_resource_outage_capacity.sql`.
+- Production schedule: through `helios-ercot-outage-capacity-batch.timer`,
+  daily at `13:35 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  operating day.
+- Data shape note: the raw ERCOT payload contains outage capacity by load zone
+  for total resources, IRR resources, and new equipment. dbt staging unpivots
+  those fields into hourly type x load-zone rows.

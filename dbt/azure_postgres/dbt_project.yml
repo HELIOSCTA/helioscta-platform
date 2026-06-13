@@ -269,6 +269,12 @@ models:
             +enabled: false
           index_ercot_solar_power_production_hourly:
             +enabled: false
+        hourly_resource_outage_capacity:
+          +materialized: ephemeral
+          table_ercot_hourly_resource_outage_capacity:
+            +enabled: false
+          index_ercot_hourly_resource_outage_capacity:
+            +enabled: false
         seven_day_load_forecast:
           +materialized: ephemeral
           table_ercot_seven_day_load_forecast:
