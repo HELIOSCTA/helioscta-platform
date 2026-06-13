@@ -12,18 +12,34 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       DBT_POSTGRES_HOST: localhost
       DBT_POSTGRES_READONLY_USER: helios_readonly
       DBT_POSTGRES_READONLY_PASSWORD: ci_dummy_password
       DBT_POSTGRES_PORT: "5432"
       DBT_POSTGRES_DBNAME: helios_prod
 
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: helios_readonly
+          POSTGRES_PASSWORD: ci_dummy_password
+          POSTGRES_DB: helios_prod
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U helios_readonly -d helios_prod"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Check out repo
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.10"
           cache: pip
