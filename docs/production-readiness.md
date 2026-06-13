@@ -138,6 +138,10 @@ five-minute readiness events, RT five-minute table shape, duplicate keys,
 recent critical API fetch failures, support-batch API/table freshness,
 systemd service results, and `helios-*` timer schedule.
 
+Recovered API failures are not findings when the latest fetch succeeded and
+the failure rate is low. The digest warns on an API path when the latest fetch
+is still failed or when failures dominate the health window.
+
 Exit codes:
 
 - `0`: no critical failures.

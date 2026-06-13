@@ -99,7 +99,9 @@ It runs `backend.orchestration.health.prod_health_check` with the same
 `/etc/helioscta/backend.env` credential boundary as scheduled scrapes. It does
 not send alerts; use `journalctl` to read the digest after a manual or
 scheduled run. The digest checks critical DA/RT readiness plus support-batch
-API and table freshness. The timer runs at `10:15 UTC` and `16:30 UTC`.
+API and table freshness. Recovered low-rate API failures are not surfaced as
+findings when the latest fetch succeeded. The timer runs at `10:15 UTC` and
+`16:30 UTC`.
 
 ## Naming
 

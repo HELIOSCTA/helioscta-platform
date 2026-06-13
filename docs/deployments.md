@@ -211,6 +211,8 @@ Operational notes:
   duplicate keys, support-batch coverage of `api=29/29` and `tables=29/29`,
   and all critical service results as `success`. Findings were warning-only
   historical critical API fetch failures in the 24-hour window.
+- API failure findings now warn only when the latest fetch failed or recovered
+  failures dominate the health window.
 - Next scheduled run observed: `2026-06-13 10:16:43 UTC`.
 
 Verification SQL for API telemetry:

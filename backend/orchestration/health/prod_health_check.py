@@ -60,6 +60,7 @@ DEFAULT_LOOKBACK_HOURS = 24
 MAX_DA_BUSINESS_DATE_LAG_DAYS = 1
 MAX_RT_BUSINESS_DATE_LAG_DAYS = 4
 MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
+MAX_RECOVERED_API_FAILURE_RATE = 0.5
 
 
 @dataclass(frozen=True)
@@ -291,17 +292,42 @@ def _api_fetch_summary(
 ) -> list[dict[str, Any]]:
     rows = db.execute_sql(
         """
+        WITH windowed AS (
+            SELECT
+                pipeline_name,
+                status,
+                http_status,
+                rows_returned,
+                created_at
+            FROM ops.api_fetch_log
+            WHERE pipeline_name = ANY(%s)
+              AND created_at >= NOW() - (%s || ' hours')::interval
+        ),
+        latest AS (
+            SELECT DISTINCT ON (pipeline_name)
+                pipeline_name,
+                status AS latest_status,
+                http_status AS latest_http_status,
+                created_at AS last_fetch_at
+            FROM windowed
+            ORDER BY pipeline_name, created_at DESC
+        )
         SELECT
-            pipeline_name,
+            windowed.pipeline_name,
             COUNT(*) AS fetch_count,
-            COUNT(*) FILTER (WHERE status <> 'success') AS failure_count,
-            COALESCE(SUM(rows_returned), 0) AS rows_returned,
-            MAX(created_at) AS last_fetch_at
-        FROM ops.api_fetch_log
-        WHERE pipeline_name = ANY(%s)
-          AND created_at >= NOW() - (%s || ' hours')::interval
-        GROUP BY pipeline_name
-        ORDER BY pipeline_name;
+            COUNT(*) FILTER (WHERE windowed.status <> 'success') AS failure_count,
+            COALESCE(SUM(windowed.rows_returned), 0) AS rows_returned,
+            latest.latest_status,
+            latest.latest_http_status,
+            latest.last_fetch_at
+        FROM windowed
+        JOIN latest USING (pipeline_name)
+        GROUP BY
+            windowed.pipeline_name,
+            latest.latest_status,
+            latest.latest_http_status,
+            latest.last_fetch_at
+        ORDER BY windowed.pipeline_name;
         """,
         params=(list(pipeline_names), lookback_hours),
         database=database,
@@ -490,15 +516,9 @@ def _evaluate_health(
         )
 
     for row in api_summary:
-        failure_count = int(row["failure_count"])
-        if failure_count > 0:
-            issues.append(
-                HealthIssue(
-                    "WARN",
-                    str(row["pipeline_name"]),
-                    f"{failure_count} API fetch failures in the health window.",
-                )
-            )
+        issue = _api_fetch_issue(row=row, subject=str(row["pipeline_name"]))
+        if issue is not None:
+            issues.append(issue)
 
     observed_pipelines = {row["pipeline_name"] for row in api_summary}
     for pipeline_name in CRITICAL_PIPELINES:
@@ -526,15 +546,9 @@ def _evaluate_health(
             )
             continue
 
-        failure_count = int(row["failure_count"])
-        if failure_count > 0:
-            issues.append(
-                HealthIssue(
-                    "WARN",
-                    pipeline_name,
-                    f"{failure_count} support-batch API fetch failures in the health window.",
-                )
-            )
+        issue = _api_fetch_issue(row=row, subject=pipeline_name, label="support-batch")
+        if issue is not None:
+            issues.append(issue)
 
     support_tables_by_feed = {
         str(row["feed_name"]): row for row in support_table_summary
@@ -649,6 +663,44 @@ def _evaluate_readiness(
     return issues
 
 
+def _api_fetch_issue(
+    *,
+    row: dict[str, Any],
+    subject: str,
+    label: str = "API",
+) -> HealthIssue | None:
+    failure_count = int(row["failure_count"])
+    if failure_count == 0:
+        return None
+
+    fetch_count = int(row["fetch_count"])
+    latest_status = str(row.get("latest_status") or "")
+    latest_http_status = row.get("latest_http_status")
+    if latest_status != "success":
+        return HealthIssue(
+            "WARN",
+            subject,
+            (
+                f"Latest {label} fetch status is {latest_status} "
+                f"(HTTP {latest_http_status}); {failure_count}/{fetch_count} "
+                "fetches failed in the health window."
+            ),
+        )
+
+    failure_rate = failure_count / fetch_count if fetch_count else 0
+    if failure_rate > MAX_RECOVERED_API_FAILURE_RATE:
+        return HealthIssue(
+            "WARN",
+            subject,
+            (
+                f"{failure_count}/{fetch_count} {label} fetches failed in the "
+                "health window, despite latest fetch recovery."
+            ),
+        )
+
+    return None
+
+
 def _format_readiness(label: str, readiness: dict[str, Any] | None) -> str:
     if readiness is None:
         return f"- {label}: MISSING"
@@ -680,6 +732,7 @@ def _format_api_summary(rows: list[dict[str, Any]]) -> list[str]:
         (
             f"- {row['pipeline_name']}: fetches={row['fetch_count']}, "
             f"failures={row['failure_count']}, rows_returned={row['rows_returned']}, "
+            f"latest_status={row.get('latest_status', 'unknown')}, "
             f"last_fetch_at={_format_value(row['last_fetch_at'])}"
         )
         for row in rows
@@ -706,7 +759,7 @@ def _format_support_batch_summary(
         last_fetch_at = "NULL"
         failure_count = "NULL"
         if api_row is not None:
-            api_status = "ok" if int(api_row["failure_count"]) == 0 else "warn"
+            api_status = str(api_row.get("latest_status") or "unknown")
             last_fetch_at = _format_value(api_row["last_fetch_at"])
             failure_count = str(api_row["failure_count"])
 
