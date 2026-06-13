@@ -131,7 +131,7 @@ LIMIT 10;
 
 ## ercot-renewables-5min-batch
 
-- Status: pending deployment.
+- Status: deployed; timer enabled and latest manual run succeeded.
 - Runtime module: `backend.orchestration.power.ercot.renewables_5min_batch`.
 - Lower-level scrape modules:
   - `backend.scrapes.power.ercot.wind_power_actual_5min`
@@ -147,8 +147,11 @@ LIMIT 10;
   - `infrastructure/systemd/helios-ercot-renewables-5min-batch.timer`
 - Journal logs: `journalctl -u helios-ercot-renewables-5min-batch.service`.
 - Safe rerun story: upsert on each feed's source primary key.
-- Deployed commit: pending.
-- Latest manual verification: pending.
+- Deployed commit: `a32d01e`.
+- Latest manual verification: `2026-06-13 19:06:14 UTC`; service exited
+  `status=0/SUCCESS`, ran interval-ending day `2026-06-12`, upserted 3,456
+  wind rows and 3,456 solar rows, and completed with `2 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-14 13:28:28 UTC`.
 
 ## ercot-outage-capacity-batch
 
@@ -447,13 +450,14 @@ LIMIT 10;
 - First enabled at: `2026-06-13 03:08 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Deployed by: Aidan Keaveny via Codex.
-- Last manual verification: `2026-06-13 04:19:39 UTC`; service exited
-  `status=0/SUCCESS`, reported complete DA readiness for `2026-06-13`,
-  complete RT verified five-minute HRL readiness for `2026-06-11`, zero
-  duplicate keys, support-batch coverage of `api=29/29` and `tables=29/29`,
-  all support API latest statuses as `success`, and all critical service
-  results as `success`. Findings result was `PASS: no critical failures or
-  warnings detected`.
+- Last manual verification: `2026-06-13 19:06:23 UTC`; service exited
+  `status=0/SUCCESS`, reported complete DA readiness for `2026-06-14`,
+  complete RT verified five-minute HRL readiness for `2026-06-11`, complete
+  ERCOT DAM SPP readiness for `2026-06-13`, complete ERCOT RT SPP readiness
+  for `2026-06-12`, zero duplicate keys, support-batch coverage of `api=38/38`
+  and `tables=38/38`, all support API latest statuses as `success`, and all
+  critical/support service results as `success`. Findings result was
+  `PASS: no critical failures or warnings detected`.
 - API failure findings now warn only when the latest fetch failed or recovered
   failures dominate the health window.
 - Next scheduled run observed: `2026-06-13 10:16:43 UTC`.
