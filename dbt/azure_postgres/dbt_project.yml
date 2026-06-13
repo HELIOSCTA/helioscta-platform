@@ -269,6 +269,18 @@ models:
             +enabled: false
           index_ercot_solar_power_production_hourly:
             +enabled: false
+        wind_power_actual_5min:
+          +materialized: ephemeral
+          table_ercot_wind_power_actual_5min:
+            +enabled: false
+          index_ercot_wind_power_actual_5min:
+            +enabled: false
+        solar_power_actual_5min:
+          +materialized: ephemeral
+          table_ercot_solar_power_actual_5min:
+            +enabled: false
+          index_ercot_solar_power_actual_5min:
+            +enabled: false
         hourly_resource_outage_capacity:
           +materialized: ephemeral
           table_ercot_hourly_resource_outage_capacity:

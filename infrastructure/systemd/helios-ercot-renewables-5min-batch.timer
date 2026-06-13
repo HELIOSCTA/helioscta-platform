@@ -1,0 +1,11 @@
+[Unit]
+Description=Run HeliosCTA ERCOT 5-minute renewables actual support batch daily
+
+[Timer]
+OnCalendar=*-*-* 13:25:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+Unit=helios-ercot-renewables-5min-batch.service
+
+[Install]
+WantedBy=timers.target

@@ -24,37 +24,82 @@ CRITICAL_SERVICES: tuple[str, ...] = (
 )
 SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-data-miner-batch.service",
+    "helios-ercot-load-batch.service",
+    "helios-ercot-congestion-batch.service",
+    "helios-ercot-renewables-batch.service",
+    "helios-ercot-renewables-5min-batch.service",
+    "helios-ercot-outage-capacity-batch.service",
 )
-SUPPORT_BATCH_PIPELINES: tuple[str, ...] = (
-    "act_sch_interchange",
-    "agg_definitions",
-    "ancillary_services",
-    "da_interface_flows_and_limits",
-    "da_marginal_value",
-    "da_transconstraints",
-    "day_gen_capacity",
-    "dispatched_reserves",
-    "five_min_solar_generation",
-    "five_min_tie_flows",
-    "frcstd_gen_outages",
-    "gen_outages_by_type",
-    "hrl_dmd_bids",
-    "hrl_load_metered",
-    "hrl_load_prelim",
-    "load_frcstd_7_day",
-    "load_frcstd_hist",
-    "pnode",
-    "reserve_market_results",
-    "rt_default_mv_override",
-    "rt_dispatch_reserves",
-    "rt_fivemin_mnt_lmps",
-    "rt_hrl_lmps",
-    "rt_marginal_value",
-    "rt_short_term_mv_override",
-    "rt_unverified_hrl_lmps",
-    "solar_gen",
-    "unverified_five_min_lmps",
-    "wind_gen",
+
+
+@dataclass(frozen=True)
+class SupportFeed:
+    pipeline_name: str
+    table_schema: str
+    table_name: str
+
+
+PJM_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
+    SupportFeed("act_sch_interchange", "pjm", "act_sch_interchange"),
+    SupportFeed("agg_definitions", "pjm", "agg_definitions"),
+    SupportFeed("ancillary_services", "pjm", "ancillary_services"),
+    SupportFeed(
+        "da_interface_flows_and_limits",
+        "pjm",
+        "da_interface_flows_and_limits",
+    ),
+    SupportFeed("da_marginal_value", "pjm", "da_marginal_value"),
+    SupportFeed("da_transconstraints", "pjm", "da_transconstraints"),
+    SupportFeed("day_gen_capacity", "pjm", "day_gen_capacity"),
+    SupportFeed("dispatched_reserves", "pjm", "dispatched_reserves"),
+    SupportFeed("five_min_solar_generation", "pjm", "five_min_solar_generation"),
+    SupportFeed("five_min_tie_flows", "pjm", "five_min_tie_flows"),
+    SupportFeed("frcstd_gen_outages", "pjm", "frcstd_gen_outages"),
+    SupportFeed("gen_outages_by_type", "pjm", "gen_outages_by_type"),
+    SupportFeed("hrl_dmd_bids", "pjm", "hrl_dmd_bids"),
+    SupportFeed("hrl_load_metered", "pjm", "hrl_load_metered"),
+    SupportFeed("hrl_load_prelim", "pjm", "hrl_load_prelim"),
+    SupportFeed("load_frcstd_7_day", "pjm", "load_frcstd_7_day"),
+    SupportFeed("load_frcstd_hist", "pjm", "load_frcstd_hist"),
+    SupportFeed("pnode", "pjm", "pnode"),
+    SupportFeed("reserve_market_results", "pjm", "reserve_market_results"),
+    SupportFeed("rt_default_mv_override", "pjm", "rt_default_mv_override"),
+    SupportFeed("rt_dispatch_reserves", "pjm", "rt_dispatch_reserves"),
+    SupportFeed("rt_fivemin_mnt_lmps", "pjm", "rt_fivemin_mnt_lmps"),
+    SupportFeed("rt_hrl_lmps", "pjm", "rt_hrl_lmps"),
+    SupportFeed("rt_marginal_value", "pjm", "rt_marginal_value"),
+    SupportFeed("rt_short_term_mv_override", "pjm", "rt_short_term_mv_override"),
+    SupportFeed("rt_unverified_hrl_lmps", "pjm", "rt_unverified_hrl_lmps"),
+    SupportFeed("solar_gen", "pjm", "solar_gen"),
+    SupportFeed("unverified_five_min_lmps", "pjm", "unverified_five_min_lmps"),
+    SupportFeed("wind_gen", "pjm", "wind_gen"),
+)
+ERCOT_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
+    SupportFeed("actual_system_load", "ercot", "actual_system_load"),
+    SupportFeed("seven_day_load_forecast", "ercot", "seven_day_load_forecast"),
+    SupportFeed("dam_shadow_prices", "ercot", "dam_shadow_prices"),
+    SupportFeed("sced_shadow_prices", "ercot", "sced_shadow_prices"),
+    SupportFeed(
+        "wind_power_production_hourly",
+        "ercot",
+        "wind_power_production_hourly",
+    ),
+    SupportFeed(
+        "solar_power_production_hourly",
+        "ercot",
+        "solar_power_production_hourly",
+    ),
+    SupportFeed("wind_power_actual_5min", "ercot", "wind_power_actual_5min"),
+    SupportFeed("solar_power_actual_5min", "ercot", "solar_power_actual_5min"),
+    SupportFeed(
+        "hourly_resource_outage_capacity",
+        "ercot",
+        "hourly_resource_outage_capacity",
+    ),
+)
+SUPPORT_FEEDS: tuple[SupportFeed, ...] = PJM_SUPPORT_FEEDS + ERCOT_SUPPORT_FEEDS
+SUPPORT_BATCH_PIPELINES: tuple[str, ...] = tuple(
+    feed.pipeline_name for feed in SUPPORT_FEEDS
 )
 HELIOS_TIMER_PATTERN = "helios-*"
 DA_DATASET = "pjm_da_hrl_lmps"
@@ -363,12 +408,13 @@ def _support_table_summary(database: str | None) -> list[dict[str, Any]]:
     union_sql = " UNION ALL\n".join(
         (
             "SELECT "
-            f"'{pipeline_name}' AS feed_name, "
+            f"'{feed.pipeline_name}' AS feed_name, "
+            f"'{feed.table_schema}.{feed.table_name}' AS table_name, "
             "COUNT(*)::bigint AS row_count, "
             "MAX(updated_at) AS latest_updated_at "
-            f"FROM pjm.{pipeline_name}"
+            f'FROM "{feed.table_schema}"."{feed.table_name}"'
         )
-        for pipeline_name in SUPPORT_BATCH_PIPELINES
+        for feed in SUPPORT_FEEDS
     )
     rows = db.execute_sql(
         f"""

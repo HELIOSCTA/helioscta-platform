@@ -49,7 +49,7 @@ A backend workflow is production-ready when it has:
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
-| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and support-batch freshness. |
+| Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual DA/RT backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
@@ -139,8 +139,9 @@ journalctl -u helios-prod-health-check.service -n 220 --no-pager
 The service uses `/etc/helioscta/backend.env`, matching the production scrape
 jobs. The digest is read-only. It checks the latest PJM DA, PJM RT verified
 five-minute, ERCOT DAM SPP, and ERCOT RT SPP readiness events, RT five-minute
-table shape, duplicate keys, recent critical API fetch failures, support-batch
-API/table freshness, systemd service results, and `helios-*` timer schedule.
+table shape, duplicate keys, recent critical API fetch failures, PJM/ERCOT
+support-batch API/table freshness, systemd service results, and `helios-*`
+timer schedule.
 
 Recovered API failures are not findings when the latest fetch succeeded and
 the failure rate is low. The digest warns on an API path when the latest fetch

@@ -164,6 +164,21 @@ pulls yesterday through seven days forward so the same source payload captures
 completed actual generation and the current forecast curve. The timer runs
 daily at `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
 
+## ERCOT 5-Minute Renewables Actual Batch
+
+The ERCOT 5-minute renewable actual support feeds run through one daily batch
+timer:
+
+```text
+helios-ercot-renewables-5min-batch.service
+helios-ercot-renewables-5min-batch.timer
+```
+
+It runs `backend.orchestration.power.ercot.renewables_5min_batch`, which
+executes `wind_power_actual_5min` and `solar_power_actual_5min`. The batch
+pulls the prior complete interval-ending day. The timer runs daily at
+`13:25 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+
 ## ERCOT Outage/Capacity Batch
 
 The ERCOT outage and capacity support feeds run through one daily batch timer:
@@ -222,6 +237,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-b
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-batch.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-5min-batch.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-5min-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capacity-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capacity-batch.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
@@ -234,6 +251,7 @@ sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-batch.timer
+sudo systemctl enable --now helios-ercot-renewables-5min-batch.timer
 sudo systemctl enable --now helios-ercot-outage-capacity-batch.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
@@ -253,6 +271,7 @@ sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
 sudo systemctl start helios-ercot-renewables-batch.service
+sudo systemctl start helios-ercot-renewables-5min-batch.service
 sudo systemctl start helios-ercot-outage-capacity-batch.service
 sudo systemctl start helios-prod-health-check.service
 ```
@@ -332,6 +351,14 @@ For the ERCOT renewables batch:
 systemctl status helios-ercot-renewables-batch.service
 systemctl status helios-ercot-renewables-batch.timer
 journalctl -u helios-ercot-renewables-batch.service -n 200 --no-pager
+```
+
+For the ERCOT 5-minute renewables actual batch:
+
+```bash
+systemctl status helios-ercot-renewables-5min-batch.service
+systemctl status helios-ercot-renewables-5min-batch.timer
+journalctl -u helios-ercot-renewables-5min-batch.service -n 200 --no-pager
 ```
 
 For the ERCOT outage/capacity batch:

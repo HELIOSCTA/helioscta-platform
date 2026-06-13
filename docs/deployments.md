@@ -129,6 +129,27 @@ LIMIT 10;
   `2 succeeded, 0 failed`.
 - Next scheduled run observed: `2026-06-14 13:11:44 UTC`.
 
+## ercot-renewables-5min-batch
+
+- Status: pending deployment.
+- Runtime module: `backend.orchestration.power.ercot.renewables_5min_batch`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.ercot.wind_power_actual_5min`
+  - `backend.scrapes.power.ercot.solar_power_actual_5min`
+- Destination tables:
+  - `ercot.wind_power_actual_5min`
+  - `ercot.solar_power_actual_5min`
+- Schedule: daily at `13:25 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
+  interval-ending day.
+- Systemd units:
+  - `infrastructure/systemd/helios-ercot-renewables-5min-batch.service`
+  - `infrastructure/systemd/helios-ercot-renewables-5min-batch.timer`
+- Journal logs: `journalctl -u helios-ercot-renewables-5min-batch.service`.
+- Safe rerun story: upsert on each feed's source primary key.
+- Deployed commit: pending.
+- Latest manual verification: pending.
+
 ## ercot-outage-capacity-batch
 
 - Status: deployed; timer enabled and latest manual run succeeded.

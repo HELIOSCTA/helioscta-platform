@@ -226,6 +226,60 @@ workspace.
   `2026-06-12` through `2026-06-20` on `2026-06-13 18:32 UTC` and upserted
   20,910 solar rows.
 
+## Wind Power Actual 5-Minute
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP4-733-CD`, Wind Power Production - Actual 5-Minute
+  Averaged Values.
+- Report Type ID: `13071`.
+- Endpoint: `np4-733-cd/wpp_actual_5min_avg_values`.
+- Runtime: `backend.scrapes.power.ercot.wind_power_actual_5min`.
+- Batch orchestration: `backend.orchestration.power.ercot.renewables_5min_batch`.
+- Destination: `ercot.wind_power_actual_5min`.
+- Primary grain: posted datetime x interval ending.
+- Primary key: `posteddatetime`, `intervalending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/wind_power_actual_5min/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/wind_power_actual_5min/table_ercot_wind_power_actual_5min.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/wind_power_actual_5min/index_ercot_wind_power_actual_5min.sql`.
+- Production schedule: through `helios-ercot-renewables-5min-batch.timer`,
+  daily at `13:25 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  interval-ending day.
+- Data shape note: the raw ERCOT payload contains repeated posted snapshots
+  for each 5-minute interval. dbt staging unpivots system-wide and load-zone
+  actual generation into 5-minute region rows.
+
+## Solar Power Actual 5-Minute
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP4-738-CD`, Solar Power Production - Actual 5-Minute
+  Averaged Values.
+- Report Type ID: `13484`.
+- Endpoint: `np4-738-cd/spp_actual_5min_avg_values`.
+- Runtime: `backend.scrapes.power.ercot.solar_power_actual_5min`.
+- Batch orchestration: `backend.orchestration.power.ercot.renewables_5min_batch`.
+- Destination: `ercot.solar_power_actual_5min`.
+- Primary grain: posted datetime x interval ending.
+- Primary key: `posteddatetime`, `intervalending`.
+- Safe rerun story: upsert on the primary key.
+- dbt folder:
+  `dbt/azure_postgres/models/power/ercot/solar_power_actual_5min/`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/ercot/solar_power_actual_5min/table_ercot_solar_power_actual_5min.sql`
+  and
+  `dbt/azure_postgres/models/power/ercot/solar_power_actual_5min/index_ercot_solar_power_actual_5min.sql`.
+- Production schedule: through `helios-ercot-renewables-5min-batch.timer`,
+  daily at `13:25 UTC` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  interval-ending day.
+- Data shape note: the raw ERCOT payload contains repeated posted snapshots
+  for each 5-minute interval. dbt staging exposes a system-wide actual
+  generation row.
+
 ## Hourly Resource Outage Capacity
 
 - Source system: ERCOT Public Reports API.
