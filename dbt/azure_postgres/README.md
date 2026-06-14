@@ -225,12 +225,16 @@ models/power/isone/hourly_system_demand/
 models/power/isone/hourly_system_demand/isone_hourly_system_demand/
 models/power/isone/da_hrl_cleared_demand/
 models/power/isone/da_hrl_cleared_demand/isone_da_hrl_cleared_demand/
+models/power/isone/forecast_feeds/
+models/power/isone/forecast_feeds/isone_forecast_feeds/
 ```
 
 `table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled
 operator SQL, as are the matching RT final, RT preliminary, hourly system
 demand, and day-ahead hourly cleared demand table and index files. The enabled
-models are read-only validation/query shaping only.
+models are read-only validation/query shaping only. ISO-NE forecast batch
+table and index SQL under `models/power/isone/forecast_feeds/` follows the
+same disabled-operator-SQL pattern.
 
 Compile the ISO-NE DA LMP query-shaping models with:
 

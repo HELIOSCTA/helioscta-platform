@@ -136,6 +136,8 @@ helios-isone-hourly-system-demand.service
 helios-isone-hourly-system-demand.timer
 helios-isone-da-hrl-cleared-demand.service
 helios-isone-da-hrl-cleared-demand.timer
+helios-isone-forecast-batch.service
+helios-isone-forecast-batch.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
@@ -169,6 +171,12 @@ The day-ahead cleared demand workflow runs
 Eastern operating-date hourly day-ahead cleared demand rows into
 `isone.da_hrl_cleared_demand`, and emits a complete-date system readiness
 signal. The timer runs daily at `17:20 UTC` with `Persistent=true` and
+`RandomizedDelaySec=5min`.
+
+The forecast batch runs `backend.orchestration.power.isone.forecast_batch` and
+upserts the three-day reliability-region demand forecast, seven-day capacity
+forecast, seven-day wind forecast, and seven-day solar forecast tables. The
+timer runs daily at `15:20 UTC` with `Persistent=true` and
 `RandomizedDelaySec=5min`.
 
 ## ERCOT Load Batch
@@ -302,6 +310,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-hourly-syste
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-hourly-system-demand.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-cleared-demand.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-cleared-demand.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-batch.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-batch.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -319,6 +329,7 @@ sudo systemctl enable --now helios-isone-rt-hrl-lmps-prelim.timer
 sudo systemctl enable --now helios-isone-rt-hrl-lmps-final.timer
 sudo systemctl enable --now helios-isone-hourly-system-demand.timer
 sudo systemctl enable --now helios-isone-da-hrl-cleared-demand.timer
+sudo systemctl enable --now helios-isone-forecast-batch.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -456,6 +467,9 @@ journalctl -u helios-isone-hourly-system-demand.service -n 200 --no-pager
 systemctl status helios-isone-da-hrl-cleared-demand.service
 systemctl status helios-isone-da-hrl-cleared-demand.timer
 journalctl -u helios-isone-da-hrl-cleared-demand.service -n 200 --no-pager
+systemctl status helios-isone-forecast-batch.service
+systemctl status helios-isone-forecast-batch.timer
+journalctl -u helios-isone-forecast-batch.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

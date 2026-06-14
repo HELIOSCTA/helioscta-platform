@@ -54,7 +54,10 @@ ISO-NE-specific credentials. The promoted ISO-NE runtime modules live under
 by disabled operator SQL under `dbt/azure_postgres/models/power/isone/`.
 Promoted feeds currently cover DA hourly LMPs, final RT hourly LMPs,
 preliminary RT hourly LMPs, hourly system demand, and day-ahead hourly cleared
-demand.
+demand. ISO-NE forecast feeds run through
+`backend.orchestration.power.isone.forecast_batch` and cover regional demand,
+capacity, wind, and solar forecast CSVs while intentionally excluding
+five-minute feeds.
 
 ## Permissions Contract
 

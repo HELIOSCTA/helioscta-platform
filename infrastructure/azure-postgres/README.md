@@ -31,6 +31,8 @@ passwords before execution. Do not commit real passwords.
      `dbt/azure_postgres/models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql`
      or
      `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql`
+     or ISO-NE forecast table SQL under
+     `dbt/azure_postgres/models/power/isone/forecast_feeds/`
    - required `index_*.sql` files, including matching `ops` and feed indexes
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`

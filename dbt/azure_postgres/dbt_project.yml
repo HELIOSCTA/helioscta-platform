@@ -333,6 +333,18 @@ models:
             +enabled: false
           index_isone_da_hrl_cleared_demand:
             +enabled: false
+        forecast_feeds:
+          +materialized: ephemeral
+          table_isone_three_day_reliability_region_demand_forecast:
+            +enabled: false
+          table_isone_seven_day_capacity_forecast:
+            +enabled: false
+          table_isone_seven_day_wind_forecast:
+            +enabled: false
+          table_isone_seven_day_solar_forecast:
+            +enabled: false
+          index_isone_forecast_feeds:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false
