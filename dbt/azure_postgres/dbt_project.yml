@@ -315,6 +315,12 @@ models:
             +enabled: false
           index_isone_rt_hrl_lmps_final:
             +enabled: false
+        rt_hrl_lmps_prelim:
+          +materialized: ephemeral
+          table_isone_rt_hrl_lmps_prelim:
+            +enabled: false
+          index_isone_rt_hrl_lmps_prelim:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

@@ -128,6 +128,8 @@ The ISO-NE LMP workflows have dedicated daily timers:
 ```text
 helios-isone-da-hrl-lmps.service
 helios-isone-da-hrl-lmps.timer
+helios-isone-rt-hrl-lmps-prelim.service
+helios-isone-rt-hrl-lmps-prelim.timer
 helios-isone-rt-hrl-lmps-final.service
 helios-isone-rt-hrl-lmps-final.timer
 ```
@@ -143,6 +145,12 @@ The final RT workflow runs
 hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_final`, and emits the
 same complete-date readiness signal. Its scheduled default pulls two days back
 to avoid ISO-NE's finalization lag. The timer runs daily at `20:10 UTC` with
+`Persistent=true` and `RandomizedDelaySec=5min`.
+
+The preliminary RT workflow runs
+`backend.orchestration.power.isone.rt_hrl_lmps_prelim`, upserts preliminary
+hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_prelim`, and emits the
+same complete-date readiness signal. The timer runs daily at `01:10 UTC` with
 `Persistent=true` and `RandomizedDelaySec=5min`.
 
 ## ERCOT Load Batch
@@ -268,6 +276,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capac
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capacity-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-prelim.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-prelim.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
@@ -283,6 +293,7 @@ sudo systemctl enable --now helios-ercot-renewables-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-5min-batch.timer
 sudo systemctl enable --now helios-ercot-outage-capacity-batch.timer
 sudo systemctl enable --now helios-isone-da-hrl-lmps.timer
+sudo systemctl enable --now helios-isone-rt-hrl-lmps-prelim.timer
 sudo systemctl enable --now helios-isone-rt-hrl-lmps-final.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
@@ -305,6 +316,7 @@ sudo systemctl start helios-ercot-renewables-batch.service
 sudo systemctl start helios-ercot-renewables-5min-batch.service
 sudo systemctl start helios-ercot-outage-capacity-batch.service
 sudo systemctl start helios-isone-da-hrl-lmps.service
+sudo systemctl start helios-isone-rt-hrl-lmps-prelim.service
 sudo systemctl start helios-isone-rt-hrl-lmps-final.service
 sudo systemctl start helios-prod-health-check.service
 ```
@@ -408,6 +420,9 @@ For ISO-NE day-ahead hourly LMPs:
 systemctl status helios-isone-da-hrl-lmps.service
 systemctl status helios-isone-da-hrl-lmps.timer
 journalctl -u helios-isone-da-hrl-lmps.service -n 200 --no-pager
+systemctl status helios-isone-rt-hrl-lmps-prelim.service
+systemctl status helios-isone-rt-hrl-lmps-prelim.timer
+journalctl -u helios-isone-rt-hrl-lmps-prelim.service -n 200 --no-pager
 systemctl status helios-isone-rt-hrl-lmps-final.service
 systemctl status helios-isone-rt-hrl-lmps-final.timer
 journalctl -u helios-isone-rt-hrl-lmps-final.service -n 200 --no-pager

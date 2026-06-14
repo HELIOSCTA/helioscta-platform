@@ -11,6 +11,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 | --- | --- | --- | --- | --- |
 | `da_hrl_lmps` | Hourly Day-Ahead LMPs | `backend.orchestration.power.isone.da_hrl_lmps` | `isone.da_hrl_lmps` | operating date x hour ending x location |
 | `rt_hrl_lmps_final` | Final Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_final` | `isone.rt_hrl_lmps_final` | operating date x hour ending x location |
+| `rt_hrl_lmps_prelim` | Preliminary Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_prelim` | `isone.rt_hrl_lmps_prelim` | operating date x hour ending x location |
 
 ## Day-Ahead Hourly LMPs
 
@@ -40,3 +41,17 @@ credential boundary from `/etc/helioscta/backend.env`.
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/`, plus
   duplicate-key data test
   `dbt/azure_postgres/tests/test_isone_rt_hrl_lmps_final_primary_keys.sql`.
+
+## Preliminary Real-Time Hourly LMPs
+
+- Source page:
+  `https://www.iso-ne.com/isoexpress/web/reports/pricing/-/tree/lmps-rt-hourly-prelim`
+- Static CSV pattern:
+  `https://www.iso-ne.com/static-transform/csv/histRpts/rt-lmp/lmp_rt_prelim_YYYYMMDD.csv`
+- Primary key: `date, hour_ending, location`
+- Freshness field: `date`
+- Safe rerun story: upsert by the primary key.
+- Validation: dbt source and staging models under
+  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/`, plus
+  duplicate-key data test
+  `dbt/azure_postgres/tests/test_isone_rt_hrl_lmps_prelim_primary_keys.sql`.

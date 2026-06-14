@@ -218,11 +218,14 @@ models/power/isone/da_hrl_lmps/isone_lmps_da_daily/
 models/power/isone/rt_hrl_lmps_final/
 models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_hourly/
 models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily/
+models/power/isone/rt_hrl_lmps_prelim/
+models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_hourly/
+models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_daily/
 ```
 
 `table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled
-operator SQL, as are the matching `rt_hrl_lmps_final` table and index files.
-The enabled models are read-only validation/query shaping only.
+operator SQL, as are the matching RT final and RT preliminary table and index
+files. The enabled models are read-only validation/query shaping only.
 
 Compile the ISO-NE DA LMP query-shaping models with:
 
@@ -232,6 +235,8 @@ dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_lmps/isone_
 dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_lmps/isone_lmps_da_daily
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_hourly
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily
+dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_hourly
+dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_daily
 ```
 
 ## Operator SQL
@@ -264,6 +269,7 @@ models/power/ercot/short_term_system_adequacy/table_ercot_short_term_system_adeq
 models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql
 models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql
 models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql
+models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
@@ -279,6 +285,7 @@ models/power/ercot/short_term_system_adequacy/index_ercot_short_term_system_adeq
 models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql
 models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql
 models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql
+models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

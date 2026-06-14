@@ -398,6 +398,60 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-isone-rt-hrl-lmps-prelim
+
+- Status: local manual verification succeeded; ready for VM deployment.
+- Workflow: ISO-NE Preliminary Real-Time Hourly LMP orchestration.
+- Runtime module: `backend.orchestration.power.isone.rt_hrl_lmps_prelim`.
+- Lower-level scrape module: `backend.scrapes.power.isone.rt_hrl_lmps_prelim`.
+- Source system: ISO-NE ISO Express `Preliminary Real-Time Hourly LMPs`.
+- Destination table: `isone.rt_hrl_lmps_prelim`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-rt-hrl-lmps-prelim.service`
+  - `infrastructure/systemd/helios-isone-rt-hrl-lmps-prelim.timer`
+- Schedule: daily at `01:10 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-rt-hrl-lmps-prelim.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
+  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql`,
+  and
+  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for operating date
+  `2026-06-13`, upserted 24,180 partial current-day rows, correctly skipped
+  readiness because only 20 hours were present, then ran operating date
+  `2026-06-12`, upserted 29,016 complete-day rows, logged `RUN_SUCCESS` to
+  `ops.pipeline_runs`, and emitted
+  `isone_rt_hrl_lmps_prelim:data_ready:2026-06-12:all_locations`.
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'isone_rt_hrl_lmps_prelim'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.

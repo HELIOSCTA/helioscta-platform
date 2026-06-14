@@ -53,7 +53,8 @@ require ISO-NE-specific credentials. The first ISO-NE runtime module is
 `backend.scrapes.power.isone.da_hrl_lmps`, backed by disabled operator SQL
 under `dbt/azure_postgres/models/power/isone/`. ISO-NE final RT hourly LMPs
 use the same credential boundary through
-`backend.scrapes.power.isone.rt_hrl_lmps_final`.
+`backend.scrapes.power.isone.rt_hrl_lmps_final`; preliminary RT hourly LMPs
+use `backend.scrapes.power.isone.rt_hrl_lmps_prelim`.
 
 ## Permissions Contract
 
