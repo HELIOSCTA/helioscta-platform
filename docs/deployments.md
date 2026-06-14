@@ -280,7 +280,7 @@ LIMIT 10;
 
 ## helios-isone-da-hrl-lmps
 
-- Status: local manual verification succeeded; ready for VM deployment.
+- Status: deployed; timer enabled and latest VM run succeeded.
 - Workflow: ISO-NE Day-Ahead Hourly LMP orchestration.
 - Runtime module: `backend.orchestration.power.isone.da_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.isone.da_hrl_lmps`.
@@ -308,6 +308,14 @@ LIMIT 10;
   `2026-06-13`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
   `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
   `isone_da_hrl_lmps:data_ready:2026-06-13:all_locations`.
+- Deployed runtime commit: `4b0901c`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 00:21 UTC`.
+- Last VM verification: `2026-06-14 00:21 UTC`; service exited
+  `status=0/SUCCESS`, upserted 29,016 rows for operating date `2026-06-13`,
+  and observed existing readiness event
+  `isone_da_hrl_lmps:data_ready:2026-06-13:all_locations`.
+- Next scheduled run observed: `2026-06-14 17:10:45 UTC`.
 
 Verification SQL for data-availability events:
 
@@ -332,7 +340,7 @@ LIMIT 10;
 
 ## helios-isone-rt-hrl-lmps-final
 
-- Status: local manual verification succeeded; ready for VM deployment.
+- Status: deployed; timer enabled and latest VM run succeeded.
 - Workflow: ISO-NE Final Real-Time Hourly LMP orchestration.
 - Runtime module: `backend.orchestration.power.isone.rt_hrl_lmps_final`.
 - Lower-level scrape module: `backend.scrapes.power.isone.rt_hrl_lmps_final`.
@@ -360,6 +368,14 @@ LIMIT 10;
   `2026-06-11`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
   `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
   `isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations`.
+- Deployed runtime commit: `4b0901c`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 00:21 UTC`.
+- Last VM verification: `2026-06-14 00:21 UTC`; service exited
+  `status=0/SUCCESS`, upserted 29,016 rows for operating date `2026-06-11`,
+  and observed existing readiness event
+  `isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations`.
+- Next scheduled run observed: `2026-06-14 20:14:29 UTC`.
 
 Verification SQL for data-availability events:
 
