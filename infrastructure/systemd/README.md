@@ -133,7 +133,7 @@ helios-isone-rt-hrl-lmps-final.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
-next-day ISO Express hourly day-ahead LMP CSV rows into `isone.da_hrl_lmps`,
+current Eastern operating-date ISO Express hourly day-ahead LMP CSV rows into `isone.da_hrl_lmps`,
 writes API telemetry to `ops.api_fetch_log`, and emits complete-date readiness
 events when all hourly location rows are present. The timer runs daily at
 `17:10 UTC` with `Persistent=true` and `RandomizedDelaySec=5min`.

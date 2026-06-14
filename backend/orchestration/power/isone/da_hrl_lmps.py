@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -28,9 +29,13 @@ DATA_SCOPE = "all_locations"
 DATA_GRAIN = "date_hour_location"
 LOCAL_MARKET_TIMEZONE = "America/New_York"
 DEFAULT_DELTA = relativedelta(days=1)
-DEFAULT_LOOKAHEAD_DAYS = 1
+DEFAULT_LOOKAHEAD_DAYS = 0
 
 logger = logging.getLogger(__name__)
+
+
+def _local_now() -> datetime:
+    return datetime.now(ZoneInfo(LOCAL_MARKET_TIMEZONE)).replace(tzinfo=None)
 
 
 def main(
@@ -42,7 +47,7 @@ def main(
     metadata: dict[str, Any] | None = None,
 ) -> pd.DataFrame | None:
     """Run the ISO-NE DA hourly LMP workflow and emit readiness events."""
-    target_day = datetime.now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
+    target_day = _local_now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
     start_date = start_date or target_day
     end_date = end_date or target_day
     database = database or credentials.AZURE_POSTGRESQL_DB_NAME
