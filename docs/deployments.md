@@ -558,6 +558,67 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-isone-forecast-batch
+
+- Status: deployed; timer enabled and latest VM run succeeded.
+- Workflow: ISO-NE Forecast Batch orchestration.
+- Runtime module: `backend.orchestration.power.isone.forecast_batch`.
+- Shared scrape module: `backend.scrapes.power.isone.forecast_feeds`.
+- Source system: ISO-NE ISO Express forecast CSV reports.
+- Destination tables:
+  - `isone.three_day_reliability_region_demand_forecast`
+  - `isone.seven_day_capacity_forecast`
+  - `isone.seven_day_wind_forecast`
+  - `isone.seven_day_solar_forecast`
+- API telemetry: `ops.api_fetch_log`.
+- Pipeline logging: `ops.pipeline_runs`, one run row per feed.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-forecast-batch.service`
+  - `infrastructure/systemd/helios-isone-forecast-batch.timer`
+- Schedule: daily at `15:20 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-forecast-batch.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/isone/forecast_feeds/table_isone_*.sql`
+  and `dbt/azure_postgres/models/power/isone/forecast_feeds/index_isone_forecast_feeds.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the batch for report date `2026-06-13`,
+  upserted 2,632 regional demand forecast rows, 6 capacity forecast rows,
+  144 wind forecast rows, and 168 solar forecast rows. The four dbt
+  duplicate-key tests passed.
+- Deployed runtime commit: `16012dc`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 01:27 UTC`.
+- Last VM verification: `2026-06-14 01:27 UTC`; service exited
+  `status=0/SUCCESS` and logged `RUN_SUCCESS` for all four feed pipelines
+  with the same row counts as local verification.
+- Next scheduled run observed: `2026-06-14 15:23:07 UTC`.
+- Scope note: ISO-NE five-minute demand and zonal forecast feeds are
+  intentionally excluded from this promotion.
+
+Verification SQL for ISO-NE forecast pipeline runs:
+
+```sql
+SELECT
+    pipeline_name,
+    status,
+    rows_processed,
+    target_table,
+    created_at
+FROM ops.pipeline_runs
+WHERE pipeline_name IN (
+    'three_day_reliability_region_demand_forecast',
+    'seven_day_capacity_forecast',
+    'seven_day_wind_forecast',
+    'seven_day_solar_forecast'
+)
+ORDER BY created_at DESC
+LIMIT 12;
+```
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.
