@@ -659,6 +659,46 @@ LIMIT 12;
   `isone_rt_hrl_scheduled_interchange:data_ready:2026-06-12:all_interfaces`.
 - Next scheduled run observed: `2026-06-14 06:26:45 UTC`.
 
+## helios-isone-external-interface-metered-data
+
+- Status: deployed; timer enabled and latest VM run succeeded.
+- Workflow: ISO-NE External Interface Metered Data orchestration.
+- Runtime module:
+  `backend.orchestration.power.isone.external_interface_metered_data`.
+- Lower-level scrape module:
+  `backend.scrapes.power.isone.external_interface_metered_data`.
+- Source system: ISO-NE ISO Express `External Interface Metered Data` annual
+  XLSX workbook.
+- Destination table: `isone.external_interface_metered_data`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-external-interface-metered-data.service`
+  - `infrastructure/systemd/helios-isone-external-interface-metered-data.timer`
+- Schedule: weekly on Mondays at `07:10 UTC` with
+  `RandomizedDelaySec=10min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-external-interface-metered-data.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql`
+  and
+  `dbt/azure_postgres/models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql`.
+- Operator SQL applied locally on `2026-06-14`.
+- Manual verification: `2026-06-14`; conda env
+  `helioscta-platform-backend` ran the orchestration for local dates
+  `2026-01-01` through `2026-04-30`, upserted 23,032 rows across 8 entities,
+  logged `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted complete-date
+  readiness events through `2026-04-30`.
+- Deployed runtime commit: `b0b4263`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 04:00 UTC`.
+- Last VM verification: `2026-06-14 04:00 UTC`; service exited
+  `status=0/SUCCESS`, upserted 23,032 rows for workbook dates
+  `2026-01-01` through `2026-04-30`, and observed existing readiness events.
+- Next scheduled run observed: `2026-06-15 07:15:04 UTC`.
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.
