@@ -460,6 +460,104 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-isone-hourly-system-demand
+
+- Status: deployed; timer enabled and latest VM run succeeded.
+- Workflow: ISO-NE Hourly System Demand orchestration.
+- Runtime module: `backend.orchestration.power.isone.hourly_system_demand`.
+- Lower-level scrape module: `backend.scrapes.power.isone.hourly_system_demand`.
+- Source system: ISO-NE ISO Express `Real-Time Hourly System Load Report`.
+- Destination table: `isone.hourly_system_demand`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-hourly-system-demand.service`
+  - `infrastructure/systemd/helios-isone-hourly-system-demand.timer`
+- Schedule: daily at `06:10 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-hourly-system-demand.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql`
+  and
+  `dbt/azure_postgres/models/power/isone/hourly_system_demand/index_isone_hourly_system_demand.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for operating date
+  `2026-06-12`, upserted 24 rows, logged `RUN_SUCCESS` to
+  `ops.pipeline_runs`, and emitted
+  `isone_hourly_system_demand:data_ready:2026-06-12:system`.
+- Deployed runtime commit: `c6b42d9`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 01:12 UTC`.
+- Last VM verification: `2026-06-14 01:12 UTC`; service exited
+  `status=0/SUCCESS`, upserted 24 rows for operating date `2026-06-12`,
+  and observed existing readiness event
+  `isone_hourly_system_demand:data_ready:2026-06-12:system`.
+- Next scheduled run observed: `2026-06-14 06:11:24 UTC`.
+
+## helios-isone-da-hrl-cleared-demand
+
+- Status: deployed; timer enabled and latest VM run succeeded.
+- Workflow: ISO-NE Day-Ahead Hourly Cleared Demand orchestration.
+- Runtime module: `backend.orchestration.power.isone.da_hrl_cleared_demand`.
+- Lower-level scrape module: `backend.scrapes.power.isone.da_hrl_cleared_demand`.
+- Source system: ISO-NE ISO Express `Day-Ahead Hourly Cleared Demand Report`.
+- Destination table: `isone.da_hrl_cleared_demand`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-da-hrl-cleared-demand.service`
+  - `infrastructure/systemd/helios-isone-da-hrl-cleared-demand.timer`
+- Schedule: daily at `17:20 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-da-hrl-cleared-demand.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql`
+  and
+  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for operating date
+  `2026-06-13`, upserted 24 rows, logged `RUN_SUCCESS` to
+  `ops.pipeline_runs`, and emitted
+  `isone_da_hrl_cleared_demand:data_ready:2026-06-13:system`.
+- Deployed runtime commit: `c6b42d9`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 01:12 UTC`.
+- Last VM verification: `2026-06-14 01:12 UTC`; service exited
+  `status=0/SUCCESS`, upserted 24 rows for operating date `2026-06-13`,
+  and observed existing readiness event
+  `isone_da_hrl_cleared_demand:data_ready:2026-06-13:system`.
+- Next scheduled run observed: `2026-06-14 17:23:33 UTC`.
+
+Verification SQL for ISO-NE demand readiness:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset IN (
+    'isone_hourly_system_demand',
+    'isone_da_hrl_cleared_demand'
+)
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.
