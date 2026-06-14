@@ -12,6 +12,8 @@ credential boundary from `/etc/helioscta/backend.env`.
 | `da_hrl_lmps` | Hourly Day-Ahead LMPs | `backend.orchestration.power.isone.da_hrl_lmps` | `isone.da_hrl_lmps` | operating date x hour ending x location |
 | `rt_hrl_lmps_final` | Final Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_final` | `isone.rt_hrl_lmps_final` | operating date x hour ending x location |
 | `rt_hrl_lmps_prelim` | Preliminary Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_prelim` | `isone.rt_hrl_lmps_prelim` | operating date x hour ending x location |
+| `hourly_system_demand` | Real-Time Hourly System Load Report | `backend.orchestration.power.isone.hourly_system_demand` | `isone.hourly_system_demand` | operating date x hour ending |
+| `da_hrl_cleared_demand` | Day-Ahead Hourly Cleared Demand Report | `backend.orchestration.power.isone.da_hrl_cleared_demand` | `isone.da_hrl_cleared_demand` | operating date x hour ending |
 
 ## Day-Ahead Hourly LMPs
 
@@ -55,3 +57,31 @@ credential boundary from `/etc/helioscta/backend.env`.
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/`, plus
   duplicate-key data test
   `dbt/azure_postgres/tests/test_isone_rt_hrl_lmps_prelim_primary_keys.sql`.
+
+## Hourly System Demand
+
+- Source page:
+  `https://www.iso-ne.com/isoexpress/web/reports/load-and-demand`
+- CSV endpoint:
+  `https://www.iso-ne.com/transform/csv/hourlysystemdemand?start=YYYYMMDD&end=YYYYMMDD`
+- Primary key: `date, hour_ending`
+- Freshness field: `date`
+- Safe rerun story: upsert by the primary key.
+- Validation: dbt source and staging models under
+  `dbt/azure_postgres/models/power/isone/hourly_system_demand/`, plus
+  duplicate-key data test
+  `dbt/azure_postgres/tests/test_isone_hourly_system_demand_primary_keys.sql`.
+
+## Day-Ahead Hourly Cleared Demand
+
+- Source page:
+  `https://www.iso-ne.com/isoexpress/web/reports/load-and-demand`
+- CSV endpoint:
+  `https://www.iso-ne.com/transform/csv/hourlydayaheaddemand?start=YYYYMMDD&end=YYYYMMDD`
+- Primary key: `date, hour_ending`
+- Freshness field: `date`
+- Safe rerun story: upsert by the primary key.
+- Validation: dbt source and staging models under
+  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/`, plus
+  duplicate-key data test
+  `dbt/azure_postgres/tests/test_isone_da_hrl_cleared_demand_primary_keys.sql`.

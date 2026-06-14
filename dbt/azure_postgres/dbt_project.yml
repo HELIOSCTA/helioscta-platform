@@ -321,6 +321,18 @@ models:
             +enabled: false
           index_isone_rt_hrl_lmps_prelim:
             +enabled: false
+        hourly_system_demand:
+          +materialized: ephemeral
+          table_isone_hourly_system_demand:
+            +enabled: false
+          index_isone_hourly_system_demand:
+            +enabled: false
+        da_hrl_cleared_demand:
+          +materialized: ephemeral
+          table_isone_da_hrl_cleared_demand:
+            +enabled: false
+          index_isone_da_hrl_cleared_demand:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

@@ -121,9 +121,9 @@ prices, and emits complete delivery-date readiness events. The RT workflow runs
 upserts published hub intervals, and emits readiness only when a full delivery
 date is present. Both services use `flock` to avoid overlap.
 
-## ISO-NE Day-Ahead Hourly LMPs
+## ISO-NE ISO Express Feeds
 
-The ISO-NE LMP workflows have dedicated daily timers:
+The ISO-NE ISO Express workflows have dedicated daily timers:
 
 ```text
 helios-isone-da-hrl-lmps.service
@@ -132,6 +132,10 @@ helios-isone-rt-hrl-lmps-prelim.service
 helios-isone-rt-hrl-lmps-prelim.timer
 helios-isone-rt-hrl-lmps-final.service
 helios-isone-rt-hrl-lmps-final.timer
+helios-isone-hourly-system-demand.service
+helios-isone-hourly-system-demand.timer
+helios-isone-da-hrl-cleared-demand.service
+helios-isone-da-hrl-cleared-demand.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
@@ -152,6 +156,20 @@ The preliminary RT workflow runs
 hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_prelim`, and emits the
 same complete-date readiness signal. The timer runs daily at `01:10 UTC` with
 `Persistent=true` and `RandomizedDelaySec=5min`.
+
+The hourly system demand workflow runs
+`backend.orchestration.power.isone.hourly_system_demand`, upserts previous
+complete Eastern operating-date hourly actual load rows into
+`isone.hourly_system_demand`, and emits a complete-date system readiness
+signal. The timer runs daily at `06:10 UTC` with `Persistent=true` and
+`RandomizedDelaySec=5min`.
+
+The day-ahead cleared demand workflow runs
+`backend.orchestration.power.isone.da_hrl_cleared_demand`, upserts current
+Eastern operating-date hourly day-ahead cleared demand rows into
+`isone.da_hrl_cleared_demand`, and emits a complete-date system readiness
+signal. The timer runs daily at `17:20 UTC` with `Persistent=true` and
+`RandomizedDelaySec=5min`.
 
 ## ERCOT Load Batch
 
@@ -280,6 +298,10 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-prelim.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-hourly-system-demand.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-hourly-system-demand.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-cleared-demand.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-cleared-demand.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -295,6 +317,8 @@ sudo systemctl enable --now helios-ercot-outage-capacity-batch.timer
 sudo systemctl enable --now helios-isone-da-hrl-lmps.timer
 sudo systemctl enable --now helios-isone-rt-hrl-lmps-prelim.timer
 sudo systemctl enable --now helios-isone-rt-hrl-lmps-final.timer
+sudo systemctl enable --now helios-isone-hourly-system-demand.timer
+sudo systemctl enable --now helios-isone-da-hrl-cleared-demand.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -414,7 +438,7 @@ systemctl status helios-ercot-outage-capacity-batch.timer
 journalctl -u helios-ercot-outage-capacity-batch.service -n 200 --no-pager
 ```
 
-For ISO-NE day-ahead hourly LMPs:
+For ISO-NE ISO Express feeds:
 
 ```bash
 systemctl status helios-isone-da-hrl-lmps.service
@@ -426,6 +450,12 @@ journalctl -u helios-isone-rt-hrl-lmps-prelim.service -n 200 --no-pager
 systemctl status helios-isone-rt-hrl-lmps-final.service
 systemctl status helios-isone-rt-hrl-lmps-final.timer
 journalctl -u helios-isone-rt-hrl-lmps-final.service -n 200 --no-pager
+systemctl status helios-isone-hourly-system-demand.service
+systemctl status helios-isone-hourly-system-demand.timer
+journalctl -u helios-isone-hourly-system-demand.service -n 200 --no-pager
+systemctl status helios-isone-da-hrl-cleared-demand.service
+systemctl status helios-isone-da-hrl-cleared-demand.timer
+journalctl -u helios-isone-da-hrl-cleared-demand.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

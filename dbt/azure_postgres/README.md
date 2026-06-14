@@ -221,11 +221,16 @@ models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily/
 models/power/isone/rt_hrl_lmps_prelim/
 models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_hourly/
 models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_daily/
+models/power/isone/hourly_system_demand/
+models/power/isone/hourly_system_demand/isone_hourly_system_demand/
+models/power/isone/da_hrl_cleared_demand/
+models/power/isone/da_hrl_cleared_demand/isone_da_hrl_cleared_demand/
 ```
 
 `table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled
-operator SQL, as are the matching RT final and RT preliminary table and index
-files. The enabled models are read-only validation/query shaping only.
+operator SQL, as are the matching RT final, RT preliminary, hourly system
+demand, and day-ahead hourly cleared demand table and index files. The enabled
+models are read-only validation/query shaping only.
 
 Compile the ISO-NE DA LMP query-shaping models with:
 
@@ -237,6 +242,8 @@ dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_hourly
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_daily
+dbt compile --profiles-dir . --select path:models/power/isone/hourly_system_demand/isone_hourly_system_demand
+dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_cleared_demand/isone_da_hrl_cleared_demand
 ```
 
 ## Operator SQL
@@ -270,6 +277,8 @@ models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.s
 models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql
 models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql
 models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql
+models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql
+models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
@@ -286,6 +295,8 @@ models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.s
 models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql
 models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql
 models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql
+models/power/isone/hourly_system_demand/index_isone_hourly_system_demand.sql
+models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```
