@@ -33,6 +33,8 @@ passwords before execution. Do not commit real passwords.
      `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql`
      or
      `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql`
+     or
+     `dbt/azure_postgres/models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql`
      or ISO-NE forecast table SQL under
      `dbt/azure_postgres/models/power/isone/forecast_feeds/`
    - required `index_*.sql` files, including matching `ops` and feed indexes

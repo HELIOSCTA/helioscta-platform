@@ -229,6 +229,8 @@ models/power/isone/forecast_feeds/
 models/power/isone/forecast_feeds/isone_forecast_feeds/
 models/power/isone/rt_hrl_scheduled_interchange/
 models/power/isone/rt_hrl_scheduled_interchange/isone_rt_hrl_scheduled_interchange/
+models/power/isone/external_interface_metered_data/
+models/power/isone/external_interface_metered_data/isone_external_interface_metered_data/
 ```
 
 `table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled
@@ -236,7 +238,8 @@ operator SQL, as are the matching RT final, RT preliminary, hourly system
 demand, and day-ahead hourly cleared demand table and index files. The enabled
 models are read-only validation/query shaping only. ISO-NE forecast batch
 table and index SQL under `models/power/isone/forecast_feeds/` follows the
-same disabled-operator-SQL pattern.
+same disabled-operator-SQL pattern, as do the real-time hourly scheduled
+interchange and external interface metered data table/index files.
 
 Compile the ISO-NE DA LMP query-shaping models with:
 
@@ -250,6 +253,7 @@ dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim
 dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_prelim/isone_lmps_rt_prelim_daily
 dbt compile --profiles-dir . --select path:models/power/isone/hourly_system_demand/isone_hourly_system_demand
 dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_cleared_demand/isone_da_hrl_cleared_demand
+dbt compile --profiles-dir . --select path:models/power/isone/external_interface_metered_data/isone_external_interface_metered_data
 ```
 
 ## Operator SQL
@@ -285,6 +289,8 @@ models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql
 models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql
 models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql
 models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql
+models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql
+models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
@@ -303,6 +309,8 @@ models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql
 models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql
 models/power/isone/hourly_system_demand/index_isone_hourly_system_demand.sql
 models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql
+models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_interchange.sql
+models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

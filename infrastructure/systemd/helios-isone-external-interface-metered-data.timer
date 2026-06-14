@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly HeliosCTA ISO-NE External Interface Metered Data orchestration timer
+
+[Timer]
+OnCalendar=Mon *-*-* 07:10:00 UTC
+Persistent=true
+RandomizedDelaySec=10min
+AccuracySec=1min
+Unit=helios-isone-external-interface-metered-data.service
+
+[Install]
+WantedBy=timers.target

@@ -61,6 +61,10 @@ five-minute feeds.
 The real-time hourly scheduled interchange workflow runs through
 `backend.orchestration.power.isone.rt_hrl_scheduled_interchange` and writes
 actual interchange, purchases, and sales by interface.
+The external interface metered data workflow runs through
+`backend.orchestration.power.isone.external_interface_metered_data` and writes
+annual workbook rows for ISO-NE control-area totals and interface-level
+metered interchange plus DA/RT price components.
 
 ## Permissions Contract
 

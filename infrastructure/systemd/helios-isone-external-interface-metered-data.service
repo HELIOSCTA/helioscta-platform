@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA ISO-NE External Interface Metered Data orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-isone-external-interface-metered-data.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.isone.external_interface_metered_data
+TimeoutStartSec=2h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-isone-external-interface-metered-data
+
+[Install]
+WantedBy=multi-user.target

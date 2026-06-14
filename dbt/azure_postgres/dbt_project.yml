@@ -339,6 +339,12 @@ models:
             +enabled: false
           index_isone_rt_hrl_scheduled_interchange:
             +enabled: false
+        external_interface_metered_data:
+          +materialized: ephemeral
+          table_isone_external_interface_metered_data:
+            +enabled: false
+          index_isone_external_interface_metered_data:
+            +enabled: false
         forecast_feeds:
           +materialized: ephemeral
           table_isone_three_day_reliability_region_demand_forecast:

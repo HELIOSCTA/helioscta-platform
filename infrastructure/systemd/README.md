@@ -140,6 +140,8 @@ helios-isone-forecast-batch.service
 helios-isone-forecast-batch.timer
 helios-isone-rt-hrl-scheduled-interchange.service
 helios-isone-rt-hrl-scheduled-interchange.timer
+helios-isone-external-interface-metered-data.service
+helios-isone-external-interface-metered-data.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
@@ -187,6 +189,14 @@ actual interchange, purchases, and sales by hourly interface into
 `isone.rt_hrl_scheduled_interchange`, and emits complete-date interface
 readiness events. The timer runs daily at `06:25 UTC` with `Persistent=true`
 and `RandomizedDelaySec=5min`.
+
+The external interface metered data workflow runs
+`backend.orchestration.power.isone.external_interface_metered_data`, pulls the
+annual ISO-NE workbook, upserts ISO-NE control-area totals plus interface-level
+metered interchange and DA/RT price components into
+`isone.external_interface_metered_data`, and emits complete-date readiness
+events for dates present in the workbook. The timer runs weekly on Mondays at
+`07:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
 
 ## ERCOT Load Batch
 
@@ -323,6 +333,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-bat
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-external-interface-metered-data.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-external-interface-metered-data.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -342,6 +354,7 @@ sudo systemctl enable --now helios-isone-hourly-system-demand.timer
 sudo systemctl enable --now helios-isone-da-hrl-cleared-demand.timer
 sudo systemctl enable --now helios-isone-forecast-batch.timer
 sudo systemctl enable --now helios-isone-rt-hrl-scheduled-interchange.timer
+sudo systemctl enable --now helios-isone-external-interface-metered-data.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -366,6 +379,7 @@ sudo systemctl start helios-isone-da-hrl-lmps.service
 sudo systemctl start helios-isone-rt-hrl-lmps-prelim.service
 sudo systemctl start helios-isone-rt-hrl-lmps-final.service
 sudo systemctl start helios-isone-rt-hrl-scheduled-interchange.service
+sudo systemctl start helios-isone-external-interface-metered-data.service
 sudo systemctl start helios-prod-health-check.service
 ```
 
@@ -486,6 +500,9 @@ journalctl -u helios-isone-forecast-batch.service -n 200 --no-pager
 systemctl status helios-isone-rt-hrl-scheduled-interchange.service
 systemctl status helios-isone-rt-hrl-scheduled-interchange.timer
 journalctl -u helios-isone-rt-hrl-scheduled-interchange.service -n 200 --no-pager
+systemctl status helios-isone-external-interface-metered-data.service
+systemctl status helios-isone-external-interface-metered-data.timer
+journalctl -u helios-isone-external-interface-metered-data.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

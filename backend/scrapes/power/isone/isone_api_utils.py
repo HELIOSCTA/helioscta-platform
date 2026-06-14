@@ -32,8 +32,9 @@ def make_request(
     operation_name: str | None = None,
     metadata: dict | None = None,
     database: str | None = None,
+    expected_content_types: tuple[str, ...] = ("text/csv",),
 ) -> requests.Response:
-    """Make a CSV request to ISO-NE with cookie warmup, retries, and telemetry."""
+    """Make an ISO-NE request with cookie warmup, retries, and telemetry."""
     parsed_url = urlsplit(url)
     operation = operation_name or parsed_url.path.rsplit("/", 1)[-1] or parsed_url.path
     last_error = None
@@ -54,7 +55,10 @@ def make_request(
                         f"Content Type: {content_type}"
                     )
 
-                if response.status_code == 200 and "text/csv" in content_type:
+                if response.status_code == 200 and any(
+                    expected_content_type in content_type
+                    for expected_content_type in expected_content_types
+                ):
                     _log_fetch_attempt(
                         parsed_url=parsed_url,
                         pipeline_name=pipeline_name,
