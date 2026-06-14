@@ -619,6 +619,46 @@ ORDER BY created_at DESC
 LIMIT 12;
 ```
 
+## helios-isone-rt-hrl-scheduled-interchange
+
+- Status: deployed; timer enabled and latest VM run succeeded.
+- Workflow: ISO-NE Real-Time Hourly Scheduled Interchange orchestration.
+- Runtime module:
+  `backend.orchestration.power.isone.rt_hrl_scheduled_interchange`.
+- Lower-level scrape module:
+  `backend.scrapes.power.isone.rt_hrl_scheduled_interchange`.
+- Source system: ISO-NE ISO Express `Real-Time Market Actual Scheduled
+  Interchange`.
+- Destination table: `isone.rt_hrl_scheduled_interchange`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.service`
+  - `infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.timer`
+- Schedule: daily at `06:25 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-rt-hrl-scheduled-interchange.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql`
+  and
+  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_interchange.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for local date
+  `2026-06-12`, upserted 168 rows across 7 interfaces x 24 hours, logged
+  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `isone_rt_hrl_scheduled_interchange:data_ready:2026-06-12:all_interfaces`.
+- Deployed runtime commit: `3a5c15c`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 01:58 UTC`.
+- Last VM verification: `2026-06-14 01:58 UTC`; service exited
+  `status=0/SUCCESS`, upserted 168 rows for local date `2026-06-12`,
+  and observed existing readiness event
+  `isone_rt_hrl_scheduled_interchange:data_ready:2026-06-12:all_interfaces`.
+- Next scheduled run observed: `2026-06-14 06:26:45 UTC`.
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.
