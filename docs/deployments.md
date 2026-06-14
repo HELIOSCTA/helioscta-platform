@@ -400,7 +400,7 @@ LIMIT 10;
 
 ## helios-isone-rt-hrl-lmps-prelim
 
-- Status: local manual verification succeeded; ready for VM deployment.
+- Status: deployed; timer enabled and latest VM run succeeded.
 - Workflow: ISO-NE Preliminary Real-Time Hourly LMP orchestration.
 - Runtime module: `backend.orchestration.power.isone.rt_hrl_lmps_prelim`.
 - Lower-level scrape module: `backend.scrapes.power.isone.rt_hrl_lmps_prelim`.
@@ -430,6 +430,14 @@ LIMIT 10;
   `2026-06-12`, upserted 29,016 complete-day rows, logged `RUN_SUCCESS` to
   `ops.pipeline_runs`, and emitted
   `isone_rt_hrl_lmps_prelim:data_ready:2026-06-12:all_locations`.
+- Deployed runtime commit: `d758ecd`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-14 00:57 UTC`.
+- Last VM verification: `2026-06-14 00:57 UTC`; service exited
+  `status=0/SUCCESS`, upserted 24,180 partial current-day rows for operating
+  date `2026-06-13`, and correctly skipped readiness because only 20 hours
+  were present.
+- Next scheduled run observed: `2026-06-14 01:13:38 UTC`.
 
 Verification SQL for data-availability events:
 
