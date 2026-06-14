@@ -18,6 +18,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 | `seven_day_capacity_forecast` | Seven-Day Capacity Forecast | `backend.orchestration.power.isone.forecast_batch` | `isone.seven_day_capacity_forecast` | forecast execution date x forecast date |
 | `seven_day_wind_forecast` | Seven-Day Wind Power Forecast | `backend.orchestration.power.isone.forecast_batch` | `isone.seven_day_wind_forecast` | forecast execution date x forecast date x hour ending |
 | `seven_day_solar_forecast` | Seven-Day Solar Power Forecast | `backend.orchestration.power.isone.forecast_batch` | `isone.seven_day_solar_forecast` | forecast execution date x forecast date x hour ending |
+| `rt_hrl_scheduled_interchange` | Real-Time Market Actual Scheduled Interchange | `backend.orchestration.power.isone.rt_hrl_scheduled_interchange` | `isone.rt_hrl_scheduled_interchange` | local date x hour ending x interface |
 
 ## Day-Ahead Hourly LMPs
 
@@ -104,3 +105,17 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Validation: read-only dbt source/query models under
   `dbt/azure_postgres/models/power/isone/forecast_feeds/`, plus per-table
   duplicate-key data tests.
+
+## Real-Time Hourly Scheduled Interchange
+
+- Source page:
+  `https://www.iso-ne.com/isoexpress/web/reports/grid/-/tree/interchange-rt-actual-schd`
+- CSV endpoint:
+  `https://www.iso-ne.com/transform/csv/actualinterchange?start=YYYYMMDD&end=YYYYMMDD`
+- Primary key: `local_date, local_hour_ending, interface_name`
+- Freshness field: `local_date`
+- Safe rerun story: upsert by the primary key.
+- Validation: dbt source and staging models under
+  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/`,
+  plus duplicate-key data test
+  `dbt/azure_postgres/tests/test_isone_rt_hrl_scheduled_interchange_primary_keys.sql`.

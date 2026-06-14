@@ -227,6 +227,8 @@ models/power/isone/da_hrl_cleared_demand/
 models/power/isone/da_hrl_cleared_demand/isone_da_hrl_cleared_demand/
 models/power/isone/forecast_feeds/
 models/power/isone/forecast_feeds/isone_forecast_feeds/
+models/power/isone/rt_hrl_scheduled_interchange/
+models/power/isone/rt_hrl_scheduled_interchange/isone_rt_hrl_scheduled_interchange/
 ```
 
 `table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled

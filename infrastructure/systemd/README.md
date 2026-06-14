@@ -138,6 +138,8 @@ helios-isone-da-hrl-cleared-demand.service
 helios-isone-da-hrl-cleared-demand.timer
 helios-isone-forecast-batch.service
 helios-isone-forecast-batch.timer
+helios-isone-rt-hrl-scheduled-interchange.service
+helios-isone-rt-hrl-scheduled-interchange.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
@@ -178,6 +180,13 @@ upserts the three-day reliability-region demand forecast, seven-day capacity
 forecast, seven-day wind forecast, and seven-day solar forecast tables. The
 timer runs daily at `15:20 UTC` with `Persistent=true` and
 `RandomizedDelaySec=5min`.
+
+The real-time hourly scheduled interchange workflow runs
+`backend.orchestration.power.isone.rt_hrl_scheduled_interchange`, upserts
+actual interchange, purchases, and sales by hourly interface into
+`isone.rt_hrl_scheduled_interchange`, and emits complete-date interface
+readiness events. The timer runs daily at `06:25 UTC` with `Persistent=true`
+and `RandomizedDelaySec=5min`.
 
 ## ERCOT Load Batch
 
@@ -312,6 +321,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-clear
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-cleared-demand.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-forecast-batch.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-scheduled-interchange.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -330,6 +341,7 @@ sudo systemctl enable --now helios-isone-rt-hrl-lmps-final.timer
 sudo systemctl enable --now helios-isone-hourly-system-demand.timer
 sudo systemctl enable --now helios-isone-da-hrl-cleared-demand.timer
 sudo systemctl enable --now helios-isone-forecast-batch.timer
+sudo systemctl enable --now helios-isone-rt-hrl-scheduled-interchange.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -353,6 +365,7 @@ sudo systemctl start helios-ercot-outage-capacity-batch.service
 sudo systemctl start helios-isone-da-hrl-lmps.service
 sudo systemctl start helios-isone-rt-hrl-lmps-prelim.service
 sudo systemctl start helios-isone-rt-hrl-lmps-final.service
+sudo systemctl start helios-isone-rt-hrl-scheduled-interchange.service
 sudo systemctl start helios-prod-health-check.service
 ```
 
@@ -470,6 +483,9 @@ journalctl -u helios-isone-da-hrl-cleared-demand.service -n 200 --no-pager
 systemctl status helios-isone-forecast-batch.service
 systemctl status helios-isone-forecast-batch.timer
 journalctl -u helios-isone-forecast-batch.service -n 200 --no-pager
+systemctl status helios-isone-rt-hrl-scheduled-interchange.service
+systemctl status helios-isone-rt-hrl-scheduled-interchange.timer
+journalctl -u helios-isone-rt-hrl-scheduled-interchange.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs

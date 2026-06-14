@@ -58,6 +58,9 @@ demand. ISO-NE forecast feeds run through
 `backend.orchestration.power.isone.forecast_batch` and cover regional demand,
 capacity, wind, and solar forecast CSVs while intentionally excluding
 five-minute feeds.
+The real-time hourly scheduled interchange workflow runs through
+`backend.orchestration.power.isone.rt_hrl_scheduled_interchange` and writes
+actual interchange, purchases, and sales by interface.
 
 ## Permissions Contract
 

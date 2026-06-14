@@ -333,6 +333,12 @@ models:
             +enabled: false
           index_isone_da_hrl_cleared_demand:
             +enabled: false
+        rt_hrl_scheduled_interchange:
+          +materialized: ephemeral
+          table_isone_rt_hrl_scheduled_interchange:
+            +enabled: false
+          index_isone_rt_hrl_scheduled_interchange:
+            +enabled: false
         forecast_feeds:
           +materialized: ephemeral
           table_isone_three_day_reliability_region_demand_forecast:
