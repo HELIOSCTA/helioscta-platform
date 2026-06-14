@@ -278,6 +278,110 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-isone-da-hrl-lmps
+
+- Status: local manual verification succeeded; ready for VM deployment.
+- Workflow: ISO-NE Day-Ahead Hourly LMP orchestration.
+- Runtime module: `backend.orchestration.power.isone.da_hrl_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.isone.da_hrl_lmps`.
+- Source system: ISO-NE ISO Express `Hourly Day-Ahead LMPs`.
+- Destination table: `isone.da_hrl_lmps`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-da-hrl-lmps.service`
+  - `infrastructure/systemd/helios-isone-da-hrl-lmps.timer`
+- Schedule: daily at `17:10 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-da-hrl-lmps.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
+  `dbt/azure_postgres/models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql`,
+  and
+  `dbt/azure_postgres/models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for operating date
+  `2026-06-13`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
+  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `isone_da_hrl_lmps:data_ready:2026-06-13:all_locations`.
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'isone_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+## helios-isone-rt-hrl-lmps-final
+
+- Status: local manual verification succeeded; ready for VM deployment.
+- Workflow: ISO-NE Final Real-Time Hourly LMP orchestration.
+- Runtime module: `backend.orchestration.power.isone.rt_hrl_lmps_final`.
+- Lower-level scrape module: `backend.scrapes.power.isone.rt_hrl_lmps_final`.
+- Source system: ISO-NE ISO Express `Final Real-Time Hourly LMPs`.
+- Destination table: `isone.rt_hrl_lmps_final`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-isone-rt-hrl-lmps-final.service`
+  - `infrastructure/systemd/helios-isone-rt-hrl-lmps-final.timer`
+- Schedule: daily at `20:10 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-isone-rt-hrl-lmps-final.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
+  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql`,
+  and
+  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql`.
+- Operator SQL applied locally on `2026-06-13`.
+- Manual verification: `2026-06-13`; conda env
+  `helioscta-platform-backend` ran the orchestration for operating date
+  `2026-06-11`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
+  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations`.
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'isone_rt_hrl_lmps_final'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 ## ercot-settlement-point-prices
 
 - Status: deployed; timer enabled and latest manual VM/timer run succeeded.

@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA ISO-NE Day-Ahead Hourly LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 17:10:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-isone-da-hrl-lmps.service
+
+[Install]
+WantedBy=timers.target

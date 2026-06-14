@@ -14,12 +14,17 @@ passwords before execution. Do not commit real passwords.
 2. Connect to `helios_prod` as `helios_admin` and run the disabled dbt
    operator SQL needed for application objects:
    - `dbt/azure_postgres/models/setup/schemas.sql`
+   - `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`
    - `dbt/azure_postgres/models/ops/table_ops_api_fetch_log.sql`
    - `dbt/azure_postgres/models/ops/table_ops_data_availability_events.sql`
    - required feed `table_*.sql` files, such as
      `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/table_pjm_da_hrl_lmps.sql`
      or
      `dbt/azure_postgres/models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql`
+     or
+     `dbt/azure_postgres/models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql`
+     or
+     `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql`
    - required `index_*.sql` files, including matching `ops` and feed indexes
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`

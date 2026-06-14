@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA ISO-NE Final Real-Time Hourly LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 20:10:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-isone-rt-hrl-lmps-final.service
+
+[Install]
+WantedBy=timers.target

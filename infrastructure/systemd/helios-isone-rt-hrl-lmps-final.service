@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA ISO-NE Final Real-Time Hourly LMP orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-isone-rt-hrl-lmps-final.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.isone.rt_hrl_lmps_final
+TimeoutStartSec=2h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-isone-rt-hrl-lmps-final
+
+[Install]
+WantedBy=multi-user.target

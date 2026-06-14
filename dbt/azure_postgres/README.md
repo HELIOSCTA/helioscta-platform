@@ -207,6 +207,33 @@ dbt compile --profiles-dir . --select path:models/power/pjm/wind_gen/pjm_wind_ge
 read-only credentials cannot create application objects or indexes. Keep them
 as DBA/operator reference SQL only.
 
+## ISO-NE ISO Express Layout
+
+ISO-NE public CSV report feeds use the same one-folder-per-feed pattern:
+
+```text
+models/power/isone/da_hrl_lmps/
+models/power/isone/da_hrl_lmps/isone_lmps_da_hourly/
+models/power/isone/da_hrl_lmps/isone_lmps_da_daily/
+models/power/isone/rt_hrl_lmps_final/
+models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_hourly/
+models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily/
+```
+
+`table_isone_da_hrl_lmps.sql` and `index_isone_da_hrl_lmps.sql` are disabled
+operator SQL, as are the matching `rt_hrl_lmps_final` table and index files.
+The enabled models are read-only validation/query shaping only.
+
+Compile the ISO-NE DA LMP query-shaping models with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_lmps/isone_lmps_da_hourly
+dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_lmps/isone_lmps_da_daily
+dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_hourly
+dbt compile --profiles-dir . --select path:models/power/isone/rt_hrl_lmps_final/isone_lmps_rt_final_daily
+```
+
 ## Operator SQL
 
 `schema_*.sql`, `table_*.sql`, and `index_*.sql` files are disabled as dbt
@@ -221,6 +248,7 @@ Run order for a new database:
 
 ```text
 models/setup/schemas.sql
+models/ops/table_ops_pipeline_runs.sql
 models/ops/table_ops_api_fetch_log.sql
 models/ops/table_ops_data_availability_events.sql
 models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
@@ -234,6 +262,8 @@ models/power/ercot/solar_power_actual_5min/table_ercot_solar_power_actual_5min.s
 models/power/ercot/hourly_resource_outage_capacity/table_ercot_hourly_resource_outage_capacity.sql
 models/power/ercot/short_term_system_adequacy/table_ercot_short_term_system_adequacy.sql
 models/power/ercot/seven_day_load_forecast/table_ercot_seven_day_load_forecast.sql
+models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql
+models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
@@ -247,6 +277,8 @@ models/power/ercot/solar_power_actual_5min/index_ercot_solar_power_actual_5min.s
 models/power/ercot/hourly_resource_outage_capacity/index_ercot_hourly_resource_outage_capacity.sql
 models/power/ercot/short_term_system_adequacy/index_ercot_short_term_system_adequacy.sql
 models/power/ercot/seven_day_load_forecast/index_ercot_seven_day_load_forecast.sql
+models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql
+models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

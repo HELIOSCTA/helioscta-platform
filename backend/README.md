@@ -48,6 +48,13 @@ by disabled operator SQL under `dbt/azure_postgres/models/power/ercot/`.
 Promoted ERCOT schedules run orchestration modules through systemd so API
 telemetry and data-readiness events are emitted with the database writes.
 
+ISO-NE ISO Express CSV helpers use public static CSV report URLs and do not
+require ISO-NE-specific credentials. The first ISO-NE runtime module is
+`backend.scrapes.power.isone.da_hrl_lmps`, backed by disabled operator SQL
+under `dbt/azure_postgres/models/power/isone/`. ISO-NE final RT hourly LMPs
+use the same credential boundary through
+`backend.scrapes.power.isone.rt_hrl_lmps_final`.
+
 ## Permissions Contract
 
 Application schemas, shared platform tables, and promoted direct-write feed

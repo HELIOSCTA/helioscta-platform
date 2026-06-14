@@ -121,6 +121,30 @@ prices, and emits complete delivery-date readiness events. The RT workflow runs
 upserts published hub intervals, and emits readiness only when a full delivery
 date is present. Both services use `flock` to avoid overlap.
 
+## ISO-NE Day-Ahead Hourly LMPs
+
+The ISO-NE LMP workflows have dedicated daily timers:
+
+```text
+helios-isone-da-hrl-lmps.service
+helios-isone-da-hrl-lmps.timer
+helios-isone-rt-hrl-lmps-final.service
+helios-isone-rt-hrl-lmps-final.timer
+```
+
+The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
+next-day ISO Express hourly day-ahead LMP CSV rows into `isone.da_hrl_lmps`,
+writes API telemetry to `ops.api_fetch_log`, and emits complete-date readiness
+events when all hourly location rows are present. The timer runs daily at
+`17:10 UTC` with `Persistent=true` and `RandomizedDelaySec=5min`.
+
+The final RT workflow runs
+`backend.orchestration.power.isone.rt_hrl_lmps_final`, upserts finalized
+hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_final`, and emits the
+same complete-date readiness signal. Its scheduled default pulls two days back
+to avoid ISO-NE's finalization lag. The timer runs daily at `20:10 UTC` with
+`Persistent=true` and `RandomizedDelaySec=5min`.
+
 ## ERCOT Load Batch
 
 The ERCOT load support feeds run through one daily batch timer:
@@ -242,6 +266,10 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-5
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-renewables-5min-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capacity-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-outage-capacity-batch.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-rt-hrl-lmps-final.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
@@ -254,6 +282,8 @@ sudo systemctl enable --now helios-ercot-congestion-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-5min-batch.timer
 sudo systemctl enable --now helios-ercot-outage-capacity-batch.timer
+sudo systemctl enable --now helios-isone-da-hrl-lmps.timer
+sudo systemctl enable --now helios-isone-rt-hrl-lmps-final.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```
 
@@ -274,6 +304,8 @@ sudo systemctl start helios-ercot-congestion-batch.service
 sudo systemctl start helios-ercot-renewables-batch.service
 sudo systemctl start helios-ercot-renewables-5min-batch.service
 sudo systemctl start helios-ercot-outage-capacity-batch.service
+sudo systemctl start helios-isone-da-hrl-lmps.service
+sudo systemctl start helios-isone-rt-hrl-lmps-final.service
 sudo systemctl start helios-prod-health-check.service
 ```
 
@@ -368,6 +400,17 @@ For the ERCOT outage/capacity batch:
 systemctl status helios-ercot-outage-capacity-batch.service
 systemctl status helios-ercot-outage-capacity-batch.timer
 journalctl -u helios-ercot-outage-capacity-batch.service -n 200 --no-pager
+```
+
+For ISO-NE day-ahead hourly LMPs:
+
+```bash
+systemctl status helios-isone-da-hrl-lmps.service
+systemctl status helios-isone-da-hrl-lmps.timer
+journalctl -u helios-isone-da-hrl-lmps.service -n 200 --no-pager
+systemctl status helios-isone-rt-hrl-lmps-final.service
+systemctl status helios-isone-rt-hrl-lmps-final.timer
+journalctl -u helios-isone-rt-hrl-lmps-final.service -n 200 --no-pager
 ```
 
 On the VM, configure `HELIOS_LOG_DIR=/var/log/helioscta`. Successful runs
