@@ -76,8 +76,10 @@ npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bu
 
 The checker calls each production API route, parses `Server-Timing`, and fails
 when a route is broken or over its route latency budget. For protected Vercel
-deployments, set `HELIOS_API_HEALTH_BYPASS_TOKEN` before running against the
-production URL.
+deployments, set `HELIOS_API_HEALTH_BYPASS_TOKEN`; the checker sends it as the
+`x-vercel-protection-bypass` header. Use `--require-timing` for local checks
+where `Server-Timing` should be present; production Vercel responses may omit
+that header, in which case the checker falls back to total request time.
 
 ## Vercel
 

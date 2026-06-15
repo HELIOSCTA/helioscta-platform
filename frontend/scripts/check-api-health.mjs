@@ -47,6 +47,7 @@ Options:
   --samples=<n>        Measured samples per endpoint. Default: ${DEFAULT_SAMPLES}
   --warmup=<n>         Warmup requests per endpoint. Default: ${DEFAULT_WARMUP}
   --cache-bust         Add a unique query param so Vercel/Next cache misses are measured.
+  --require-timing     Fail when Server-Timing is missing.
   --allow-slow         Exit 0 when routes exceed target latency, but still report SLOW.
   --json               Print machine-readable JSON instead of a table.
   --help               Show this help.
@@ -63,6 +64,7 @@ function parseArgs(argv) {
     samples: DEFAULT_SAMPLES,
     warmup: DEFAULT_WARMUP,
     cacheBust: false,
+    requireTiming: false,
     allowSlow: false,
     json: false,
   };
@@ -86,6 +88,10 @@ function parseArgs(argv) {
     }
     if (arg === "--cache-bust") {
       options.cacheBust = true;
+      continue;
+    }
+    if (arg === "--require-timing") {
+      options.requireTiming = true;
       continue;
     }
     if (arg === "--allow-slow") {
@@ -112,15 +118,19 @@ function positiveInt(value, name, min = 1) {
 
 function buildUrl(baseUrl, path, cacheBust, requestId) {
   const url = new URL(path, normalizeBaseUrl(baseUrl));
-  const bypassToken = process.env.HELIOS_API_HEALTH_BYPASS_TOKEN;
-  if (bypassToken) {
-    url.searchParams.set("x-vercel-set-bypass-cookie", "true");
-    url.searchParams.set("x-vercel-protection-bypass", bypassToken);
-  }
   if (cacheBust) {
     url.searchParams.set("_health", requestId);
   }
   return url;
+}
+
+function requestHeaders() {
+  const headers = { Accept: "application/json" };
+  const bypassToken = process.env.HELIOS_API_HEALTH_BYPASS_TOKEN;
+  if (bypassToken) {
+    headers["x-vercel-protection-bypass"] = bypassToken;
+  }
+  return headers;
 }
 
 function normalizeBaseUrl(value) {
@@ -177,7 +187,7 @@ async function measureEndpoint(endpoint, options) {
 
     try {
       const response = await fetch(url, {
-        headers: { Accept: "application/json" },
+        headers: requestHeaders(),
       });
       const body = await response.text();
       const totalMs = performance.now() - startedAt;
@@ -201,7 +211,7 @@ async function measureEndpoint(endpoint, options) {
       if (!contentType.includes("application/json")) {
         errors.push(`non-JSON response: ${contentType || "unknown content type"}`);
       }
-      if (!response.headers.get("server-timing")) {
+      if (options.requireTiming && !response.headers.get("server-timing")) {
         errors.push("missing Server-Timing header");
       }
       if (!dataAsOf || dataAsOf === "unknown") {
