@@ -111,9 +111,9 @@ pip install -r backend/requirements-dev.txt -e backend
 pytest backend/tests
 ```
 
-## Manual PJM LMP Backfills
+## Manual PJM Backfills
 
-PJM LMP backfills are Python module entry points that call the same production
+PJM backfills are Python module entry points that call the same production
 scrape/orchestration `main()` functions as the scheduled jobs, then rely on the
 existing primary-key upserts for safe reruns.
 
@@ -123,6 +123,7 @@ Default module runs backfill one recent market day:
 python -m backend.backfills.power.pjm.da_hrl_lmps
 python -m backend.backfills.power.pjm.rt_hrl_lmps
 python -m backend.backfills.power.pjm.rt_unverified_hrl_lmps
+python -m backend.backfills.power.pjm.gen_outages_by_type
 ```
 
 For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the

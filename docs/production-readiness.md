@@ -50,7 +50,7 @@ A backend workflow is production-ready when it has:
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
-| Manual DA/RT backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
+| Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
@@ -162,11 +162,12 @@ Scheduling:
 
 ## Manual Backfills
 
-Manual backfills are available for the priority PJM LMP workflows:
+Manual backfills are available for the priority PJM workflows:
 
 - `backend.backfills.power.pjm.da_hrl_lmps`
 - `backend.backfills.power.pjm.rt_hrl_lmps`
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- `backend.backfills.power.pjm.gen_outages_by_type`
 
 They write to the same canonical `pjm` tables with the same upsert keys as the
 scheduled jobs, and tag PJM API telemetry with `run_mode=backfill` in

@@ -270,14 +270,15 @@ executes `hourly_resource_outage_capacity` and `short_term_system_adequacy`.
 The timer runs daily at `13:35 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`.
 
-## Manual DA/RT Backfills
+## Manual PJM Backfills
 
-PJM LMP backfills are manual operator workflows, not timers:
+PJM backfills are manual operator workflows, not timers:
 
 ```text
 backend.backfills.power.pjm.da_hrl_lmps
 backend.backfills.power.pjm.rt_hrl_lmps
 backend.backfills.power.pjm.rt_unverified_hrl_lmps
+backend.backfills.power.pjm.gen_outages_by_type
 ```
 
 Deploy them with the repo, but do not install persistent `.service` or

@@ -1,7 +1,7 @@
 # Manual Backfills
 
-Use this runbook for controlled PJM hourly LMP replays. Backfills write to the
-same canonical production tables as the scheduled jobs and rely on the same
+Use this runbook for controlled PJM source-table replays. Backfills write to
+the same canonical production tables as the scheduled jobs and rely on the same
 idempotent upsert keys.
 
 ## Scope
@@ -11,12 +11,14 @@ Covered workflows:
 - `backend.backfills.power.pjm.da_hrl_lmps`
 - `backend.backfills.power.pjm.rt_hrl_lmps`
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- `backend.backfills.power.pjm.gen_outages_by_type`
 
 Destination tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
 - `pjm.rt_unverified_hrl_lmps`
+- `pjm.gen_outages_by_type`
 
 Backfill runs add `run_mode=backfill`, `backfill_workflow`,
 `backfill_start_date`, and `backfill_end_date` to `ops.api_fetch_log.metadata`
@@ -32,6 +34,7 @@ data-readiness events.
   - DA hourly LMPs: `31` days.
   - RT verified hourly LMPs: `31` days.
   - RT unverified hourly LMPs: `30` days.
+  - Generation outages by type: `31` execution dates.
 - Future dates are rejected unless `allow_future=True` is passed.
 - Do not run a backfill during the matching scheduled timer window unless the
   overlap is intentional.
@@ -94,6 +97,24 @@ sudo systemd-run --unit=helios-rt-unverified-hrl-lmps-backfill --wait --collect 
 rm -f /tmp/helios_rt-unverified-hrl-backfill.py
 ```
 
+## Generation Outages By Type Backfill
+
+This replays PJM Data Miner 2 `gen_outages_by_type` by
+`forecast_execution_date_ept`. Each execution date returns the seven-day outage
+forecast by region and upserts into `pjm.gen_outages_by_type` using
+`forecast_execution_date_ept, forecast_date, region`.
+
+```bash
+cat > /tmp/helios-gen-outages-by-type-backfill.py <<'PY'
+from backend.backfills.power.pjm.gen_outages_by_type import main
+
+print(main(start_date="2026-06-01", end_date="2026-06-07"))
+PY
+
+sudo systemd-run --unit=helios-gen-outages-by-type-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-gen-outages-by-type-backfill.py
+rm -f /tmp/helios-gen-outages-by-type-backfill.py
+```
+
 ## Verification
 
 Check API telemetry for backfill context:
@@ -145,5 +166,21 @@ SELECT
 FROM pjm.rt_unverified_hrl_lmps
 GROUP BY datetime_beginning_ept::date
 ORDER BY market_date DESC, feed
+LIMIT 30;
+```
+
+Check generation outage coverage:
+
+```sql
+SELECT
+    forecast_execution_date_ept,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT forecast_date) AS forecast_dates,
+    COUNT(DISTINCT region) AS regions,
+    MIN(forecast_date) AS min_forecast_date,
+    MAX(forecast_date) AS max_forecast_date
+FROM pjm.gen_outages_by_type
+GROUP BY forecast_execution_date_ept
+ORDER BY forecast_execution_date_ept DESC
 LIMIT 30;
 ```
