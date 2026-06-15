@@ -134,6 +134,10 @@ function metricValue(row: OutageRow, metric: OutageMetricKey): number | null {
   return row[metric] ?? null;
 }
 
+function hasMetricValues(rows: OutageRow[], metric: OutageMetricKey): boolean {
+  return rows.some((row) => metricValue(row, metric) !== null);
+}
+
 interface HeatBounds {
   min: number;
   max: number;
@@ -420,12 +424,20 @@ export default function PjmOutages({
     () => uniqueSorted(rows.map((row) => row.forecast_date)),
     [rows]
   );
+  const forecastMetrics = useMemo(
+    () => OUTAGE_METRICS.filter((item) => hasMetricValues(rows, item.key)),
+    [rows]
+  );
+  const seasonalMetrics = useMemo(
+    () => OUTAGE_METRICS.filter((item) => hasMetricValues(seasonalRows, item.key)),
+    [seasonalRows]
+  );
   const heatBoundsByMetric = useMemo(
     () =>
       new Map(
-        OUTAGE_METRICS.map((item) => [item.key, buildDateHeatBounds(rows, item.key)] as const)
+        forecastMetrics.map((item) => [item.key, buildDateHeatBounds(rows, item.key)] as const)
       ),
-    [rows]
+    [forecastMetrics, rows]
   );
   const seasonalYears = useMemo(() => data?.seasonal.years ?? [], [data]);
   const currentYear = seasonalYears.at(-1) ?? null;
@@ -615,7 +627,7 @@ export default function PjmOutages({
           </div>
 
           {activeView === "seasonal" &&
-            OUTAGE_METRICS.map((item) => (
+            seasonalMetrics.map((item) => (
               <div key={item.key} className="space-y-4">
                 <PlotCard
                   title={`${item.label} Seasonal Overlay`}
@@ -635,7 +647,7 @@ export default function PjmOutages({
             ))}
 
           {activeView === "forecast" &&
-            OUTAGE_METRICS.map((item) => (
+            forecastMetrics.map((item) => (
               <DataTableShell
                 key={item.key}
                 title={`${item.label} Forecast Vintage Heatmap`}

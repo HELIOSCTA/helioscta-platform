@@ -25,10 +25,20 @@ interface OutageSourceRow {
   forecast_execution_date: string;
   forecast_date: string;
   lead_days: number;
+  total_outages_mw?: number | string | null;
+  planned_outages_mw?: number | string | null;
+  maintenance_outages_mw?: number | string | null;
+  forced_outages_mw?: number | string | null;
   rto_mw: number | string | null;
   west_mw: number | string | null;
   other_mw: number | string | null;
 }
+
+const REGION_SOURCE_NAMES: Record<Region, string> = {
+  RTO: "PJM RTO",
+  WEST: "Western",
+  OTHER: "Mid Atlantic - Dominion",
+};
 
 function parseView(value: string | null): OutagesView {
   return value === "seasonal" ? "seasonal" : "forecast";
@@ -57,13 +67,13 @@ function valueForRegion(row: OutageSourceRow, region: Region): number | null {
 }
 
 function normalize(row: OutageSourceRow, region: Region, view: OutagesView) {
-  const total = valueForRegion(row, region);
+  const total = toNumber(row.total_outages_mw) ?? valueForRegion(row, region);
   const base = {
     region,
     total_outages_mw: total,
-    planned_outages_mw: null,
-    maintenance_outages_mw: null,
-    forced_outages_mw: null,
+    planned_outages_mw: toNumber(row.planned_outages_mw),
+    maintenance_outages_mw: toNumber(row.maintenance_outages_mw),
+    forced_outages_mw: toNumber(row.forced_outages_mw),
   };
   if (view === "seasonal") {
     const d = new Date(`${row.forecast_date}T00:00:00Z`);
@@ -107,7 +117,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       ? `
           with recent_exec_dates as (
             select distinct forecast_execution_date_ept
-            from pjm.frcstd_gen_outages
+            from pjm.gen_outages_by_type
+            where region = $2
             order by forecast_execution_date_ept desc
             limit $1
           )
@@ -115,11 +126,16 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
             forecast_execution_date_ept::text as forecast_execution_date,
             forecast_date::text as forecast_date,
             (forecast_date - forecast_execution_date_ept)::int as lead_days,
-            forecast_gen_outage_mw_rto::float8 as rto_mw,
-            forecast_gen_outage_mw_west::float8 as west_mw,
-            forecast_gen_outage_mw_other::float8 as other_mw
-          from pjm.frcstd_gen_outages
+            total_outages_mw::float8 as total_outages_mw,
+            planned_outages_mw::float8 as planned_outages_mw,
+            maintenance_outages_mw::float8 as maintenance_outages_mw,
+            forced_outages_mw::float8 as forced_outages_mw,
+            null::float8 as rto_mw,
+            null::float8 as west_mw,
+            null::float8 as other_mw
+          from pjm.gen_outages_by_type
           where forecast_execution_date_ept in (select forecast_execution_date_ept from recent_exec_dates)
+            and region = $2
             and (forecast_date - forecast_execution_date_ept)::int between 0 and 6
           order by forecast_execution_date_ept desc, forecast_date
         `
@@ -141,7 +157,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
           where extract(year from forecast_date)::int in (select year from recent_years)
           order by forecast_date, forecast_execution_date_ept desc
         `,
-    view === "forecast" ? [executionLimit] : [seasonalYearLimit],
+    view === "forecast" ? [executionLimit, REGION_SOURCE_NAMES[region]] : [seasonalYearLimit],
   );
   const normalized = rows.map((row) => normalize(row, region, view));
   const years = Array.from(
