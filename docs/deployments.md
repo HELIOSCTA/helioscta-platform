@@ -375,6 +375,12 @@ LIMIT 10;
   `status=0/SUCCESS`, upserted 29,016 rows for operating date `2026-06-11`,
   and observed existing readiness event
   `isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations`.
+- Runtime fix deployed: `2026-06-15 17:06 UTC`; commit `457ddd0` changed the
+  lower-level scrape to treat ISO-NE's `No data exists for this period.` CSV
+  body as an empty result instead of a failed run. VM verification exited
+  `status=0/SUCCESS`, upserted 29,016 rows for operating date `2026-06-13`,
+  logged `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `isone_rt_hrl_lmps_final:data_ready:2026-06-13:all_locations`.
 - Next scheduled run observed: `2026-06-14 20:14:29 UTC`.
 
 Verification SQL for data-availability events:
