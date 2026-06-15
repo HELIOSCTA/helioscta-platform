@@ -33,6 +33,7 @@ npm install
 npm run dev
 npm run lint
 npm run build
+npm run check:api
 ```
 
 The production route is `/`. The active compatibility API routes are:
@@ -65,6 +66,18 @@ Production routes should expose:
 Use Vercel Observability to rank weak endpoints by function duration, errors,
 and status codes. Use Postgres query statistics or Azure query performance
 tools to connect slow routes back to slow SQL.
+
+Run the endpoint health check after a local build or production deploy:
+
+```bash
+npm run check:api -- --base-url=http://localhost:3000 --cache-bust
+npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bust
+```
+
+The checker calls each production API route, parses `Server-Timing`, and fails
+when a route is broken or over its route latency budget. For protected Vercel
+deployments, set `HELIOS_API_HEALTH_BYPASS_TOKEN` before running against the
+production URL.
 
 ## Vercel
 
