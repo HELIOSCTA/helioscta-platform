@@ -1,0 +1,9 @@
+backend
+dbt
+docs
+infrastructure
+.agents
+.pytest_cache
+**/.pytest_cache
+frontend/.env
+frontend/.env.*
