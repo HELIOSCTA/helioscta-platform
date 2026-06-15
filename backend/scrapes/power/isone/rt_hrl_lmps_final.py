@@ -81,7 +81,23 @@ def _pull(
         metadata={"operating_date": start_date.strftime("%Y-%m-%d"), **(metadata or {})},
         database=database,
     )
-    return _format(isone_api.parse_csv_response(response))
+    try:
+        raw_df = isone_api.parse_csv_response(response)
+    except RuntimeError as exc:
+        if _is_source_no_data_message(exc):
+            logger.info(
+                "ISO-NE final RT hourly LMPs returned no data for %s; "
+                "treating as an empty result.",
+                start_date.strftime("%Y-%m-%d"),
+            )
+            return pd.DataFrame()
+        raise
+
+    return _format(raw_df)
+
+
+def _is_source_no_data_message(exc: RuntimeError) -> bool:
+    return str(exc).strip().lower().startswith("no data exists for this period")
 
 
 def _format(df: pd.DataFrame) -> pd.DataFrame:

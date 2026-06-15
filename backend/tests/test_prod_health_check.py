@@ -277,6 +277,83 @@ def test_health_evaluation_warns_for_support_batch_gaps_only():
     assert any("support batch systemd result is exit-code" in message for message in warnings)
 
 
+def test_health_evaluation_warns_for_unmanaged_helios_timers():
+    issues = prod_health_check._evaluate_health(
+        da_readiness=_readiness("pjm_da_hrl_lmps", date(2026, 6, 13), 288, 12, 24),
+        rt_readiness=_readiness(
+            "pjm_rt_fivemin_hrl_lmps",
+            date(2026, 6, 11),
+            12096,
+            42,
+            288,
+        ),
+        rt_shape={
+            "business_date": date(2026, 6, 11),
+            "row_count": 12096,
+            "pnode_count": 42,
+            "type_count": 3,
+            "period_count": 288,
+            "min_utc": datetime(2026, 6, 11, 10, tzinfo=timezone.utc),
+            "max_utc": datetime(2026, 6, 12, 9, 55, tzinfo=timezone.utc),
+        },
+        duplicate_key_count=0,
+        api_summary=[
+            {
+                "pipeline_name": "da_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 288,
+                "latest_status": "success",
+                "latest_http_status": 200,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+            {
+                "pipeline_name": "rt_fivemin_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 12096,
+                "latest_status": "success",
+                "latest_http_status": 200,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+        ],
+        support_api_summary=_support_api_summary(),
+        support_table_summary=_support_table_summary(),
+        service_statuses=[
+            _service("helios-da-hrl-lmps.service", "success"),
+            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+        ],
+        generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
+        timers=[
+            "NEXT LEFT LAST PASSED UNIT ACTIVATES",
+            (
+                "Sat 2026-06-13 16:00:00 UTC 1h left "
+                "Fri 2026-06-12 16:00:00 UTC 23h ago "
+                "helios-da-hrl-lmps.timer helios-da-hrl-lmps.service"
+            ),
+            (
+                "Sat 2026-06-13 16:06:00 UTC 1h left "
+                "Fri 2026-06-12 16:06:00 UTC 23h ago "
+                "helios-pjm-forecast-hourly.timer helios-pjm-forecast-hourly.service"
+            ),
+        ],
+    )
+
+    warnings = [issue for issue in issues if issue.severity == "WARN"]
+    assert any(issue.subject == "helios-pjm-forecast-hourly.timer" for issue in warnings)
+    assert not any(issue.subject == "helios-da-hrl-lmps.timer" for issue in warnings)
+
+
+def test_unmanaged_helios_timers_parses_timer_lines():
+    assert prod_health_check._unmanaged_helios_timers(
+        [
+            "NEXT LEFT LAST PASSED UNIT ACTIVATES",
+            "n/a n/a n/a n/a helios-da-hrl-lmps.timer helios-da-hrl-lmps.service",
+            "n/a n/a n/a n/a helios-old-feed.timer helios-old-feed.service",
+        ]
+    ) == ["helios-old-feed.timer"]
+
+
 def _readiness(
     dataset: str,
     business_date: date,

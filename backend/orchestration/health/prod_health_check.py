@@ -30,6 +30,27 @@ SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-ercot-renewables-5min-batch.service",
     "helios-ercot-outage-capacity-batch.service",
 )
+KNOWN_TIMERS: tuple[str, ...] = (
+    "helios-da-hrl-lmps.timer",
+    "helios-rt-fivemin-hrl-lmps.timer",
+    "helios-prod-health-check.timer",
+    "helios-pjm-data-miner-batch.timer",
+    "helios-ercot-dam-stlmnt-pnt-prices.timer",
+    "helios-ercot-settlement-point-prices.timer",
+    "helios-ercot-load-batch.timer",
+    "helios-ercot-congestion-batch.timer",
+    "helios-ercot-renewables-batch.timer",
+    "helios-ercot-renewables-5min-batch.timer",
+    "helios-ercot-outage-capacity-batch.timer",
+    "helios-isone-da-hrl-lmps.timer",
+    "helios-isone-rt-hrl-lmps-prelim.timer",
+    "helios-isone-rt-hrl-lmps-final.timer",
+    "helios-isone-hourly-system-demand.timer",
+    "helios-isone-da-hrl-cleared-demand.timer",
+    "helios-isone-forecast-batch.timer",
+    "helios-isone-rt-hrl-scheduled-interchange.timer",
+    "helios-isone-external-interface-metered-data.timer",
+)
 
 
 @dataclass(frozen=True)
@@ -207,6 +228,7 @@ def collect_health(
         support_api_summary=support_api_summary,
         support_table_summary=support_table_summary,
         service_statuses=service_statuses,
+        timers=timers,
         generated_at=generated_at,
     )
 
@@ -522,6 +544,7 @@ def _evaluate_health(
     support_table_summary: list[dict[str, Any]],
     service_statuses: list[dict[str, str]],
     generated_at: datetime,
+    timers: list[str] | None = None,
     ercot_dam_readiness: dict[str, Any] | None = None,
     ercot_rt_readiness: dict[str, Any] | None = None,
     require_ercot_readiness: bool = False,
@@ -718,6 +741,19 @@ def _evaluate_health(
                 )
             )
 
+    for timer_name in _unmanaged_helios_timers(timers or []):
+        issues.append(
+            HealthIssue(
+                "WARN",
+                timer_name,
+                (
+                    "Timer is enabled on the VM but is not tracked in "
+                    "infrastructure/systemd. Disable it if it is a legacy job, "
+                    "or promote it with a source/table contract and deployment entry."
+                ),
+            )
+        )
+
     return issues
 
 
@@ -900,6 +936,18 @@ def _format_issues(issues: list[HealthIssue]) -> list[str]:
         f"- {issue.severity}: {issue.subject}: {issue.message}"
         for issue in issues
     ]
+
+
+def _unmanaged_helios_timers(timer_lines: list[str]) -> list[str]:
+    known = set(KNOWN_TIMERS)
+    observed: set[str] = set()
+    for line in timer_lines:
+        for token in line.split():
+            if token.startswith("helios-") and token.endswith(".timer"):
+                observed.add(token)
+                break
+
+    return sorted(observed - known)
 
 
 def _as_date(value: Any) -> date:

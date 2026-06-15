@@ -122,6 +122,21 @@ def test_isone_rt_hrl_lmps_final_pull_uses_static_csv_url_and_metadata(monkeypat
     assert len(df) == 1
 
 
+def test_isone_rt_hrl_lmps_final_pull_returns_empty_on_source_no_data(monkeypatch):
+    class FakeResponse:
+        content = b"No data exists for this period.\n"
+
+    monkeypatch.setattr(
+        rt_hrl_lmps_final.isone_api,
+        "make_request",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    df = rt_hrl_lmps_final._pull(start_date=pd.Timestamp("2026-06-12"))
+
+    assert df.empty
+
+
 def test_isone_parse_csv_response_raises_on_source_no_data_message():
     class FakeResponse:
         content = b"No data exists for this period.\n"
