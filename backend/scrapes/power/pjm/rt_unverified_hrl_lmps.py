@@ -76,6 +76,7 @@ def main(
     delta: relativedelta = DEFAULT_DELTA,
     pnode_types: str | Iterable[str] | None = DEFAULT_PRICING_NODE_TYPES,
     database: str | None = None,
+    metadata: dict | None = None,
 ):
     return run_feed(
         CONFIG,
@@ -84,6 +85,7 @@ def main(
         delta=delta,
         pnode_types=pnode_types,
         database=database,
+        metadata=metadata,
     )
 
 

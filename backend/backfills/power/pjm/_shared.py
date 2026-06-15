@@ -1,4 +1,4 @@
-"""Shared helpers for manual PJM backfill orchestration."""
+"""Shared helpers for manual PJM backfills."""
 
 from __future__ import annotations
 

@@ -5,17 +5,18 @@ from datetime import date, datetime
 import pandas as pd
 import pytest
 
-from backend.orchestration.power.pjm import (
-    da_hrl_lmps_backfill,
-    rt_fivemin_hrl_lmps_backfill,
+from backend.backfills.power.pjm import (
+    da_hrl_lmps,
+    rt_hrl_lmps,
+    rt_unverified_hrl_lmps,
 )
-from backend.orchestration.power.pjm import _backfill
+from backend.backfills.power.pjm import _shared
 from backend.scrapes.power.pjm import client
 
 
 def test_backfill_window_rejects_future_dates():
     with pytest.raises(ValueError, match="future"):
-        _backfill.validate_backfill_window(
+        _shared.validate_backfill_window(
             start_date=date(2026, 6, 13),
             end_date=date(2026, 6, 14),
             max_days=7,
@@ -25,7 +26,7 @@ def test_backfill_window_rejects_future_dates():
 
 def test_backfill_window_rejects_too_many_days():
     with pytest.raises(ValueError, match="max_days"):
-        _backfill.validate_backfill_window(
+        _shared.validate_backfill_window(
             start_date=date(2026, 6, 1),
             end_date=date(2026, 6, 10),
             max_days=7,
@@ -40,9 +41,9 @@ def test_da_backfill_dry_run_does_not_call_workflow(monkeypatch):
         nonlocal called
         called = True
 
-    monkeypatch.setattr(da_hrl_lmps_backfill.da_hrl_lmps, "main", fake_main)
+    monkeypatch.setattr(da_hrl_lmps.source, "main", fake_main)
 
-    result = da_hrl_lmps_backfill.main(
+    result = da_hrl_lmps.main(
         start_date="2026-06-10",
         end_date="2026-06-10",
         dry_run=True,
@@ -57,60 +58,123 @@ def test_da_backfill_dry_run_does_not_call_workflow(monkeypatch):
     assert result.dry_run is True
 
 
-def test_da_backfill_calls_production_workflow_with_backfill_metadata(monkeypatch):
-    captured: dict[str, object] = {}
+def test_da_backfill_calls_scrape_once_per_day_with_backfill_metadata(monkeypatch):
+    calls: list[dict[str, object]] = []
 
     def fake_main(**kwargs):
-        captured.update(kwargs)
+        calls.append(kwargs)
         return pd.DataFrame([{"row": 1}, {"row": 2}])
 
-    monkeypatch.setattr(da_hrl_lmps_backfill.da_hrl_lmps, "main", fake_main)
+    monkeypatch.setattr(da_hrl_lmps.source, "main", fake_main)
 
-    result = da_hrl_lmps_backfill.main(
+    result = da_hrl_lmps.main(
         start_date=date(2026, 6, 10),
         end_date=date(2026, 6, 11),
         database="stage_db",
     )
 
-    assert result.rows_processed == 2
-    assert captured["start_date"] == "2026-06-10 00:00"
-    assert captured["end_date"] == "2026-06-11 23:00"
-    assert captured["database"] == "stage_db"
-    assert captured["run_mode"] == "backfill"
-    assert captured["metadata"]["run_mode"] == "backfill"
-    assert captured["metadata"]["backfill_workflow"] == "da_hrl_lmps"
-    assert captured["metadata"]["backfill_start_date"] == "2026-06-10"
-    assert captured["metadata"]["backfill_end_date"] == "2026-06-11"
+    assert result.rows_processed == 4
+    assert len(calls) == 2
+    assert calls[0]["start_date"] == datetime(2026, 6, 10)
+    assert calls[0]["end_date"] == datetime(2026, 6, 10)
+    assert calls[1]["start_date"] == datetime(2026, 6, 11)
+    assert calls[1]["end_date"] == datetime(2026, 6, 11)
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["run_mode"] == "backfill"
+    assert calls[0]["metadata"]["run_mode"] == "backfill"
+    assert calls[0]["metadata"]["backfill_workflow"] == "da_hrl_lmps"
+    assert calls[0]["metadata"]["backfill_start_date"] == "2026-06-10"
+    assert calls[0]["metadata"]["backfill_end_date"] == "2026-06-11"
+    assert calls[0]["metadata"]["backfill_business_date"] == "2026-06-10"
 
 
-def test_rt_backfill_calls_production_workflow_with_backfill_metadata(monkeypatch):
-    captured: dict[str, object] = {}
+def test_verified_hourly_rt_backfill_calls_scrape_once_per_day(monkeypatch):
+    calls: list[dict[str, object]] = []
 
     def fake_main(**kwargs):
-        captured.update(kwargs)
+        calls.append(kwargs)
+        return pd.DataFrame([{"row": 1}, {"row": 2}])
+
+    monkeypatch.setattr(rt_hrl_lmps.source, "main", fake_main)
+
+    result = rt_hrl_lmps.main(
+        start_date="2026-06-10",
+        end_date="2026-06-11",
+        database="stage_db",
+    )
+
+    assert result.pipeline_name == "rt_hrl_lmps"
+    assert result.days_requested == 2
+    assert result.rows_processed == 4
+    assert len(calls) == 2
+    assert calls[0]["start_date"] == datetime(2026, 6, 10)
+    assert calls[0]["end_date"] == datetime(2026, 6, 10)
+    assert calls[1]["start_date"] == datetime(2026, 6, 11)
+    assert calls[1]["end_date"] == datetime(2026, 6, 11)
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["run_mode"] == "backfill"
+    assert calls[0]["metadata"]["backfill_workflow"] == "rt_hrl_lmps"
+    assert calls[0]["metadata"]["backfill_start_date"] == "2026-06-10"
+    assert calls[0]["metadata"]["backfill_end_date"] == "2026-06-11"
+    assert calls[0]["metadata"]["backfill_business_date"] == "2026-06-10"
+
+
+def test_unverified_hourly_rt_backfill_calls_scrape_once_per_day(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_main(**kwargs):
+        calls.append(kwargs)
         return pd.DataFrame([{"row": 1}, {"row": 2}, {"row": 3}])
 
     monkeypatch.setattr(
-        rt_fivemin_hrl_lmps_backfill.rt_fivemin_hrl_lmps,
+        rt_unverified_hrl_lmps.source,
         "main",
         fake_main,
     )
 
-    result = rt_fivemin_hrl_lmps_backfill.main(
-        start_date=datetime(2026, 6, 10, 12),
-        end_date="2026-06-10",
+    result = rt_unverified_hrl_lmps.main(
+        start_date=date(2026, 6, 10),
+        end_date=date(2026, 6, 11),
         pnode_types=("hub",),
         database="stage_db",
     )
 
-    assert result.rows_processed == 3
-    assert captured["start_date"] == datetime(2026, 6, 10)
-    assert captured["end_date"] == datetime(2026, 6, 10)
-    assert captured["pnode_types"] == ("hub",)
-    assert captured["database"] == "stage_db"
-    assert captured["run_mode"] == "backfill"
-    assert captured["metadata"]["run_mode"] == "backfill"
-    assert captured["metadata"]["backfill_workflow"] == "rt_fivemin_hrl_lmps"
+    assert result.pipeline_name == "rt_unverified_hrl_lmps"
+    assert result.days_requested == 2
+    assert result.rows_processed == 6
+    assert len(calls) == 2
+    assert calls[0]["start_date"] == datetime(2026, 6, 10)
+    assert calls[0]["end_date"] == datetime(2026, 6, 10)
+    assert calls[0]["pnode_types"] == ("hub",)
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["metadata"]["run_mode"] == "backfill"
+    assert calls[0]["metadata"]["backfill_workflow"] == "rt_unverified_hrl_lmps"
+    assert calls[1]["metadata"]["backfill_business_date"] == "2026-06-11"
+
+
+def test_unverified_hourly_rt_backfill_dry_run_does_not_call_scrape(monkeypatch):
+    called = False
+
+    def fake_main(**_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        rt_unverified_hrl_lmps.source,
+        "main",
+        fake_main,
+    )
+
+    result = rt_unverified_hrl_lmps.main(
+        start_date="2026-06-10",
+        end_date="2026-06-10",
+        dry_run=True,
+    )
+
+    assert called is False
+    assert result.pipeline_name == "rt_unverified_hrl_lmps"
+    assert result.status == "dry_run"
+    assert result.dry_run is True
 
 
 def test_fetch_csv_merges_backfill_metadata_with_page_metadata(monkeypatch):

@@ -162,16 +162,18 @@ Scheduling:
 
 ## Manual Backfills
 
-Manual backfills are available for the two priority price workflows:
+Manual backfills are available for the priority PJM LMP workflows:
 
-- `backend.orchestration.power.pjm.da_hrl_lmps_backfill`
-- `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill`
+- `backend.backfills.power.pjm.da_hrl_lmps`
+- `backend.backfills.power.pjm.rt_hrl_lmps`
+- `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
 
-They call the same production orchestration/upsert paths as the scheduled
-jobs, write to the same canonical `pjm` tables, and tag PJM API telemetry with
-`run_mode=backfill` in `ops.api_fetch_log.metadata`. Use
-`docs/operations/manual-backfills.md` for exact VM commands and verification
-SQL. No separate backfill tables or timers are used.
+They write to the same canonical `pjm` tables with the same upsert keys as the
+scheduled jobs, and tag PJM API telemetry with `run_mode=backfill` in
+`ops.api_fetch_log.metadata`. Scheduled orchestrators remain responsible for
+polling and readiness events; manual backfill wrappers call lower-level scrape
+modules where available. Use `docs/operations/manual-backfills.md` for exact VM
+commands and verification SQL. No separate backfill tables or timers are used.
 
 RT verified five-minute HRL LMP API note:
 

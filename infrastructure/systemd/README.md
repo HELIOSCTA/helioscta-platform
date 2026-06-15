@@ -272,18 +272,19 @@ The timer runs daily at `13:35 UTC` with `Persistent=true` and
 
 ## Manual DA/RT Backfills
 
-DA hourly LMP and RT verified five-minute HRL LMP backfills are manual
-operator workflows, not timers:
+PJM LMP backfills are manual operator workflows, not timers:
 
 ```text
-backend.orchestration.power.pjm.da_hrl_lmps_backfill
-backend.orchestration.power.pjm.rt_fivemin_hrl_lmps_backfill
+backend.backfills.power.pjm.da_hrl_lmps
+backend.backfills.power.pjm.rt_hrl_lmps
+backend.backfills.power.pjm.rt_unverified_hrl_lmps
 ```
 
-Run them with `systemd-run` so `/etc/helioscta/backend.env` is loaded by
-systemd instead of shell-sourced. This avoids corrupting secrets that contain
-characters such as `$`. See `docs/operations/manual-backfills.md` for exact
-commands and verification SQL.
+Deploy them with the repo, but do not install persistent `.service` or
+`.timer` units for them. Run them on demand with `systemd-run` so
+`/etc/helioscta/backend.env` is loaded by systemd instead of shell-sourced.
+This avoids corrupting secrets that contain characters such as `$`. See
+`docs/operations/manual-backfills.md` for exact commands and verification SQL.
 
 ## Naming
 
@@ -518,3 +519,31 @@ data-availability events.
 ```bash
 sudo systemctl disable --now helios-<workflow>.timer
 ```
+
+## Remove Legacy Or Untracked Timers
+
+Only committed timers in this directory should run on `helioscta-prod-vm-01`.
+If production health shows a `helios-*` timer that is not represented by a
+`.timer` file here, treat it as untracked deployed code until proven otherwise.
+
+Inspect enabled timers and their commands:
+
+```bash
+systemctl list-timers 'helios-*' --all --no-pager
+systemctl list-unit-files 'helios-*' --type=timer --no-pager
+systemctl cat helios-<workflow>.service
+journalctl -u helios-<workflow>.service -n 120 --no-pager
+```
+
+For legacy jobs that duplicate promoted feeds or have no documented source/table
+contract, stop the timer and leave the service file disabled:
+
+```bash
+sudo systemctl disable --now helios-<workflow>.timer
+sudo systemctl reset-failed helios-<workflow>.service
+systemctl list-timers 'helios-*' --all --no-pager
+```
+
+Promote an untracked timer instead of disabling it only when it has an owner,
+runtime path, destination table contract, safe rerun behavior, telemetry,
+deployment register entry, and targeted verification.

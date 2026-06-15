@@ -82,6 +82,7 @@ def _pull(
     end_date: str,
     run_id: str | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame:
     """Pull PJM real-time verified hourly hub LMPs."""
     df = client.fetch_csv(
@@ -96,6 +97,7 @@ def _pull(
         database=database,
         log_fetch=True,
         timeout=PJM_REQUEST_TIMEOUT_SECONDS,
+        metadata=metadata,
     )
 
     if df.empty:
@@ -133,6 +135,8 @@ def main(
     end_date: datetime | None = None,
     delta: relativedelta = DEFAULT_DELTA,
     database: str | None = None,
+    run_mode: str = "scheduled",
+    metadata: dict | None = None,
 ) -> pd.DataFrame | None:
     now = datetime.now()
     start_date = start_date or (now - relativedelta(days=DEFAULT_LOOKBACK_DAYS))
@@ -150,6 +154,8 @@ def main(
     try:
         run_logger.header(API_SCRAPE_NAME)
         run_logger.info(f"Run ID: {run_id}")
+        run_logger.info(f"Run mode: {run_mode}")
+        fetch_metadata = {"run_mode": run_mode, **(metadata or {})}
 
         current_date = start_date
         while current_date <= end_date:
@@ -166,6 +172,7 @@ def main(
                 end_date=params["end_date"],
                 run_id=run_id,
                 database=database,
+                metadata=fetch_metadata,
             )
 
             if df.empty:

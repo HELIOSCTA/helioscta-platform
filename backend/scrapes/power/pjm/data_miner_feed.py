@@ -182,6 +182,7 @@ def run_feed(
     delta: relativedelta = relativedelta(days=1),
     pnode_types: str | Iterable[str] | None = None,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame | None:
     """Run a configured PJM scrape with safe default lookback windows."""
     now = datetime.now()
@@ -220,12 +221,18 @@ def run_feed(
                     pnode_types=pnode_types,
                     run_id=run_id,
                     database=database,
+                    metadata=metadata,
                 )
                 rows_processed += _upsert_if_present(df, config, database, run_logger)
                 current_date += delta
         else:
             run_logger.section("Pulling data...")
-            df = pull_feed_window(config, run_id=run_id, database=database)
+            df = pull_feed_window(
+                config,
+                run_id=run_id,
+                database=database,
+                metadata=metadata,
+            )
             rows_processed += _upsert_if_present(df, config, database, run_logger)
 
         run_logger.success(

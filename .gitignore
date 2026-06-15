@@ -36,3 +36,5 @@ dbt/**/logs/
 # Frontend
 frontend/node_modules/
 frontend/.next/
+
+.vercel

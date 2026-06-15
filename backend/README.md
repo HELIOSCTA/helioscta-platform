@@ -66,6 +66,15 @@ The external interface metered data workflow runs through
 annual workbook rows for ISO-NE control-area totals and interface-level
 metered interchange plus DA/RT price components.
 
+MISO public Real-Time Data API helpers use unauthenticated JSON endpoints from
+`https://public-api.misoenergy.org` and do not require MISO-specific
+credentials. The first promoted MISO runtime module is
+`backend.scrapes.power.miso.real_time_total_load`, with orchestration at
+`backend.orchestration.power.miso.real_time_total_load`, backed by disabled
+operator SQL under `dbt/azure_postgres/models/power/miso/`. MISO asks public
+users to avoid accessing real-time links more than once per minute, so
+scheduled jobs should use a conservative cadence.
+
 ## Permissions Contract
 
 Application schemas, shared platform tables, and promoted direct-write feed
@@ -101,3 +110,22 @@ For local tests:
 pip install -r backend/requirements-dev.txt -e backend
 pytest backend/tests
 ```
+
+## Manual PJM LMP Backfills
+
+PJM LMP backfills are Python module entry points that call the same production
+scrape/orchestration `main()` functions as the scheduled jobs, then rely on the
+existing primary-key upserts for safe reruns.
+
+Default module runs backfill one recent market day:
+
+```bash
+python -m backend.backfills.power.pjm.da_hrl_lmps
+python -m backend.backfills.power.pjm.rt_hrl_lmps
+python -m backend.backfills.power.pjm.rt_unverified_hrl_lmps
+```
+
+For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
+bottom `main(...)` call in the target module before running it on the VM. The
+wrappers validate the requested window, support `dry_run=True`, and stamp API
+fetch telemetry with backfill metadata where the underlying scrape supports it.

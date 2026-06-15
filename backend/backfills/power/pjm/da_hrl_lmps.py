@@ -5,8 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 
 from backend import credentials
-from backend.orchestration.power.pjm import da_hrl_lmps
-from backend.orchestration.power.pjm._backfill import (
+from backend.backfills.power.pjm._shared import (
     BackfillResult,
     backfill_metadata,
     normalize_date,
@@ -14,8 +13,9 @@ from backend.orchestration.power.pjm._backfill import (
     start_of_day,
     validate_backfill_window,
 )
+from backend.scrapes.power.pjm import da_hrl_lmps as source
 
-API_SCRAPE_NAME = da_hrl_lmps.API_SCRAPE_NAME
+API_SCRAPE_NAME = source.API_SCRAPE_NAME
 DEFAULT_START_DATE = (datetime.now(timezone.utc).date() - timedelta(days=1))
 DEFAULT_END_DATE = DEFAULT_START_DATE
 DEFAULT_MAX_DAYS = 31
@@ -29,7 +29,7 @@ def main(
     dry_run: bool = False,
     database: str | None = None,
 ) -> BackfillResult:
-    """Replay DA hourly LMPs into the production table with idempotent upserts."""
+    """Replay DA hourly LMPs with the lower-level scrape and idempotent upserts."""
     start = normalize_date(start_date)
     end = normalize_date(end_date)
     days_requested = validate_backfill_window(
@@ -51,23 +51,30 @@ def main(
             dry_run=True,
         )
 
-    frame = da_hrl_lmps.main(
-        start_date=start_of_day(start).strftime("%Y-%m-%d 00:00"),
-        end_date=start_of_day(end).strftime("%Y-%m-%d 23:00"),
-        database=database,
-        run_mode="backfill",
-        metadata=backfill_metadata(
-            start_date=start,
-            end_date=end,
-            workflow=API_SCRAPE_NAME,
-        ),
-    )
+    total_rows = 0
+    current = start
+    while current <= end:
+        frame = source.main(
+            start_date=start_of_day(current),
+            end_date=start_of_day(current),
+            database=database,
+            run_mode="backfill",
+            metadata=backfill_metadata(
+                start_date=start,
+                end_date=end,
+                workflow=API_SCRAPE_NAME,
+                extra={"backfill_business_date": current.isoformat()},
+            ),
+        )
+        total_rows += rows_processed(frame)
+        current += timedelta(days=1)
+
     return BackfillResult(
         pipeline_name=API_SCRAPE_NAME,
         start_date=start,
         end_date=end,
         days_requested=days_requested,
-        rows_processed=rows_processed(frame),
+        rows_processed=total_rows,
         status="success",
     )
 

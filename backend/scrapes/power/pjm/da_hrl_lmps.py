@@ -127,6 +127,8 @@ def main(
         end_date: datetime | None = None,
         delta: relativedelta = relativedelta(days=1),
         database: str | None = None,
+        run_mode: str = "scheduled",
+        metadata: dict | None = None,
     ):
 
     now = datetime.now()
@@ -146,6 +148,8 @@ def main(
 
         run_logger.header(f"{API_SCRAPE_NAME}")
         run_logger.info(f"Run ID: {run_id}")
+        run_logger.info(f"Run mode: {run_mode}")
+        fetch_metadata = {"run_mode": run_mode, **(metadata or {})}
 
         current_date = start_date
         while current_date <= end_date:
@@ -163,6 +167,7 @@ def main(
                 end_date=params['end_date'],
                 run_id=run_id,
                 database=database,
+                metadata=fetch_metadata,
             )
 
             # upsert
