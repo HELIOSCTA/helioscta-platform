@@ -16,7 +16,7 @@ const ROUTE_CONFIG = {
   owner: "frontend",
   purpose: "PJM outage forecast and seasonal dashboard data",
   p95TargetMs: 1_500,
-  freshnessSource: "pjm.frcstd_gen_outages.forecast_execution_date_ept",
+  freshnessSource: "pjm.gen_outages_by_type.forecast_execution_date_ept",
 } as const;
 type OutagesView = "forecast" | "seasonal";
 type Region = "RTO" | "WEST" | "OTHER";
@@ -142,7 +142,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       : `
           with recent_years as (
             select distinct extract(year from forecast_date)::int as year
-            from pjm.frcstd_gen_outages
+            from pjm.gen_outages_by_type
+            where region = $2
             order by year desc
             limit $1
           )
@@ -150,14 +151,19 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
             forecast_execution_date_ept::text as forecast_execution_date,
             forecast_date::text as forecast_date,
             (forecast_date - forecast_execution_date_ept)::int as lead_days,
-            forecast_gen_outage_mw_rto::float8 as rto_mw,
-            forecast_gen_outage_mw_west::float8 as west_mw,
-            forecast_gen_outage_mw_other::float8 as other_mw
-          from pjm.frcstd_gen_outages
+            total_outages_mw::float8 as total_outages_mw,
+            planned_outages_mw::float8 as planned_outages_mw,
+            maintenance_outages_mw::float8 as maintenance_outages_mw,
+            forced_outages_mw::float8 as forced_outages_mw,
+            null::float8 as rto_mw,
+            null::float8 as west_mw,
+            null::float8 as other_mw
+          from pjm.gen_outages_by_type
           where extract(year from forecast_date)::int in (select year from recent_years)
+            and region = $2
           order by forecast_date, forecast_execution_date_ept desc
         `,
-    view === "forecast" ? [executionLimit, REGION_SOURCE_NAMES[region]] : [seasonalYearLimit],
+    [view === "forecast" ? executionLimit : seasonalYearLimit, REGION_SOURCE_NAMES[region]],
   );
   const normalized = rows.map((row) => normalize(row, region, view));
   const years = Array.from(

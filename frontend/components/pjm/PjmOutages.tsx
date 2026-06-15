@@ -454,9 +454,20 @@ export default function PjmOutages({
       ...(lastYear
         ? [{ key: "lastYear", label: String(lastYear), color: "#38bdf8", defaultVisible: true }]
         : []),
-      { key: "fiveYearRange", label: "5Y Range", color: "#facc15", defaultVisible: true },
+      ...(averageYears.length
+        ? [{ key: "fiveYearRange", label: "5Y Range", color: "#facc15", defaultVisible: true }]
+        : []),
     ],
-    [currentYear, lastYear]
+    [averageYears.length, currentYear, lastYear]
+  );
+  const seasonalSubtitle = useMemo(
+    () =>
+      [
+        `${region}: ${currentYear ?? "current"} by forecast date`,
+        ...(lastYear ? [`${lastYear} prior year`] : []),
+        ...(averageYears.length ? [`${averageYears.length}Y min/max range`] : []),
+      ].join(" | "),
+    [averageYears.length, currentYear, lastYear, region]
   );
 
   const toggleSeasonalSeries = (key: string) => {
@@ -480,6 +491,7 @@ export default function PjmOutages({
     });
     const currentYearSeries = seasonalSeries.find((series) => series.key === "currentYear");
     const lastYearSeries = seasonalSeries.find((series) => series.key === "lastYear");
+    const rangeSeries = seasonalSeries.find((series) => series.key === "fiveYearRange");
 
     return (
       <div className={heightClass}>
@@ -510,7 +522,7 @@ export default function PjmOutages({
               formatter={renderTooltipValue}
               labelFormatter={(value) => `Day ${value}`}
             />
-            {!hiddenSeasonalSeries.has("fiveYearRange") && (
+            {rangeSeries && !hiddenSeasonalSeries.has("fiveYearRange") && (
               <Area
                 type="monotone"
                 dataKey="fiveYearRange"
@@ -631,7 +643,7 @@ export default function PjmOutages({
               <div key={item.key} className="space-y-4">
                 <PlotCard
                   title={`${item.label} Seasonal Overlay`}
-                  subtitle={`${region}: ${currentYear ?? "current"} includes latest forecast | ${lastYear ?? "prior"} and 5Y min/max range`}
+                  subtitle={seasonalSubtitle}
                   series={seasonalSeries}
                   hiddenSeries={hiddenSeasonalSeries}
                   onToggleSeries={toggleSeasonalSeries}
