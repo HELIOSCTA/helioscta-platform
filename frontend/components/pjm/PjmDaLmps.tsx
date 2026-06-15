@@ -1,0 +1,2563 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  ComposedChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
+import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { fetchJsonWithCache } from "@/lib/clientJsonCache";
+import { buildPjmDaSingleDateReport } from "@/lib/pjm-da-lmps/single-date-view";
+
+interface HourlyLmp {
+  hourEnding: number;
+  datetimeBeginningEpt: string;
+  total: number | null;
+  systemEnergy: number | null;
+  congestion: number | null;
+  marginalLoss: number | null;
+}
+
+interface HubLmpSummary {
+  hub: string;
+  onPeakAvg: number | null;
+  offPeakAvg: number | null;
+  flatAvg: number | null;
+  peakHour: number | null;
+  peakPrice: number | null;
+  hourly: HourlyLmp[];
+}
+
+interface PjmLmpsPayload {
+  targetDate: string;
+  latestDate: string | null;
+  asOf: string | null;
+  source:
+    | "pjm.da_hrl_lmps"
+    | "pjm.rt_hrl_lmps"
+    | "pjm.rt_unverified_hrl_lmps"
+    | "pjm.dart_lmps";
+  rtSource?: RtLmpSource;
+  hubs: HubLmpSummary[];
+}
+
+export interface PjmDaLmpsFreshnessSummary {
+  status: string;
+  statusClass: string;
+  summary: string;
+  targetDateLabel: string;
+  latestDateLabel: string;
+  latestUpdateLabel: string;
+}
+
+const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
+const ONPEAK_START = 8;
+const ONPEAK_END = 23;
+const ONPEAK_HOURS = HOURS.filter((hour) => hour >= ONPEAK_START && hour <= ONPEAK_END);
+const OFFPEAK_HOURS = HOURS.filter((hour) => hour < ONPEAK_START || hour > ONPEAK_END);
+const API_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type ComponentKey = "energy" | "congestion" | "loss" | "total";
+type ComponentSelection = ComponentKey | "all";
+type LmpProduct = "da" | "rt" | "dart";
+type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
+type RtLmpSource = "verified" | "unverified";
+type SettleDayType = "all" | "weekday" | "weekend" | "holiday";
+type SettleSortDirection = "asc" | "desc";
+// Sort/selection column keys for the daily settles grid: the three period summaries
+// plus one per hour-ending ("he1" … "he24"). "date" sorts the leading column.
+type SettleColumnKey = "onpeak" | "offpeak" | "flat" | `he${number}`;
+type SettleSortKey = "date" | SettleColumnKey;
+interface SettleSortState {
+  key: SettleSortKey;
+  direction: SettleSortDirection;
+}
+
+interface ComponentConfig {
+  key: ComponentKey;
+  label: string;
+  color: string;
+  getValue: (row: HourlyLmp) => number | null;
+}
+
+interface ComponentRow {
+  key: string;
+  label: string;
+  color: string;
+  values: Map<number, number | null>;
+  onPeakAvg: number | null;
+  offPeakAvg: number | null;
+  flatAvg: number | null;
+  min: number;
+  max: number;
+}
+
+interface PjmLmpSettleDayRow {
+  date: string;
+  hub: string;
+  isWeekend: boolean;
+  isNercHoliday: boolean;
+  holidayName: string | null;
+  // 24-element arrays indexed by hour-ending (HE1 at index 0 … HE24 at index 23),
+  // carrying the selected component's value for that hour.
+  daHourly: Array<number | string | null>;
+  rtHourly: Array<number | string | null>;
+  daAsOf: string | null;
+  rtAsOf: string | null;
+}
+
+interface PjmLmpSettlesPayload {
+  startDate: string;
+  endDate: string;
+  hub: string;
+  component: ComponentKey;
+  rtSource: RtLmpSource | "best";
+  rowCount: number;
+  summary: {
+    rowCount: number;
+    latestDate: string | null;
+    latestAsOf: string | null;
+  };
+  rows: PjmLmpSettleDayRow[];
+}
+
+const COMPONENTS: ComponentConfig[] = [
+  {
+    key: "energy",
+    label: "Energy",
+    color: "#38bdf8",
+    getValue: (row) => row.systemEnergy,
+  },
+  {
+    key: "congestion",
+    label: "Congestion",
+    color: "#f97316",
+    getValue: (row) => row.congestion,
+  },
+  {
+    key: "loss",
+    label: "Loss",
+    color: "#a78bfa",
+    getValue: (row) => row.marginalLoss,
+  },
+  {
+    key: "total",
+    label: "Total",
+    color: "#e5e7eb",
+    getValue: (row) => row.total,
+  },
+];
+
+const PLOT_SERIES: PlotSeries[] = COMPONENTS.map((component) => ({
+  key: component.key,
+  label: component.label,
+  color: component.color,
+  defaultVisible: true,
+}));
+
+const COMPARISON_COLORS = {
+  reference: "#38bdf8",
+  compare: "#f97316",
+  delta: "#22c55e",
+} as const;
+
+const PRODUCT_LABELS: Record<LmpProduct, string> = {
+  da: "DA LMPs",
+  rt: "RT LMPs",
+  dart: "DART",
+};
+
+const RT_SOURCE_LABELS: Record<RtLmpSource, string> = {
+  verified: "Verified Hourly",
+  unverified: "Unverified Hourly",
+};
+
+const LMP_VIEW_TABS: Array<DashboardTabOption<LmpView>> = [
+  { value: "daily-settles", label: "Daily Settles" },
+  { value: "single-day", label: "Single Day" },
+  { value: "compare-dates", label: "Compare Dates" },
+  { value: "compare-hubs", label: "Compare Hubs" },
+];
+
+const SETTLE_DAY_TYPE_LABELS: Record<SettleDayType, string> = {
+  all: "All",
+  weekday: "Weekday",
+  weekend: "Weekend",
+  holiday: "Holiday",
+};
+
+function settleCellKey(date: string, column: SettleColumnKey): string {
+  return `${date}|${column}`;
+}
+
+function fmtPrice(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return `$${value.toFixed(2)}`;
+}
+
+function toNumber(value: number | string | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function fmtStamp(value: string | null): string {
+  if (!value) return "-";
+  return value.replace("T", " ").slice(0, 16);
+}
+
+function todayDate(): string {
+  const date = new Date();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function offsetDate(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return value;
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function buildLmpsApiUrl({
+  product,
+  date,
+  rtSource,
+  refresh = false,
+}: {
+  product: LmpProduct;
+  date?: string | null;
+  rtSource: RtLmpSource;
+  refresh?: boolean;
+}): string {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  if (product === "rt") params.set("source", rtSource);
+  if (refresh) params.set("refresh", "1");
+
+  const baseUrl = product === "rt" ? "/api/pjm-rt-lmps" : "/api/pjm-da-lmps";
+  const query = params.toString();
+  return query ? `${baseUrl}?${query}` : baseUrl;
+}
+
+function buildLmpsCacheKey({
+  product,
+  date,
+  rtSource,
+}: {
+  product: LmpProduct;
+  date?: string | null;
+  rtSource: RtLmpSource;
+}): string {
+  return `api:pjm-${product}-lmps:${product === "rt" ? rtSource : "hourly"}:${date ?? "latest"}`;
+}
+
+function buildSettlesApiUrl({
+  startDate,
+  endDate,
+  hub,
+  component,
+  rtSource,
+  refresh = false,
+}: {
+  startDate: string;
+  endDate: string;
+  hub: string;
+  component: ComponentKey;
+  rtSource: RtLmpSource;
+  refresh?: boolean;
+}): string {
+  const params = new URLSearchParams({
+    start: startDate,
+    end: endDate,
+    hub,
+    component,
+    rtSource,
+  });
+  if (refresh) params.set("refresh", "1");
+  return `/api/pjm-lmp-settles?${params.toString()}`;
+}
+
+// Resolve a day's 24 hourly values for the active product. DART is the per-hour
+// DA - RT difference, matching how the single-day view builds its DART hub.
+function settleHourlyForProduct(
+  row: PjmLmpSettleDayRow,
+  product: LmpProduct
+): Array<number | null> {
+  const da = HOURS.map((_, index) => toNumber(row.daHourly?.[index] ?? null));
+  const rt = HOURS.map((_, index) => toNumber(row.rtHourly?.[index] ?? null));
+  if (product === "da") return da;
+  if (product === "rt") return rt;
+  return HOURS.map((_, index) => subtractValue(da[index], rt[index]));
+}
+
+// Plain hour-window averages with no calendar logic: OnPeak = HE 8-23, OffPeak = the
+// rest, Flat = all 24. Weekend / holiday status is surfaced as a row badge only and
+// never changes the numbers shown.
+function settlePeriodAverages(
+  hourly: Array<number | null>
+): { onPeak: number | null; offPeak: number | null; flat: number | null } {
+  return {
+    onPeak: avg(ONPEAK_HOURS.map((hour) => hourly[hour - 1] ?? null)),
+    offPeak: avg(OFFPEAK_HOURS.map((hour) => hourly[hour - 1] ?? null)),
+    flat: avg(hourly),
+  };
+}
+
+function settleDayAsOf(row: PjmLmpSettleDayRow, product: LmpProduct): string | null {
+  if (product === "da") return row.daAsOf;
+  if (product === "rt") return row.rtAsOf;
+  return maxStamp(row.daAsOf, row.rtAsOf);
+}
+
+// Read a settles grid cell value by column key (summary or "heN" hour column).
+function settleColumnValue(
+  day: {
+    onPeak: number | null;
+    offPeak: number | null;
+    flat: number | null;
+    hourly: Array<number | null>;
+  },
+  column: SettleColumnKey
+): number | null {
+  if (column === "onpeak") return day.onPeak;
+  if (column === "offpeak") return day.offPeak;
+  if (column === "flat") return day.flat;
+  const hour = Number(column.slice(2));
+  return Number.isFinite(hour) ? day.hourly[hour - 1] ?? null : null;
+}
+
+function subtractValue(left: number | null, right: number | null): number | null {
+  if (left === null || right === null) return null;
+  return left - right;
+}
+
+function maxStamp(left: string | null, right: string | null): string | null {
+  if (!left) return right;
+  if (!right) return left;
+  return left > right ? left : right;
+}
+
+function avg(values: Array<number | null>): number | null {
+  const nums = values.filter((value): value is number => value !== null);
+  if (nums.length === 0) return null;
+  return nums.reduce((sum, value) => sum + value, 0) / nums.length;
+}
+
+function buildTableRow({
+  key,
+  label,
+  color,
+  values,
+}: {
+  key: string;
+  label: string;
+  color: string;
+  values: Map<number, number | null>;
+}): ComponentRow {
+  const allValues = HOURS.map((hour) => values.get(hour) ?? null);
+  const nums = allValues.filter((value): value is number => value !== null);
+
+  return {
+    key,
+    label,
+    color,
+    values,
+    onPeakAvg: avg(ONPEAK_HOURS.map((hour) => values.get(hour) ?? null)),
+    offPeakAvg: avg(OFFPEAK_HOURS.map((hour) => values.get(hour) ?? null)),
+    flatAvg: avg(allValues),
+    min: nums.length > 0 ? Math.min(...nums) : 0,
+    max: nums.length > 0 ? Math.max(...nums) : 0,
+  };
+}
+
+function heatStyle(value: number | null, min: number, max: number): React.CSSProperties {
+  if (value === null || min === max) return {};
+  const midpoint = (min + max) / 2;
+  const spread = Math.max(Math.abs(max - midpoint), Math.abs(midpoint - min));
+  if (spread === 0) return {};
+
+  const neutralBand = 0.14;
+  const distance = Math.min(Math.abs(value - midpoint) / spread, 1);
+  if (distance < neutralBand) return {};
+
+  const intensity = (distance - neutralBand) / (1 - neutralBand);
+  const alpha = 0.04 + intensity * 0.16;
+  const [r, g, b] = value >= midpoint ? [22, 163, 74] : [220, 38, 38];
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    boxShadow: `inset 2px 0 0 rgba(${r}, ${g}, ${b}, ${(alpha + 0.14).toFixed(2)})`,
+    color: "#e5e7eb",
+  };
+}
+
+function deltaHeatStyle(value: number | null, maxAbs: number): React.CSSProperties {
+  if (value === null || maxAbs === 0) return {};
+
+  const neutralBand = 0.08;
+  const distance = Math.min(Math.abs(value) / maxAbs, 1);
+  if (distance < neutralBand) return {};
+
+  const intensity = (distance - neutralBand) / (1 - neutralBand);
+  const alpha = 0.05 + intensity * 0.18;
+  const [r, g, b] = value >= 0 ? [22, 163, 74] : [220, 38, 38];
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    boxShadow: `inset 2px 0 0 rgba(${r}, ${g}, ${b}, ${(alpha + 0.14).toFixed(2)})`,
+    color: "#e5e7eb",
+  };
+}
+
+function tableHeatStyle(row: ComponentRow, value: number | null): React.CSSProperties {
+  if (row.key !== "delta") return heatStyle(value, row.min, row.max);
+  return deltaHeatStyle(value, Math.max(Math.abs(row.min), Math.abs(row.max)));
+}
+
+function fallbackHourStamp(targetDate: string, hourEnding: number): string {
+  const hourBeginning = `${hourEnding - 1}`.padStart(2, "0");
+  return `${targetDate}T${hourBeginning}:00:00`;
+}
+
+function buildDartHub(
+  hubName: string,
+  daHub: HubLmpSummary | null,
+  rtHub: HubLmpSummary | null,
+  targetDate: string
+): HubLmpSummary {
+  const hourly = HOURS.map((hour) => {
+    const daRow = daHub?.hourly.find((row) => row.hourEnding === hour) ?? null;
+    const rtRow = rtHub?.hourly.find((row) => row.hourEnding === hour) ?? null;
+
+    return {
+      hourEnding: hour,
+      datetimeBeginningEpt:
+        daRow?.datetimeBeginningEpt ??
+        rtRow?.datetimeBeginningEpt ??
+        fallbackHourStamp(targetDate, hour),
+      total: subtractValue(daRow?.total ?? null, rtRow?.total ?? null),
+      systemEnergy: subtractValue(daRow?.systemEnergy ?? null, rtRow?.systemEnergy ?? null),
+      congestion: subtractValue(daRow?.congestion ?? null, rtRow?.congestion ?? null),
+      marginalLoss: subtractValue(daRow?.marginalLoss ?? null, rtRow?.marginalLoss ?? null),
+    };
+  });
+
+  const onPeak = hourly.filter(
+    (row) => row.hourEnding >= ONPEAK_START && row.hourEnding <= ONPEAK_END
+  );
+  const offPeak = hourly.filter(
+    (row) => row.hourEnding < ONPEAK_START || row.hourEnding > ONPEAK_END
+  );
+  const peak = hourly.reduce<HourlyLmp | null>((best, row) => {
+    if (row.total === null) return best;
+    if (!best || best.total === null || row.total > best.total) return row;
+    return best;
+  }, null);
+
+  return {
+    hub: hubName,
+    onPeakAvg: avg(onPeak.map((row) => row.total)),
+    offPeakAvg: avg(offPeak.map((row) => row.total)),
+    flatAvg: avg(hourly.map((row) => row.total)),
+    peakHour: peak?.hourEnding ?? null,
+    peakPrice: peak?.total ?? null,
+    hourly,
+  };
+}
+
+function buildDartPayload(
+  daPayload: PjmLmpsPayload,
+  rtPayload: PjmLmpsPayload,
+  rtSource: RtLmpSource
+): PjmLmpsPayload {
+  const targetDate = daPayload.targetDate;
+  const hubNames = daPayload.hubs.map((hub) => hub.hub);
+  const hubs = hubNames.map((hubName) =>
+    buildDartHub(
+      hubName,
+      daPayload.hubs.find((hub) => hub.hub === hubName) ?? null,
+      rtPayload.hubs.find((hub) => hub.hub === hubName) ?? null,
+      targetDate
+    )
+  );
+
+  return {
+    targetDate,
+    latestDate: rtPayload.latestDate,
+    asOf: maxStamp(daPayload.asOf, rtPayload.asOf),
+    source: "pjm.dart_lmps",
+    rtSource,
+    hubs,
+  };
+}
+
+function fetchDirectLmpsPayload({
+  product,
+  date,
+  rtSource,
+  signal,
+  cacheMode = "default",
+  forceRefresh = false,
+}: {
+  product: Exclude<LmpProduct, "dart">;
+  date?: string | null;
+  rtSource: RtLmpSource;
+  signal?: AbortSignal;
+  cacheMode?: RequestCache;
+  forceRefresh?: boolean;
+}): Promise<PjmLmpsPayload> {
+  return fetchJsonWithCache<PjmLmpsPayload>({
+    key: buildLmpsCacheKey({ product, date, rtSource }),
+    url: buildLmpsApiUrl({ product, date, rtSource, refresh: forceRefresh }),
+    ttlMs: API_CACHE_TTL_MS,
+    signal,
+    cacheMode,
+    forceRefresh,
+  });
+}
+
+async function fetchLmpsPayload({
+  product,
+  date,
+  rtSource,
+  signal,
+  cacheMode = "default",
+  forceRefresh = false,
+}: {
+  product: LmpProduct;
+  date?: string | null;
+  rtSource: RtLmpSource;
+  signal?: AbortSignal;
+  cacheMode?: RequestCache;
+  forceRefresh?: boolean;
+}): Promise<PjmLmpsPayload> {
+  if (product !== "dart") {
+    return fetchDirectLmpsPayload({
+      product,
+      date,
+      rtSource,
+      signal,
+      cacheMode,
+      forceRefresh,
+    });
+  }
+
+  const rtSeed = await fetchDirectLmpsPayload({
+    product: "rt",
+    date,
+    rtSource,
+    signal,
+    cacheMode,
+    forceRefresh,
+  });
+  const targetDate = date ?? rtSeed.targetDate;
+  const [daPayload, rtPayload] = await Promise.all([
+    fetchDirectLmpsPayload({
+      product: "da",
+      date: targetDate,
+      rtSource,
+      signal,
+      cacheMode,
+      forceRefresh,
+    }),
+    rtSeed.targetDate === targetDate
+      ? Promise.resolve(rtSeed)
+      : fetchDirectLmpsPayload({
+          product: "rt",
+          date: targetDate,
+          rtSource,
+          signal,
+          cacheMode,
+          forceRefresh,
+        }),
+  ]);
+
+  return buildDartPayload(daPayload, rtPayload, rtSource);
+}
+
+function StatTile({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="rounded-md border border-gray-800 bg-gray-950/40 px-4 py-3">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-gray-100">{value}</p>
+      {sub && <p className="mt-1 text-xs text-gray-600">{sub}</p>}
+    </div>
+  );
+}
+
+function SectionCard({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
+          {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function TableHeatmapToggle({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={enabled}
+      onClick={onToggle}
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+        enabled
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${enabled ? "bg-emerald-300" : "bg-gray-600"}`}
+        aria-hidden="true"
+      />
+      Heatmap
+    </button>
+  );
+}
+
+function LmpComponentCard({
+  value,
+  onChange,
+  allowAll = false,
+}: {
+  value: ComponentSelection;
+  onChange: (value: ComponentSelection) => void;
+  allowAll?: boolean;
+}) {
+  const options: Array<{ key: ComponentSelection; label: string; color?: string }> = [
+    ...(allowAll ? [{ key: "all" as const, label: "All Components" }] : []),
+    ...COMPONENTS.map((component) => ({
+      key: component.key,
+      label: component.label,
+      color: component.color,
+    })),
+  ];
+
+  return (
+    <SectionCard title="LMP Component">
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="LMP component">
+        {options.map((option) => {
+          const selected = value === option.key;
+          return (
+            <button
+              key={option.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(option.key)}
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                selected
+                  ? "border-sky-500/50 bg-sky-500/10 text-white"
+                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+              }`}
+            >
+              {option.color && (
+                <span
+                  className="h-2.5 w-2.5 rounded-sm"
+                  style={{ backgroundColor: option.color }}
+                  aria-hidden="true"
+                />
+              )}
+              {option.label}
+            </button>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+function RtDatasetCard({
+  value,
+  onChange,
+}: {
+  value: RtLmpSource;
+  onChange: (value: RtLmpSource) => void;
+}) {
+  const options: RtLmpSource[] = ["unverified", "verified"];
+
+  return (
+    <SectionCard title="RT Dataset" subtitle="Real-time LMP source">
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="RT LMP dataset">
+        {options.map((option) => {
+          const selected = value === option;
+          return (
+            <button
+              key={option}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(option)}
+              className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                selected
+                  ? "border-sky-500/50 bg-sky-500/10 text-white"
+                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+              }`}
+            >
+              {RT_SOURCE_LABELS[option]}
+            </button>
+          );
+        })}
+      </div>
+    </SectionCard>
+  );
+}
+
+// Sortable column header for the daily settles grid: click to sort, arrow shows the
+// active key + direction (↕ = inactive).
+function SettleHeaderButton({
+  label,
+  sortKey,
+  activeSort,
+  onSort,
+}: {
+  label: string;
+  sortKey: SettleSortKey;
+  activeSort: SettleSortState;
+  onSort: (key: SettleSortKey) => void;
+}) {
+  const active = activeSort.key === sortKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className="inline-flex items-center gap-1 font-semibold uppercase tracking-wide transition-colors hover:text-gray-200"
+    >
+      {label}
+      <span className={`text-[9px] ${active ? "text-sky-300" : "text-gray-700"}`} aria-hidden="true">
+        {active ? (activeSort.direction === "asc" ? "▲" : "▼") : "↕"}
+      </span>
+    </button>
+  );
+}
+
+// Selectable price cell for the daily settles grid. Click toggles, shift-click extends
+// a range within the same column; selection drives the live stats popover. When
+// selected, the sky highlight replaces the heatmap tint.
+function SettleCell({
+  value,
+  date,
+  column,
+  selected,
+  heatmapEnabled,
+  heatRange,
+  onSelect,
+  extraClass = "",
+}: {
+  value: number | null;
+  date: string;
+  column: SettleColumnKey;
+  selected: boolean;
+  heatmapEnabled: boolean;
+  heatRange: { min: number; max: number };
+  onSelect: (date: string, column: SettleColumnKey, shiftKey: boolean) => void;
+  extraClass?: string;
+}) {
+  const stateClass = selected
+    ? "bg-sky-500/25 text-sky-50 outline outline-1 -outline-offset-1 outline-sky-400/70"
+    : "text-gray-200 hover:bg-sky-500/10";
+  return (
+    <td
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={(event) => onSelect(date, column, event.shiftKey)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(date, column, event.shiftKey);
+        }
+      }}
+      className={`cursor-pointer select-none px-2 py-2 text-right tabular-nums transition-colors ${extraClass} ${stateClass}`}
+      style={!selected && heatmapEnabled ? heatStyle(value, heatRange.min, heatRange.max) : undefined}
+    >
+      {fmtPrice(value)}
+    </td>
+  );
+}
+
+export default function PjmDaLmps({
+  initialDate = null,
+  refreshToken = 0,
+  onFreshnessChange,
+}: {
+  initialDate?: string | null;
+  refreshToken?: number;
+  onFreshnessChange?: (freshness: PjmDaLmpsFreshnessSummary) => void;
+}) {
+  const [activeProduct, setActiveProduct] = useState<LmpProduct>("da");
+  const [rtSource, setRtSource] = useState<RtLmpSource>("unverified");
+  const [data, setData] = useState<PjmLmpsPayload | null>(null);
+  const [selectedHub, setSelectedHub] = useState("WESTERN HUB");
+  const [date, setDate] = useState<string | null>(initialDate);
+  const [dateInput, setDateInput] = useState("");
+  const [activeView, setActiveView] = useState<LmpView>("daily-settles");
+  // Empty until seeded from the latest available date (see the seeding effect below).
+  // The settles fetch is gated on these being set, so we never issue a wasted query
+  // for a guessed "today" window.
+  const [settlesStartDate, setSettlesStartDate] = useState("");
+  const [settlesEndDate, setSettlesEndDate] = useState("");
+  const [settlesComponent, setSettlesComponent] = useState<ComponentKey>("total");
+  const [settlesData, setSettlesData] = useState<PjmLmpSettlesPayload | null>(null);
+  const [settlesLoading, setSettlesLoading] = useState(false);
+  const [settlesError, setSettlesError] = useState<string | null>(null);
+  const [settlesDayType, setSettlesDayType] = useState<SettleDayType>("all");
+  const [settlesSort, setSettlesSort] = useState<SettleSortState>({
+    key: "date",
+    direction: "desc",
+  });
+  const [selectedSettleCells, setSelectedSettleCells] = useState<Set<string>>(() => new Set());
+  const [lastSelectedSettleCell, setLastSelectedSettleCell] = useState<string | null>(null);
+  // Seed the settles range to the latest available date once, the first time PJM data
+  // loads — so we don't land on an empty "today" window before settles are posted.
+  const settlesRangeSeededRef = useRef(false);
+  const [singleComponent, setSingleComponent] = useState<ComponentSelection>("all");
+  const [compareBaseDate, setCompareBaseDate] = useState(() => todayDate());
+  const [compareDate, setCompareDate] = useState(() => offsetDate(todayDate(), -1));
+  const [compareComponent, setCompareComponent] = useState<ComponentKey>("total");
+  const [compareBaseData, setCompareBaseData] = useState<PjmLmpsPayload | null>(null);
+  const [compareData, setCompareData] = useState<PjmLmpsPayload | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
+  const [compareHubA, setCompareHubA] = useState("WESTERN HUB");
+  const [compareHubB, setCompareHubB] = useState("EASTERN HUB");
+  const [compareHubComponent, setCompareHubComponent] = useState<ComponentKey>("total");
+  const [latestRefreshToken, setLatestRefreshToken] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
+  const [hiddenPlotSeries, setHiddenPlotSeries] = useState<Set<string>>(() => new Set());
+  const [hiddenCompareSeries, setHiddenCompareSeries] = useState<Set<string>>(() => new Set());
+  const [hiddenHubCompareSeries, setHiddenHubCompareSeries] = useState<Set<string>>(
+    () => new Set()
+  );
+  const effectiveRefreshToken = refreshToken + latestRefreshToken;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+
+    setLoading(true);
+    setError(null);
+    setData(null);
+    fetchLmpsPayload({
+      product: activeProduct,
+      date,
+      rtSource,
+      signal: controller.signal,
+      cacheMode: effectiveRefreshToken > 0 ? "no-store" : "default",
+      forceRefresh: effectiveRefreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setData(payload);
+        setDateInput(payload.targetDate);
+        setCompareBaseDate((prev) => prev || payload.targetDate);
+        setCompareDate((prev) => prev || offsetDate(payload.targetDate, -1));
+        setSelectedHub((prev) =>
+          payload.hubs.some((hub) => hub.hub === prev)
+            ? prev
+            : (payload.hubs[0]?.hub ?? "WESTERN HUB")
+        );
+        setCompareHubA((prev) =>
+          payload.hubs.some((hub) => hub.hub === prev)
+            ? prev
+            : (payload.hubs[0]?.hub ?? "WESTERN HUB")
+        );
+        setCompareHubB((prev) => {
+          if (payload.hubs.some((hub) => hub.hub === prev)) return prev;
+          return (
+            payload.hubs.find((hub) => hub.hub === "EASTERN HUB")?.hub ??
+            payload.hubs[1]?.hub ??
+            payload.hubs[0]?.hub ??
+            "EASTERN HUB"
+          );
+        });
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setError(err.message ?? "Failed to load LMPs");
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [activeProduct, date, effectiveRefreshToken, rtSource]);
+
+  useEffect(() => {
+    if (activeView !== "daily-settles") return;
+    // Wait until the range is seeded from the latest date, so the first request targets
+    // the populated window rather than a guessed "today" range.
+    if (!settlesStartDate || !settlesEndDate) return;
+
+    const controller = new AbortController();
+    let active = true;
+    const url = buildSettlesApiUrl({
+      startDate: settlesStartDate,
+      endDate: settlesEndDate,
+      hub: selectedHub,
+      component: settlesComponent,
+      rtSource,
+      refresh: effectiveRefreshToken > 0,
+    });
+
+    setSettlesLoading(true);
+    setSettlesError(null);
+    fetchJsonWithCache<PjmLmpSettlesPayload>({
+      key: `pjm-lmp-settles:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${settlesComponent}:${rtSource}`,
+      url,
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: effectiveRefreshToken > 0 ? "no-store" : "default",
+      forceRefresh: effectiveRefreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setSettlesData(payload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setSettlesError(err.message ?? "Failed to load PJM LMP settles");
+        }
+      })
+      .finally(() => {
+        if (active) setSettlesLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    activeView,
+    effectiveRefreshToken,
+    rtSource,
+    selectedHub,
+    settlesComponent,
+    settlesEndDate,
+    settlesStartDate,
+  ]);
+
+  // A new settles payload invalidates any prior cell selection (dates/values changed).
+  useEffect(() => {
+    setSelectedSettleCells(new Set());
+    setLastSelectedSettleCell(null);
+  }, [settlesData]);
+
+  // Default the settles window to end on the latest available market date (start = 30
+  // days prior), seeded once from the PJM single-day payload's latestDate — which is
+  // already fetched for the hub grid, so the settles request goes out a single time
+  // with a valid range (the API skips its own latest-date lookup). Runs before the
+  // user touches the inputs; after that their range is preserved.
+  useEffect(() => {
+    if (settlesRangeSeededRef.current) return;
+    if (!data) return;
+    settlesRangeSeededRef.current = true;
+    const end = data.latestDate ?? todayDate();
+    setSettlesEndDate(end);
+    setSettlesStartDate(offsetDate(end, -30));
+  }, [data]);
+
+  const selected = useMemo(
+    () => (data ? buildPjmDaSingleDateReport(data, selectedHub).selectedHub : null),
+    [data, selectedHub]
+  );
+
+  const chartData = useMemo(
+    () =>
+      selected?.hourly.map((row) => ({
+        he: row.hourEnding,
+        energy: row.systemEnergy,
+        congestion: row.congestion,
+        loss: row.marginalLoss,
+        total: row.total,
+      })) ?? [],
+    [selected]
+  );
+
+  const componentRows = useMemo(
+    () => (data ? buildPjmDaSingleDateReport(data, selectedHub).componentRows : []),
+    [data, selectedHub]
+  );
+  const visibleComponentRows = useMemo(
+    () =>
+      singleComponent === "all"
+        ? componentRows
+        : componentRows.filter((row) => row.key === singleComponent),
+    [componentRows, singleComponent]
+  );
+  const singlePlotSeries = useMemo(
+    () =>
+      singleComponent === "all"
+        ? PLOT_SERIES
+        : PLOT_SERIES.filter((series) => series.key === singleComponent),
+    [singleComponent]
+  );
+  const isLatestDay = data?.latestDate && data.targetDate === data.latestDate;
+  const freshnessStatus = loading ? "Refreshing" : isLatestDay ? "Current" : "Selected Day";
+  const freshnessClass = loading
+    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+    : isLatestDay
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+      : "border-sky-500/40 bg-sky-500/10 text-sky-200";
+  const freshnessSummary = useMemo<PjmDaLmpsFreshnessSummary | null>(() => {
+    if (!data) return null;
+    const productLabel =
+      activeProduct === "dart"
+        ? `DART ${RT_SOURCE_LABELS[rtSource]}`
+        : activeProduct === "rt"
+        ? `RT ${RT_SOURCE_LABELS[rtSource]}`
+        : "PJM DA";
+    return {
+      status: freshnessStatus,
+      statusClass: freshnessClass,
+      summary: `${productLabel} day ${data.targetDate}`,
+      targetDateLabel: data.targetDate,
+      latestDateLabel: data.latestDate ?? "--",
+      latestUpdateLabel: fmtStamp(data.asOf),
+    };
+  }, [activeProduct, data, freshnessClass, freshnessStatus, rtSource]);
+
+  useEffect(() => {
+    if (freshnessSummary) {
+      onFreshnessChange?.(freshnessSummary);
+    }
+  }, [freshnessSummary, onFreshnessChange]);
+
+  useEffect(() => {
+    if (activeView !== "compare-dates" || !compareBaseDate || !compareDate) return;
+
+    const controller = new AbortController();
+    let active = true;
+
+    setCompareLoading(true);
+    setCompareError(null);
+    setCompareBaseData(null);
+    setCompareData(null);
+
+    const fetchDate = (targetDate: string) =>
+      fetchLmpsPayload({
+        product: activeProduct,
+        date: targetDate,
+        rtSource,
+        signal: controller.signal,
+      });
+
+    Promise.all([fetchDate(compareBaseDate), fetchDate(compareDate)])
+      .then(([basePayload, comparePayload]) => {
+        if (!active) return;
+        setCompareBaseData(basePayload);
+        setCompareData(comparePayload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setCompareError(err.message ?? "Failed to load comparison LMPs");
+        }
+      })
+      .finally(() => {
+        if (active) setCompareLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [activeProduct, activeView, compareBaseDate, compareDate, rtSource]);
+
+  const applyDate = () => {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+      setDate(dateInput);
+    }
+  };
+  const tableHeatmapAction = (
+    <TableHeatmapToggle
+      enabled={tableHeatmapEnabled}
+      onToggle={() => setTableHeatmapEnabled((enabled) => !enabled)}
+    />
+  );
+
+  const compareConfig = COMPONENTS.find((component) => component.key === compareComponent) ?? COMPONENTS[3];
+  const compareBaseHub = useMemo(
+    () => compareBaseData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
+    [compareBaseData, selectedHub]
+  );
+  const compareHub = useMemo(
+    () => compareData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
+    [compareData, selectedHub]
+  );
+  const compareChartData = useMemo(
+    () =>
+      HOURS.map((hour) => {
+        const baseRow = compareBaseHub?.hourly.find((row) => row.hourEnding === hour) ?? null;
+        const compareRow = compareHub?.hourly.find((row) => row.hourEnding === hour) ?? null;
+        const base = baseRow ? compareConfig.getValue(baseRow) : null;
+        const compare = compareRow ? compareConfig.getValue(compareRow) : null;
+        return {
+          he: hour,
+          base,
+          compare,
+          delta: base !== null && compare !== null ? base - compare : null,
+        };
+      }),
+    [compareBaseHub, compareConfig, compareHub]
+  );
+  const compareTableRows = useMemo(
+    () => [
+      buildTableRow({
+        key: "base",
+        label: compareBaseDate || "Reference Date",
+        color: COMPARISON_COLORS.reference,
+        values: new Map(compareChartData.map((row) => [row.he, row.base] as const)),
+      }),
+      buildTableRow({
+        key: "compare",
+        label: compareDate || "Compare Date",
+        color: COMPARISON_COLORS.compare,
+        values: new Map(compareChartData.map((row) => [row.he, row.compare] as const)),
+      }),
+      buildTableRow({
+        key: "delta",
+        label: "Delta",
+        color: COMPARISON_COLORS.delta,
+        values: new Map(compareChartData.map((row) => [row.he, row.delta] as const)),
+      }),
+    ],
+    [compareChartData, compareBaseDate, compareDate]
+  );
+  const compareSeries: PlotSeries[] = [
+    {
+      key: "base",
+      label: compareBaseDate || "Reference",
+      color: COMPARISON_COLORS.reference,
+      defaultVisible: true,
+    },
+    {
+      key: "compare",
+      label: compareDate || "Compare",
+      color: COMPARISON_COLORS.compare,
+      defaultVisible: true,
+    },
+    { key: "delta", label: "Delta", color: COMPARISON_COLORS.delta, defaultVisible: true },
+  ];
+  const hubCompareConfig =
+    COMPONENTS.find((component) => component.key === compareHubComponent) ?? COMPONENTS[3];
+  const compareHubAData = useMemo(
+    () => data?.hubs.find((hub) => hub.hub === compareHubA) ?? data?.hubs[0] ?? null,
+    [compareHubA, data]
+  );
+  const compareHubBData = useMemo(
+    () => data?.hubs.find((hub) => hub.hub === compareHubB) ?? data?.hubs[1] ?? data?.hubs[0] ?? null,
+    [compareHubB, data]
+  );
+  const hubCompareChartData = useMemo(
+    () =>
+      HOURS.map((hour) => {
+        const hubARow = compareHubAData?.hourly.find((row) => row.hourEnding === hour) ?? null;
+        const hubBRow = compareHubBData?.hourly.find((row) => row.hourEnding === hour) ?? null;
+        const hubA = hubARow ? hubCompareConfig.getValue(hubARow) : null;
+        const hubB = hubBRow ? hubCompareConfig.getValue(hubBRow) : null;
+        return {
+          he: hour,
+          hubA,
+          hubB,
+          delta: hubA !== null && hubB !== null ? hubA - hubB : null,
+        };
+      }),
+    [compareHubAData, compareHubBData, hubCompareConfig]
+  );
+  const hubCompareTableRows = useMemo(
+    () => [
+      buildTableRow({
+        key: "hubA",
+        label: compareHubAData?.hub ?? "Hub A",
+        color: COMPARISON_COLORS.reference,
+        values: new Map(hubCompareChartData.map((row) => [row.he, row.hubA] as const)),
+      }),
+      buildTableRow({
+        key: "hubB",
+        label: compareHubBData?.hub ?? "Hub B",
+        color: COMPARISON_COLORS.compare,
+        values: new Map(hubCompareChartData.map((row) => [row.he, row.hubB] as const)),
+      }),
+      buildTableRow({
+        key: "delta",
+        label: "Delta",
+        color: COMPARISON_COLORS.delta,
+        values: new Map(hubCompareChartData.map((row) => [row.he, row.delta] as const)),
+      }),
+    ],
+    [compareHubAData, compareHubBData, hubCompareChartData]
+  );
+  const hubCompareSeries: PlotSeries[] = [
+    {
+      key: "hubA",
+      label: compareHubAData?.hub ?? "Hub A",
+      color: COMPARISON_COLORS.reference,
+      defaultVisible: true,
+    },
+    {
+      key: "hubB",
+      label: compareHubBData?.hub ?? "Hub B",
+      color: COMPARISON_COLORS.compare,
+      defaultVisible: true,
+    },
+    { key: "delta", label: "Delta", color: COMPARISON_COLORS.delta, defaultVisible: true },
+  ];
+  const settleRows = useMemo(() => settlesData?.rows ?? [], [settlesData]);
+  const settleComponentConfig =
+    COMPONENTS.find((component) => component.key === settlesComponent) ?? COMPONENTS[3];
+  const settleMetricLabel =
+    activeProduct === "dart" ? "DART (DA - RT)" : activeProduct === "rt" ? "RT" : "DA";
+  // One enriched record per day: the active product's hourly values for the selected
+  // component, plus that day's on-peak / off-peak / flat averages.
+  const settleDays = useMemo(
+    () =>
+      settleRows.map((row) => {
+        const hourly = settleHourlyForProduct(row, activeProduct);
+        const periods = settlePeriodAverages(hourly);
+        return {
+          date: row.date,
+          isWeekend: row.isWeekend,
+          isNercHoliday: row.isNercHoliday,
+          holidayName: row.holidayName,
+          hourly,
+          onPeak: periods.onPeak,
+          offPeak: periods.offPeak,
+          flat: periods.flat,
+          hoursPresent: hourly.filter((value) => value !== null).length,
+          asOf: settleDayAsOf(row, activeProduct),
+        };
+      }),
+    [activeProduct, settleRows]
+  );
+  // Shared color scale across the whole day×hour grid so magnitudes are comparable
+  // between days (a per-row scale would flatten every day to the same gradient).
+  const settleHeatRange = useMemo(() => {
+    const nums = settleDays
+      .flatMap((day) => day.hourly)
+      .filter((value): value is number => value !== null);
+    return {
+      min: nums.length > 0 ? Math.min(...nums) : 0,
+      max: nums.length > 0 ? Math.max(...nums) : 0,
+    };
+  }, [settleDays]);
+  const filteredSettleDays = useMemo(
+    () =>
+      settleDays.filter((day) => {
+        if (settlesDayType === "weekday") return !day.isWeekend && !day.isNercHoliday;
+        if (settlesDayType === "weekend") return day.isWeekend;
+        if (settlesDayType === "holiday") return day.isNercHoliday;
+        return true;
+      }),
+    [settleDays, settlesDayType]
+  );
+  const displayedSettleDays = useMemo(() => {
+    const direction = settlesSort.direction === "asc" ? 1 : -1;
+    const rows = [...filteredSettleDays];
+    rows.sort((a, b) => {
+      if (settlesSort.key === "date") {
+        return a.date < b.date ? -direction : a.date > b.date ? direction : 0;
+      }
+      const aValue = settleColumnValue(a, settlesSort.key);
+      const bValue = settleColumnValue(b, settlesSort.key);
+      if (aValue === null && bValue === null) return 0;
+      if (aValue === null) return 1; // nulls always sort last
+      if (bValue === null) return -1;
+      return (aValue - bValue) * direction;
+    });
+    return rows;
+  }, [filteredSettleDays, settlesSort]);
+  const settleSelectionStats = useMemo(() => {
+    if (selectedSettleCells.size === 0) return null;
+    const dayByDate = new Map(settleDays.map((day) => [day.date, day] as const));
+    const values: number[] = [];
+    let nercCells = 0;
+    selectedSettleCells.forEach((key) => {
+      const [date, column] = key.split("|");
+      const day = dayByDate.get(date);
+      if (!day) return;
+      const value = settleColumnValue(day, column as SettleColumnKey);
+      if (value !== null) values.push(value);
+      if (day.isNercHoliday) nercCells += 1;
+    });
+    const sum = values.reduce((total, value) => total + value, 0);
+    return {
+      cells: selectedSettleCells.size,
+      observations: values.length,
+      avg: values.length > 0 ? sum / values.length : null,
+      sum: values.length > 0 ? sum : null,
+      min: values.length > 0 ? Math.min(...values) : null,
+      max: values.length > 0 ? Math.max(...values) : null,
+      nercCells,
+    };
+  }, [selectedSettleCells, settleDays]);
+  const toggleSettleSort = (key: SettleSortKey) => {
+    setSettlesSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "desc" }
+    );
+  };
+  const toggleSettleCell = (date: string, column: SettleColumnKey, shiftKey: boolean) => {
+    const key = settleCellKey(date, column);
+    const order = displayedSettleDays.map((day) => day.date);
+    const last = lastSelectedSettleCell ? lastSelectedSettleCell.split("|") : null;
+    if (shiftKey && last && last[1] === column && order.includes(last[0])) {
+      const start = order.indexOf(last[0]);
+      const end = order.indexOf(date);
+      const [from, to] = start <= end ? [start, end] : [end, start];
+      setSelectedSettleCells((prev) => {
+        const next = new Set(prev);
+        for (let index = from; index <= to; index += 1) {
+          next.add(settleCellKey(order[index], column));
+        }
+        return next;
+      });
+    } else {
+      setSelectedSettleCells((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+    setLastSelectedSettleCell(key);
+  };
+  const clearSettleSelection = () => {
+    setSelectedSettleCells(new Set());
+    setLastSelectedSettleCell(null);
+  };
+
+  const handleViewChange = (nextView: LmpView) => {
+    setActiveView(nextView);
+  };
+
+  const togglePlotSeries = (key: string) => {
+    setHiddenPlotSeries((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const showAllPlotSeries = () => setHiddenPlotSeries(new Set());
+
+  const hideAllPlotSeries = () =>
+    setHiddenPlotSeries(new Set(singlePlotSeries.map((series) => series.key)));
+
+  const shouldShowSingleSeries = (key: ComponentKey) =>
+    (singleComponent === "all" || singleComponent === key) && !hiddenPlotSeries.has(key);
+
+  const renderChart = (heightClass: string) => (
+    <div className={heightClass}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={chartData} margin={{ top: 10, right: 16, left: 0, bottom: 8 }}>
+          <CartesianGrid stroke="rgba(75,85,99,0.25)" />
+          <XAxis
+            dataKey="he"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            interval={1}
+            label={{ value: "Hour Ending", position: "insideBottom", offset: -4, fill: "#6b7280" }}
+          />
+          <YAxis
+            yAxisId="lmp"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tickFormatter={(value) => `$${value}`}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#111827",
+              border: "1px solid #374151",
+              borderRadius: "6px",
+              color: "#e5e7eb",
+            }}
+            formatter={(value) =>
+              typeof value === "number" ? [`$${value.toFixed(2)}`, ""] : [value, ""]
+            }
+            labelFormatter={(value) => `HE ${value}`}
+          />
+          {shouldShowSingleSeries("energy") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="energy"
+              name="Energy"
+              stroke="#38bdf8"
+              dot={false}
+              strokeWidth={2}
+            />
+          )}
+          {shouldShowSingleSeries("congestion") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="congestion"
+              name="Congestion"
+              stroke="#f97316"
+              dot={false}
+              strokeWidth={2}
+            />
+          )}
+          {shouldShowSingleSeries("loss") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="loss"
+              name="Loss"
+              stroke="#a78bfa"
+              dot={false}
+              strokeWidth={2}
+            />
+          )}
+          {shouldShowSingleSeries("total") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="total"
+              name="Total"
+              stroke="#e5e7eb"
+              dot={false}
+              strokeWidth={2.5}
+            />
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const toggleCompareSeries = (key: string) => {
+    setHiddenCompareSeries((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const showAllCompareSeries = () => setHiddenCompareSeries(new Set());
+  const hideAllCompareSeries = () =>
+    setHiddenCompareSeries(new Set(compareSeries.map((series) => series.key)));
+  const renderCompareChart = (heightClass: string) => (
+    <div className={heightClass}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart data={compareChartData} margin={{ top: 10, right: 16, left: 0, bottom: 8 }}>
+          <CartesianGrid stroke="rgba(75,85,99,0.25)" />
+          <XAxis
+            dataKey="he"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            interval={1}
+            label={{ value: "Hour Ending", position: "insideBottom", offset: -4, fill: "#6b7280" }}
+          />
+          <YAxis
+            yAxisId="lmp"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tickFormatter={(value) => `$${value}`}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#111827",
+              border: "1px solid #374151",
+              borderRadius: "6px",
+              color: "#e5e7eb",
+            }}
+            formatter={(value) =>
+              typeof value === "number" ? [`$${value.toFixed(2)}`, ""] : [value, ""]
+            }
+            labelFormatter={(value) => `HE ${value}`}
+          />
+          {!hiddenCompareSeries.has("base") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="base"
+              name={compareBaseDate || "Base"}
+              stroke={COMPARISON_COLORS.reference}
+              dot={false}
+              strokeWidth={2.5}
+            />
+          )}
+          {!hiddenCompareSeries.has("compare") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="compare"
+              name={compareDate || "Compare"}
+              stroke={COMPARISON_COLORS.compare}
+              dot={false}
+              strokeDasharray="2 4"
+              strokeWidth={2}
+            />
+          )}
+          {!hiddenCompareSeries.has("delta") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="delta"
+              name="Delta"
+              stroke={COMPARISON_COLORS.delta}
+              dot={false}
+              strokeDasharray="4 4"
+              strokeWidth={2}
+            />
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+  const toggleHubCompareSeries = (key: string) => {
+    setHiddenHubCompareSeries((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+  const showAllHubCompareSeries = () => setHiddenHubCompareSeries(new Set());
+  const hideAllHubCompareSeries = () =>
+    setHiddenHubCompareSeries(new Set(hubCompareSeries.map((series) => series.key)));
+  const renderHubCompareChart = (heightClass: string) => (
+    <div className={heightClass}>
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart
+          data={hubCompareChartData}
+          margin={{ top: 10, right: 16, left: 0, bottom: 8 }}
+        >
+          <CartesianGrid stroke="rgba(75,85,99,0.25)" />
+          <XAxis
+            dataKey="he"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            interval={1}
+            label={{ value: "Hour Ending", position: "insideBottom", offset: -4, fill: "#6b7280" }}
+          />
+          <YAxis
+            yAxisId="lmp"
+            stroke="#9ca3af"
+            tick={{ fill: "#9ca3af", fontSize: 11 }}
+            tickFormatter={(value) => `$${value}`}
+          />
+          <Tooltip
+            contentStyle={{
+              background: "#111827",
+              border: "1px solid #374151",
+              borderRadius: "6px",
+              color: "#e5e7eb",
+            }}
+            formatter={(value) =>
+              typeof value === "number" ? [`$${value.toFixed(2)}`, ""] : [value, ""]
+            }
+            labelFormatter={(value) => `HE ${value}`}
+          />
+          {!hiddenHubCompareSeries.has("hubA") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="hubA"
+              name={compareHubAData?.hub ?? "Hub A"}
+              stroke={COMPARISON_COLORS.reference}
+              dot={false}
+              strokeWidth={2.5}
+            />
+          )}
+          {!hiddenHubCompareSeries.has("hubB") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="hubB"
+              name={compareHubBData?.hub ?? "Hub B"}
+              stroke={COMPARISON_COLORS.compare}
+              dot={false}
+              strokeWidth={2}
+            />
+          )}
+          {!hiddenHubCompareSeries.has("delta") && (
+            <Line
+              yAxisId="lmp"
+              type="monotone"
+              dataKey="delta"
+              name="Delta"
+              stroke={COMPARISON_COLORS.delta}
+              dot={false}
+              strokeDasharray="4 4"
+              strokeWidth={2}
+            />
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  );
+
+
+  const activeProductLabel =
+    activeProduct === "dart"
+      ? `DART (${RT_SOURCE_LABELS[rtSource]} RT)`
+      : activeProduct === "rt"
+      ? `RT ${RT_SOURCE_LABELS[rtSource]} LMPs`
+      : `PJM ${PRODUCT_LABELS[activeProduct]}`;
+
+  if (loading && !data) {
+    return <p className="text-sm text-gray-500">Loading LMPs...</p>;
+  }
+
+  if (error && !data) {
+    return (
+      <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-300">
+        {error}
+      </div>
+    );
+  }
+
+  if (!data || data.hubs.length === 0) {
+    return <p className="text-sm text-gray-500">No {activeProductLabel} data is available.</p>;
+  }
+
+  const productTabs: Array<DashboardTabOption<LmpProduct>> = (
+    ["da", "rt", "dart"] as LmpProduct[]
+  ).map((product) => ({
+    value: product,
+    label: PRODUCT_LABELS[product],
+  }));
+  const viewTabs: Array<DashboardTabOption<LmpView>> = LMP_VIEW_TABS;
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+          {error}
+        </div>
+      )}
+      <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
+        <DashboardTabs
+          tabs={productTabs}
+          activeValue={activeProduct}
+          onChange={setActiveProduct}
+          ariaLabel="LMP products"
+          className="border-b border-gray-800 pb-2"
+        />
+        <DashboardTabs
+          tabs={viewTabs}
+          activeValue={activeView}
+          onChange={handleViewChange}
+          ariaLabel={`${PRODUCT_LABELS[activeProduct]} views`}
+          variant="secondary"
+          className="pt-2"
+        />
+      </div>
+
+      {activeProduct !== "da" && activeView !== "daily-settles" && (
+        <RtDatasetCard value={rtSource} onChange={setRtSource} />
+      )}
+
+      {activeView === "daily-settles" && (
+        <>
+          <SectionCard title="Date Range" subtitle="Inclusive market dates">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={settlesStartDate}
+                max={settlesEndDate}
+                onChange={(event) => setSettlesStartDate(event.target.value)}
+                className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+              />
+              <span className="text-xs text-gray-500">to</span>
+              <input
+                type="date"
+                value={settlesEndDate}
+                min={settlesStartDate}
+                onChange={(event) => setSettlesEndDate(event.target.value)}
+                className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+              />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Hub Selection" subtitle={`${selectedHub} selected`}>
+            <div className="flex flex-wrap gap-2">
+              {data.hubs.map((hub) => (
+                <button
+                  key={hub.hub}
+                  onClick={() => setSelectedHub(hub.hub)}
+                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    selectedHub === hub.hub
+                      ? "border-sky-500/50 bg-sky-500/10 text-white"
+                      : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                  }`}
+                >
+                  {hub.hub}
+                </button>
+              ))}
+            </div>
+          </SectionCard>
+
+          <LmpComponentCard
+            value={settlesComponent}
+            onChange={(value) => {
+              if (value !== "all") setSettlesComponent(value);
+            }}
+          />
+
+          {activeProduct !== "da" && (
+            <RtDatasetCard value={rtSource} onChange={setRtSource} />
+          )}
+
+          {settlesError && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              {settlesError}
+            </div>
+          )}
+
+          <SectionCard
+            title="Daily Hourly Settles"
+            subtitle={`${displayedSettleDays.length.toLocaleString()} of ${settleDays.length.toLocaleString()} dates | ${settleComponentConfig.label} | ${settleMetricLabel} | click cells to aggregate`}
+            action={
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <div className="flex flex-wrap gap-1" role="group" aria-label="Day type filter">
+                  {(Object.keys(SETTLE_DAY_TYPE_LABELS) as SettleDayType[]).map((type) => {
+                    const active = settlesDayType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => setSettlesDayType(type)}
+                        className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                          active
+                            ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
+                            : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                        }`}
+                      >
+                        {SETTLE_DAY_TYPE_LABELS[type]}
+                      </button>
+                    );
+                  })}
+                </div>
+                {tableHeatmapAction}
+              </div>
+            }
+          >
+            <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
+              <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
+                <thead className="bg-gray-950 text-gray-500">
+                  <tr>
+                    <th className="sticky left-0 z-20 w-10 bg-gray-950 px-2 py-2 text-center font-semibold uppercase tracking-wide">
+                      <span className="sr-only">Day type</span>
+                    </th>
+                    <th className="sticky left-10 z-20 bg-gray-950 px-3 py-2 text-left">
+                      <SettleHeaderButton
+                        label="Date"
+                        sortKey="date"
+                        activeSort={settlesSort}
+                        onSort={toggleSettleSort}
+                      />
+                    </th>
+                    <th className="border-l border-gray-700 px-3 py-2 text-right">
+                      <SettleHeaderButton
+                        label="OnPeak"
+                        sortKey="onpeak"
+                        activeSort={settlesSort}
+                        onSort={toggleSettleSort}
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <SettleHeaderButton
+                        label="OffPeak"
+                        sortKey="offpeak"
+                        activeSort={settlesSort}
+                        onSort={toggleSettleSort}
+                      />
+                    </th>
+                    <th className="px-3 py-2 text-right">
+                      <SettleHeaderButton
+                        label="Flat"
+                        sortKey="flat"
+                        activeSort={settlesSort}
+                        onSort={toggleSettleSort}
+                      />
+                    </th>
+                    {HOURS.map((hour) => (
+                      <th
+                        key={hour}
+                        className={`px-2 py-2 text-right ${
+                          hour === 1 ? "border-l border-gray-700" : ""
+                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                      >
+                        <SettleHeaderButton
+                          label={`HE${hour}`}
+                          sortKey={`he${hour}` as SettleSortKey}
+                          activeSort={settlesSort}
+                          onSort={toggleSettleSort}
+                        />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {displayedSettleDays.length === 0 ? (
+                    <tr>
+                      <td colSpan={5 + HOURS.length} className="px-3 py-8 text-center text-sm text-gray-500">
+                        {settlesLoading && !settlesData
+                          ? "Loading settles..."
+                          : "No daily settles match the selected filters."}
+                      </td>
+                    </tr>
+                  ) : (
+                    displayedSettleDays.map((day) => (
+                      <tr
+                        key={day.date}
+                        className={day.isNercHoliday ? "bg-amber-500/[0.06]" : "hover:bg-gray-900/40"}
+                      >
+                        <td className="sticky left-0 z-10 w-10 bg-[#0d1119] px-2 py-2 text-center">
+                          {day.isNercHoliday ? (
+                            <span
+                              title={day.holidayName ?? "NERC holiday"}
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-amber-500/40 bg-amber-500/10 text-[10px] font-bold text-amber-200"
+                            >
+                              H
+                            </span>
+                          ) : day.isWeekend ? (
+                            <span
+                              title="Weekend"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-500/40 bg-slate-500/10 text-[10px] font-bold text-slate-300"
+                            >
+                              W
+                            </span>
+                          ) : (
+                            <span className="text-gray-700" aria-hidden="true">
+                              ·
+                            </span>
+                          )}
+                        </td>
+                        <td className="sticky left-10 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
+                          {day.date}
+                        </td>
+                        <SettleCell
+                          value={day.onPeak}
+                          date={day.date}
+                          column="onpeak"
+                          selected={selectedSettleCells.has(settleCellKey(day.date, "onpeak"))}
+                          heatmapEnabled={tableHeatmapEnabled}
+                          heatRange={settleHeatRange}
+                          onSelect={toggleSettleCell}
+                          extraClass="border-l border-gray-700 font-semibold"
+                        />
+                        <SettleCell
+                          value={day.offPeak}
+                          date={day.date}
+                          column="offpeak"
+                          selected={selectedSettleCells.has(settleCellKey(day.date, "offpeak"))}
+                          heatmapEnabled={tableHeatmapEnabled}
+                          heatRange={settleHeatRange}
+                          onSelect={toggleSettleCell}
+                          extraClass="font-semibold"
+                        />
+                        <SettleCell
+                          value={day.flat}
+                          date={day.date}
+                          column="flat"
+                          selected={selectedSettleCells.has(settleCellKey(day.date, "flat"))}
+                          heatmapEnabled={tableHeatmapEnabled}
+                          heatRange={settleHeatRange}
+                          onSelect={toggleSettleCell}
+                          extraClass="border-r border-gray-800 font-semibold"
+                        />
+                        {HOURS.map((hour) => {
+                          const column = `he${hour}` as SettleColumnKey;
+                          return (
+                            <SettleCell
+                              key={hour}
+                              value={day.hourly[hour - 1] ?? null}
+                              date={day.date}
+                              column={column}
+                              selected={selectedSettleCells.has(settleCellKey(day.date, column))}
+                              heatmapEnabled={tableHeatmapEnabled}
+                              heatRange={settleHeatRange}
+                              onSelect={toggleSettleCell}
+                              extraClass={`${hour === 1 ? "border-l border-gray-700" : ""} ${
+                                hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
+                              } ${hour === 23 ? "border-r border-dotted border-sky-700/70" : ""}`}
+                            />
+                          );
+                        })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+
+          {settleSelectionStats && (
+            <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 rounded-lg border border-sky-500/30 bg-[#090d15]/95 px-3 py-2 shadow-2xl shadow-black/40 backdrop-blur">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-300">
+                <span className="font-semibold text-sky-100">
+                  {settleComponentConfig.label} {settleMetricLabel} selection
+                </span>
+                <span>
+                  <span className="text-gray-500">Count:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {settleSelectionStats.observations.toLocaleString()}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-gray-500">Avg:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {fmtPrice(settleSelectionStats.avg)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-gray-500">Sum:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {fmtPrice(settleSelectionStats.sum)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-gray-500">Min:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {fmtPrice(settleSelectionStats.min)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-gray-500">Max:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {fmtPrice(settleSelectionStats.max)}
+                  </span>
+                </span>
+                <span>
+                  <span className="text-gray-500">Cells:</span>{" "}
+                  <span className="font-semibold tabular-nums text-gray-100">
+                    {settleSelectionStats.cells.toLocaleString()}
+                  </span>
+                </span>
+                {settleSelectionStats.nercCells > 0 && (
+                  <span className="font-semibold text-amber-200">
+                    {settleSelectionStats.nercCells} NERC
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={clearSettleSelection}
+                  className="ml-auto rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {activeView === "single-day" && (
+        <>
+      <SectionCard title="Date Selection" subtitle={`Source: ${data.source}`}>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="date"
+            value={dateInput}
+            onChange={(event) => setDateInput(event.target.value)}
+            className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+          />
+          <button
+            onClick={applyDate}
+            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+          >
+            Load
+          </button>
+          <button
+            onClick={() => {
+              setDate(null);
+              setLatestRefreshToken((value) => value + 1);
+            }}
+            className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+          >
+            Latest
+          </button>
+        </div>
+      </SectionCard>
+
+      <SectionCard title="Hub Selection" subtitle={selected ? `${selected.hub} selected` : undefined}>
+        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
+          <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+            {data.hubs.map((hub) => (
+              <button
+                key={hub.hub}
+                onClick={() => setSelectedHub(hub.hub)}
+                className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                  selected?.hub === hub.hub
+                    ? "border-sky-500/50 bg-sky-500/10 text-white"
+                    : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                }`}
+              >
+                <span className="font-medium">{hub.hub}</span>
+                <span className="text-right text-gray-500">
+                  <span className="tabular-nums">OnPk: {fmtPrice(hub.onPeakAvg)}</span>
+                  <span className="ml-2 tabular-nums">
+                    {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+          {selected && (
+            <div className="grid grid-cols-2 gap-2">
+              <StatTile label="OnPeak" value={fmtPrice(selected.onPeakAvg)} />
+              <StatTile label="OffPeak" value={fmtPrice(selected.offPeakAvg)} />
+              <StatTile label="Flat" value={fmtPrice(selected.flatAvg)} />
+              <StatTile
+                label="Peak Hour"
+                value={selected.peakHour ? `HE ${selected.peakHour}` : "-"}
+                sub={fmtPrice(selected.peakPrice)}
+              />
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      <LmpComponentCard
+        value={singleComponent}
+        onChange={setSingleComponent}
+        allowAll
+      />
+
+      <PlotCard
+        title={`${selected?.hub ?? "Hub"} Plot`}
+        subtitle={`Hourly ${activeProductLabel} components`}
+        series={singlePlotSeries}
+        hiddenSeries={hiddenPlotSeries}
+        onToggleSeries={togglePlotSeries}
+        onShowAll={showAllPlotSeries}
+        onHideAll={hideAllPlotSeries}
+        focusedChildren={renderChart("h-[70vh]")}
+      >
+        {renderChart("h-[340px]")}
+      </PlotCard>
+
+      <SectionCard
+        title="Hourly Table"
+        subtitle="Hourly component values"
+        action={tableHeatmapAction}
+      >
+        <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
+          <table className="w-full min-w-[1080px] border-collapse text-xs text-gray-200">
+            <thead className="bg-gray-950 text-gray-500">
+              <tr>
+                <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                  Date
+                </th>
+                <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Hub</th>
+                <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Component</th>
+                <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
+                  OnPeak
+                </th>
+                <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">OffPeak</th>
+                <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Flat</th>
+                {HOURS.map((hour) => (
+                  <th
+                    key={hour}
+                    className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
+                      hour === 1 ? "border-l border-gray-700" : ""
+                    } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                  >
+                    HE{hour}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800">
+              {visibleComponentRows.map((row) => (
+                <tr key={row.key} className="hover:bg-gray-900/60">
+                  <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
+                    {data.targetDate}
+                  </td>
+                  <td className="px-3 py-2 font-medium text-gray-300">{selected?.hub}</td>
+                  <td className="px-3 py-2 font-semibold text-gray-100">
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 rounded-sm"
+                        style={{ backgroundColor: row.color }}
+                        aria-hidden="true"
+                      />
+                      {row.label}
+                    </span>
+                  </td>
+                  <td
+                    className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
+                  >
+                    {fmtPrice(row.onPeakAvg)}
+                  </td>
+                  <td
+                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
+                  >
+                    {fmtPrice(row.offPeakAvg)}
+                  </td>
+                  <td
+                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
+                  >
+                    {fmtPrice(row.flatAvg)}
+                  </td>
+                  {HOURS.map((hour) => {
+                    const value = row.values.get(hour) ?? null;
+                    return (
+                      <td
+                        key={hour}
+                        className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                          hour === 1 ? "border-l border-gray-700" : ""
+                        } ${
+                          hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
+                        } ${
+                          hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
+                        }`}
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
+                      >
+                        {fmtPrice(value)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </SectionCard>
+        </>
+      )}
+
+      {activeView === "compare-dates" && (
+        <>
+          <SectionCard title="Date Selection" subtitle={`Compare ${activeProductLabel} across dates`}>
+            <div className="grid gap-3 lg:grid-cols-[repeat(2,minmax(0,220px))] lg:items-end">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Reference Date
+                </span>
+                <input
+                  type="date"
+                  value={compareBaseDate}
+                  onChange={(event) => setCompareBaseDate(event.target.value)}
+                  className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Compare Date
+                </span>
+                <input
+                  type="date"
+                  value={compareDate}
+                  onChange={(event) => setCompareDate(event.target.value)}
+                  className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                />
+              </label>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Hub Selection" subtitle={selected ? `${selected.hub} selected` : undefined}>
+            <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+              {data.hubs.map((hub) => (
+                <button
+                  key={hub.hub}
+                  onClick={() => setSelectedHub(hub.hub)}
+                  className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                    selected?.hub === hub.hub
+                      ? "border-sky-500/50 bg-sky-500/10 text-white"
+                      : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                  }`}
+                >
+                  <span className="font-medium">{hub.hub}</span>
+                  <span className="text-right text-gray-500">
+                    <span className="tabular-nums">OnPk: {fmtPrice(hub.onPeakAvg)}</span>
+                    <span className="ml-2 tabular-nums">
+                      {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </SectionCard>
+
+          <LmpComponentCard
+            value={compareComponent}
+            onChange={(value) => {
+              if (value !== "all") setCompareComponent(value);
+            }}
+          />
+
+          {compareError && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+              {compareError}
+            </div>
+          )}
+
+          {compareLoading ? (
+            <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
+              Loading comparison...
+            </div>
+          ) : (
+            <PlotCard
+              title={`${selectedHub} Comparison`}
+              subtitle={`${compareConfig.label}: ${compareBaseDate || "-"} vs ${compareDate || "-"}`}
+              series={compareSeries}
+              hiddenSeries={hiddenCompareSeries}
+              onToggleSeries={toggleCompareSeries}
+              onShowAll={showAllCompareSeries}
+              onHideAll={hideAllCompareSeries}
+              focusedChildren={renderCompareChart("h-[70vh]")}
+            >
+              {renderCompareChart("h-[340px]")}
+            </PlotCard>
+          )}
+
+          <SectionCard
+            title="Comparison Table"
+            subtitle={`${compareConfig.label} by hour`}
+            action={tableHeatmapAction}
+          >
+            <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
+              <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
+                <thead className="bg-gray-950 text-gray-500">
+                  <tr>
+                    <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Series
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Date
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Hub
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Component
+                    </th>
+                    <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
+                      OnPeak
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">OffPeak</th>
+                    <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Flat</th>
+                    {HOURS.map((hour) => (
+                      <th
+                        key={hour}
+                        className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
+                          hour === 1 ? "border-l border-gray-700" : ""
+                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                      >
+                        HE{hour}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {compareTableRows.map((row) => (
+                    <tr key={row.key} className="hover:bg-gray-900/60">
+                      <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
+                        {row.key === "base" ? "Reference" : row.key === "compare" ? "Compare" : "Delta"}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-gray-300">
+                        {row.key === "base"
+                          ? compareBaseDate
+                          : row.key === "compare"
+                            ? compareDate
+                            : `${compareBaseDate} - ${compareDate}`}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-gray-300">{selectedHub}</td>
+                      <td className="px-3 py-2 font-semibold text-gray-100">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm"
+                            style={{ backgroundColor: row.color }}
+                            aria-hidden="true"
+                          />
+                          {compareConfig.label}
+                        </span>
+                      </td>
+                      <td
+                        className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
+                      >
+                        {fmtPrice(row.onPeakAvg)}
+                      </td>
+                      <td
+                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
+                      >
+                        {fmtPrice(row.offPeakAvg)}
+                      </td>
+                      <td
+                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
+                      >
+                        {fmtPrice(row.flatAvg)}
+                      </td>
+                      {HOURS.map((hour) => {
+                        const value = row.values.get(hour) ?? null;
+                        return (
+                          <td
+                            key={hour}
+                            className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                              hour === 1 ? "border-l border-gray-700" : ""
+                            } ${
+                              hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
+                            } ${
+                              hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
+                            }`}
+                            style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
+                          >
+                            {fmtPrice(value)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </>
+      )}
+
+      {activeView === "compare-hubs" && (
+        <>
+          <SectionCard title="Date Selection" subtitle={`Source: ${data.source}`}>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="date"
+                value={dateInput}
+                onChange={(event) => setDateInput(event.target.value)}
+                className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+              />
+              <button
+                onClick={applyDate}
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+              >
+                Load
+              </button>
+              <button
+                onClick={() => {
+                  setDate(null);
+                  setLatestRefreshToken((value) => value + 1);
+                }}
+                className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+              >
+                Latest
+              </button>
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Hub Selection" subtitle={`Date: ${data.targetDate}`}>
+            <div className="grid gap-3 lg:grid-cols-[repeat(2,minmax(0,240px))] lg:items-end">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Hub A
+                </span>
+                <select
+                  value={compareHubAData?.hub ?? compareHubA}
+                  onChange={(event) => setCompareHubA(event.target.value)}
+                  className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                >
+                  {data.hubs.map((hub) => (
+                    <option key={hub.hub} value={hub.hub}>
+                      {hub.hub}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Hub B
+                </span>
+                <select
+                  value={compareHubBData?.hub ?? compareHubB}
+                  onChange={(event) => setCompareHubB(event.target.value)}
+                  className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                >
+                  {data.hubs.map((hub) => (
+                    <option key={hub.hub} value={hub.hub}>
+                      {hub.hub}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </SectionCard>
+
+          <LmpComponentCard
+            value={compareHubComponent}
+            onChange={(value) => {
+              if (value !== "all") setCompareHubComponent(value);
+            }}
+          />
+
+          <PlotCard
+            title={`${compareHubAData?.hub ?? "Hub A"} vs ${compareHubBData?.hub ?? "Hub B"}`}
+            subtitle={`${hubCompareConfig.label}: ${data.targetDate}`}
+            series={hubCompareSeries}
+            hiddenSeries={hiddenHubCompareSeries}
+            onToggleSeries={toggleHubCompareSeries}
+            onShowAll={showAllHubCompareSeries}
+            onHideAll={hideAllHubCompareSeries}
+            focusedChildren={renderHubCompareChart("h-[70vh]")}
+          >
+            {renderHubCompareChart("h-[340px]")}
+          </PlotCard>
+
+          <SectionCard
+            title="Hub Comparison Table"
+            subtitle={`${hubCompareConfig.label} by hour`}
+            action={tableHeatmapAction}
+          >
+            <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
+              <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
+                <thead className="bg-gray-950 text-gray-500">
+                  <tr>
+                    <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Series
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Date
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Hub
+                    </th>
+                    <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                      Component
+                    </th>
+                    <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
+                      OnPeak
+                    </th>
+                    <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">OffPeak</th>
+                    <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Flat</th>
+                    {HOURS.map((hour) => (
+                      <th
+                        key={hour}
+                        className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
+                          hour === 1 ? "border-l border-gray-700" : ""
+                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                      >
+                        HE{hour}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-800">
+                  {hubCompareTableRows.map((row) => (
+                    <tr key={row.key} className="hover:bg-gray-900/60">
+                      <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
+                        {row.key === "hubA" ? "Hub A" : row.key === "hubB" ? "Hub B" : "Delta"}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-gray-300">
+                        {data.targetDate}
+                      </td>
+                      <td className="px-3 py-2 font-medium text-gray-300">
+                        {row.key === "delta"
+                          ? `${compareHubAData?.hub ?? "Hub A"} - ${compareHubBData?.hub ?? "Hub B"}`
+                          : row.label}
+                      </td>
+                      <td className="px-3 py-2 font-semibold text-gray-100">
+                        <span className="inline-flex items-center gap-2">
+                          <span
+                            className="h-2.5 w-2.5 rounded-sm"
+                            style={{ backgroundColor: row.color }}
+                            aria-hidden="true"
+                          />
+                          {hubCompareConfig.label}
+                        </span>
+                      </td>
+                      <td
+                        className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
+                      >
+                        {fmtPrice(row.onPeakAvg)}
+                      </td>
+                      <td
+                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
+                      >
+                        {fmtPrice(row.offPeakAvg)}
+                      </td>
+                      <td
+                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
+                      >
+                        {fmtPrice(row.flatAvg)}
+                      </td>
+                      {HOURS.map((hour) => {
+                        const value = row.values.get(hour) ?? null;
+                        return (
+                          <td
+                            key={hour}
+                            className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                              hour === 1 ? "border-l border-gray-700" : ""
+                            } ${
+                              hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
+                            } ${
+                              hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
+                            }`}
+                            style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
+                          >
+                            {fmtPrice(value)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </SectionCard>
+        </>
+      )}
+    </div>
+  );
+}

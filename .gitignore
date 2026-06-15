@@ -32,3 +32,7 @@ backend/**/logs/
 dbt/**/target/
 dbt/**/dbt_packages/
 dbt/**/logs/
+
+# Frontend
+frontend/node_modules/
+frontend/.next/

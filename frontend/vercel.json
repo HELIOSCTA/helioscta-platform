@@ -1,0 +1,24 @@
+{
+  "functions": {
+    "app/api/pjm-da-lmps/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-rt-lmps/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-lmp-settles/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-outages/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/ops/readiness/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    }
+  }
+}
