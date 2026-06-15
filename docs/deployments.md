@@ -298,15 +298,13 @@ LIMIT 10;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Operator SQL:
   `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
   `dbt/azure_postgres/models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql`,
   and
   `dbt/azure_postgres/models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql`.
 - Operator SQL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
-  `2026-06-13`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
-  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `2026-06-13`, upserted 29,016 rows, wrote ISO-NE API telemetry, and emitted
   `isone_da_hrl_lmps:data_ready:2026-06-13:all_locations`.
 - Deployed runtime commit: `4b0901c`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -358,15 +356,13 @@ LIMIT 10;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Operator SQL:
   `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql`,
   and
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql`.
 - Operator SQL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
-  `2026-06-11`, upserted 29,016 rows, wrote ISO-NE API telemetry, logged
-  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `2026-06-11`, upserted 29,016 rows, wrote ISO-NE API telemetry, and emitted
   `isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations`.
 - Deployed runtime commit: `4b0901c`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -379,7 +375,7 @@ LIMIT 10;
   lower-level scrape to treat ISO-NE's `No data exists for this period.` CSV
   body as an empty result instead of a failed run. VM verification exited
   `status=0/SUCCESS`, upserted 29,016 rows for operating date `2026-06-13`,
-  logged `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  and emitted
   `isone_rt_hrl_lmps_final:data_ready:2026-06-13:all_locations`.
 - Next scheduled run observed: `2026-06-14 20:14:29 UTC`.
 
@@ -424,7 +420,6 @@ LIMIT 10;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Operator SQL:
   `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`,
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql`,
   and
   `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql`.
@@ -433,8 +428,7 @@ LIMIT 10;
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-13`, upserted 24,180 partial current-day rows, correctly skipped
   readiness because only 20 hours were present, then ran operating date
-  `2026-06-12`, upserted 29,016 complete-day rows, logged `RUN_SUCCESS` to
-  `ops.pipeline_runs`, and emitted
+  `2026-06-12`, upserted 29,016 complete-day rows, and emitted
   `isone_rt_hrl_lmps_prelim:data_ready:2026-06-12:all_locations`.
 - Deployed runtime commit: `d758ecd`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -491,8 +485,7 @@ LIMIT 10;
 - Operator SQL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
-  `2026-06-12`, upserted 24 rows, logged `RUN_SUCCESS` to
-  `ops.pipeline_runs`, and emitted
+  `2026-06-12`, upserted 24 rows, and emitted
   `isone_hourly_system_demand:data_ready:2026-06-12:system`.
 - Deployed runtime commit: `c6b42d9`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -528,8 +521,7 @@ LIMIT 10;
 - Operator SQL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
-  `2026-06-13`, upserted 24 rows, logged `RUN_SUCCESS` to
-  `ops.pipeline_runs`, and emitted
+  `2026-06-13`, upserted 24 rows, and emitted
   `isone_da_hrl_cleared_demand:data_ready:2026-06-13:system`.
 - Deployed runtime commit: `c6b42d9`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -577,7 +569,6 @@ LIMIT 10;
   - `isone.seven_day_wind_forecast`
   - `isone.seven_day_solar_forecast`
 - API telemetry: `ops.api_fetch_log`.
-- Pipeline logging: `ops.pipeline_runs`, one run row per feed.
 - Unit files:
   - `infrastructure/systemd/helios-isone-forecast-batch.service`
   - `infrastructure/systemd/helios-isone-forecast-batch.timer`
@@ -599,22 +590,22 @@ LIMIT 10;
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
   installed, and timer enabled on `2026-06-14 01:27 UTC`.
 - Last VM verification: `2026-06-14 01:27 UTC`; service exited
-  `status=0/SUCCESS` and logged `RUN_SUCCESS` for all four feed pipelines
-  with the same row counts as local verification.
+  `status=0/SUCCESS` for all four feed pipelines with the same row counts as
+  local verification.
 - Next scheduled run observed: `2026-06-14 15:23:07 UTC`.
 - Scope note: ISO-NE five-minute demand and zonal forecast feeds are
   intentionally excluded from this promotion.
 
-Verification SQL for ISO-NE forecast pipeline runs:
+Verification SQL for ISO-NE forecast API telemetry:
 
 ```sql
 SELECT
-    pipeline_name,
+    feed_name,
     status,
-    rows_processed,
-    target_table,
+    http_status,
+    rows_returned,
     created_at
-FROM ops.pipeline_runs
+FROM ops.api_fetch_log
 WHERE pipeline_name IN (
     'three_day_reliability_region_demand_forecast',
     'seven_day_capacity_forecast',
@@ -623,6 +614,34 @@ WHERE pipeline_name IN (
 )
 ORDER BY created_at DESC
 LIMIT 12;
+```
+
+Verification SQL for ISO-NE forecast table freshness:
+
+```sql
+SELECT
+    'three_day_reliability_region_demand_forecast' AS feed_name,
+    COUNT(*) AS rows,
+    MAX(updated_at) AS latest_updated_at
+FROM isone.three_day_reliability_region_demand_forecast
+UNION ALL
+SELECT
+    'seven_day_capacity_forecast',
+    COUNT(*),
+    MAX(updated_at)
+FROM isone.seven_day_capacity_forecast
+UNION ALL
+SELECT
+    'seven_day_wind_forecast',
+    COUNT(*),
+    MAX(updated_at)
+FROM isone.seven_day_wind_forecast
+UNION ALL
+SELECT
+    'seven_day_solar_forecast',
+    COUNT(*),
+    MAX(updated_at)
+FROM isone.seven_day_solar_forecast;
 ```
 
 ## helios-isone-rt-hrl-scheduled-interchange
@@ -653,8 +672,7 @@ LIMIT 12;
 - Operator SQL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for local date
-  `2026-06-12`, upserted 168 rows across 7 interfaces x 24 hours, logged
-  `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted
+  `2026-06-12`, upserted 168 rows across 7 interfaces x 24 hours, and emitted
   `isone_rt_hrl_scheduled_interchange:data_ready:2026-06-12:all_interfaces`.
 - Deployed runtime commit: `3a5c15c`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -695,8 +713,7 @@ LIMIT 12;
 - Manual verification: `2026-06-14`; conda env
   `helioscta-platform-backend` ran the orchestration for local dates
   `2026-01-01` through `2026-04-30`, upserted 23,032 rows across 8 entities,
-  logged `RUN_SUCCESS` to `ops.pipeline_runs`, and emitted complete-date
-  readiness events through `2026-04-30`.
+  and emitted complete-date readiness events through `2026-04-30`.
 - Deployed runtime commit: `b0b4263`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
   installed, and timer enabled on `2026-06-14 04:00 UTC`.

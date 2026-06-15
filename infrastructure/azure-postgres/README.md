@@ -14,7 +14,6 @@ passwords before execution. Do not commit real passwords.
 2. Connect to `helios_prod` as `helios_admin` and run the disabled dbt
    operator SQL needed for application objects:
    - `dbt/azure_postgres/models/setup/schemas.sql`
-   - `dbt/azure_postgres/models/ops/table_ops_pipeline_runs.sql`
    - `dbt/azure_postgres/models/ops/table_ops_api_fetch_log.sql`
    - `dbt/azure_postgres/models/ops/table_ops_data_availability_events.sql`
    - required feed `table_*.sql` files, such as
@@ -37,6 +36,8 @@ passwords before execution. Do not commit real passwords.
      `dbt/azure_postgres/models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql`
      or ISO-NE forecast table SQL under
      `dbt/azure_postgres/models/power/isone/forecast_feeds/`
+     or
+     `dbt/azure_postgres/models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql`
    - required `index_*.sql` files, including matching `ops` and feed indexes
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`

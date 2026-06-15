@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -12,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 from backend import credentials
 from backend.scrapes.power.isone import forecast_feeds
 from backend.utils import script_logging
-from backend.utils.ops_logging import PipelineRunLogger, redact_secrets
+from backend.utils.ops_logging import redact_secrets
 
 
 API_SCRAPE_NAME = "isone_forecast_batch"
@@ -54,15 +55,7 @@ def main(
 
         for feed_name in feed_names:
             config = forecast_feeds.FEED_CONFIGS[feed_name]
-            pipeline_run = PipelineRunLogger(
-                pipeline_name=feed_name,
-                source="power",
-                target_table=config.target_table_fqn,
-                operation_type="upsert",
-                log_file_path=run_logger.log_file_path,
-                database=database,
-            )
-            pipeline_run.start()
+            run_id = str(uuid4())
             rows_processed = 0
             frames: list[pd.DataFrame] = []
 
@@ -76,7 +69,7 @@ def main(
                     df = forecast_feeds._pull(
                         config=config,
                         start_date=current_date,
-                        run_id=pipeline_run.run_id,
+                        run_id=run_id,
                         database=database,
                         metadata=fetch_metadata,
                     )
@@ -94,7 +87,6 @@ def main(
                     pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
                 )
                 results[feed_name] = combined
-                pipeline_run.success(rows_processed=rows_processed)
                 run_logger.success(
                     f"{feed_name} completed; {rows_processed} rows processed."
                 )
@@ -102,7 +94,6 @@ def main(
                 run_logger.exception(
                     f"{feed_name} failed: {redact_secrets(str(exc))}"
                 )
-                pipeline_run.failure(error=exc, rows_processed=rows_processed)
                 raise
 
     finally:

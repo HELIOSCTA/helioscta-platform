@@ -5,6 +5,7 @@ import logging
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -14,7 +15,7 @@ from backend import credentials
 from backend.scrapes.power.isone import rt_hrl_lmps_prelim as scrape
 from backend.utils import script_logging
 from backend.utils.data_availability import emit_data_availability_event
-from backend.utils.ops_logging import PipelineRunLogger, redact_secrets
+from backend.utils.ops_logging import redact_secrets
 
 
 API_SCRAPE_NAME = scrape.API_SCRAPE_NAME
@@ -60,16 +61,7 @@ def main(
     rows_processed = 0
     frames: list[pd.DataFrame] = []
     combined_df = pd.DataFrame()
-    pipeline_run = PipelineRunLogger(
-        pipeline_name=API_SCRAPE_NAME,
-        source="power",
-        target_table=TARGET_TABLE_FQN,
-        operation_type="upsert",
-        log_file_path=run_logger.log_file_path,
-        database=database,
-    )
-    pipeline_run.start()
-    run_id = pipeline_run.run_id
+    run_id = str(uuid4())
 
     try:
         run_logger.header(API_SCRAPE_NAME)
@@ -118,14 +110,12 @@ def main(
                 "no data availability event emitted."
             )
 
-        pipeline_run.success(rows_processed=rows_processed)
         run_logger.success(
             f"{API_SCRAPE_NAME} completed; {rows_processed} rows processed."
         )
 
     except Exception as exc:
         run_logger.exception(f"Pipeline failed: {redact_secrets(str(exc))}")
-        pipeline_run.failure(error=exc, rows_processed=rows_processed)
         raise
 
     finally:

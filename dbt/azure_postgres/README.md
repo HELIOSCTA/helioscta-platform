@@ -256,6 +256,26 @@ dbt compile --profiles-dir . --select path:models/power/isone/da_hrl_cleared_dem
 dbt compile --profiles-dir . --select path:models/power/isone/external_interface_metered_data/isone_external_interface_metered_data
 ```
 
+## MISO Public RT Data API Layout
+
+MISO public RT Data API JSON feeds use the same one-folder-per-feed pattern:
+
+```text
+models/power/miso/real_time_total_load/
+models/power/miso/real_time_total_load/miso_real_time_total_load/
+```
+
+`table_miso_real_time_total_load.sql` and
+`index_miso_real_time_total_load.sql` are disabled operator SQL. The enabled
+models are read-only validation/query shaping only.
+
+Compile the MISO real-time total load query-shaping model with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/power/miso/real_time_total_load/miso_real_time_total_load
+```
+
 ## Operator SQL
 
 `schema_*.sql`, `table_*.sql`, and `index_*.sql` files are disabled as dbt
@@ -270,7 +290,6 @@ Run order for a new database:
 
 ```text
 models/setup/schemas.sql
-models/ops/table_ops_pipeline_runs.sql
 models/ops/table_ops_api_fetch_log.sql
 models/ops/table_ops_data_availability_events.sql
 models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
@@ -291,6 +310,7 @@ models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql
 models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql
 models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql
 models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql
+models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
@@ -311,6 +331,7 @@ models/power/isone/hourly_system_demand/index_isone_hourly_system_demand.sql
 models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql
 models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_interchange.sql
 models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql
+models/power/miso/real_time_total_load/index_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```

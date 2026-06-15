@@ -30,8 +30,6 @@ models:
         +enabled: false
       table_ops_data_availability_events:
         +enabled: false
-      table_ops_pipeline_runs:
-        +enabled: false
       index_ops_api_fetch_log:
         +enabled: false
       index_ops_data_availability_events:
@@ -356,6 +354,14 @@ models:
           table_isone_seven_day_solar_forecast:
             +enabled: false
           index_isone_forecast_feeds:
+            +enabled: false
+      miso:
+        +materialized: ephemeral
+        real_time_total_load:
+          +materialized: ephemeral
+          table_miso_real_time_total_load:
+            +enabled: false
+          index_miso_real_time_total_load:
             +enabled: false
 tests:
   helioscta_platform:
