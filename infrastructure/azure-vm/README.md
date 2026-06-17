@@ -64,10 +64,11 @@ As of the deployed commit above, the promoted PJM Data Miner scrape modules are
 available on the VM and their database tables/indexes have been applied in
 `helios_prod`. `helios-da-hrl-lmps.timer` and
 `helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
-data-readiness events. `helios-pjm-data-miner-batch.timer` runs the remaining
-29 support lower-level scrape modules daily. `helios-prod-health-check.timer`
-keeps a post-RT and post-DA read-only health digest in journald, including
-support-batch API and table freshness.
+data-readiness events. `helios-pjm-load-frcstd-7-day.timer` refreshes the PJM
+seven-day load forecast hourly, while `helios-pjm-data-miner-batch.timer` runs
+the remaining 28 support lower-level scrape modules daily.
+`helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health
+digest in journald, including support-batch API and table freshness.
 
 ## Design Defaults
 

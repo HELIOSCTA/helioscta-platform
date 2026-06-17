@@ -65,11 +65,28 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 29
-lower-level scrape modules that are not covered by dedicated priority timers.
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 28
+lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
+
+## PJM Seven-Day Load Forecast
+
+The hourly PJM seven-day load forecast workflow has its own timer:
+
+```text
+helios-pjm-load-frcstd-7-day.service
+helios-pjm-load-frcstd-7-day.timer
+```
+
+It runs `backend.orchestration.power.pjm.load_frcstd_7_day`, upserts the
+current PJM Data Miner `load_frcstd_7_day` snapshot into
+`pjm.load_frcstd_7_day`, and writes API fetch telemetry to
+`ops.api_fetch_log`. The timer runs hourly at minute `25` UTC with
+`Persistent=false` because the source returns the current seven-day forecast
+snapshot. The service uses `flock` with
+`/tmp/helios-pjm-load-frcstd-7-day.lock`.
 
 ## RT Verified Five-Minute HRL LMPs
 
@@ -305,6 +322,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.servic
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
@@ -342,6 +361,7 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
@@ -370,6 +390,7 @@ Run the workflow once on demand:
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
@@ -409,6 +430,14 @@ For the PJM Data Miner batch:
 systemctl status helios-pjm-data-miner-batch.service
 systemctl status helios-pjm-data-miner-batch.timer
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
+```
+
+For the PJM seven-day load forecast refresh:
+
+```bash
+systemctl status helios-pjm-load-frcstd-7-day.service
+systemctl status helios-pjm-load-frcstd-7-day.timer
+journalctl -u helios-pjm-load-frcstd-7-day.service -n 200 --no-pager
 ```
 
 For the RT verified five-minute HRL LMP workflow:

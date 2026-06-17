@@ -28,7 +28,6 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "hrl_dmd_bids",
     "hrl_load_metered",
     "hrl_load_prelim",
-    "load_frcstd_7_day",
     "load_frcstd_hist",
     "pnode",
     "reserve_market_results",

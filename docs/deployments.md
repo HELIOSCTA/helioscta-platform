@@ -814,9 +814,9 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: 31 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 29 support scrapes run through the shared batch
-  after `da_hrl_lmps` and `rt_fivemin_hrl_lmps` were promoted to dedicated
-  orchestration timers.
+  `backend.scrapes.power.pjm`; 28 support scrapes run through the shared batch
+  after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, and `load_frcstd_7_day` were
+  promoted to dedicated orchestration timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -838,7 +838,64 @@ FROM isone.seven_day_solar_forecast;
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-da-hrl-lmps.timer` and
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
-  workflows emit data-readiness events.
+  workflows emit data-readiness events. `helios-pjm-load-frcstd-7-day.timer`
+  remains separate because the forecast source posts hourly and drives the
+  forecast dashboard.
+
+## helios-pjm-load-frcstd-7-day
+
+- Status: pending VM deployment.
+- Workflow: PJM Seven-Day Load Forecast refresh.
+- Runtime module: `backend.orchestration.power.pjm.load_frcstd_7_day`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.load_frcstd_7_day`.
+- Source system: PJM Data Miner 2 `load_frcstd_7_day`.
+- Destination table: `pjm.load_frcstd_7_day`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-load-frcstd-7-day.service`
+  - `infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-load-frcstd-7-day.service`.
+- Schedule: hourly at minute `25` UTC with `RandomizedDelaySec=3min`.
+- Timer behavior: `Persistent=false`; missed hourly current-snapshot runs do
+  not replay after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-load-frcstd-7-day.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on `(evaluated_at_datetime_utc,
+  forecast_datetime_beginning_utc, forecast_area)`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/table_pjm_load_frcstd_7_day.sql`
+  and matching index SQL.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    COUNT(*) AS rows,
+    MAX(evaluated_at_datetime_ept) AS latest_evaluated_at_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.load_frcstd_7_day;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'load_frcstd_7_day'
+ORDER BY created_at DESC
+LIMIT 10;
+```
 
 ## helios-rt-fivemin-hrl-lmps
 

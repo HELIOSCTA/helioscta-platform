@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA PJM seven-day load forecast refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-load-frcstd-7-day.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.load_frcstd_7_day
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-load-frcstd-7-day
+
+[Install]
+WantedBy=multi-user.target

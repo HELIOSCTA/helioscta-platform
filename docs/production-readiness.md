@@ -44,7 +44,8 @@ A backend workflow is production-ready when it has:
 | RT verified five-minute HRL LMP schedule | In place | `helios-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the 29 support scrapes daily at `04:30 UTC`. |
+| PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 28 support scrapes daily at `04:30 UTC`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
@@ -112,6 +113,7 @@ on downstream value, feed update cadence, and database cost.
 | --- | --- | --- |
 | `da_hrl_lmps` | Scheduled daily with readiness event | Daily published data drives downstream reporting. |
 | `rt_fivemin_hrl_lmps` | Scheduled daily with readiness event | Priority verified five-minute RT price feed for hub, zone, and interface prices. |
+| `load_frcstd_7_day` | Scheduled hourly with API telemetry | Hourly PJM load forecast snapshots drive the forecast dashboard and vintage comparisons. |
 | `rt_hrl_lmps` | Scheduled daily in the PJM Data Miner batch | Useful, but not yet promoted to its own readiness workflow. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |

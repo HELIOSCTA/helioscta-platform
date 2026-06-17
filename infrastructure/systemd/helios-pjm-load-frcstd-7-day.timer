@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly HeliosCTA PJM seven-day load forecast refresh timer
+
+[Timer]
+OnCalendar=*:25
+Persistent=false
+RandomizedDelaySec=3min
+AccuracySec=1min
+Unit=helios-pjm-load-frcstd-7-day.service
+
+[Install]
+WantedBy=timers.target
