@@ -4,7 +4,9 @@ import { useState } from "react";
 
 export type ActiveSection =
   | "pjm-da-lmps"
-  | "pjm-outages";
+  | "pjm-forecasts"
+  | "pjm-outages"
+  | "pjm-weather";
 
 interface SidebarProps {
   activeSection: ActiveSection;
@@ -34,7 +36,9 @@ function getSections(): TopSection[] {
       label: "POWER",
       navItems: [
         { id: "pjm-da-lmps", label: "LMPs" },
+        { id: "pjm-forecasts", label: "Forecasts" },
         { id: "pjm-outages", label: "Outages" },
+        { id: "pjm-weather", label: "Weather" },
       ],
     },
   ];

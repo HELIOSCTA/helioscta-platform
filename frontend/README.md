@@ -43,8 +43,12 @@ GET /api/ops/readiness
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
+GET /api/pjm-forecast-explorer
+GET /api/pjm-forecasts?area=RTO_COMBINED
+GET /api/pjm-forecast-differences?area=RTO_COMBINED&date=YYYY-MM-DD&lookbackHours=72
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
+GET /api/pjm-weather?region=PJM&hours=24&metric=temp
 ```
 
 ## Production Endpoint Standard
@@ -52,6 +56,27 @@ GET /api/pjm-outages?view=seasonal&region=RTO
 Every dashboard API route should use the shared server observability wrapper in
 `lib/server/apiObservability.ts` and the measured Postgres helper in
 `lib/server/db.ts`.
+
+## Mobile View Links
+
+The forecast explorer is addressable for phone verification:
+
+```text
+/?section=pjm-forecasts
+/?section=pjm-weather
+```
+
+## PJM Weather Source Contract
+
+The Weather section reads realtime METAR observations from
+`weather.noaa_metar_observations` using `helios_readonly`. The expected source
+grain is `(station_id, observation_time_utc)`.
+
+Required fields:
+`station_id`, `station_name`, `region`, `observation_time_utc`, `temp_f`,
+`dew_point_f`, `feels_like_f`, `wind_speed_mph`, `wind_gust_mph`,
+`wind_dir_degrees`, `pressure_mb`, `visibility_miles`, `raw_metar`, and
+`updated_at`.
 
 Production routes should expose:
 

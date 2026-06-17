@@ -24,6 +24,12 @@ infrastructure/azure-postgres/bootstrap/
 *.code-workspace
 dbt/**/.user.yml
 
+# Local-only context workspace
+.local/*
+!.local/
+!.local/README.md
+.local/obsidian/
+
 # Runtime logs
 *.log
 backend/**/logs/

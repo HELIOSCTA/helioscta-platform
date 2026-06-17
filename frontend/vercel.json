@@ -12,7 +12,23 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/pjm-forecasts/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-forecast-explorer/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-forecast-differences/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/pjm-outages/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/pjm-weather/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
     },

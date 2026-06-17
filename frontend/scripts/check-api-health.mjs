@@ -26,6 +26,21 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
+    name: "PJM forecasts",
+    path: "/api/pjm-forecasts?area=RTO_COMBINED",
+    targetMs: 750,
+  },
+  {
+    name: "PJM forecast explorer",
+    path: "/api/pjm-forecast-explorer",
+    targetMs: 750,
+  },
+  {
+    name: "PJM forecast diffs",
+    path: "/api/pjm-forecast-differences?area=RTO_COMBINED&lookbackHours=72",
+    targetMs: 750,
+  },
+  {
     name: "PJM outage forecast",
     path: "/api/pjm-outages?view=forecast&region=RTO&executionLimit=8",
     targetMs: 1_500,
@@ -34,6 +49,11 @@ const endpoints = [
     name: "PJM outage seasonal",
     path: "/api/pjm-outages?view=seasonal&region=RTO&seasonalYearLimit=8",
     targetMs: 1_500,
+  },
+  {
+    name: "PJM weather",
+    path: "/api/pjm-weather?region=PJM&hours=24",
+    targetMs: 750,
   },
 ];
 
