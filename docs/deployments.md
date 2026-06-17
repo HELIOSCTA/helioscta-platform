@@ -844,7 +844,7 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-load-frcstd-7-day
 
-- Status: pending VM deployment.
+- Status: deployed; timer enabled and first timer run succeeded.
 - Workflow: PJM Seven-Day Load Forecast refresh.
 - Runtime module: `backend.orchestration.power.pjm.load_frcstd_7_day`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.load_frcstd_7_day`.
@@ -870,6 +870,16 @@ FROM isone.seven_day_solar_forecast;
 - Operator SQL:
   `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/table_pjm_load_frcstd_7_day.sql`
   and matching index SQL.
+- Deployed commit: `6c9fdeb`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
+  installed, and timer enabled on `2026-06-17 12:17 UTC`.
+- Local manual verification: `2026-06-17 06:15 MDT`; orchestration module
+  upserted 4,200 rows into `pjm.load_frcstd_7_day`.
+- Last VM manual verification: `2026-06-17 12:16 UTC`; service exited
+  `status=0/SUCCESS` and upserted 4,200 rows.
+- First timer verification: `2026-06-17 12:26 UTC`; timer-triggered service
+  run exited `status=0/SUCCESS` and upserted 4,200 rows.
+- Next scheduled run observed: `2026-06-17 13:26:03 UTC`.
 
 Verification SQL for table freshness:
 
