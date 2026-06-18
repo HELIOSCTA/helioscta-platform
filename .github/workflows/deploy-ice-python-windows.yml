@@ -1,0 +1,68 @@
+name: Deploy ICE Python Windows Service
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_branch:
+        description: Branch to deploy from the production clone.
+        required: true
+        default: main
+      repo_root:
+        description: Permanent production clone on the Windows ICE host.
+        required: true
+        default: "C:\\HeliosCTA\\helioscta-platform"
+      python_exe:
+        description: Python executable with local ICE dependencies.
+        required: true
+        default: "C:\\Users\\AidanKeaveny\\miniconda3\\envs\\helioscta-azure-backend\\python.exe"
+      job_timeout_seconds:
+        description: Default hard timeout for scheduled ICE child jobs.
+        required: true
+        default: "2700"
+      run_import_smoke:
+        description: Verify icepython and service imports before restart.
+        required: true
+        type: boolean
+        default: true
+
+concurrency:
+  group: ice-python-windows-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ICE Python service
+    runs-on:
+      - self-hosted
+      - Windows
+      - helioscta-ice-python
+    environment: ice-python-windows-production
+
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Check out deploy scripts
+        uses: actions/checkout@v4
+
+      - name: Deploy service
+        run: |
+          $runImportSmoke = [System.Convert]::ToBoolean("${{ inputs.run_import_smoke }}")
+          $jobTimeoutSeconds = [int]"${{ inputs.job_timeout_seconds }}"
+
+          $deployArgs = @(
+            "-RepoRoot", "${{ inputs.repo_root }}",
+            "-PythonExe", "${{ inputs.python_exe }}",
+            "-GitBranch", "${{ inputs.git_branch }}",
+            "-JobTimeoutSeconds", "$jobTimeoutSeconds"
+          )
+
+          if ($runImportSmoke) {
+            $deployArgs += "-RunImportSmoke"
+          }
+
+          .\infrastructure\windows-service\deploy_ice_python_service.ps1 @deployArgs

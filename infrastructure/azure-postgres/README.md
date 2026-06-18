@@ -41,6 +41,9 @@ passwords before execution. Do not commit real passwords.
      or
      `dbt/azure_postgres/models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql`
      or
+     ICE Python table SQL under
+     `dbt/azure_postgres/models/ice_python/`
+     or
      `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`
      or
      `dbt/azure_postgres/models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql`

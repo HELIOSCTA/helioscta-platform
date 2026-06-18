@@ -34,6 +34,21 @@ models:
         +enabled: false
       index_ops_data_availability_events:
         +enabled: false
+    ice_python:
+      +schema: ice_python
+      +materialized: ephemeral
+      settlements:
+        +materialized: ephemeral
+        table_ice_python_settlements:
+          +enabled: false
+        index_ice_python_settlements:
+          +enabled: false
+      settlement_contract_dates:
+        +materialized: ephemeral
+        table_ice_python_settlement_contract_dates:
+          +enabled: false
+        index_ice_python_settlement_contract_dates:
+          +enabled: false
     power:
       +schema: power
       +materialized: ephemeral

@@ -278,6 +278,41 @@ cd dbt/azure_postgres
 dbt compile --profiles-dir . --select path:models/power/miso/real_time_total_load/miso_real_time_total_load
 ```
 
+## ICE Python Local Windows Layout
+
+ICE Python settlement feeds are local Windows-only because they require a
+licensed ICE XL / ICE Python runtime. The Linux VM may have the files in its
+checkout, but the active runtime is the local Windows service under
+`infrastructure/windows-service/`, not systemd.
+
+```text
+models/ice_python/settlements/
+models/ice_python/settlements/ice_python_settlements/
+models/ice_python/settlement_contract_dates/
+models/ice_python/settlement_contract_dates/ice_python_settlement_contract_dates/
+```
+
+`table_ice_python_settlements.sql`,
+`index_ice_python_settlements.sql`,
+`table_ice_python_settlement_contract_dates.sql`, and
+`index_ice_python_settlement_contract_dates.sql` are disabled operator SQL.
+The enabled models are read-only query shaping over
+`ice_python.settlements` and `ice_python.settlement_contract_dates`.
+
+Source contract:
+ICE Python / ICE XL local Windows runtime, table grains
+`trade_date x symbol` for settlements and current contract-date snapshots,
+primary key `(trade_date, symbol)`, freshness field `updated_at`, downstream
+consumers are pricing/trade-blotter query paths that need ICE settlement marks
+and delivery windows. Safe reruns upsert by primary key.
+
+Compile the ICE query-shaping models with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/ice_python/settlements/ice_python_settlements path:models/ice_python/settlement_contract_dates/ice_python_settlement_contract_dates
+```
+
 ## Meteologica PJM Forecast Layout
 
 Meteologica PJM hourly forecast validation and query shaping uses:
@@ -380,6 +415,8 @@ models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql
 models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql
 models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql
 models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql
+models/ice_python/settlements/table_ice_python_settlements.sql
+models/ice_python/settlement_contract_dates/table_ice_python_settlement_contract_dates.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql
@@ -404,6 +441,8 @@ models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql
 models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_interchange.sql
 models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql
 models/power/miso/real_time_total_load/index_miso_real_time_total_load.sql
+models/ice_python/settlements/index_ice_python_settlements.sql
+models/ice_python/settlement_contract_dates/index_ice_python_settlement_contract_dates.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql

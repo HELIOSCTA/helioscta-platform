@@ -124,6 +124,18 @@ key. Scheduled runs retain 90 days of forecast issue history in the hot table
 and purge older rows after successful upserts. Hydro is excluded from v1
 because no PJM hydro forecast content ID is promoted.
 
+ICE Python settlement helpers are local Windows-only. They live under
+`backend.scrapes.ice_python` and `backend.orchestration.ice_python`, write
+non-option settlement marks to `ice_python.settlements` and contract-date
+snapshots to `ice_python.settlement_contract_dates`, and require a licensed ICE
+XL / ICE Python install on the Windows service host. Do not install ICE
+dependencies from `backend/requirements-local-windows.txt` on the Linux VM,
+and do not add ICE systemd units under `infrastructure/systemd`.
+The local Windows service runs due ICE jobs in child Python processes with a
+hard timeout, prevents overlapping manual/service pulls with a local lock file,
+persists per-window state with explicit success/failure/timeout statuses, and
+writes durable job telemetry to `ops.api_fetch_log`.
+
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
 provider credentials. The runtime module is
@@ -169,6 +181,16 @@ For local tests:
 pip install -r backend/requirements-dev.txt -e backend
 pytest backend/tests
 ```
+
+For local Windows ICE Python runs only:
+
+```powershell
+python -m pip install -r backend\requirements-local-windows.txt -e backend
+```
+
+Install the proprietary ICE Python wheel from the licensed ICE XL installation
+outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
+install the local Windows service from `infrastructure/windows-service/`.
 
 ## Manual PJM Backfills
 

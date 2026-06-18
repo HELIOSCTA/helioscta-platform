@@ -1,0 +1,659 @@
+"""Long-running local Windows service runner for ICE Python settlements."""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import signal
+import subprocess
+import sys
+import time
+from collections.abc import Callable, MutableMapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from datetime import time as dt_time
+from pathlib import Path
+from typing import Any
+from zoneinfo import ZoneInfo
+
+from backend.orchestration.ice_python import job_runner
+from backend.scrapes.ice_python import settings
+from backend.utils.ops_logging import log_api_fetch, redact_secrets
+
+
+DEFAULT_TIMEZONE = "America/Denver"
+DEFAULT_POLL_SECONDS = 60
+DEFAULT_JOB_TIMEOUT_SECONDS = 45 * 60
+DEFAULT_STATE_FILENAME = "ice_python_service_state.json"
+ENV_POLL_SECONDS = "HELIOS_ICE_SERVICE_POLL_SECONDS"
+ENV_JOB_TIMEOUT_SECONDS = "HELIOS_ICE_JOB_TIMEOUT_SECONDS"
+ENV_STATE_DIR = "HELIOS_STATE_DIR"
+PROCESS_LOG_TAIL_LINES = 80
+
+RUN_RECORD = dict[str, Any]
+RUN_STATE = MutableMapping[str, RUN_RECORD]
+RUNNER = Callable[[], dict[str, object]]
+
+_STOP_REQUESTED = False
+
+
+@dataclass(frozen=True)
+class TimeWindow:
+    """A local-time service window with an exclusive end."""
+
+    start: dt_time
+    end: dt_time
+
+    def contains(self, current_time: dt_time) -> bool:
+        return self.start <= current_time < self.end
+
+
+@dataclass(frozen=True)
+class ServiceJob:
+    """A named ICE service job and its schedule policy."""
+
+    name: str
+    cadence: str
+    module_name: str | None = None
+    runner: RUNNER | None = None
+    windows: tuple[TimeWindow, ...] = ()
+    daily_start: dt_time | None = None
+    timeout_seconds: int | None = None
+
+
+DEFAULT_HOURLY_WINDOWS: tuple[TimeWindow, ...] = (
+    TimeWindow(start=dt_time(6, 0), end=dt_time(10, 0)),
+    TimeWindow(start=dt_time(14, 0), end=dt_time(19, 0)),
+)
+
+SETTLEMENTS_MODULE_ROOT = "backend.orchestration.ice_python.settlements"
+
+DEFAULT_JOBS: tuple[ServiceJob, ...] = (
+    ServiceJob(
+        name="pjm_short_term",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_short_term",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="pjm_futures",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_futures",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="ercot_short_term",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_short_term",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="ercot_futures",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_futures",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="west_power_futures",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.west_power_futures",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="east_power_futures",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_futures",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_next_day",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_next_day",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_balmo",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_balmo",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures",
+        cadence="daily",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures",
+        daily_start=dt_time(15, 0),
+        timeout_seconds=90 * 60,
+    ),
+)
+
+
+def configure_service_logging(level: int = logging.INFO) -> logging.Logger:
+    """Configure process-level logging that survives per-job logger resets."""
+    logger = logging.getLogger("backend.orchestration.ice_python.service")
+    logger.setLevel(level)
+    logger.propagate = False
+    if not logger.handlers:
+        handler = logging.StreamHandler(sys.stdout)
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+                datefmt="%Y-%m-%d %H:%M:%S",
+            )
+        )
+        logger.addHandler(handler)
+    return logger
+
+
+def resolve_poll_seconds(poll_seconds: int | None = None) -> int:
+    """Resolve the service poll cadence from a function arg or environment."""
+    if poll_seconds is None:
+        configured = os.environ.get(ENV_POLL_SECONDS)
+        poll_seconds = int(configured) if configured else DEFAULT_POLL_SECONDS
+    if poll_seconds < 5:
+        raise ValueError("poll_seconds must be at least 5.")
+    return poll_seconds
+
+
+def resolve_job_timeout_seconds(timeout_seconds: int | None = None) -> int:
+    """Resolve the per-job hard timeout from a function arg or environment."""
+    if timeout_seconds is None:
+        configured = os.environ.get(ENV_JOB_TIMEOUT_SECONDS)
+        timeout_seconds = (
+            int(configured) if configured else DEFAULT_JOB_TIMEOUT_SECONDS
+        )
+    if timeout_seconds < 60:
+        raise ValueError("job timeout must be at least 60 seconds.")
+    return timeout_seconds
+
+
+def resolve_state_file(state_file: str | Path | None = None) -> Path:
+    """Resolve the persistent service state file."""
+    if state_file is not None:
+        return Path(state_file)
+
+    configured_state_dir = os.environ.get(ENV_STATE_DIR)
+    if configured_state_dir:
+        return Path(configured_state_dir) / DEFAULT_STATE_FILENAME
+
+    configured_log_dir = os.environ.get("HELIOS_LOG_DIR")
+    if configured_log_dir:
+        return Path(configured_log_dir).parent / "state" / DEFAULT_STATE_FILENAME
+
+    return Path(__file__).parent / "logs" / DEFAULT_STATE_FILENAME
+
+
+def _normalize_run_record(value: object) -> RUN_RECORD | None:
+    if isinstance(value, str):
+        return {
+            "status": "succeeded",
+            "started_at": value,
+            "finished_at": value,
+            "legacy_state": True,
+        }
+    if isinstance(value, dict):
+        return {str(key): record_value for key, record_value in value.items()}
+    return None
+
+
+def load_run_state(state_file: Path) -> dict[str, RUN_RECORD]:
+    """Load persisted job records for once-per-window service behavior."""
+    if not state_file.exists():
+        return {}
+
+    payload = json.loads(state_file.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        return {}
+    records: dict[str, RUN_RECORD] = {}
+    for key, value in payload.items():
+        if not isinstance(key, str):
+            continue
+        record = _normalize_run_record(value)
+        if record is not None:
+            records[str(key)] = record
+    return records
+
+
+def save_run_state(state_file: Path, run_state: RUN_STATE) -> None:
+    """Persist service run state atomically."""
+    state_file.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = state_file.with_suffix(f"{state_file.suffix}.tmp")
+    temp_file.write_text(
+        json.dumps(dict(sorted(run_state.items())), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    temp_file.replace(state_file)
+
+
+def job_run_key(job: ServiceJob, current_time: datetime) -> str:
+    """Return the once-per-hour or once-per-day key for a service job."""
+    if job.cadence == "hourly":
+        return f"{job.name}:{current_time:%Y-%m-%dT%H}"
+    if job.cadence == "daily":
+        return f"{job.name}:{current_time:%Y-%m-%d}"
+    raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
+
+
+def _scheduled_at_current_time(job: ServiceJob, current_time: datetime) -> bool:
+    local_time = current_time.timetz().replace(tzinfo=None)
+    if job.cadence == "hourly":
+        return any(window.contains(local_time) for window in job.windows)
+    if job.cadence == "daily":
+        if job.daily_start is None:
+            raise ValueError(f"Daily job {job.name} is missing daily_start.")
+        return local_time >= job.daily_start
+    raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
+
+
+def _is_running_record_stale(
+    job: ServiceJob,
+    current_time: datetime,
+    record: RUN_RECORD,
+) -> bool:
+    started_at_value = record.get("started_at")
+    if not isinstance(started_at_value, str):
+        return True
+    try:
+        started_at = datetime.fromisoformat(started_at_value)
+    except ValueError:
+        return True
+
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=current_time.tzinfo)
+
+    timeout_seconds = resolve_job_timeout_seconds(job.timeout_seconds)
+    return (current_time - started_at).total_seconds() > timeout_seconds + 60
+
+
+def is_job_due(
+    job: ServiceJob,
+    current_time: datetime,
+    run_state: RUN_STATE,
+) -> bool:
+    """Return whether a job should be attempted at current_time."""
+    if not _scheduled_at_current_time(job, current_time):
+        return False
+
+    run_key = job_run_key(job, current_time)
+    record = _normalize_run_record(run_state.get(run_key))
+    if record is None:
+        return True
+
+    status = str(record.get("status", "succeeded"))
+    if status == "running" and _is_running_record_stale(job, current_time, record):
+        return True
+    if status:
+        return False
+    return True
+
+
+def due_jobs(
+    current_time: datetime,
+    run_state: RUN_STATE,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+) -> list[ServiceJob]:
+    """Return the jobs due at current_time."""
+    return [job for job in jobs if is_job_due(job, current_time, run_state)]
+
+
+def _tail_text(value: str | bytes | None, line_limit: int = PROCESS_LOG_TAIL_LINES) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    lines = value.splitlines()
+    return "\n".join(lines[-line_limit:])
+
+
+def _parse_child_summary(stdout: str | None) -> dict[str, object]:
+    if not stdout:
+        return {}
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(job_runner.SUMMARY_PREFIX):
+            payload = line[len(job_runner.SUMMARY_PREFIX) :]
+            parsed = json.loads(payload)
+            if isinstance(parsed, dict):
+                summary = parsed.get("summary")
+                return summary if isinstance(summary, dict) else {}
+    return {}
+
+
+def _parse_child_failure(stdout: str | None) -> dict[str, object]:
+    if not stdout:
+        return {}
+    for line in reversed(stdout.splitlines()):
+        if line.startswith(job_runner.FAILURE_PREFIX):
+            payload = line[len(job_runner.FAILURE_PREFIX) :]
+            parsed = json.loads(payload)
+            return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _log_process_tail(
+    *,
+    logger: logging.Logger,
+    job_name: str,
+    stdout: str | bytes | None,
+    stderr: str | bytes | None,
+) -> None:
+    stdout_tail = _tail_text(stdout)
+    stderr_tail = _tail_text(stderr)
+    if stdout_tail:
+        logger.warning("Child stdout tail for %s:\n%s", job_name, stdout_tail)
+    if stderr_tail:
+        logger.warning("Child stderr tail for %s:\n%s", job_name, stderr_tail)
+
+
+def _run_job_callable(job: ServiceJob) -> RUN_RECORD:
+    if job.runner is None:
+        raise ValueError(f"Service job {job.name} has no runner.")
+    summary = job.runner()
+    return {
+        "status": "succeeded",
+        "rows_processed": int(summary.get("rows_processed", 0)),
+        "summary": summary,
+    }
+
+
+def _run_job_subprocess(
+    job: ServiceJob,
+    logger: logging.Logger,
+) -> RUN_RECORD:
+    if not job.module_name:
+        raise ValueError(f"Service job {job.name} has no module_name.")
+
+    timeout_seconds = resolve_job_timeout_seconds(job.timeout_seconds)
+    env = os.environ.copy()
+    env[job_runner.ENV_JOB_MODULE] = job.module_name
+    env[job_runner.ENV_JOB_NAME] = job.name
+    env.setdefault("PYTHONUNBUFFERED", "1")
+    command = [
+        sys.executable,
+        "-m",
+        "backend.orchestration.ice_python.job_runner",
+    ]
+    started_at = time.perf_counter()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=Path.cwd(),
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+        _log_process_tail(
+            logger=logger,
+            job_name=job.name,
+            stdout=exc.stdout,
+            stderr=exc.stderr,
+        )
+        return {
+            "status": "timed_out",
+            "rows_processed": 0,
+            "elapsed_ms": elapsed_ms,
+            "timeout_seconds": timeout_seconds,
+            "error_type": "TimeoutExpired",
+            "error_message": (
+                f"ICE Python job exceeded hard timeout of {timeout_seconds} seconds."
+            ),
+        }
+
+    elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+    child_summary = _parse_child_summary(completed.stdout)
+    rows_processed = int(child_summary.get("rows_processed", 0))
+    if completed.returncode == 0:
+        return {
+            "status": "succeeded",
+            "rows_processed": rows_processed,
+            "elapsed_ms": elapsed_ms,
+            "returncode": completed.returncode,
+            "summary": child_summary,
+        }
+
+    child_failure = _parse_child_failure(completed.stdout)
+    _log_process_tail(
+        logger=logger,
+        job_name=job.name,
+        stdout=completed.stdout,
+        stderr=completed.stderr,
+    )
+    return {
+        "status": "failed",
+        "rows_processed": rows_processed,
+        "elapsed_ms": elapsed_ms,
+        "returncode": completed.returncode,
+        "error_type": str(child_failure.get("error_type") or "ChildProcessError"),
+        "error_message": redact_secrets(
+            str(child_failure.get("error_message") or "ICE Python child job failed.")
+        ),
+    }
+
+
+def run_service_job(job: ServiceJob, logger: logging.Logger) -> RUN_RECORD:
+    """Run one scheduled job via callable test hook or isolated child process."""
+    if job.runner is not None:
+        return _run_job_callable(job)
+    return _run_job_subprocess(job=job, logger=logger)
+
+
+def _started_record(job: ServiceJob, current_time: datetime) -> RUN_RECORD:
+    return {
+        "status": "running",
+        "job_name": job.name,
+        "module_name": job.module_name,
+        "cadence": job.cadence,
+        "started_at": current_time.isoformat(),
+        "timeout_seconds": resolve_job_timeout_seconds(job.timeout_seconds),
+    }
+
+
+def _finished_record(
+    *,
+    job: ServiceJob,
+    current_time: datetime,
+    result: RUN_RECORD,
+) -> RUN_RECORD:
+    return {
+        **result,
+        "job_name": job.name,
+        "module_name": job.module_name,
+        "cadence": job.cadence,
+        "finished_at": current_time.isoformat(),
+    }
+
+
+def _log_timeout_telemetry(
+    *,
+    job: ServiceJob,
+    result: RUN_RECORD,
+) -> None:
+    log_api_fetch(
+        actor_type="backend",
+        provider="ice_python",
+        pipeline_name=job.name,
+        operation_name=job.name,
+        target_table=f"{settings.SCHEMA}.{settings.SETTLEMENTS_TABLE}",
+        method="ICE_PYTHON",
+        target_host="local-ice-runtime",
+        target_path=f"/{job.name}",
+        status="failure",
+        http_status=None,
+        elapsed_ms=int(result.get("elapsed_ms") or 0),
+        rows_returned=0,
+        rows_written=0,
+        error_type=str(result.get("error_type") or "TimeoutExpired"),
+        error_message=str(result.get("error_message") or "ICE Python job timed out."),
+        metadata={
+            "runtime": "local_windows_ice_python_service",
+            "module_name": job.module_name,
+            "timeout_seconds": result.get("timeout_seconds"),
+        },
+    )
+
+
+def run_due_jobs(
+    current_time: datetime,
+    run_state: RUN_STATE,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+    state_file: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> dict[str, int]:
+    """Attempt due jobs and return a compact service-loop summary."""
+    service_logger = logger or configure_service_logging()
+    selected_jobs = due_jobs(current_time=current_time, run_state=run_state, jobs=jobs)
+    succeeded = 0
+    failed = 0
+    timed_out = 0
+
+    for job in selected_jobs:
+        run_key = job_run_key(job, current_time)
+        run_state[run_key] = _started_record(job=job, current_time=current_time)
+        if state_file is not None:
+            try:
+                save_run_state(state_file=state_file, run_state=run_state)
+            except OSError:
+                service_logger.exception("Failed to persist ICE service state.")
+
+        service_logger.info("Starting ICE Python job: %s", job.name)
+        try:
+            result = run_service_job(job=job, logger=service_logger)
+            run_state[run_key] = _finished_record(
+                job=job,
+                current_time=current_time,
+                result=result,
+            )
+            rows_processed = int(result.get("rows_processed", 0))
+            status = str(result.get("status", "failed"))
+            if status == "succeeded":
+                succeeded += 1
+            else:
+                failed += 1
+                if status == "timed_out":
+                    timed_out += 1
+                    _log_timeout_telemetry(job=job, result=result)
+            service_logger.info(
+                "Finished ICE Python job: %s status=%s rows_processed=%s",
+                job.name,
+                status,
+                f"{rows_processed:,}",
+            )
+        except Exception as exc:
+            failed += 1
+            run_state[run_key] = _finished_record(
+                job=job,
+                current_time=current_time,
+                result={
+                    "status": "failed",
+                    "rows_processed": 0,
+                    "error_type": type(exc).__name__,
+                    "error_message": redact_secrets(str(exc)),
+                },
+            )
+            service_logger.exception("ICE Python job failed: %s", job.name)
+        finally:
+            if state_file is not None:
+                try:
+                    save_run_state(state_file=state_file, run_state=run_state)
+                except OSError:
+                    service_logger.exception("Failed to persist ICE service state.")
+
+    return {
+        "jobs_due": len(selected_jobs),
+        "jobs_succeeded": succeeded,
+        "jobs_failed": failed,
+        "jobs_timed_out": timed_out,
+    }
+
+
+def _request_stop(signum: int, _frame: object) -> None:
+    del signum
+    global _STOP_REQUESTED
+    _STOP_REQUESTED = True
+
+
+def install_stop_handlers() -> None:
+    """Install signal handlers used by service wrappers and console runs."""
+    signal.signal(signal.SIGINT, _request_stop)
+    signal.signal(signal.SIGTERM, _request_stop)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _request_stop)
+
+
+def sleep_until_next_poll(poll_seconds: int) -> None:
+    """Sleep in short chunks so stop signals are handled promptly."""
+    deadline = time.monotonic() + poll_seconds
+    while not _STOP_REQUESTED:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(remaining, 1.0))
+
+
+def run_service_loop(
+    poll_seconds: int | None = None,
+    run_once: bool = False,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    state_file: str | Path | None = None,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+) -> int:
+    """Run the ICE service scheduler loop."""
+    service_logger = configure_service_logging()
+    local_timezone = ZoneInfo(timezone_name)
+    resolved_poll_seconds = resolve_poll_seconds(poll_seconds)
+    resolved_state_file = resolve_state_file(state_file)
+
+    try:
+        run_state = load_run_state(resolved_state_file)
+    except (OSError, json.JSONDecodeError):
+        service_logger.exception(
+            "Failed to load ICE service state from %s; starting with empty state.",
+            resolved_state_file,
+        )
+        run_state = {}
+
+    service_logger.info(
+        "ICE Python service starting: timezone=%s poll_seconds=%s state_file=%s",
+        timezone_name,
+        resolved_poll_seconds,
+        resolved_state_file,
+    )
+
+    while not _STOP_REQUESTED:
+        current_time = datetime.now(local_timezone)
+        summary = run_due_jobs(
+            current_time=current_time,
+            run_state=run_state,
+            jobs=jobs,
+            state_file=resolved_state_file,
+            logger=service_logger,
+        )
+        if run_once:
+            return 1 if summary["jobs_failed"] else 0
+        sleep_until_next_poll(resolved_poll_seconds)
+
+    service_logger.info("ICE Python service stopping.")
+    return 0
+
+
+def main(
+    poll_seconds: int | None = None,
+    run_once: bool = False,
+    timezone_name: str = DEFAULT_TIMEZONE,
+    state_file: str | Path | None = None,
+) -> int:
+    """Service entrypoint for Windows Service Control Manager wrappers."""
+    install_stop_handlers()
+    return run_service_loop(
+        poll_seconds=poll_seconds,
+        run_once=run_once,
+        timezone_name=timezone_name,
+        state_file=state_file,
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -25,7 +25,8 @@ Promote one backend script or workflow at a time:
 - `dbt/azure_postgres/` - read-only dbt models, source definitions, tests,
   and disabled operator SQL for application tables and indexes.
 - `frontend/` - dashboard code when promoted into this repo.
-- `infrastructure/` - Azure VM setup, systemd timers, and deployment notes.
+- `infrastructure/` - Azure VM setup, systemd timers, local Windows service
+  config, and deployment notes.
 - `docs/` - migration, deployment, and operating playbooks.
 
 ## Promotion Rule
