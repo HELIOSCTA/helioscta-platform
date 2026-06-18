@@ -11,7 +11,7 @@ const REQUIRED_DATABASE = "helios_prod";
 const REQUIRED_USER = "helios_readonly";
 const DEFAULT_STATEMENT_TIMEOUT_MS = 25_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 28_000;
-const DEFAULT_CONNECTION_TIMEOUT_MS = 5_000;
+const DEFAULT_CONNECTION_TIMEOUT_MS = 12_000;
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];

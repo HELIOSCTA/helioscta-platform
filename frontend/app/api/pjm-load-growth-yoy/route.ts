@@ -639,13 +639,11 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     selectedYears,
   ];
 
-  const [dailyRows, hourlyRows, coverageRows, areaRows, stationRows] = await Promise.all([
-    query<DailyYoyRow>(DAILY_SQL, params),
-    query<HourlyYoyRow>(HOURLY_SQL, params),
-    query<CoverageRow>(COVERAGE_SQL, coverageParams),
-    loadAreas(),
-    weatherStations(region),
-  ]);
+  const dailyRows = await query<DailyYoyRow>(DAILY_SQL, params);
+  const hourlyRows = await query<HourlyYoyRow>(HOURLY_SQL, params);
+  const coverageRows = await query<CoverageRow>(COVERAGE_SQL, coverageParams);
+  const areaRows = await loadAreas();
+  const stationRows = await weatherStations(region);
   const coverage = coverageRows[0];
   const runAt = new Date().toISOString();
   const currentAvgLoadMw = avgNumbers(dailyRows, (row) => row.current_load_mw);

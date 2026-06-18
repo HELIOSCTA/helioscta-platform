@@ -59,6 +59,28 @@ function safeErrorDetail(error: unknown): string {
   return errorMessage(error).replace(/\s+/g, " ").slice(0, 900);
 }
 
+function errorHttpStatus(error: unknown): number {
+  const message = errorMessage(error).toLowerCase();
+  if (
+    message.includes("timeout exceeded when trying to connect") ||
+    message.includes("econnrefused") ||
+    message.includes("enotfound") ||
+    message.includes("connection terminated")
+  ) {
+    return 503;
+  }
+  if (message.includes("statement timeout") || message.includes("query read timeout") || message.includes("canceling statement due to statement timeout")) {
+    return 504;
+  }
+  return 500;
+}
+
+function errorTitle(status: number): string {
+  if (status === 503) return "Database connection failed";
+  if (status === 504) return "Database query timed out";
+  return "Internal server error";
+}
+
 function logApiEvent(event: Record<string, unknown>, failed = false): void {
   const line = JSON.stringify({ event: "frontend_api_request", ...event });
   if (failed) {
@@ -130,8 +152,9 @@ export function observedJsonRoute(
       } catch (error) {
         const durationMs = roundMs(nowMs() - startedAt);
         const dbDurationMs = roundMs(metrics.dbDurationMs);
+        const status = errorHttpStatus(error);
         const payload = {
-          error: "Internal server error",
+          error: errorTitle(status),
           detail: safeErrorDetail(error),
           errorType: errorName(error),
           requestId,
@@ -169,7 +192,7 @@ export function observedJsonRoute(
           true,
         );
 
-        return new NextResponse(body, { status: 500, headers });
+        return new NextResponse(body, { status, headers });
       }
     });
   };
