@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly HeliosCTA PJM forecast refresh timer
+
+[Timer]
+OnCalendar=*:35
+Persistent=false
+RandomizedDelaySec=3min
+AccuracySec=1min
+Unit=helios-pjm-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target
