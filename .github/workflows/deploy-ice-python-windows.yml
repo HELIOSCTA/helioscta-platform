@@ -35,6 +35,7 @@ permissions:
 jobs:
   deploy:
     name: Deploy ICE Python service
+    timeout-minutes: 45
     runs-on:
       - self-hosted
       - Windows

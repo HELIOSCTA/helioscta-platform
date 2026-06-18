@@ -84,7 +84,15 @@ function Invoke-External {
     try {
         & $FilePath @Arguments
         if ($LASTEXITCODE -ne 0) {
-            throw "$FilePath $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
+            $safeArguments = $Arguments | ForEach-Object {
+                if ($_ -match "AUTHORIZATION:\s*(basic|bearer)\s+") {
+                    $_ -replace "AUTHORIZATION:\s*(basic|bearer)\s+.+$", 'AUTHORIZATION: $1 ***'
+                }
+                else {
+                    $_
+                }
+            }
+            throw "$FilePath $($safeArguments -join ' ') failed with exit code $LASTEXITCODE"
         }
     }
     finally {
@@ -102,13 +110,24 @@ function Invoke-Nssm {
 }
 
 function Get-GitAuthArguments {
+    $baseArguments = @(
+        "-c",
+        "credential.helper=",
+        "-c",
+        "core.askPass=",
+        "-c",
+        "credential.interactive=never"
+    )
+
     if ($GitHubToken) {
-        return @(
+        $tokenBytes = [System.Text.Encoding]::ASCII.GetBytes("x-access-token:$GitHubToken")
+        $basicToken = [Convert]::ToBase64String($tokenBytes)
+        return $baseArguments + @(
             "-c",
-            "http.https://github.com/.extraheader=AUTHORIZATION: bearer $GitHubToken"
+            "http.https://github.com/.extraheader=AUTHORIZATION: basic $basicToken"
         )
     }
-    return @()
+    return $baseArguments
 }
 
 function Invoke-Git {
@@ -165,6 +184,10 @@ $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 $resolvedNssmExe = Resolve-CommandPath -Executable $NssmExe
 $resolvedGitExe = Resolve-CommandPath -Executable "git"
+
+$env:GIT_TERMINAL_PROMPT = "0"
+$env:GCM_INTERACTIVE = "never"
+$env:GIT_ASKPASS = ""
 
 if (-not (Test-Path -Path (Join-Path $resolvedRepoRoot ".git"))) {
     throw "RepoRoot is not a git checkout: $resolvedRepoRoot"
