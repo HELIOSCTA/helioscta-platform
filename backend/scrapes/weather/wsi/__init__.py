@@ -1,0 +1,1 @@
+"""WSI Trader weather scrapes."""

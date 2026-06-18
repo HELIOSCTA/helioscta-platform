@@ -65,11 +65,28 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 28
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 27
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
+
+## PJM Generation Outages By Type
+
+The PJM seven-day generation outage by type feed has its own daily timer:
+
+```text
+helios-pjm-gen-outages-by-type.service
+helios-pjm-gen-outages-by-type.timer
+```
+
+It runs `backend.scrapes.power.pjm.gen_outages_by_type`, upserts the current
+PJM Data Miner `gen_outages_by_type` publication into
+`pjm.gen_outages_by_type`, and writes API fetch telemetry to
+`ops.api_fetch_log`. The timer runs daily at `14:15 UTC` with
+`Persistent=true` because the source is a morning PJM publication that was not
+available during the earlier `04:30 UTC` support batch. The service uses
+`flock` with `/tmp/helios-pjm-gen-outages-by-type.lock`.
 
 ## PJM Seven-Day Load Forecast
 
@@ -304,6 +321,84 @@ Deploy them with the repo, but do not install persistent `.service` or
 This avoids corrupting secrets that contain characters such as `$`. See
 `docs/operations/manual-backfills.md` for exact commands and verification SQL.
 
+## NOAA METAR Weather
+
+The NOAA AviationWeather METAR workflow has its own timer:
+
+```text
+helios-weather-noaa-metar-observations.service
+helios-weather-noaa-metar-observations.timer
+```
+
+It runs `backend.orchestration.weather.noaa.metar_observations`, pulls public
+METAR observations for the PJM station basket, upserts
+`weather.noaa_metar_observations`, writes NOAA API telemetry to
+`ops.api_fetch_log`, and emits weather freshness events to
+`ops.data_availability_events`. The timer runs every 15 minutes at minutes
+`07`, `22`, `37`, and `52` UTC with `Persistent=false`. The service uses
+`flock` with `/tmp/helios-weather-noaa-metar-observations.lock`.
+
+Do not enable this timer until the weather schema/table/index operator SQL has
+been applied.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-noaa-metar-observations.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-noaa-metar-observations.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-weather-noaa-metar-observations.service
+sudo systemctl enable --now helios-weather-noaa-metar-observations.timer
+```
+
+Verify the workflow with:
+
+```bash
+systemctl status helios-weather-noaa-metar-observations.service
+systemctl status helios-weather-noaa-metar-observations.timer
+journalctl -u helios-weather-noaa-metar-observations.service -n 200 --no-pager
+```
+
+## WSI Hourly Observed Weather
+
+The WSI hourly observed weather workflow has its own timer:
+
+```text
+helios-weather-wsi-hourly-observed.service
+helios-weather-wsi-hourly-observed.timer
+```
+
+It runs `backend.orchestration.weather.wsi.hourly_observed`, pulls WSI Trader
+Historical Observations for the PJM station basket, upserts
+`weather.wsi_hourly_observed_temperatures`, writes WSI API telemetry to
+`ops.api_fetch_log`, and emits weather freshness events to
+`ops.data_availability_events`. The timer runs hourly at minute `20` UTC with
+`Persistent=false` because the scheduled default pulls a rolling recent window.
+The service uses `flock` with
+`/tmp/helios-weather-wsi-hourly-observed.lock`.
+
+Do not enable this timer until `/etc/helioscta/backend.env` contains
+`WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
+weather schema/table/index operator SQL has been applied.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-hourly-observed.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-hourly-observed.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-weather-wsi-hourly-observed.service
+sudo systemctl enable --now helios-weather-wsi-hourly-observed.timer
+```
+
+Verify the workflow with:
+
+```bash
+systemctl status helios-weather-wsi-hourly-observed.service
+systemctl status helios-weather-wsi-hourly-observed.timer
+journalctl -u helios-weather-wsi-hourly-observed.service -n 200 --no-pager
+```
+
 ## Naming
 
 Use predictable names:
@@ -322,6 +417,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.servic
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
@@ -361,6 +458,7 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
@@ -390,6 +488,7 @@ Run the workflow once on demand:
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
@@ -430,6 +529,14 @@ For the PJM Data Miner batch:
 systemctl status helios-pjm-data-miner-batch.service
 systemctl status helios-pjm-data-miner-batch.timer
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
+```
+
+For the PJM generation outages by type refresh:
+
+```bash
+systemctl status helios-pjm-gen-outages-by-type.service
+systemctl status helios-pjm-gen-outages-by-type.timer
+journalctl -u helios-pjm-gen-outages-by-type.service -n 200 --no-pager
 ```
 
 For the PJM seven-day load forecast refresh:

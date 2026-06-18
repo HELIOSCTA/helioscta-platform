@@ -363,6 +363,25 @@ models:
             +enabled: false
           index_miso_real_time_total_load:
             +enabled: false
+    weather:
+      +schema: weather
+      +materialized: ephemeral
+      noaa:
+        +materialized: ephemeral
+        metar_observations:
+          +materialized: ephemeral
+          table_weather_noaa_metar_observations:
+            +enabled: false
+          index_weather_noaa_metar_observations:
+            +enabled: false
+      wsi:
+        +materialized: ephemeral
+        hourly_observed:
+          +materialized: ephemeral
+          table_weather_wsi_hourly_observed_temperatures:
+            +enabled: false
+          index_weather_wsi_hourly_observed_temperatures:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

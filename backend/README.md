@@ -21,6 +21,10 @@ PJM_API_KEY=
 ERCOT_USERNAME=
 ERCOT_PASSCODE=
 ERCOT_API_KEY=
+
+WSI_TRADER_USERNAME=
+WSI_TRADER_NAME=
+WSI_TRADER_PASSWORD=
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -74,6 +78,27 @@ credentials. The first promoted MISO runtime module is
 operator SQL under `dbt/azure_postgres/models/power/miso/`. MISO asks public
 users to avoid accessing real-time links more than once per minute, so
 scheduled jobs should use a conservative cadence.
+
+WSI Trader weather helpers use `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and
+`WSI_TRADER_PASSWORD`. The first promoted weather runtime module is
+`backend.scrapes.weather.wsi.hourly_observed`, with orchestration at
+`backend.orchestration.weather.wsi.hourly_observed`. It writes hourly observed
+temperature/weather rows to `weather.wsi_hourly_observed_temperatures`, logs
+WSI API fetch telemetry to `ops.api_fetch_log`, and emits a weather freshness
+event to `ops.data_availability_events`. The source grain is
+`station_id x observation_time_local x region`; observations are stored in WSI
+local station-hour time, so the availability payload records the local window
+instead of UTC interval bounds.
+
+NOAA AviationWeather METAR helpers use the public
+`https://aviationweather.gov/api/data/metar` endpoint and do not require
+provider credentials. The runtime module is
+`backend.scrapes.weather.noaa.metar_observations`, with orchestration at
+`backend.orchestration.weather.noaa.metar_observations`. It writes
+frontend-facing realtime observations to `weather.noaa_metar_observations`,
+logs API fetch telemetry to `ops.api_fetch_log`, and emits weather freshness
+events to `ops.data_availability_events`. The source grain is
+`station_id x observation_time_utc`.
 
 ## Permissions Contract
 

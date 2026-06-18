@@ -276,6 +276,35 @@ cd dbt/azure_postgres
 dbt compile --profiles-dir . --select path:models/power/miso/real_time_total_load/miso_real_time_total_load
 ```
 
+## Weather Layout
+
+Weather feeds live under one folder per provider and feed:
+
+```text
+models/weather/noaa/metar_observations/
+models/weather/noaa/metar_observations/weather_noaa_metar_observations/
+models/weather/wsi/hourly_observed/
+models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures/
+```
+
+`table_weather_noaa_metar_observations.sql` and
+`index_weather_noaa_metar_observations.sql` are disabled operator SQL. The
+enabled NOAA weather model is read-only query shaping over
+`weather.noaa_metar_observations`.
+
+`table_weather_wsi_hourly_observed_temperatures.sql` and
+`index_weather_wsi_hourly_observed_temperatures.sql` are disabled operator SQL.
+The enabled weather model is read-only query shaping over
+`weather.wsi_hourly_observed_temperatures`.
+
+Compile the weather query-shaping models with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/weather/noaa/metar_observations/weather_noaa_metar_observations
+dbt compile --profiles-dir . --select path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
+```
+
 ## Operator SQL
 
 `schema_*.sql`, `table_*.sql`, and `index_*.sql` files are disabled as dbt
@@ -312,6 +341,8 @@ models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_int
 models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql
 models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/table_*.sql
+models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql
+models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
 models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql
@@ -333,6 +364,8 @@ models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_int
 models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql
 models/power/miso/real_time_total_load/index_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/index_*.sql
+models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql
+models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```
 

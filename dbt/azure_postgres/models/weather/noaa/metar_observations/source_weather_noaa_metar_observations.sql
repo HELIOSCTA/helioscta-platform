@@ -1,0 +1,32 @@
+{{
+  config(
+    materialized='ephemeral'
+  )
+}}
+
+SELECT
+    station_id,
+    station_name,
+    region,
+    observation_time_utc,
+    report_time_utc,
+    receipt_time_utc,
+    temp_f,
+    dew_point_f,
+    feels_like_f,
+    wind_speed_mph,
+    wind_gust_mph,
+    wind_dir_degrees,
+    pressure_mb,
+    visibility_miles,
+    relative_humidity_pct,
+    latitude,
+    longitude,
+    elevation_m,
+    flight_category,
+    raw_metar,
+    source_product_id,
+    source_updated_at,
+    created_at,
+    updated_at
+FROM weather.noaa_metar_observations

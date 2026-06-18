@@ -814,9 +814,9 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: 31 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 28 support scrapes run through the shared batch
-  after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, and `load_frcstd_7_day` were
-  promoted to dedicated orchestration timers.
+  `backend.scrapes.power.pjm`; 27 support scrapes run through the shared batch
+  after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `load_frcstd_7_day`, and
+  `gen_outages_by_type` were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -840,7 +840,36 @@ FROM isone.seven_day_solar_forecast;
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
   workflows emit data-readiness events. `helios-pjm-load-frcstd-7-day.timer`
   remains separate because the forecast source posts hourly and drives the
-  forecast dashboard.
+  forecast dashboard. `helios-pjm-gen-outages-by-type.timer` runs later because
+  the source was observed unavailable at the early `04:30 UTC` batch but
+  available during a manual `13:55 UTC` VM run.
+
+## helios-pjm-gen-outages-by-type
+
+- Status: deployed; timer enabled and manual VM run succeeded.
+- Workflow: PJM Generation Outage for Seven Days by Type refresh.
+- Runtime module: `backend.scrapes.power.pjm.gen_outages_by_type`.
+- Source system: PJM Data Miner 2 `gen_outages_by_type`.
+- Destination table: `pjm.gen_outages_by_type`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-gen-outages-by-type.service`
+  - `infrastructure/systemd/helios-pjm-gen-outages-by-type.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-gen-outages-by-type.service`.
+- Schedule: daily at `14:15 UTC` with `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-gen-outages-by-type.lock`.
+- Safe rerun story: upsert on `(forecast_execution_date_ept, forecast_date,
+  region)`.
+- Manual verification: `2026-06-18 13:55 UTC`; VM service run exited
+  `status=0/SUCCESS`, upserted 21 rows for execution date `2026-06-18`, and
+  refreshed the outage dashboard source after the early batch missed the
+  morning publication.
 
 ## helios-pjm-load-frcstd-7-day
 
@@ -1012,4 +1041,179 @@ FROM ops.data_availability_events
 WHERE dataset = 'pjm_rt_fivemin_hrl_lmps'
 ORDER BY created_at DESC
 LIMIT 10;
+```
+
+## helios-weather-noaa-metar-observations
+
+- Status: deployed on the production VM; timer enabled and latest manual run
+  succeeded.
+- Workflow: NOAA AviationWeather METAR observation refresh for the PJM station
+  basket.
+- Runtime module: `backend.orchestration.weather.noaa.metar_observations`.
+- Lower-level scrape module:
+  `backend.scrapes.weather.noaa.metar_observations`.
+- Source system: NOAA/NWS AviationWeather Data API `/api/data/metar`.
+- Destination table: `weather.noaa_metar_observations`.
+- Source grain: `station_id x observation_time_utc`.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-weather-noaa-metar-observations.service`
+  - `infrastructure/systemd/helios-weather-noaa-metar-observations.timer`
+- Proposed schedule: every 15 minutes at `07`, `22`, `37`, and `52` minutes
+  past the hour UTC with `RandomizedDelaySec=2min`.
+- Timer behavior: `Persistent=false`; scheduled runs pull a rolling recent
+  observation window.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-weather-noaa-metar-observations.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- VM deployment: working-tree overlay copied to `/opt/helioscta-platform` on
+  `2026-06-17`; unit files installed under `/etc/systemd/system/`.
+- Production DDL: `weather` schema, NOAA table, NOAA indexes, WSI table, WSI
+  indexes, and refreshed read-only grants applied on `2026-06-17`.
+- Operator SQL required before first run:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`,
+  and
+  `dbt/azure_postgres/models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql`.
+- Safe rerun story: upsert on `(station_id, observation_time_utc)`.
+- Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py
+  backend/tests/test_weather_noaa_metar_observations.py
+  backend/tests/test_weather_noaa_metar_observations_orchestration.py`, `dbt
+  parse --profiles-dir .`, and `dbt compile --profiles-dir . --select
+  path:models/weather/noaa/metar_observations/weather_noaa_metar_observations
+  path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
+  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
+  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
+  `2026-06-17`. pytest reported only pre-existing cache write warnings for
+  `backend/.pytest_cache`.
+- Production dbt validation: `dbt test --profiles-dir . --select
+  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
+  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
+  `2026-06-17`.
+- VM verification: manual service run on `2026-06-17 21:04 UTC` exited
+  `status=0/SUCCESS`, upserted 1,651 rows for 33 PJM stations, wrote five
+  successful batched NOAA API telemetry rows, and emitted
+  `weather_noaa_metar_observations:freshness_observed:PJM:202606172058`.
+  First timer-triggered run completed on `2026-06-17 21:07:52 UTC`, exited
+  `status=0/SUCCESS`, and upserted 1,651 rows. Next scheduled run observed at
+  `2026-06-17 21:23:25 UTC`.
+
+Verification SQL for NOAA table freshness:
+
+```sql
+SELECT
+    region,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT station_id) AS station_count,
+    MAX(observation_time_utc) AS latest_observation_time_utc,
+    MAX(updated_at) AS latest_updated_at
+FROM weather.noaa_metar_observations
+GROUP BY region
+ORDER BY region;
+```
+
+Verification SQL for NOAA API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'noaa_metar_observations'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+## helios-weather-wsi-hourly-observed
+
+- Status: deployed on the production VM; timer enabled and latest manual run
+  succeeded.
+- Workflow: WSI hourly observed weather refresh for the PJM station basket.
+- Runtime module: `backend.orchestration.weather.wsi.hourly_observed`.
+- Lower-level scrape module: `backend.scrapes.weather.wsi.hourly_observed`.
+- Source system: WSI Trader Historical Observations
+  `GetHistoricalObservations` / `HISTORICAL_HOURLY_OBSERVED`.
+- Destination table: `weather.wsi_hourly_observed_temperatures`.
+- Source grain: `station_id x observation_time_local x region`.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-weather-wsi-hourly-observed.service`
+  - `infrastructure/systemd/helios-weather-wsi-hourly-observed.timer`
+- Proposed schedule: hourly at minute `20` UTC with
+  `RandomizedDelaySec=3min`.
+- Timer behavior: `Persistent=false`; scheduled runs pull a rolling recent
+  observation window.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-weather-wsi-hourly-observed.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
+  `/etc/helioscta/backend.env`.
+- VM credentials: WSI credential keys were installed in
+  `/etc/helioscta/backend.env` on `2026-06-18`; values are intentionally not
+  recorded in this repo.
+- VM deployment: working-tree overlay copied to `/opt/helioscta-platform` on
+  `2026-06-17`; unit files installed under `/etc/systemd/system/`.
+- Production DDL: `weather` schema, WSI table, WSI indexes, NOAA table, NOAA
+  indexes, and refreshed read-only grants applied on `2026-06-17`.
+- Operator SQL required before first run:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql`,
+  and
+  `dbt/azure_postgres/models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql`.
+- Safe rerun story: upsert on
+  `(station_id, observation_time_local, region)`.
+- Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, `dbt parse
+  --profiles-dir .`, and `dbt compile --profiles-dir . --select
+  path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
+  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
+  `2026-06-17`. pytest reported only pre-existing cache write warnings for
+  `backend/.pytest_cache`.
+- Production dbt validation: `dbt test --profiles-dir . --select
+  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
+  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
+  `2026-06-18` after WSI was populated.
+- VM verification: manual service run on `2026-06-18 13:54 UTC` exited
+  `status=0/SUCCESS`, upserted 1,935 rows for 34 PJM station IDs, wrote
+  successful WSI API telemetry, and emitted
+  `weather_wsi_hourly_observed_temperatures:freshness_observed:PJM:2026061808`.
+  `helios-weather-wsi-hourly-observed.timer` is enabled with next run observed
+  at `2026-06-18 14:22:37 UTC`.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    region,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT station_id) AS station_count,
+    MAX(observation_time_local) AS latest_observation_time_local,
+    MAX(updated_at) AS latest_updated_at
+FROM weather.wsi_hourly_observed_temperatures
+GROUP BY region
+ORDER BY region;
+```
+
+Verification SQL for WSI API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'wsi_hourly_observed_temperatures'
+ORDER BY created_at DESC
+LIMIT 20;
 ```

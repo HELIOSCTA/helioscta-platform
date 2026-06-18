@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA NOAA AviationWeather METAR observation refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-weather-noaa-metar-observations.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.weather.noaa.metar_observations
+TimeoutStartSec=15min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-weather-noaa-metar-observations
+
+[Install]
+WantedBy=multi-user.target

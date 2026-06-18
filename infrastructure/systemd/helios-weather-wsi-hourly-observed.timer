@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly HeliosCTA WSI hourly observed weather refresh timer
+
+[Timer]
+OnCalendar=*:20
+Persistent=false
+RandomizedDelaySec=3min
+AccuracySec=1min
+Unit=helios-weather-wsi-hourly-observed.service
+
+[Install]
+WantedBy=timers.target
