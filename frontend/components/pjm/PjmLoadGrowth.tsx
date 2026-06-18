@@ -4,10 +4,6 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
   CartesianGrid,
-  Cell,
-  ComposedChart,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -20,8 +16,6 @@ import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type LoadSource = "preferred" | "prelim" | "metered";
-type HourlyLoadSource = "metered" | "prelim";
 type WeatherMetric = "tempF" | "dewPointF" | "feelsLikeF";
 type LoadGrowthTab = "daily" | "hourly";
 type LoadShape = "flat" | "onpeak" | "offpeak" | "peak";
@@ -47,119 +41,6 @@ interface WeatherStation {
   stationId: string;
   stationName: string;
   region: string;
-}
-
-interface HourlyPoint {
-  datetimeBeginningEpt: string;
-  date: string;
-  hourEnding: number;
-  source: HourlyLoadSource;
-  loadArea: string;
-  loadMw: number | null;
-  loadComponentCount: number;
-  weatherStationId: string;
-  weatherStationName: string;
-  region: string;
-  tempF: number | null;
-  dewPointF: number | null;
-  feelsLikeF: number | null;
-  windSpeedMph: number | null;
-  relativeHumidityPct: number | null;
-  cloudCoverPct: number | null;
-  precipIn: number | null;
-  loadUpdatedAt: string | null;
-  weatherUpdatedAt: string | null;
-}
-
-interface DailySummary {
-  date: string;
-  hourCount: number;
-  avgLoadMw: number | null;
-  minLoadMw: number | null;
-  peakLoadMw: number | null;
-  meteredHours: number;
-  prelimHours: number;
-  avgTempF: number | null;
-  maxTempF: number | null;
-  avgDewPointF: number | null;
-  avgFeelsLikeF: number | null;
-  avgWindSpeedMph: number | null;
-}
-
-interface RegressionResult {
-  count: number;
-  slope: number | null;
-  intercept: number | null;
-  correlation: number | null;
-  rSquared: number | null;
-}
-
-interface PjmLoadGrowthPayload {
-  iso: "pjm";
-  source: LoadSource;
-  sourceTable: string;
-  loadMetric: string;
-  selected: {
-    source: LoadSource;
-    area: string | null;
-    startDate: string | null;
-    endDate: string | null;
-    dateMode: DateMode;
-    lookbackDays: number;
-    month: number;
-    years: number[];
-    weatherStation: string;
-    region: string;
-    maxRangeDays: number;
-    loadShape: LoadShape;
-    dayType: DayType;
-  };
-  availableAreas: AvailableArea[];
-  weatherStations: WeatherStation[];
-  coverage: {
-    loadMinEpt: string | null;
-    loadMaxEpt: string | null;
-    weatherMinLocal: string | null;
-    weatherMaxLocal: string | null;
-    loadLatestUpdate: string | null;
-    weatherLatestUpdate: string | null;
-    overlapStart: string | null;
-    overlapEnd: string | null;
-    overlapDays: number;
-    selectedJoinedHours: number;
-  };
-  freshness: {
-    status: string;
-    asOf: string | null;
-    loadLatestUpdate: string | null;
-    weatherLatestUpdate: string | null;
-    runAt: string;
-    reason: string | null;
-  };
-  warnings: string[];
-  rowCount: number;
-  summary?: {
-    avgLoadMw: number | null;
-    peakLoadMw: number | null;
-    minLoadMw: number | null;
-    avgTempF: number | null;
-    maxTempF: number | null;
-    avgDewPointF: number | null;
-    avgFeelsLikeF: number | null;
-  };
-  hourly: HourlyPoint[];
-  daily: DailySummary[];
-  scatter: {
-    metric: WeatherMetric;
-    points: Array<{
-      datetimeBeginningEpt: string;
-      x: number;
-      y: number;
-      tempF: number | null;
-      loadMw: number | null;
-    }>;
-    regression: RegressionResult;
-  };
 }
 
 interface PjmLoadGrowthYoyPayload {
@@ -323,7 +204,6 @@ export interface PjmLoadGrowthFreshnessSummary {
 }
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_SOURCE: LoadSource = "preferred";
 const DEFAULT_AREA = "DOM";
 const DEFAULT_REGION = "PJM";
 const DEFAULT_WEATHER_STATION = "KRIC";
@@ -385,27 +265,12 @@ const MONTHS = [
   { value: 12, label: "Dec" },
 ];
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index)).sort();
-const PROFILE_SERIES: PlotSeries[] = [
-  { key: "loadMw", label: "Load", color: "#38bdf8", defaultVisible: true },
-  { key: "tempF", label: "Temp", color: "#f97316", defaultVisible: true },
-  { key: "dewPointF", label: "Dew Point", color: "#22c55e", defaultVisible: false },
-  { key: "feelsLikeF", label: "Feels Like", color: "#facc15", defaultVisible: false },
-];
-const DAILY_SERIES: PlotSeries[] = [
-  { key: "avgLoadMw", label: "Avg Load", color: "#38bdf8", defaultVisible: true },
-  { key: "peakLoadMw", label: "Peak Load", color: "#a78bfa", defaultVisible: true },
-  { key: "avgTempF", label: "Avg Temp", color: "#f97316", defaultVisible: true },
-];
 const DAILY_FIT_SERIES: PlotSeries[] = [
   { key: "currentYear", label: "Current Year", color: "#ef4444", defaultVisible: true },
   { key: "lastYear", label: "Last Year", color: "#a855f7", defaultVisible: true },
   { key: "lookback", label: "Lookback", color: "#7dd3fc", defaultVisible: true },
   { key: "currentFit", label: "Current Fit", color: "#ef4444", defaultVisible: true },
   { key: "lastYearFit", label: "Last Year Fit", color: "#a855f7", defaultVisible: true },
-];
-const HOURLY_FIT_SERIES: PlotSeries[] = [
-  { key: "hourlyPoints", label: "Hourly Points", color: "#7dd3fc", defaultVisible: true },
-  { key: "hourlyFit", label: "Fit", color: "#ef4444", defaultVisible: true },
 ];
 const DEFAULT_FRESHNESS: PjmLoadGrowthFreshnessSummary = {
   status: "Unknown",
@@ -461,11 +326,6 @@ function fmtDateTime(value: string | null | undefined): string {
   return value.replace("T", " ").slice(0, 16);
 }
 
-function fmtHour(value: string | null | undefined): string {
-  if (!value) return "-";
-  return value.replace("T", " ").slice(5, 16);
-}
-
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
 }
@@ -477,7 +337,7 @@ function addDaysIsoDate(value: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function loadSourceLabel(source: LoadSource | HourlyLoadSource | string | null | undefined): string {
+function loadSourceLabel(source: string | null | undefined): string {
   if (source === "preferred") return "Metered then Prelim";
   if (source === "metered" || source === "metered_verified") return "Verified Metered";
   if (source === "prelim") return "Prelim";
@@ -514,10 +374,6 @@ function stationDisplayName(
   const displayName = name === station.stationId ? fallbackName : name;
   if (!includeCode || displayName === station.stationId) return displayName;
   return `${displayName} (${station.stationId})`;
-}
-
-function metricValue(row: HourlyPoint, metric: WeatherMetric): number | null {
-  return row[metric];
 }
 
 function metricConfig(metric: WeatherMetric) {
@@ -834,99 +690,6 @@ function buildHourlyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMet
   };
 }
 
-function buildApiUrl({
-  source,
-  area,
-  startDate,
-  endDate,
-  dateMode,
-  lookbackDays,
-  month,
-  years,
-  weatherStation,
-  region,
-  weatherMetric,
-  loadShape,
-  dayType,
-  refresh,
-}: {
-  source: LoadSource;
-  area: string;
-  startDate: string;
-  endDate: string;
-  dateMode: DateMode;
-  lookbackDays: number;
-  month: number;
-  years: string[];
-  weatherStation: string;
-  region: string;
-  weatherMetric: WeatherMetric;
-  loadShape: LoadShape;
-  dayType: DayType;
-  refresh: boolean;
-}): string {
-  const params = new URLSearchParams({ source, region, weatherStation });
-  params.set("weatherMetric", weatherMetric);
-  params.set("loadShape", loadShape);
-  params.set("dayType", dayType);
-  params.set("dateMode", dateMode);
-  params.set("lookbackDays", String(lookbackDays));
-  params.set("month", String(month));
-  if (years.length) params.set("years", years.join(","));
-  if (area) params.set("loadArea", area);
-  if (dateMode === "range" && startDate) params.set("start", startDate);
-  if (dateMode === "range" && endDate) params.set("end", endDate);
-  if (refresh) params.set("refresh", "1");
-  return `/api/pjm-load-growth?${params.toString()}`;
-}
-
-function buildCacheKey({
-  source,
-  area,
-  startDate,
-  endDate,
-  dateMode,
-  lookbackDays,
-  month,
-  years,
-  weatherStation,
-  region,
-  weatherMetric,
-  loadShape,
-  dayType,
-}: {
-  source: LoadSource;
-  area: string;
-  startDate: string;
-  endDate: string;
-  dateMode: DateMode;
-  lookbackDays: number;
-  month: number;
-  years: string[];
-  weatherStation: string;
-  region: string;
-  weatherMetric: WeatherMetric;
-  loadShape: LoadShape;
-  dayType: DayType;
-}): string {
-  return [
-    "api:pjm-load-growth",
-    source,
-    area || "default",
-    startDate,
-    endDate,
-    dateMode,
-    lookbackDays,
-    month,
-    years.join(","),
-    weatherStation,
-    region,
-    weatherMetric,
-    loadShape,
-    dayType,
-  ].join(":");
-}
-
 function buildYoyApiUrl({
   area,
   weatherStation,
@@ -1019,46 +782,21 @@ function statusClass(status: string): string {
   return "border-gray-700 bg-gray-900 text-gray-400";
 }
 
-function freshnessFromPayload(payload: PjmLoadGrowthPayload | null): PjmLoadGrowthFreshnessSummary {
+function freshnessFromYoyPayload(payload: PjmLoadGrowthYoyPayload | null): PjmLoadGrowthFreshnessSummary {
   if (!payload) return DEFAULT_FRESHNESS;
   return {
     status: payload.freshness.status,
-    statusClass: statusClass(payload.freshness.status),
-    summary: `${payload.rowCount.toLocaleString()} joined hours | ${payload.coverage.overlapDays} overlap days`,
-    targetDateLabel: `${payload.selected.source} ${payload.selected.area ?? "-"}`,
-    latestDateLabel: fmtDateTime(payload.freshness.asOf),
-    latestUpdateLabel: fmtDateTime(payload.freshness.weatherLatestUpdate),
+    statusClass: payload.freshness.status === "Ready"
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-100"
+      : "border-amber-500/40 bg-amber-500/10 text-amber-100",
+    summary: `${payload.summary.matchedDays.toLocaleString()} paired days | ${payload.summary.currentHourCount.toLocaleString()} current hours`,
+    targetDateLabel: `${payload.selected.loadArea} ${stationDisplayName({
+      stationId: payload.selected.stationId,
+      stationName: payload.selected.stationName,
+    })}`,
+    latestDateLabel: fmtDate(payload.windows.currentEndExclusive),
+    latestUpdateLabel: fmtDateTime(payload.freshness.runAt),
   };
-}
-
-function SectionCard({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold text-gray-100">{title}</h2>
-        {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
-      </div>
-      {children}
-    </section>
-  );
-}
-
-function StatTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="rounded-md border border-gray-800 bg-gray-950/40 px-4 py-3">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums text-gray-100">{value}</p>
-      {sub && <p className="mt-1 text-xs text-gray-600">{sub}</p>}
-    </div>
-  );
 }
 
 function WarningStack({ warnings }: { warnings: string[] }) {
@@ -1084,7 +822,6 @@ export default function PjmLoadGrowth({
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmLoadGrowthFreshnessSummary) => void;
 }) {
-  const [source, setSource] = useState<LoadSource>(DEFAULT_SOURCE);
   const [area, setArea] = useState(DEFAULT_AREA);
   const [startDate, setStartDate] = useState(DEFAULT_START);
   const [endDate, setEndDate] = useState(DEFAULT_END);
@@ -1101,10 +838,6 @@ export default function PjmLoadGrowth({
   const [activeTab, setActiveTab] = useState<LoadGrowthTab>("daily");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const hourlyEnabled = activeTab === "hourly";
-  const [hiddenProfileSeries, setHiddenProfileSeries] = useState<Set<string>>(
-    () => new Set(PROFILE_SERIES.filter((series) => series.defaultVisible === false).map((series) => series.key)),
-  );
-  const [hiddenDailySeries, setHiddenDailySeries] = useState<Set<string>>(() => new Set());
   const [hiddenDailyFitSeries, setHiddenDailyFitSeries] = useState<Set<string>>(() => new Set());
   const [hiddenHourlyFitSeries, setHiddenHourlyFitSeries] = useState<Set<string>>(() => new Set());
   const [openTables, setOpenTables] = useState<Record<LoadGrowthTableKey, boolean>>({
@@ -1118,9 +851,6 @@ export default function PjmLoadGrowth({
   const [yoyData, setYoyData] = useState<PjmLoadGrowthYoyPayload | null>(null);
   const [yoyLoading, setYoyLoading] = useState(true);
   const [yoyError, setYoyError] = useState<string | null>(null);
-  const [data, setData] = useState<PjmLoadGrowthPayload | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -1162,6 +892,7 @@ export default function PjmLoadGrowth({
       .then((payload) => {
         if (!active) return;
         setYoyData(payload);
+        onFreshnessChange?.(freshnessFromYoyPayload(payload));
         if (payload.selected.loadArea !== area) setArea(payload.selected.loadArea);
         if (payload.selected.stationId !== weatherStation) setWeatherStation(payload.selected.stationId);
       })
@@ -1169,6 +900,12 @@ export default function PjmLoadGrowth({
         if (!active || err.name === "AbortError") return;
         setYoyError(err.message || "Failed to load PJM daily load-growth data");
         setYoyData(null);
+        onFreshnessChange?.({
+          ...DEFAULT_FRESHNESS,
+          status: "Error",
+          statusClass: statusClass("Error"),
+          summary: err.message || "Load-growth query failed",
+        });
       })
       .finally(() => {
         if (active) setYoyLoading(false);
@@ -1184,169 +921,16 @@ export default function PjmLoadGrowth({
     endDate,
     loadShape,
     lookbackDays,
-    refreshToken,
-    region,
-    selectedMonth,
-    selectedYears,
-    startDate,
-    weatherStation,
-  ]);
-
-  useEffect(() => {
-    if (!hourlyEnabled) {
-      setLoading(false);
-      setError(null);
-      setData(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    let active = true;
-    setLoading(true);
-    setError(null);
-
-    fetchJsonWithCache<PjmLoadGrowthPayload>({
-      key: buildCacheKey({
-        source,
-        area,
-        startDate,
-        endDate,
-        dateMode,
-        lookbackDays,
-        month: selectedMonth,
-        years: selectedYears,
-        weatherStation,
-        region,
-        weatherMetric,
-        loadShape,
-        dayType,
-      }),
-      url: buildApiUrl({
-        source,
-        area,
-        startDate,
-        endDate,
-        dateMode,
-        lookbackDays,
-        month: selectedMonth,
-        years: selectedYears,
-        weatherStation,
-        region,
-        weatherMetric,
-        loadShape,
-        dayType,
-        refresh: refreshToken > 0,
-      }),
-      ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
-      cacheMode: refreshToken > 0 ? "no-store" : "default",
-      forceRefresh: refreshToken > 0,
-    })
-      .then((payload) => {
-        if (!active) return;
-        setData(payload);
-        onFreshnessChange?.(freshnessFromPayload(payload));
-        if (payload.selected.area && payload.selected.area !== area) {
-          setArea(payload.selected.area);
-        }
-        if (payload.selected.startDate && !startDate) setStartDate(payload.selected.startDate);
-        if (payload.selected.endDate && !endDate) setEndDate(payload.selected.endDate);
-        if (payload.selected.weatherStation !== weatherStation) {
-          setWeatherStation(payload.selected.weatherStation);
-        }
-      })
-      .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
-        setError(err.message || "Failed to load PJM load-weather data");
-        setData(null);
-        onFreshnessChange?.({
-          ...DEFAULT_FRESHNESS,
-          status: "Error",
-          statusClass: statusClass("Error"),
-          summary: "Load-weather query failed",
-        });
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [
-    area,
-    dateMode,
-    dayType,
-    endDate,
-    hourlyEnabled,
-    loadShape,
-    lookbackDays,
     onFreshnessChange,
     refreshToken,
     region,
     selectedMonth,
     selectedYears,
-    source,
     startDate,
-    weatherMetric,
     weatherStation,
   ]);
 
   const selectedMetric = metricConfig(weatherMetric);
-  const chartRows = useMemo(
-    () =>
-      (data?.hourly ?? []).map((row) => ({
-        ...row,
-        label: fmtHour(row.datetimeBeginningEpt),
-        weatherValue: metricValue(row, weatherMetric),
-      })),
-    [data, weatherMetric],
-  );
-  const dailyRows = useMemo(
-    () =>
-      (data?.daily ?? []).map((row) => ({
-        ...row,
-        label: row.date.slice(5),
-      })),
-    [data],
-  );
-  const scatterRows = useMemo(
-    () =>
-      (data?.hourly ?? [])
-        .map((row) => ({
-          datetimeBeginningEpt: row.datetimeBeginningEpt,
-          date: row.date,
-          hourEnding: row.hourEnding,
-          source: row.source,
-          x: metricValue(row, weatherMetric),
-          y: row.loadMw,
-        }))
-        .filter(
-          (row): row is { datetimeBeginningEpt: string; date: string; hourEnding: number; source: HourlyLoadSource; x: number; y: number } =>
-            row.x !== null && row.y !== null,
-        ),
-    [data, weatherMetric],
-  );
-  const regression = data?.scatter.regression ?? {
-    count: 0,
-    slope: null,
-    intercept: null,
-    correlation: null,
-    rSquared: null,
-  };
-  const hourlyFitLine = useMemo(() => {
-    if (regression.slope === null || regression.intercept === null || scatterRows.length < 2) return [];
-    const xs = scatterRows.map((row) => row.x);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    if (!Number.isFinite(minX) || !Number.isFinite(maxX) || minX === maxX) return [];
-    return Array.from({ length: 80 }, (_, index) => {
-      const x = minX + ((maxX - minX) * index) / 79;
-      return { x, y: regression.intercept! + regression.slope! * x };
-    });
-  }, [regression.intercept, regression.slope, scatterRows]);
-  const hourlySelectedMetricAvg = useMemo(() => mean(scatterRows.map((row) => row.x)), [scatterRows]);
   const dailyFit = useMemo(
     () => buildDailyFit(yoyData, weatherMetric, plotLookbackDays),
     [plotLookbackDays, weatherMetric, yoyData],
@@ -1355,11 +939,10 @@ export default function PjmLoadGrowth({
     () => buildHourlyFit(yoyData, weatherMetric, plotLookbackDays),
     [plotLookbackDays, weatherMetric, yoyData],
   );
-  const sharedAreas = yoyData?.availableAreas.length
-    ? yoyData.availableAreas
-    : data?.availableAreas.length
-      ? data.availableAreas
-      : [{ area, rowCount: 0, minEpt: null, maxEpt: null }];
+  const sharedAreas = useMemo(
+    () => (yoyData?.availableAreas.length ? yoyData.availableAreas : [{ area, rowCount: 0, minEpt: null, maxEpt: null }]),
+    [area, yoyData],
+  );
   const groupedLoadAreas = useMemo(() => {
     const groups = new Map<LoadAreaGroupKey, AvailableArea[]>();
     sharedAreas.forEach((item) => {
@@ -1376,9 +959,7 @@ export default function PjmLoadGrowth({
   }, [sharedAreas]);
   const sharedStations = yoyData?.weatherStations.length
     ? yoyData.weatherStations
-    : data?.weatherStations.length
-      ? data.weatherStations
-      : [{ stationId: weatherStation, stationName: weatherStation, region }];
+    : [{ stationId: weatherStation, stationName: weatherStation, region }];
   const selectedStation =
     sharedStations.find((station) => station.stationId === weatherStation) ??
     (yoyData
@@ -1411,24 +992,6 @@ export default function PjmLoadGrowth({
     currentR2: hourlyYoyFit?.currentFit.stats.rSquared,
     lastYearR2: hourlyYoyFit?.lastYearFit.stats.rSquared,
     currentMae: hourlyYoyFit?.currentFit.stats.mae,
-  };
-
-  const toggleProfileSeries = (key: string) => {
-    setHiddenProfileSeries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const toggleDailySeries = (key: string) => {
-    setHiddenDailySeries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   };
 
   const toggleDailyFitSeries = (key: string) => {
@@ -1478,55 +1041,6 @@ export default function PjmLoadGrowth({
     </div>
   );
 
-  const renderProfileTooltip = ({ active, payload }: ChartTooltipProps) => {
-    if (!active || !payload?.length) return null;
-    const point = payload[0]?.payload ?? {};
-    const date = typeof point.date === "string" ? point.date : fmtDate(String(point.datetimeBeginningEpt ?? ""));
-    const hourEnding = typeof point.hourEnding === "number" ? ` HE${String(point.hourEnding).padStart(2, "0")}` : "";
-    return renderWhiteTooltip(
-      `${fmtTooltipDate(date)}${hourEnding}`,
-      <>
-        {renderTooltipRow("Load Source", loadSourceLabel(String(point.source ?? "")))}
-        {payload.map((entry) => {
-          const key = String(entry.name ?? "");
-          const label = key === "loadMw" ? "Load" : PROFILE_SERIES.find((series) => series.key === key)?.label ?? key;
-          const value =
-            typeof entry.value === "number"
-              ? key === "loadMw"
-                ? fmtMw(entry.value)
-                : fmtTemp(entry.value)
-              : "-";
-          return renderTooltipRow(label, value, entry.color);
-        })}
-      </>,
-    );
-  };
-
-  const renderDailyTooltip = ({ active, payload }: ChartTooltipProps) => {
-    if (!active || !payload?.length) return null;
-    const point = payload[0]?.payload ?? {};
-    const date = typeof point.date === "string" ? point.date : String(point.label ?? "");
-    return renderWhiteTooltip(
-      fmtTooltipDate(date),
-      <>
-        {renderTooltipRow(
-          "Load Source",
-          loadSourceMixLabel(Number(point.meteredHours ?? 0), Number(point.prelimHours ?? 0)),
-        )}
-        {payload.map((entry) => {
-          const label = String(entry.name ?? "");
-          const value =
-            typeof entry.value === "number"
-              ? label.includes("Load")
-                ? fmtMw(entry.value)
-                : fmtTemp(entry.value)
-              : "-";
-          return renderTooltipRow(label, value, entry.color);
-        })}
-      </>,
-    );
-  };
-
   const renderDailyFitTooltip = ({ active, payload }: ChartTooltipProps) => {
     if (!active || !payload?.length) return null;
     const point = payload[0]?.payload ?? {};
@@ -1548,210 +1062,6 @@ export default function PjmLoadGrowth({
       </>,
     );
   };
-
-  const renderHourlyScatterTooltip = ({ active, payload }: ChartTooltipProps) => {
-    if (!active || !payload?.length) return null;
-    const point = payload[0]?.payload ?? {};
-    const date = typeof point.date === "string" ? point.date : fmtDate(String(point.datetimeBeginningEpt ?? ""));
-    const hourEnding = typeof point.hourEnding === "number" ? ` HE${String(point.hourEnding).padStart(2, "0")}` : "";
-    return renderWhiteTooltip(
-      `${fmtTooltipDate(date)}${hourEnding}`,
-      <>
-        {renderTooltipRow("Load Source", loadSourceLabel(String(point.source ?? "")))}
-        {renderTooltipRow(selectedMetric.label, typeof point.x === "number" ? fmtTemp(point.x) : "-", selectedMetric.color)}
-        {renderTooltipRow("Load", typeof point.y === "number" ? fmtMw(point.y) : "-", "#38bdf8")}
-      </>,
-    );
-  };
-
-  const renderHourlyFitChart = (heightClass: string) => (
-    <div className={`${heightClass} relative min-h-[420px] overflow-hidden rounded-md border border-gray-800 bg-[#0d1119]`}>
-      <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 grid grid-cols-5 gap-2">
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Avg Load</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtMw(data?.summary?.avgLoadMw)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Peak Load</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtMw(data?.summary?.peakLoadMw)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Avg {selectedMetric.label}</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtTemp(hourlySelectedMetricAvg)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">R2</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtNumber(regression.rSquared, 2)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Points</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{regression.count.toLocaleString()}</div>
-        </div>
-      </div>
-      <ResponsiveContainer width="100%" height="100%">
-        <ScatterChart margin={{ top: 96, right: 28, bottom: 30, left: 12 }}>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" />
-          <XAxis
-            type="number"
-            dataKey="x"
-            name={selectedMetric.label}
-            unit={selectedMetric.unit}
-            domain={["auto", "auto"]}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            label={{ value: `${selectedMetric.label} (${selectedMetric.unit})`, position: "insideBottom", offset: -18, fill: "#94a3b8", fontSize: 11 }}
-          />
-          <YAxis
-            type="number"
-            dataKey="y"
-            name="Load"
-            domain={["auto", "auto"]}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-            label={{ value: "Load (MW)", angle: -90, position: "insideLeft", fill: "#94a3b8", fontSize: 11 }}
-          />
-          <Tooltip
-            cursor={{ strokeDasharray: "3 3" }}
-            content={(props) => renderHourlyScatterTooltip(props as unknown as ChartTooltipProps)}
-          />
-          {!hiddenHourlyFitSeries.has("hourlyPoints") && (
-            <Scatter name="Hourly Points" data={scatterRows} fill="#7dd3fc" fillOpacity={0.72}>
-              {scatterRows.map((row) => (
-                <Cell
-                  key={row.datetimeBeginningEpt}
-                  fill={row.source === "metered" ? "#7dd3fc" : "#facc15"}
-                  fillOpacity={0.78}
-                />
-              ))}
-            </Scatter>
-          )}
-          {!hiddenHourlyFitSeries.has("hourlyFit") && (
-            <Scatter
-              name="Fit"
-              data={hourlyFitLine}
-              fill="none"
-              line={{ stroke: "#ef4444", strokeWidth: 2.5 }}
-              shape={() => null}
-            />
-          )}
-        </ScatterChart>
-      </ResponsiveContainer>
-    </div>
-  );
-
-  const renderProfileChart = (heightClass: string) => (
-    <div className={heightClass}>
-      <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={chartRows} margin={{ top: 12, right: 18, bottom: 12, left: 8 }}>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            minTickGap={22}
-          />
-          <YAxis
-            yAxisId="load"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-          />
-          <YAxis
-            yAxisId="weather"
-            orientation="right"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value))}F`}
-          />
-          <Tooltip
-            content={(props) => renderProfileTooltip(props as unknown as ChartTooltipProps)}
-          />
-          {!hiddenProfileSeries.has("loadMw") && (
-            <Line
-              yAxisId="load"
-              type="monotone"
-              dataKey="loadMw"
-              name="loadMw"
-              stroke="#38bdf8"
-              strokeWidth={2.4}
-              dot={false}
-              connectNulls
-            />
-          )}
-          {PROFILE_SERIES.filter((series) => series.key !== "loadMw").map((series) =>
-            hiddenProfileSeries.has(series.key) ? null : (
-              <Line
-                key={series.key}
-                yAxisId="weather"
-                type="monotone"
-                dataKey={series.key}
-                name={series.key}
-                stroke={series.color}
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-              />
-            ),
-          )}
-        </ComposedChart>
-      </ResponsiveContainer>
-    </div>
-  );
-
-  const renderDailyChart = (heightClass: string) => (
-    <div className={heightClass}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={dailyRows} margin={{ top: 12, right: 18, bottom: 12, left: 8 }}>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" vertical={false} />
-          <XAxis
-            dataKey="label"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-          />
-          <YAxis
-            yAxisId="load"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-          />
-          <YAxis
-            yAxisId="weather"
-            orientation="right"
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value))}F`}
-          />
-          <Tooltip
-            content={(props) => renderDailyTooltip(props as unknown as ChartTooltipProps)}
-          />
-          {DAILY_SERIES.map((series) =>
-            hiddenDailySeries.has(series.key) ? null : (
-              <Line
-                key={series.key}
-                yAxisId={series.key === "avgTempF" ? "weather" : "load"}
-                type="monotone"
-                dataKey={series.key}
-                name={series.label}
-                stroke={series.color}
-                strokeWidth={2.2}
-                dot={{ r: 2 }}
-                connectNulls
-              />
-            ),
-          )}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
 
   const renderDailyFitChart = (
     heightClass: string,
@@ -1887,7 +1197,6 @@ export default function PjmLoadGrowth({
         <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
           {[
             area,
-            activeTab === "hourly" ? loadSourceLabel(source) : null,
             selectedStationName,
             selectedMetric.label,
             selectedShapeLabel,
@@ -2051,25 +1360,7 @@ export default function PjmLoadGrowth({
               <div>
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Load</div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    Source
-                  </span>
-                  <select
-                    value={source}
-                    onChange={(event) => {
-                      setSource(event.target.value as LoadSource);
-                      setArea(DEFAULT_AREA);
-                    }}
-                    className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-                  >
-                    <option value="preferred">Metered then Prelim</option>
-                    <option value="prelim">Prelim</option>
-                    <option value="metered">Metered</option>
-                  </select>
-                </label>
-
-                <label className="block md:col-span-2 xl:col-span-3">
+                <label className="block md:col-span-2">
                   <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
                     Load Area
                   </div>

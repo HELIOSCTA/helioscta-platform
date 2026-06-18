@@ -1,6 +1,7 @@
 import "server-only";
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 export interface ApiRouteConfig {
@@ -54,6 +55,10 @@ function errorName(error: unknown): string {
   return error instanceof Error ? error.name : "UnknownError";
 }
 
+function safeErrorDetail(error: unknown): string {
+  return errorMessage(error).replace(/\s+/g, " ").slice(0, 900);
+}
+
 function logApiEvent(event: Record<string, unknown>, failed = false): void {
   const line = JSON.stringify({ event: "frontend_api_request", ...event });
   if (failed) {
@@ -77,6 +82,7 @@ export function observedJsonRoute(
 ) {
   return async function GET(request: Request): Promise<NextResponse> {
     const startedAt = nowMs();
+    const requestId = randomUUID();
     const metrics: ApiRequestMetrics = {
       dbDurationMs: 0,
       dbQueryCount: 0,
@@ -99,6 +105,7 @@ export function observedJsonRoute(
         headers.set("Content-Type", "application/json");
         headers.set("Server-Timing", `app;dur=${durationMs}, db;dur=${dbDurationMs}`);
         headers.set("X-Helios-Route", config.route);
+        headers.set("X-Helios-Request-Id", requestId);
         headers.set("X-Helios-Cache-Policy", config.cachePolicy);
         headers.set("X-Helios-Data-As-Of", headerValue(result.dataAsOf));
 
@@ -114,6 +121,7 @@ export function observedJsonRoute(
           payload_bytes: bytes,
           cache_policy: config.cachePolicy,
           data_as_of: result.dataAsOf ?? null,
+          request_id: requestId,
           freshness_source: config.freshnessSource ?? null,
           p95_target_ms: config.p95TargetMs,
         });
@@ -122,13 +130,20 @@ export function observedJsonRoute(
       } catch (error) {
         const durationMs = roundMs(nowMs() - startedAt);
         const dbDurationMs = roundMs(metrics.dbDurationMs);
-        const payload = { error: "Internal server error" };
+        const payload = {
+          error: "Internal server error",
+          detail: safeErrorDetail(error),
+          errorType: errorName(error),
+          requestId,
+          route: config.route,
+        };
         const { body, bytes } = jsonBytes(payload);
         const headers = new Headers({
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
           "Server-Timing": `app;dur=${durationMs}, db;dur=${dbDurationMs}`,
           "X-Helios-Route": config.route,
+          "X-Helios-Request-Id": requestId,
           "X-Helios-Cache-Policy": "no-store",
           "X-Helios-Data-As-Of": "unknown",
         });
@@ -147,6 +162,7 @@ export function observedJsonRoute(
             cache_policy: "no-store",
             error_type: errorName(error),
             error_message: errorMessage(error),
+            request_id: requestId,
             freshness_source: config.freshnessSource ?? null,
             p95_target_ms: config.p95TargetMs,
           },

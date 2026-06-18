@@ -79,12 +79,28 @@ function extractErrorMessage(status: number, payload: unknown): string {
   }
 
   if (payload && typeof payload === "object") {
-    const maybeError = (payload as { error?: unknown; message?: unknown }).error;
+    const fields = payload as {
+      detail?: unknown;
+      error?: unknown;
+      errorType?: unknown;
+      message?: unknown;
+      requestId?: unknown;
+      route?: unknown;
+    };
+    const maybeDetail = fields.detail;
+    if (typeof maybeDetail === "string" && maybeDetail.trim()) {
+      const route = typeof fields.route === "string" ? ` ${fields.route}` : "";
+      const type = typeof fields.errorType === "string" ? ` ${fields.errorType}` : "";
+      const request = typeof fields.requestId === "string" ? ` request ${fields.requestId}` : "";
+      return `HTTP ${status}${route}${type}${request}: ${maybeDetail}`;
+    }
+
+    const maybeError = fields.error;
     if (typeof maybeError === "string" && maybeError.trim()) {
       return `HTTP ${status}: ${maybeError}`;
     }
 
-    const maybeMessage = (payload as { error?: unknown; message?: unknown }).message;
+    const maybeMessage = fields.message;
     if (typeof maybeMessage === "string" && maybeMessage.trim()) {
       return `HTTP ${status}: ${maybeMessage}`;
     }
