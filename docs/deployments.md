@@ -860,7 +860,8 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-pjm-gen-outages-by-type.service`.
-- Schedule: daily at `14:15 UTC` with `RandomizedDelaySec=5min`.
+- Schedule: daily at `13:45`, `14:15`, and `15:15 UTC` with
+  `RandomizedDelaySec=5min`.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-gen-outages-by-type.lock`.

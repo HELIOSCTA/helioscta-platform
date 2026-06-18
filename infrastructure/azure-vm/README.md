@@ -32,7 +32,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
-  - `helios-pjm-gen-outages-by-type.timer`, daily at `14:15 UTC`,
+  - `helios-pjm-gen-outages-by-type.timer`, daily at `13:45`, `14:15`, and
+    `15:15 UTC`,
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-prod-health-check.timer`, daily at `10:15 UTC` and `16:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=2min`.
