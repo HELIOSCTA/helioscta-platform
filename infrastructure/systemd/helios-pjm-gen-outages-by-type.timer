@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM generation outages by type refresh timer
+
+[Timer]
+OnCalendar=*-*-* 14:15:00 UTC
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=5min
+Unit=helios-pjm-gen-outages-by-type.service
+
+[Install]
+WantedBy=timers.target

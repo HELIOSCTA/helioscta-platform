@@ -24,6 +24,7 @@ CRITICAL_SERVICES: tuple[str, ...] = (
 )
 SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-data-miner-batch.service",
+    "helios-pjm-gen-outages-by-type.service",
     "helios-ercot-load-batch.service",
     "helios-ercot-congestion-batch.service",
     "helios-ercot-renewables-batch.service",
@@ -35,6 +36,7 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-rt-fivemin-hrl-lmps.timer",
     "helios-prod-health-check.timer",
     "helios-pjm-data-miner-batch.timer",
+    "helios-pjm-gen-outages-by-type.timer",
     "helios-ercot-dam-stlmnt-pnt-prices.timer",
     "helios-ercot-settlement-point-prices.timer",
     "helios-ercot-load-batch.timer",

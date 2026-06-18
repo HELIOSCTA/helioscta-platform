@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA PJM generation outages by type refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-gen-outages-by-type.lock /opt/helioscta-platform/.venv/bin/python -m backend.scrapes.power.pjm.gen_outages_by_type
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-gen-outages-by-type
+
+[Install]
+WantedBy=multi-user.target

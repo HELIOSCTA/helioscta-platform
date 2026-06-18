@@ -45,7 +45,7 @@ A backend workflow is production-ready when it has:
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 28 support scrapes daily at `04:30 UTC`. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 27 support scrapes daily at `04:30 UTC`; `helios-pjm-gen-outages-by-type.timer` refreshes outage forecasts daily at `14:15 UTC`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
