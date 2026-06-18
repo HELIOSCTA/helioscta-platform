@@ -43,13 +43,15 @@ jobs:
 
     defaults:
       run:
-        shell: pwsh
+        shell: powershell
 
     steps:
       - name: Check out deploy scripts
         uses: actions/checkout@v4
 
       - name: Deploy service
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           $runImportSmoke = [System.Convert]::ToBoolean("${{ inputs.run_import_smoke }}")
           $jobTimeoutSeconds = [int]"${{ inputs.job_timeout_seconds }}"

@@ -12,6 +12,7 @@ param(
     [string]$ServiceName = "HeliosCTA-IcePython",
     [string]$GitRemote = "origin",
     [string]$GitBranch = "main",
+    [string]$GitHubToken = $(if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }),
     [int]$JobTimeoutSeconds = 2700,
     [switch]$SkipGitPull,
     [switch]$SkipDependencyInstall,
@@ -69,6 +70,28 @@ function Invoke-Nssm {
     Invoke-External -FilePath $resolvedNssmExe -Arguments $Arguments
 }
 
+function Get-GitAuthArguments {
+    if ($GitHubToken) {
+        return @(
+            "-c",
+            "http.https://github.com/.extraheader=AUTHORIZATION: bearer $GitHubToken"
+        )
+    }
+    return @()
+}
+
+function Invoke-Git {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $gitArguments = @()
+    $gitArguments += Get-GitAuthArguments
+    $gitArguments += $Arguments
+    Invoke-External -FilePath $resolvedGitExe -Arguments $gitArguments
+}
+
 function Wait-ServiceStatus {
     param(
         [Parameter(Mandatory = $true)]
@@ -97,7 +120,10 @@ function Get-GitOutput {
         [string[]]$Arguments
     )
 
-    $output = & $resolvedGitExe @Arguments
+    $gitArguments = @()
+    $gitArguments += Get-GitAuthArguments
+    $gitArguments += $Arguments
+    $output = & $resolvedGitExe @gitArguments
     if ($LASTEXITCODE -ne 0) {
         throw "git $($Arguments -join ' ') failed with exit code $LASTEXITCODE"
     }
@@ -119,6 +145,14 @@ Write-Host "Python: $resolvedPythonExe"
 Write-Host "NSSM: $resolvedNssmExe"
 Write-Host "Branch: $GitBranch"
 
+Invoke-External -FilePath $resolvedGitExe -Arguments @(
+    "config",
+    "--global",
+    "--add",
+    "safe.directory",
+    $resolvedRepoRoot
+)
+
 if (-not $SkipGitPull) {
     $dirty = Get-GitOutput -Arguments @("-C", $resolvedRepoRoot, "status", "--porcelain")
     if ($dirty -and -not $AllowDirtyWorktree) {
@@ -130,7 +164,7 @@ if (-not $SkipGitPull) {
         throw "Production checkout is on branch $currentBranch, expected $GitBranch."
     }
 
-    Invoke-External -FilePath $resolvedGitExe -Arguments @(
+    Invoke-Git -Arguments @(
         "-C",
         $resolvedRepoRoot,
         "fetch",
@@ -138,7 +172,7 @@ if (-not $SkipGitPull) {
         $GitRemote,
         $GitBranch
     )
-    Invoke-External -FilePath $resolvedGitExe -Arguments @(
+    Invoke-Git -Arguments @(
         "-C",
         $resolvedRepoRoot,
         "merge-base",
@@ -157,7 +191,7 @@ if ($null -ne $existingService -and $existingService.Status -ne "Stopped") {
 
 try {
     if (-not $SkipGitPull) {
-        Invoke-External -FilePath $resolvedGitExe -Arguments @(
+        Invoke-Git -Arguments @(
             "-C",
             $resolvedRepoRoot,
             "pull",
