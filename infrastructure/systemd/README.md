@@ -399,6 +399,46 @@ systemctl status helios-weather-wsi-hourly-observed.timer
 journalctl -u helios-weather-wsi-hourly-observed.service -n 200 --no-pager
 ```
 
+## WSI Hourly Forecast Weather
+
+The WSI hourly forecast weather workflow has its own timer:
+
+```text
+helios-weather-wsi-hourly-forecast.service
+helios-weather-wsi-hourly-forecast.timer
+```
+
+It runs `backend.orchestration.weather.wsi.hourly_forecast`, pulls WSI Trader
+Hourly Forecast rows for the PJM station basket, upserts
+`weather.wsi_hourly_forecasts`, writes WSI API telemetry to
+`ops.api_fetch_log`, and emits weather forecast freshness events to
+`ops.data_availability_events`. The timer runs hourly at minute `32` UTC with
+`Persistent=false`; each run stores the latest WSI forecast issue returned by
+the source. The service uses `flock` with
+`/tmp/helios-weather-wsi-hourly-forecast.lock`.
+
+Do not enable this timer until `/etc/helioscta/backend.env` contains
+`WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
+weather forecast table/index operator SQL has been applied.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-hourly-forecast.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-hourly-forecast.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-weather-wsi-hourly-forecast.service
+sudo systemctl enable --now helios-weather-wsi-hourly-forecast.timer
+```
+
+Verify the workflow with:
+
+```bash
+systemctl status helios-weather-wsi-hourly-forecast.service
+systemctl status helios-weather-wsi-hourly-forecast.timer
+journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
+```
+
 ## Naming
 
 Use predictable names:

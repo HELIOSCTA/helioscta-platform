@@ -80,7 +80,7 @@ users to avoid accessing real-time links more than once per minute, so
 scheduled jobs should use a conservative cadence.
 
 WSI Trader weather helpers use `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and
-`WSI_TRADER_PASSWORD`. The first promoted weather runtime module is
+`WSI_TRADER_PASSWORD`. The promoted observed runtime module is
 `backend.scrapes.weather.wsi.hourly_observed`, with orchestration at
 `backend.orchestration.weather.wsi.hourly_observed`. It writes hourly observed
 temperature/weather rows to `weather.wsi_hourly_observed_temperatures`, logs
@@ -89,6 +89,15 @@ event to `ops.data_availability_events`. The source grain is
 `station_id x observation_time_local x region`; observations are stored in WSI
 local station-hour time, so the availability payload records the local window
 instead of UTC interval bounds.
+
+The promoted WSI hourly forecast runtime module is
+`backend.scrapes.weather.wsi.hourly_forecast`, with orchestration at
+`backend.orchestration.weather.wsi.hourly_forecast`. It writes latest WSI
+hourly forecast snapshots to `weather.wsi_hourly_forecasts`, using the source
+forecast issue timestamp from the WSI CSV banner and UTC forecast valid hours.
+The source grain is
+`station_id x region x forecast_issued_at_utc x forecast_time_utc`; safe reruns
+upsert by that key while preserving distinct forecast issues.
 
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
@@ -148,10 +157,17 @@ Default module runs backfill one recent market day:
 python -m backend.backfills.power.pjm.da_hrl_lmps
 python -m backend.backfills.power.pjm.rt_hrl_lmps
 python -m backend.backfills.power.pjm.rt_unverified_hrl_lmps
+python -m backend.backfills.power.pjm.hrl_load_metered
+python -m backend.backfills.power.pjm.hrl_load_prelim
 python -m backend.backfills.power.pjm.gen_outages_by_type
+python -m backend.backfills.weather.wsi.hourly_observed
 ```
 
 For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
 bottom `main(...)` call in the target module before running it on the VM. The
 wrappers validate the requested window, support `dry_run=True`, and stamp API
 fetch telemetry with backfill metadata where the underlying scrape supports it.
+WSI hourly observed backfills call the existing weather orchestration path, so
+successful runs also emit the current WSI freshness event. Use the read-only
+coverage SQL in `docs/operations/manual-backfills.md` before handing historical
+coverage to frontend consumers.

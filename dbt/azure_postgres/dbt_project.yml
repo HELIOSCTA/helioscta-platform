@@ -382,6 +382,12 @@ models:
             +enabled: false
           index_weather_wsi_hourly_observed_temperatures:
             +enabled: false
+        hourly_forecast:
+          +materialized: ephemeral
+          table_weather_wsi_hourly_forecasts:
+            +enabled: false
+          index_weather_wsi_hourly_forecasts:
+            +enabled: false
 tests:
   helioscta_platform:
     +store_failures: false

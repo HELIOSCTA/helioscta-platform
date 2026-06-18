@@ -68,6 +68,7 @@ models/power/pjm/hrl_load_metered/
 models/power/pjm/hrl_load_metered/pjm_hrl_load_metered/
 models/power/pjm/hrl_load_prelim/
 models/power/pjm/hrl_load_prelim/pjm_hrl_load_prelim/
+models/power/pjm/load_growth/
 models/power/pjm/hrl_dmd_bids/
 models/power/pjm/hrl_dmd_bids/pjm_hrl_dmd_bids/
 models/power/pjm/frcstd_gen_outages/
@@ -189,6 +190,7 @@ dbt compile --profiles-dir . --select path:models/power/pjm/five_min_solar_gener
 dbt compile --profiles-dir . --select path:models/power/pjm/load_frcstd_hist/pjm_load_frcstd_hist
 dbt compile --profiles-dir . --select path:models/power/pjm/hrl_load_metered/pjm_hrl_load_metered
 dbt compile --profiles-dir . --select path:models/power/pjm/hrl_load_prelim/pjm_hrl_load_prelim
+dbt compile --profiles-dir . --select path:models/power/pjm/load_growth
 dbt compile --profiles-dir . --select path:models/power/pjm/hrl_dmd_bids/pjm_hrl_dmd_bids
 dbt compile --profiles-dir . --select path:models/power/pjm/frcstd_gen_outages/pjm_frcstd_gen_outages
 dbt compile --profiles-dir . --select path:models/power/pjm/rt_dispatch_reserves/pjm_rt_dispatch_reserves
@@ -285,6 +287,8 @@ models/weather/noaa/metar_observations/
 models/weather/noaa/metar_observations/weather_noaa_metar_observations/
 models/weather/wsi/hourly_observed/
 models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures/
+models/weather/wsi/hourly_forecast/
+models/weather/wsi/hourly_forecast/weather_wsi_hourly_forecasts/
 ```
 
 `table_weather_noaa_metar_observations.sql` and
@@ -297,12 +301,17 @@ enabled NOAA weather model is read-only query shaping over
 The enabled weather model is read-only query shaping over
 `weather.wsi_hourly_observed_temperatures`.
 
+`table_weather_wsi_hourly_forecasts.sql` and
+`index_weather_wsi_hourly_forecasts.sql` are disabled operator SQL. The enabled
+weather model is read-only query shaping over `weather.wsi_hourly_forecasts`.
+
 Compile the weather query-shaping models with:
 
 ```bash
 cd dbt/azure_postgres
 dbt compile --profiles-dir . --select path:models/weather/noaa/metar_observations/weather_noaa_metar_observations
 dbt compile --profiles-dir . --select path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
+dbt compile --profiles-dir . --select path:models/weather/wsi/hourly_forecast/weather_wsi_hourly_forecasts
 ```
 
 ## Operator SQL
@@ -343,6 +352,7 @@ models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql
+models/weather/wsi/hourly_forecast/table_weather_wsi_hourly_forecasts.sql
 models/ops/index_*.sql
 models/power/ercot/dam_stlmnt_pnt_prices/index_ercot_dam_stlmnt_pnt_prices.sql
 models/power/ercot/actual_system_load/index_ercot_actual_system_load.sql
@@ -366,7 +376,15 @@ models/power/miso/real_time_total_load/index_miso_real_time_total_load.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql
+models/weather/wsi/hourly_forecast/index_weather_wsi_hourly_forecasts.sql
 infrastructure/azure-postgres/permissions/01_apply_database_permissions.sql
 ```
 
 Enabled dbt models remain read-only validation/query shaping only.
+
+`models/power/pjm/load_growth/pjm_load_growth_hourly_source_contract.sql` is a
+read-only contract check for the initial PJM load-growth frontend source shape.
+It joins PJM preliminary hourly load to WSI hourly observed weather by local EPT
+hour using `station_id = 'PJM'` and `region = 'PJM'`, and includes same-hour
+metered-load coverage fields for operator verification. It is intentionally
+ephemeral and should not be materialized into production.

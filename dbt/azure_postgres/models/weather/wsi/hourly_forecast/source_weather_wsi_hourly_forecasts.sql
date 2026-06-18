@@ -1,0 +1,31 @@
+{{
+  config(
+    materialized='ephemeral'
+  )
+}}
+
+SELECT
+    station_id,
+    station_name,
+    region,
+    forecast_issued_at_utc,
+    forecast_time_utc,
+    temp_f,
+    temp_diff_f,
+    temp_normal_f,
+    dew_point_f,
+    cloud_cover_pct,
+    feels_like_f,
+    feels_like_diff_f,
+    precip_in,
+    wind_dir_degrees,
+    wind_speed_mph,
+    ghi_irradiance,
+    probability_of_precip_pct,
+    relative_humidity_pct,
+    source_product_id,
+    source_banner,
+    scrape_run_at_utc,
+    created_at,
+    updated_at
+FROM weather.wsi_hourly_forecasts

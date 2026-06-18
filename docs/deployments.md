@@ -1218,3 +1218,92 @@ WHERE pipeline_name = 'wsi_hourly_observed_temperatures'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## helios-weather-wsi-hourly-forecast
+
+- Status: production DDL applied and initial refresh succeeded; timer unit is
+  promoted for VM deployment.
+- Workflow: WSI hourly forecast weather refresh for the PJM station basket.
+- Runtime module: `backend.orchestration.weather.wsi.hourly_forecast`.
+- Lower-level scrape module: `backend.scrapes.weather.wsi.hourly_forecast`.
+- Source system: WSI Trader Hourly Forecast `GetHourlyForecast`.
+- Destination table: `weather.wsi_hourly_forecasts`.
+- Source grain:
+  `station_id x region x forecast_issued_at_utc x forecast_time_utc`.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.service`
+  - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.timer`
+- Proposed schedule: hourly at minute `32` UTC with
+  `RandomizedDelaySec=3min`.
+- Timer behavior: `Persistent=false`; scheduled runs store the latest WSI
+  forecast issue returned by the source.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-weather-wsi-hourly-forecast.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
+  `/etc/helioscta/backend.env`.
+- Operator SQL required before first run:
+  `dbt/azure_postgres/models/weather/wsi/hourly_forecast/table_weather_wsi_hourly_forecasts.sql`
+  and
+  `dbt/azure_postgres/models/weather/wsi/hourly_forecast/index_weather_wsi_hourly_forecasts.sql`.
+- Safe rerun story: upsert on
+  `(station_id, region, forecast_issued_at_utc, forecast_time_utc)`.
+- Local verification: `pytest backend/tests/test_weather_wsi_hourly_forecast.py
+  backend/tests/test_weather_wsi_hourly_forecast_orchestration.py
+  backend/tests/test_weather_wsi_hourly_observed.py
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, `dbt parse
+  --profiles-dir .`, and `dbt compile --profiles-dir . --select
+  path:models/weather/wsi/hourly_forecast/weather_wsi_hourly_forecasts
+  path:tests/test_weather_wsi_hourly_forecasts_primary_keys.sql` passed on
+  `2026-06-18`. pytest reported only pre-existing cache write warnings for
+  `backend/.pytest_cache`.
+- Production DDL: `weather.wsi_hourly_forecasts` table and three forecast
+  indexes were applied on `2026-06-18`:
+  `idx_weather_wsi_hourly_fcst_latest`,
+  `idx_weather_wsi_hourly_fcst_valid_time`, and
+  `idx_weather_wsi_hourly_fcst_updated_at`.
+- Production dbt validation: `dbt test --profiles-dir . --select
+  path:tests/test_weather_wsi_hourly_forecasts_primary_keys.sql` passed on
+  `2026-06-18`.
+- Production refresh verification: local orchestration run on
+  `2026-06-18 14:19 UTC` upserted 12,240 rows for 34 PJM station IDs and one
+  WSI forecast issue, wrote four successful batched WSI API telemetry rows,
+  produced zero duplicate primary-key groups, and emitted
+  `weather_wsi_hourly_forecasts:freshness_forecast:PJM:202606181028`.
+
+Verification SQL for forecast table freshness:
+
+```sql
+SELECT
+    region,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT station_id) AS station_count,
+    COUNT(DISTINCT forecast_issued_at_utc) AS issue_count,
+    MAX(forecast_issued_at_utc) AS latest_forecast_issued_at_utc,
+    MIN(forecast_time_utc) AS min_forecast_time_utc,
+    MAX(forecast_time_utc) AS max_forecast_time_utc,
+    MAX(updated_at) AS latest_updated_at
+FROM weather.wsi_hourly_forecasts
+GROUP BY region
+ORDER BY region;
+```
+
+Verification SQL for WSI forecast API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    target_table,
+    created_at,
+    metadata
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'wsi_hourly_forecasts'
+ORDER BY created_at DESC
+LIMIT 20;
+```

@@ -42,6 +42,8 @@ passwords before execution. Do not commit real passwords.
      `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`
      or
      `dbt/azure_postgres/models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql`
+     or
+     `dbt/azure_postgres/models/weather/wsi/hourly_forecast/table_weather_wsi_hourly_forecasts.sql`
    - required `index_*.sql` files, including matching `ops` and feed indexes
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`
