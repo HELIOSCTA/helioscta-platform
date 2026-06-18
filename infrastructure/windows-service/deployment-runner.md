@@ -78,6 +78,11 @@ C:\HeliosCTA\helioscta-platform\infrastructure\windows-service\bootstrap_github_
 The script uses the GitHub API to fetch the current Windows x64 runner
 download, verify its SHA-256 checksum, create a short-lived registration token,
 configure the runner with `--runasservice`, and start the runner service.
+If no `-WindowsLogonAccount` and `-WindowsLogonPassword` are supplied, GitHub's
+runner installer uses `NT AUTHORITY\NETWORK SERVICE`. That is enough to bring
+the runner online, but it is not enough for ICE production deploys because the
+deploy script must stop/update/start Windows services. Reconfigure the runner
+service to a dedicated deploy account, or reinstall with those parameters.
 
 If you prefer the GitHub UI-generated commands:
 

@@ -146,5 +146,18 @@ Write-Host "Runner service:"
 Get-Service -Name $runnerService.Name | Format-List Name,DisplayName,Status,StartType
 
 Write-Host "Registered runner:"
-& $gh api "repos/$Owner/$Repo/actions/runners" `
-    --jq ".runners[] | select(.name == `"$RunnerName`") | {name, status, os, labels: [.labels[].name]}"
+$runnersJson = & $gh api "repos/$Owner/$Repo/actions/runners"
+if ($LASTEXITCODE -ne 0) {
+    throw "Could not read registered GitHub runners."
+}
+($runnersJson | ConvertFrom-Json).runners |
+    Where-Object { $_.name -eq $RunnerName } |
+    ForEach-Object {
+        [PSCustomObject]@{
+            name = $_.name
+            status = $_.status
+            os = $_.os
+            labels = ($_.labels | ForEach-Object { $_.name }) -join ","
+        }
+    } |
+    Format-List
