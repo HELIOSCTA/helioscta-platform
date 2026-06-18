@@ -45,7 +45,8 @@ Promoted work needs:
 - A documented source/table contract and grain.
 - Read-only dbt validation or analysis SQL where data shape matters.
 - A safe rerun story.
-- Pipeline logging or failure visibility for scheduled work.
+- API fetch telemetry in `ops.api_fetch_log` or failure visibility for
+  scheduled work.
 - Deployment notes when VM, timer, credential, or permission behavior changes.
 
 ## Backend Rules

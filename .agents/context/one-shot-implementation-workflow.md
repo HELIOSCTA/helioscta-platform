@@ -131,7 +131,7 @@ before editing:
 - Destination schema/table, primary grain, uniqueness key, and timestamp or
   freshness fields.
 - Safe rerun behavior, including expected upsert/delete/insert policy.
-- Pipeline run logging and failure visibility.
+- API fetch telemetry in `ops.api_fetch_log` and failure visibility.
 - Required environment variables and credential role.
 - Smallest local test, module import, dry run, or read-only SQL check that
   proves the change.
