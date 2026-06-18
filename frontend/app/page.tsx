@@ -1,7 +1,10 @@
 import { Suspense } from "react";
 import HomePageClient from "./HomePageClient";
+import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 
 export default function Page() {
+  const showLocalDevFeatures = isLocalOnlyFeatureEnabled();
+
   return (
     <Suspense
       fallback={
@@ -10,7 +13,7 @@ export default function Page() {
         </main>
       }
     >
-      <HomePageClient />
+      <HomePageClient showLocalDevFeatures={showLocalDevFeatures} />
     </Suspense>
   );
 }

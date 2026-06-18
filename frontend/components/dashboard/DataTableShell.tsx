@@ -39,9 +39,10 @@ export default function DataTableShell({
               <button
                 type="button"
                 onClick={onToggle}
+                aria-expanded={open}
                 className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
               >
-                {open ? "Hide" : "Show"}
+                {open ? "Collapse" : "Expand"}
               </button>
             )}
           </div>

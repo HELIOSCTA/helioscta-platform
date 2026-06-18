@@ -26,9 +26,20 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
+    name: "PJM duration curves",
+    path: "/api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak",
+    targetMs: 1_500,
+    devOnly: true,
+  },
+  {
     name: "PJM forecasts",
     path: "/api/pjm-forecasts?area=RTO_COMBINED",
     targetMs: 750,
+  },
+  {
+    name: "PJM load growth",
+    path: "/api/pjm-load-growth?source=prelim&loadArea=AEP&weatherStation=PJM&region=PJM",
+    targetMs: 1_000,
   },
   {
     name: "PJM forecast explorer",
@@ -41,6 +52,16 @@ const endpoints = [
     targetMs: 750,
   },
   {
+    name: "PJM Meteologica forecast explorer",
+    path: "/api/pjm-meteologica-forecast-explorer",
+    targetMs: 1_000,
+  },
+  {
+    name: "PJM Meteologica forecast diffs",
+    path: "/api/pjm-meteologica-forecast-differences?area=RTO&lookbackHours=72",
+    targetMs: 1_000,
+  },
+  {
     name: "PJM outage forecast",
     path: "/api/pjm-outages?view=forecast&region=RTO&executionLimit=8",
     targetMs: 1_500,
@@ -51,9 +72,22 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
-    name: "PJM weather",
+    name: "WSI hourly temps",
+    path: "/api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary",
+    targetMs: 1_500,
+    devOnly: true,
+  },
+  {
+    name: "WSI hourly forecast",
+    path: "/api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary",
+    targetMs: 1_500,
+    devOnly: true,
+  },
+  {
+    name: "NOAA METAR weather",
     path: "/api/pjm-weather?region=PJM&hours=24",
     targetMs: 750,
+    devOnly: true,
   },
 ];
 
@@ -155,6 +189,11 @@ function requestHeaders() {
 
 function normalizeBaseUrl(value) {
   return value.endsWith("/") ? value : `${value}/`;
+}
+
+function isLocalBaseUrl(value) {
+  const hostname = new URL(normalizeBaseUrl(value)).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1";
 }
 
 function parseServerTiming(value) {
@@ -338,7 +377,11 @@ function printTable(results, options) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const results = [];
-  for (const endpoint of endpoints) {
+  const endpointsToCheck = endpoints.filter(
+    (endpoint) => !endpoint.devOnly || isLocalBaseUrl(options.baseUrl),
+  );
+
+  for (const endpoint of endpointsToCheck) {
     results.push(await measureEndpoint(endpoint, options));
   }
 

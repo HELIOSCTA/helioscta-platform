@@ -4,6 +4,8 @@ import { useState } from "react";
 
 export type ActiveSection =
   | "pjm-da-lmps"
+  | "pjm-price-duration-curves"
+  | "pjm-load-growth"
   | "pjm-forecasts"
   | "pjm-outages"
   | "pjm-weather";
@@ -11,8 +13,7 @@ export type ActiveSection =
 interface SidebarProps {
   activeSection: ActiveSection;
   onSectionChange: (section: ActiveSection) => void;
-  mobileOpen?: boolean;
-  onMobileClose?: () => void;
+  showLocalDevFeatures: boolean;
 }
 
 interface NavItem {
@@ -29,28 +30,40 @@ interface TopSection {
   navItems: NavItem[];
 }
 
-function getSections(): TopSection[] {
-  return [
+function getSections(showLocalDevFeatures: boolean): TopSection[] {
+  const sections: TopSection[] = [
     {
       key: "power",
       label: "POWER",
       navItems: [
         { id: "pjm-da-lmps", label: "LMPs" },
-        { id: "pjm-forecasts", label: "Forecasts" },
         { id: "pjm-outages", label: "Outages" },
-        { id: "pjm-weather", label: "Weather" },
+        { id: "pjm-forecasts", label: "Forecasts" },
+        { id: "pjm-load-growth", label: "Load Growth" },
       ],
     },
   ];
+
+  if (showLocalDevFeatures) {
+    sections.push({
+      key: "dev",
+      label: "DEV",
+      navItems: [
+        { id: "pjm-price-duration-curves", label: "Duration Curves" },
+        { id: "pjm-weather", label: "Weather" },
+      ],
+    });
+  }
+
+  return sections;
 }
 
 export default function Sidebar({
   activeSection,
   onSectionChange,
-  mobileOpen = false,
-  onMobileClose,
+  showLocalDevFeatures,
 }: SidebarProps) {
-  const topSections = getSections();
+  const topSections = getSections(showLocalDevFeatures);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(topSections.map((s) => [s.key, true]))
   );
@@ -61,25 +74,10 @@ export default function Sidebar({
 
   const handleSectionChange = (section: ActiveSection) => {
     onSectionChange(section);
-    onMobileClose?.();
   };
 
   return (
-    <>
-      {/* Mobile backdrop */}
-      {mobileOpen && (
-        <div
-          onClick={onMobileClose}
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
-          aria-hidden="true"
-        />
-      )}
-
-      <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[300px] shrink-0 flex-col border-r border-gray-800 bg-[#0b0d14] transition-transform md:static md:w-[280px] md:translate-x-0 ${
-          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-        }`}
-      >
+    <aside className="flex w-[280px] shrink-0 flex-col border-r border-gray-800 bg-[#0b0d14]">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-5 pb-4">
         <div>
@@ -87,15 +85,6 @@ export default function Sidebar({
             HELIOSCTA
           </p>
         </div>
-        <button
-          onClick={onMobileClose}
-          className="rounded-md p-1.5 text-gray-500 hover:bg-gray-800 hover:text-gray-200 md:hidden"
-          aria-label="Close navigation"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
       </div>
 
       <div className="mx-3 h-px bg-gray-800" />
@@ -144,7 +133,7 @@ export default function Sidebar({
                           onClick={() => !item.disabled && handleSectionChange(item.id)}
                           disabled={item.disabled}
                           title={item.disabled ? `${item.label} is not available yet` : undefined}
-                          className={`flex w-full items-center rounded-md py-2 text-[13px] font-medium transition-colors md:py-1.5 ${
+                          className={`flex w-full items-center rounded-md py-1.5 text-[13px] font-medium transition-colors ${
                             item.disabled
                               ? "cursor-not-allowed bg-transparent text-gray-600 opacity-55"
                               : isActive
@@ -168,7 +157,6 @@ export default function Sidebar({
       <div className="border-t border-gray-800 px-4 py-3">
         <p className="text-[10px] text-gray-600">Source: Azure PostgreSQL</p>
       </div>
-      </aside>
-    </>
+    </aside>
   );
 }

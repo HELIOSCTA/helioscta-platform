@@ -15,7 +15,15 @@ import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type WeatherMetric = "tempF" | "dewPointF" | "feelsLikeF" | "windSpeedMph" | "windGustMph";
+type WeatherMetric =
+  | "tempF"
+  | "dewPointF"
+  | "feelsLikeF"
+  | "windSpeedMph"
+  | "windGustMph"
+  | "visibilityMiles"
+  | "pressureMb"
+  | "relativeHumidityPct";
 
 interface WeatherObservation {
   stationId: string;
@@ -31,6 +39,8 @@ interface WeatherObservation {
   windDirDegrees: number | null;
   pressureMb: number | null;
   visibilityMiles: number | null;
+  relativeHumidityPct: number | null;
+  flightCategory: string | null;
   rawMetar: string | null;
   updatedAt: string | null;
 }
@@ -97,6 +107,9 @@ const METRICS: Array<{ key: WeatherMetric; label: string; unit: string; color: s
   { key: "feelsLikeF", label: "Feels Like", unit: "F", color: "#facc15" },
   { key: "windSpeedMph", label: "Wind", unit: "mph", color: "#22c55e" },
   { key: "windGustMph", label: "Gust", unit: "mph", color: "#a78bfa" },
+  { key: "visibilityMiles", label: "Visibility", unit: "mi", color: "#60a5fa" },
+  { key: "pressureMb", label: "Pressure", unit: "mb", color: "#94a3b8" },
+  { key: "relativeHumidityPct", label: "Humidity", unit: "%", color: "#2dd4bf" },
 ];
 const TEMP_SERIES: PlotSeries[] = [
   { key: "tempF", label: "Temp", color: "#f97316", defaultVisible: true },
@@ -129,17 +142,36 @@ function fmtMetric(value: number | null | undefined, metric: WeatherMetric): str
   const config = METRICS.find((item) => item.key === metric);
   if (!config) return fmtNumber(value);
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  return `${Math.round(value)}${config.unit === "F" ? "°" : ""}`;
+  if (config.unit === "F") return `${Math.round(value)}F`;
+  if (config.unit === "%") return `${Math.round(value)}%`;
+  if (config.unit === "mb") return value.toFixed(1);
+  if (config.unit === "mi") return value.toFixed(1);
+  return `${Math.round(value)}`;
 }
 
 function fmtTemp(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  return `${Math.round(value)}°F`;
+  return `${Math.round(value)}F`;
 }
 
 function fmtWind(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${Math.round(value)} mph`;
+}
+
+function fmtVisibility(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(1)} mi`;
+}
+
+function fmtPressure(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(1)} mb`;
+}
+
+function fmtHumidity(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${Math.round(value)}%`;
 }
 
 function fmtDateTime(value: string | null | undefined): string {
@@ -200,6 +232,25 @@ function statusClass(status: string): string {
   }
   if (status === "Error") return "border-red-500/40 bg-red-500/10 text-red-200";
   return "border-gray-700 bg-gray-900 text-gray-400";
+}
+
+function flightCategoryClass(category: string | null | undefined): string {
+  const normalized = category?.toUpperCase();
+  if (normalized === "VFR") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+  if (normalized === "MVFR") return "border-sky-500/40 bg-sky-500/10 text-sky-200";
+  if (normalized === "IFR") return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  if (normalized === "LIFR") return "border-red-500/40 bg-red-500/10 text-red-200";
+  return "border-gray-700 bg-gray-900 text-gray-400";
+}
+
+function FlightCategoryBadge({ category }: { category: string | null | undefined }) {
+  return (
+    <span
+      className={`inline-flex min-w-12 justify-center rounded-md border px-2 py-1 text-[11px] font-bold tabular-nums ${flightCategoryClass(category)}`}
+    >
+      {category?.toUpperCase() || "-"}
+    </span>
+  );
 }
 
 function freshnessFromPayload(payload: PjmWeatherPayload | null): PjmWeatherFreshnessSummary {
@@ -383,6 +434,46 @@ export default function PjmWeather({
   const metricMin = metricValues.length ? Math.min(...metricValues) : 0;
   const metricMax = metricValues.length ? Math.max(...metricValues) : 0;
   const selectedStation = data?.stations.find((station) => station.stationId === selectedStationId) ?? null;
+  const latestStationRows = useMemo(
+    () =>
+      [...(data?.stations ?? [])].sort((left, right) => {
+        const leftStale = left.stale ? 0 : 1;
+        const rightStale = right.stale ? 0 : 1;
+        if (leftStale !== rightStale) return leftStale - rightStale;
+        const leftAge = left.ageMinutes ?? Number.POSITIVE_INFINITY;
+        const rightAge = right.ageMinutes ?? Number.POSITIVE_INFINITY;
+        if (leftAge !== rightAge) return rightAge - leftAge;
+        return left.stationId.localeCompare(right.stationId);
+      }),
+    [data],
+  );
+  const staleStations = useMemo(
+    () => (data?.stations ?? []).filter((station) => station.stale),
+    [data],
+  );
+  const gustAlertStations = useMemo(
+    () =>
+      (data?.stations ?? []).filter(
+        (station) => (station.latest?.windGustMph ?? 0) >= 30,
+      ),
+    [data],
+  );
+  const lowVisibilityStations = useMemo(
+    () =>
+      (data?.stations ?? []).filter((station) => {
+        const visibility = station.latest?.visibilityMiles;
+        return visibility !== null && visibility !== undefined && visibility < 5;
+      }),
+    [data],
+  );
+  const ifrStations = useMemo(
+    () =>
+      (data?.stations ?? []).filter((station) => {
+        const category = station.latest?.flightCategory?.toUpperCase();
+        return category === "IFR" || category === "LIFR";
+      }),
+    [data],
+  );
   const selectedRows = useMemo(
     () =>
       (data?.hourly ?? [])
@@ -580,6 +671,106 @@ export default function PjmWeather({
             />
           </div>
 
+          <DataTableShell
+            title="Realtime METAR Monitor"
+            subtitle={`${staleStations.length} stale | ${gustAlertStations.length} gust alerts | ${lowVisibilityStations.length} low visibility | ${ifrStations.length} IFR/LIFR`}
+          >
+            <table className="w-full min-w-[1180px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+              <thead className="bg-gray-950 text-gray-500">
+                <tr>
+                  <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                    Station
+                  </th>
+                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Category</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Age</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Temp</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Dew</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Feels</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Wind</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Gust</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Visibility</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Pressure</th>
+                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Humidity</th>
+                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Raw METAR</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {latestStationRows.map((station) => {
+                  const latest = station.latest;
+                  const isSelected = selectedStationId === station.stationId;
+                  return (
+                    <tr key={station.stationId} className="hover:bg-gray-900/60">
+                      <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedStationId(station.stationId)}
+                          className={`w-full rounded px-2 py-1 text-left transition-colors ${
+                            isSelected
+                              ? "bg-sky-500/10 text-sky-100 ring-1 ring-sky-400/60"
+                              : "text-gray-300 hover:bg-gray-950/50"
+                          }`}
+                        >
+                          <span className="block font-semibold">{station.stationId}</span>
+                          <span className="block text-[11px] text-gray-500">{station.stationName}</span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">
+                        <FlightCategoryBadge category={latest?.flightCategory} />
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          station.stale ? "font-semibold text-amber-200" : "text-gray-400"
+                        }`}
+                      >
+                        {fmtAge(station.ageMinutes)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtTemp(latest?.tempF)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtTemp(latest?.dewPointF)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtTemp(latest?.feelsLikeF)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtWind(latest?.windSpeedMph)}</td>
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          (latest?.windGustMph ?? 0) >= 30 ? "font-semibold text-amber-200" : ""
+                        }`}
+                      >
+                        {fmtWind(latest?.windGustMph)}
+                      </td>
+                      <td
+                        className={`px-3 py-2 text-right tabular-nums ${
+                          latest?.visibilityMiles !== null &&
+                          latest?.visibilityMiles !== undefined &&
+                          latest.visibilityMiles < 5
+                            ? "font-semibold text-amber-200"
+                            : ""
+                        }`}
+                      >
+                        {fmtVisibility(latest?.visibilityMiles)}
+                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmtPressure(latest?.pressureMb)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {fmtHumidity(latest?.relativeHumidityPct)}
+                      </td>
+                      <td className="max-w-[360px] truncate px-3 py-2 font-mono text-[11px] text-gray-400">
+                        {latest?.rawMetar ?? "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </DataTableShell>
+
+          {selectedStation?.latest?.rawMetar && (
+            <SectionCard
+              title={`${selectedStation.stationId} Raw METAR`}
+              subtitle={`${selectedStation.stationName} | ${fmtDateTime(selectedStation.latest.observationTimeUtc)}`}
+            >
+              <pre className="overflow-x-auto rounded-md border border-gray-800 bg-gray-950/50 p-3 font-mono text-xs leading-relaxed text-gray-200">
+                {selectedStation.latest.rawMetar}
+              </pre>
+            </SectionCard>
+          )}
+
           {data.hourly.length === 0 && (
             <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
               No METAR observations are available for the PJM station basket yet.
@@ -674,20 +865,20 @@ export default function PjmWeather({
                   heightClass: "h-[70vh]",
                   series: TEMP_SERIES,
                   hiddenSeries: hiddenTempSeries,
-                  unit: "°",
+                  unit: "F",
                 })}
               >
                 {renderChart({
                   heightClass: "h-[320px]",
                   series: TEMP_SERIES,
                   hiddenSeries: hiddenTempSeries,
-                  unit: "°",
+                  unit: "F",
                 })}
               </PlotCard>
 
               <PlotCard
                 title={`${selectedStation.stationId} Wind Detail`}
-                subtitle={`Direction ${fmtNumber(selectedStation.latest?.windDirDegrees)}° | visibility ${fmtNumber(
+                subtitle={`Direction ${fmtNumber(selectedStation.latest?.windDirDegrees)} deg | visibility ${fmtNumber(
                   selectedStation.latest?.visibilityMiles,
                   1,
                 )} mi`}

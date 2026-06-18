@@ -5,18 +5,27 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=120";
-const DEFAULT_AREA = "RTO_COMBINED";
+const DEFAULT_AREA = "RTO";
 const DEFAULT_LOOKBACK_HOURS = 72;
 const MIN_LOOKBACK_HOURS = 1;
 const MAX_LOOKBACK_HOURS = 168;
+const LAGS = [
+  { label: "72h", hours: 72 },
+  { label: "48h", hours: 48 },
+  { label: "24h", hours: 24 },
+  { label: "12h", hours: 12 },
+  { label: "1h", hours: 1 },
+] as const;
+const ON_PEAK_HE_STARTS = Array.from({ length: 16 }, (_, index) => index + 7);
+const ON_PEAK_HE_START_SET = new Set(ON_PEAK_HE_STARTS);
 const ROUTE_CONFIG = {
-  route: "/api/pjm-forecast-differences",
+  route: "/api/pjm-meteologica-forecast-differences",
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=600, stale-while-revalidate=120",
   owner: "frontend",
-  purpose: "PJM load forecast vintage difference dashboard data",
-  p95TargetMs: 750,
-  freshnessSource: "pjm.load_frcstd_7_day.evaluated_at_datetime_ept",
+  purpose: "PJM Meteologica load forecast vintage difference dashboard data",
+  p95TargetMs: 1_000,
+  freshnessSource: "meteologica.pjm_forecast_hourly.issue_date",
 } as const;
 
 interface AreaRow {
@@ -43,16 +52,6 @@ interface VintageCurve {
   offPeak: number | null;
   hourly: Array<number | null>;
 }
-
-const LAGS = [
-  { label: "72h", hours: 72 },
-  { label: "48h", hours: 48 },
-  { label: "24h", hours: 24 },
-  { label: "12h", hours: 12 },
-  { label: "1h", hours: 1 },
-] as const;
-const ON_PEAK_HE_STARTS = Array.from({ length: 16 }, (_, index) => index + 7);
-const ON_PEAK_HE_START_SET = new Set(ON_PEAK_HE_STARTS);
 
 function parseArea(value: string | null): string {
   if (!value) return DEFAULT_AREA;
@@ -146,7 +145,9 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const areas = await query<AreaRow>(
     `
       select distinct forecast_area
-      from pjm.load_frcstd_7_day
+      from meteologica.pjm_forecast_hourly
+      where region = 'PJM'
+        and metric = 'load'
       order by forecast_area
     `,
   );
@@ -155,46 +156,50 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   if (!fallbackArea) {
     return {
       status: 404,
-      payload: { error: "No PJM load forecast data is available" },
-      headers: { "Cache-Control": "no-store", "X-Pjm-Forecast-Differences-Cache": "MISS" },
+      payload: { error: "No PJM Meteologica load forecast data is available" },
+      headers: { "Cache-Control": "no-store", "X-Pjm-Meteologica-Forecast-Differences-Cache": "MISS" },
     };
   }
   const area = availableAreas.includes(requestedArea) ? requestedArea : fallbackArea;
 
-  const dateRows = await query<DateRow>(
+  const dates = await query<DateRow>(
     `
-      select distinct forecast_datetime_beginning_ept::date::text as forecast_date
-      from pjm.load_frcstd_7_day
-      where forecast_area = $1
-        and forecast_datetime_beginning_ept::date >= current_date
+      select distinct forecast_period_start::date::text as forecast_date
+      from meteologica.pjm_forecast_hourly
+      where region = 'PJM'
+        and metric = 'load'
+        and forecast_area = $1
+        and forecast_period_start::date >= current_date
       order by forecast_date
-      limit 10
     `,
     [area],
   );
-  const forecastDates = dateRows.map((row) => row.forecast_date);
+  const forecastDates = dates.map((row) => row.forecast_date);
   const forecastDate =
     requestedDate && forecastDates.includes(requestedDate) ? requestedDate : forecastDates[0];
   if (!forecastDate) {
     return {
       status: 404,
-      payload: { error: "No current PJM load forecast dates are available" },
-      headers: { "Cache-Control": "no-store", "X-Pjm-Forecast-Differences-Cache": "MISS" },
+      payload: { error: "No current PJM Meteologica load forecast dates are available" },
+      headers: { "Cache-Control": "no-store", "X-Pjm-Meteologica-Forecast-Differences-Cache": "MISS" },
     };
   }
 
   const rows = await query<SourceRow>(
     `
       select
-        to_char(evaluated_at_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_datetime_ept,
-        forecast_datetime_beginning_ept::date::text as forecast_date,
-        extract(hour from forecast_datetime_beginning_ept)::int as he_start,
-        forecast_load_mw::float8 as forecast_load_mw,
+        to_char(issue_date, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_datetime_ept,
+        forecast_period_start::date::text as forecast_date,
+        extract(hour from forecast_period_start)::int as he_start,
+        forecast_mw::float8 as forecast_load_mw,
         to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as updated_at
-      from pjm.load_frcstd_7_day
-      where forecast_area = $1
-        and forecast_datetime_beginning_ept::date = $2::date
-      order by evaluated_at_datetime_ept, forecast_datetime_beginning_ept
+      from meteologica.pjm_forecast_hourly
+      where region = 'PJM'
+        and metric = 'load'
+        and issue_date is not null
+        and forecast_area = $1
+        and forecast_period_start::date = $2::date
+      order by issue_date, forecast_period_start
     `,
     [area, forecastDate],
   );
@@ -214,8 +219,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   if (!curves.length) {
     return {
       status: 404,
-      payload: { error: "No PJM load forecast vintage data is available" },
-      headers: { "Cache-Control": "no-store", "X-Pjm-Forecast-Differences-Cache": "MISS" },
+      payload: { error: "No PJM Meteologica load forecast vintage data is available" },
+      headers: { "Cache-Control": "no-store", "X-Pjm-Meteologica-Forecast-Differences-Cache": "MISS" },
     };
   }
 
@@ -248,9 +253,9 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       forecastDates,
       asOf,
       latestUpdate,
-      source: "pjm.load_frcstd_7_day",
+      source: "meteologica.pjm_forecast_hourly",
       sourceComparisonAvailable: false,
-      sourceComparisonNote: "Meteologica forecast tables are not present in helios_prod.",
+      sourceComparisonNote: "Meteologica forecast source selected.",
       rowCount: rows.length,
       lookbackHours,
       snapshotRows,
@@ -258,7 +263,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lookbackRows,
       windowRows: lookbackRows,
     },
-    headers: { "Cache-Control": CACHE_HEADER, "X-Pjm-Forecast-Differences-Cache": "MISS" },
+    headers: { "Cache-Control": CACHE_HEADER, "X-Pjm-Meteologica-Forecast-Differences-Cache": "MISS" },
     rowCount: rows.length,
     dataAsOf: asOf,
   };

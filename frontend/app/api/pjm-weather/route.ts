@@ -1,5 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { isWeatherDevEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -69,6 +70,8 @@ interface SourceRow {
   wind_dir_degrees: number | string | null;
   pressure_mb: number | string | null;
   visibility_miles: number | string | null;
+  relative_humidity_pct: number | string | null;
+  flight_category: string | null;
   raw_metar: string | null;
   updated_at: string | null;
 }
@@ -87,6 +90,8 @@ interface WeatherObservation {
   windDirDegrees: number | null;
   pressureMb: number | null;
   visibilityMiles: number | null;
+  relativeHumidityPct: number | null;
+  flightCategory: string | null;
   rawMetar: string | null;
   updatedAt: string | null;
 }
@@ -157,6 +162,8 @@ function normalize(row: SourceRow, region: string): WeatherObservation {
     windDirDegrees: toNumber(row.wind_dir_degrees),
     pressureMb: toNumber(row.pressure_mb),
     visibilityMiles: toNumber(row.visibility_miles),
+    relativeHumidityPct: toNumber(row.relative_humidity_pct),
+    flightCategory: row.flight_category,
     rawMetar: row.raw_metar,
     updatedAt: isoOrNull(row.updated_at),
   };
@@ -212,7 +219,7 @@ function emptyPayload({
   };
 }
 
-export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
+const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const startedAt = performance.now();
   const runAt = new Date().toISOString();
   const { searchParams } = new URL(request.url);
@@ -256,6 +263,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
           wind_dir_degrees,
           pressure_mb,
           visibility_miles,
+          relative_humidity_pct,
+          flight_category,
           raw_metar,
           updated_at
         from weather.noaa_metar_observations
@@ -277,6 +286,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
         wind_dir_degrees::float8 as wind_dir_degrees,
         pressure_mb::float8 as pressure_mb,
         visibility_miles::float8 as visibility_miles,
+        relative_humidity_pct::float8 as relative_humidity_pct,
+        flight_category,
         raw_metar,
         updated_at::text as updated_at
       from recent
@@ -375,3 +386,14 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     dataAsOf: asOf ?? "empty",
   };
 });
+
+export async function GET(request: Request): Promise<Response> {
+  if (!isWeatherDevEnabled()) {
+    return new Response(null, {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
+  return observedGET(request);
+}
