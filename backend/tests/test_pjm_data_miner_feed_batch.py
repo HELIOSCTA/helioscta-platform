@@ -24,6 +24,8 @@ BATCH_FEEDS = [
     "dispatched_reserves",
     "five_min_solar_generation",
     "load_frcstd_hist",
+    "hourly_solar_power_forecast",
+    "hourly_wind_power_forecast",
     "hrl_load_metered",
     "hrl_load_prelim",
     "hrl_dmd_bids",
@@ -59,6 +61,55 @@ def test_batch_feed_configs_have_contract_fields():
         assert config.display_name
         assert config.posting_frequency
         assert config.retention_time
+
+
+def test_forecast_feed_configs_have_90_day_hot_retention():
+    assert FEED_CONFIGS["load_frcstd_hist"].hot_retention_days is None
+    assert FEED_CONFIGS["frcstd_gen_outages"].hot_retention_days is None
+    assert FEED_CONFIGS["gen_outages_by_type"].hot_retention_days is None
+
+    expected = {
+        "load_frcstd_7_day": "evaluated_at_datetime_utc",
+        "hourly_solar_power_forecast": "evaluated_at_utc",
+        "hourly_wind_power_forecast": "evaluated_at_utc",
+    }
+    for feed_name, retention_column in expected.items():
+        config = FEED_CONFIGS[feed_name]
+        assert config.hot_retention_days == 90
+        assert config.hot_retention_column == retention_column
+
+
+def test_data_miner_retention_purge_uses_config(monkeypatch):
+    config = FEED_CONFIGS["hourly_solar_power_forecast"]
+    captured: dict[str, object] = {}
+
+    class FakeLogger:
+        def section(self, message):
+            captured["message"] = message
+
+    def fake_purge_rows_older_than(**kwargs):
+        captured.update(kwargs)
+        return 5
+
+    monkeypatch.setattr(
+        data_miner_feed.retention,
+        "purge_rows_older_than",
+        fake_purge_rows_older_than,
+    )
+
+    deleted_rows = data_miner_feed._purge_retention_if_configured(
+        config=config,
+        database="helios_prod",
+        rows_processed=10,
+        run_logger=FakeLogger(),
+    )
+
+    assert deleted_rows == 5
+    assert captured["schema"] == "pjm"
+    assert captured["table_name"] == "hourly_solar_power_forecast"
+    assert captured["timestamp_column"] == "evaluated_at_utc"
+    assert captured["retention_days"] == 90
+    assert captured["database"] == "helios_prod"
 
 
 def test_normalize_feed_frame_coerces_and_dedupes():
@@ -134,6 +185,58 @@ def test_normalize_feed_frame_parses_pjm_datetimes_without_inference_warning():
     assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
     assert df["datetime_beginning_ept"].isna().sum() == 1
     assert df["datetime_beginning_utc"].isna().sum() == 1
+
+
+def test_hourly_renewables_forecast_configs_preserve_source_vintages():
+    solar = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "evaluated_at_utc": "6/16/2026 5:00:00 AM",
+                    "evaluated_at_ept": "6/16/2026 1:00:00 AM",
+                    "datetime_beginning_utc": "6/18/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/18/2026 12:00:00 AM",
+                    "datetime_ending_utc": "6/18/2026 5:00:00 AM",
+                    "datetime_ending_ept": "6/18/2026 1:00:00 AM",
+                    "solar_forecast_mwh": "10.5",
+                    "solar_forecast_btm_mwh": "3.25",
+                },
+                {
+                    "evaluated_at_utc": "6/16/2026 6:00:00 AM",
+                    "evaluated_at_ept": "6/16/2026 2:00:00 AM",
+                    "datetime_beginning_utc": "6/18/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/18/2026 12:00:00 AM",
+                    "datetime_ending_utc": "6/18/2026 5:00:00 AM",
+                    "datetime_ending_ept": "6/18/2026 1:00:00 AM",
+                    "solar_forecast_mwh": "11.5",
+                    "solar_forecast_btm_mwh": "4.25",
+                },
+            ]
+        ),
+        FEED_CONFIGS["hourly_solar_power_forecast"],
+    )
+    wind = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "evaluated_at_utc": "6/16/2026 5:00:00 AM",
+                    "evaluated_at_ept": "6/16/2026 1:00:00 AM",
+                    "datetime_beginning_utc": "6/18/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/18/2026 12:00:00 AM",
+                    "datetime_ending_utc": "6/18/2026 5:00:00 AM",
+                    "datetime_ending_ept": "6/18/2026 1:00:00 AM",
+                    "wind_forecast_mwh": "8443.551",
+                }
+            ]
+        ),
+        FEED_CONFIGS["hourly_wind_power_forecast"],
+    )
+
+    assert len(solar) == 2
+    assert solar["solar_forecast_mwh"].tolist() == [10.5, 11.5]
+    assert solar["solar_forecast_btm_mwh"].tolist() == [3.25, 4.25]
+    assert len(wind) == 1
+    assert wind["wind_forecast_mwh"].iloc[0] == 8443.551
 
 
 def test_agg_definitions_preserves_bigint_ids_and_active_dates(monkeypatch):

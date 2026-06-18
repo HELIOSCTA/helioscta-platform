@@ -97,7 +97,32 @@ hourly forecast snapshots to `weather.wsi_hourly_forecasts`, using the source
 forecast issue timestamp from the WSI CSV banner and UTC forecast valid hours.
 The source grain is
 `station_id x region x forecast_issued_at_utc x forecast_time_utc`; safe reruns
-upsert by that key while preserving distinct forecast issues.
+upsert by that key while preserving distinct forecast issues. Scheduled runs
+retain 90 days of forecast issue history in the hot table and purge older rows
+after successful upserts.
+
+Forecast hot-table retention is enforced by the scrape runtime after successful
+upserts for rolling forecast tables: ERCOT seven-day load forecasts, ISO-NE
+regional demand/capacity/wind/solar forecasts, PJM seven-day load, hourly
+solar/wind, WSI hourly forecasts, and Meteologica PJM hourly forecasts.
+Retention is keyed to the source issue, publication, or evaluation timestamp so
+the table keeps 90 days of forecast vintages. Historical PJM Data Miner
+`pjm.load_frcstd_hist` and outage forecast tables remain indefinite unless
+operators explicitly decide to truncate archive history.
+
+Meteologica xTraders helpers use the existing
+`XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment
+variables. The promoted PJM forecast runtime module is
+`backend.scrapes.power.pjm.meteologica_forecast_hourly`, with orchestration at
+`backend.orchestration.power.pjm.meteologica_forecast_hourly`. It writes
+load, solar, and wind hourly forecasts for PJM `RTO`, `MIDATL`, `SOUTH`, and
+`WEST` into `meteologica.pjm_forecast_hourly`, logs Meteologica API telemetry
+to `ops.api_fetch_log`, and emits a forecast freshness event to
+`ops.data_availability_events`. The source grain is
+`content_id x update_id x forecast_period_start`; safe reruns upsert by that
+key. Scheduled runs retain 90 days of forecast issue history in the hot table
+and purge older rows after successful upserts. Hydro is excluded from v1
+because no PJM hydro forecast content ID is promoted.
 
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require

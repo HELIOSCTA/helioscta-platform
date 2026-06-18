@@ -36,6 +36,8 @@ class ErcotPublicReportConfig:
     default_lookahead_days: int = 1
     target_schema: str = "ercot"
     target_database: str | None = None
+    hot_retention_days: int | None = None
+    hot_retention_column: str | None = None
 
     @property
     def target_table(self) -> str:
@@ -742,5 +744,7 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_to_param="deliveryDateTo",
         default_lookback_days=0,
         default_lookahead_days=7,
+        hot_retention_days=90,
+        hot_retention_column="posteddatetime",
     ),
 }

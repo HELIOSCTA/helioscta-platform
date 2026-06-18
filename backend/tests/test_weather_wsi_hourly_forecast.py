@@ -132,3 +132,28 @@ def test_wsi_hourly_forecast_pull_uses_batched_site_ids(monkeypatch):
     assert captured[0]["params"]["SiteIds[]"] == ["KDCA", "KPHL"]
     assert captured[1]["params"]["SiteIds[]"] == ["KPIT"]
     assert set(df["station_id"]) == {"KDCA", "KPHL", "KPIT"}
+
+
+def test_wsi_hourly_forecast_retention_purge_uses_90_day_default(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_purge_rows_older_than(**kwargs):
+        captured.update(kwargs)
+        return 3
+
+    monkeypatch.setattr(
+        hourly_forecast.retention,
+        "purge_rows_older_than",
+        fake_purge_rows_older_than,
+    )
+
+    deleted_rows = hourly_forecast._purge_old_rows(database="helios_prod")
+
+    assert deleted_rows == 3
+    assert captured == {
+        "schema": "weather",
+        "table_name": "wsi_hourly_forecasts",
+        "timestamp_column": "forecast_issued_at_utc",
+        "retention_days": 90,
+        "database": "helios_prod",
+    }

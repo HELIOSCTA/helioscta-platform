@@ -18,7 +18,7 @@ from backend.scrapes.power.pjm.pricing_filters import (
     fetch_csv_for_pricing_node_types,
     pricing_node_type_label,
 )
-from backend.utils import db, script_logging
+from backend.utils import db, retention, script_logging
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,8 @@ class DataMinerFeedConfig:
     pricing_node_types: tuple[str, ...] | None = None
     target_schema: str = "pjm"
     target_database: str | None = None
+    hot_retention_days: int | None = None
+    hot_retention_column: str | None = None
 
     @property
     def target_table(self) -> str:
@@ -235,6 +237,12 @@ def run_feed(
             )
             rows_processed += _upsert_if_present(df, config, database, run_logger)
 
+        _purge_retention_if_configured(
+            config=config,
+            database=database,
+            rows_processed=rows_processed,
+            run_logger=run_logger,
+        )
         run_logger.success(
             f"{config.feed_name} completed; {rows_processed} rows processed."
         )
@@ -263,6 +271,33 @@ def _upsert_if_present(
     upsert_feed_frame(df, config, database=database)
     run_logger.success("Successfully pulled and upserted data.")
     return len(df)
+
+
+def _purge_retention_if_configured(
+    *,
+    config: DataMinerFeedConfig,
+    database: str | None,
+    rows_processed: int,
+    run_logger,
+) -> int:
+    if not config.hot_retention_days or not config.hot_retention_column:
+        return 0
+    if rows_processed == 0:
+        run_logger.section("No rows processed; skipping retention purge.")
+        return 0
+
+    deleted_rows = retention.purge_rows_older_than(
+        schema=config.target_schema,
+        table_name=config.target_table,
+        timestamp_column=config.hot_retention_column,
+        retention_days=config.hot_retention_days,
+        database=database,
+    )
+    run_logger.section(
+        "Retention purge removed "
+        f"{deleted_rows} rows older than {config.hot_retention_days} days."
+    )
+    return deleted_rows
 
 
 def _coerce_bool(values: pd.Series) -> pd.Series:

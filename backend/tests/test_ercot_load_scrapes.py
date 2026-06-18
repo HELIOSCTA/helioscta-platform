@@ -60,6 +60,8 @@ def test_seven_day_load_forecast_config_contract():
         "model",
     )
     assert config.default_params["inUseFlag"] == "true"
+    assert config.hot_retention_days == 90
+    assert config.hot_retention_column == "posteddatetime"
     assert seven_day_load_forecast.API_SCRAPE_NAME == "seven_day_load_forecast"
 
 

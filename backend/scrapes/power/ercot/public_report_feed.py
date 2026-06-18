@@ -12,7 +12,7 @@ from dateutil.relativedelta import relativedelta
 from backend import credentials
 from backend.scrapes.power.ercot import client
 from backend.scrapes.power.ercot.feed_configs import ErcotPublicReportConfig
-from backend.utils import db, script_logging
+from backend.utils import db, retention, script_logging
 
 
 def pull_public_report(
@@ -150,6 +150,12 @@ def run_public_report(
                 )
             current_date += delta
 
+        _purge_retention_if_configured(
+            config=config,
+            database=database,
+            rows_processed=rows_processed,
+            run_logger=run_logger,
+        )
         run_logger.success(
             f"{config.feed_name} completed; {rows_processed} rows processed."
         )
@@ -162,6 +168,33 @@ def run_public_report(
         script_logging.close_logging()
 
     return pd.concat(frames, ignore_index=True) if frames else None
+
+
+def _purge_retention_if_configured(
+    *,
+    config: ErcotPublicReportConfig,
+    database: str | None,
+    rows_processed: int,
+    run_logger,
+) -> int:
+    if not config.hot_retention_days or not config.hot_retention_column:
+        return 0
+    if rows_processed == 0:
+        run_logger.section("No rows processed; skipping retention purge.")
+        return 0
+
+    deleted_rows = retention.purge_rows_older_than(
+        schema=config.target_schema,
+        table_name=config.target_table,
+        timestamp_column=config.hot_retention_column,
+        retention_days=config.hot_retention_days,
+        database=database,
+    )
+    run_logger.section(
+        "Retention purge removed "
+        f"{deleted_rows} rows older than {config.hot_retention_days} days."
+    )
+    return deleted_rows
 
 
 def _date_window_params(

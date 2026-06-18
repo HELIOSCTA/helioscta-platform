@@ -15,6 +15,51 @@ def test_isone_forecast_feed_configs_target_contracts():
     for name, config in forecast_feeds.FEED_CONFIGS.items():
         assert config.feed_name == name
         assert config.target_table_fqn == f"isone.{name}"
+        assert config.hot_retention_days == 90
+
+    assert (
+        forecast_feeds.FEED_CONFIGS[
+            "three_day_reliability_region_demand_forecast"
+        ].hot_retention_column
+        == "published_date"
+    )
+    assert (
+        forecast_feeds.FEED_CONFIGS["seven_day_capacity_forecast"].hot_retention_column
+        == "forecast_execution_date"
+    )
+
+
+def test_isone_retention_purge_uses_config(monkeypatch):
+    config = forecast_feeds.FEED_CONFIGS["seven_day_wind_forecast"]
+    captured: dict[str, object] = {}
+
+    class FakeLogger:
+        def section(self, message):
+            captured["message"] = message
+
+    def fake_purge_rows_older_than(**kwargs):
+        captured.update(kwargs)
+        return 9
+
+    monkeypatch.setattr(
+        forecast_feeds.retention,
+        "purge_rows_older_than",
+        fake_purge_rows_older_than,
+    )
+
+    deleted_rows = forecast_feeds._purge_retention_if_configured(
+        config=config,
+        database="helios_prod",
+        rows_processed=1,
+        run_logger=FakeLogger(),
+    )
+
+    assert deleted_rows == 9
+    assert captured["schema"] == "isone"
+    assert captured["table_name"] == "seven_day_wind_forecast"
+    assert captured["timestamp_column"] == "forecast_execution_date"
+    assert captured["retention_days"] == 90
+    assert captured["database"] == "helios_prod"
 
 
 def test_reliability_region_demand_forecast_format():

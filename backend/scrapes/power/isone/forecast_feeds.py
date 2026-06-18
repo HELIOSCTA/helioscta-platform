@@ -13,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 
 from backend import credentials
 from backend.scrapes.power.isone import isone_api_utils as isone_api
-from backend.utils import db, script_logging
+from backend.utils import db, retention, script_logging
 
 
 TARGET_DATABASE: str | None = None
@@ -34,6 +34,8 @@ class ForecastFeedConfig:
     text_columns: tuple[str, ...] = ()
     skiprows: tuple[int, ...] | None = None
     skipfooter: int = 1
+    hot_retention_days: int = 90
+    hot_retention_column: str = "forecast_execution_date"
 
     @property
     def target_table(self) -> str:
@@ -81,6 +83,7 @@ FEED_CONFIGS: dict[str, ForecastFeedConfig] = {
         ),
         parser="reliability_region_demand",
         numeric_columns=("mw", "percentage"),
+        hot_retention_column="published_date",
     ),
     "seven_day_capacity_forecast": ForecastFeedConfig(
         feed_name="seven_day_capacity_forecast",
@@ -112,6 +115,7 @@ FEED_CONFIGS: dict[str, ForecastFeedConfig] = {
         parser="hourly_generation_forecast",
         numeric_columns=("wind_forecast_mw",),
         skiprows=(0, 1, 2, 3, 4, 5),
+        hot_retention_column="forecast_execution_date",
     ),
     "seven_day_solar_forecast": ForecastFeedConfig(
         feed_name="seven_day_solar_forecast",
@@ -124,6 +128,7 @@ FEED_CONFIGS: dict[str, ForecastFeedConfig] = {
         parser="hourly_generation_forecast",
         numeric_columns=("solar_forecast_mw",),
         skiprows=(0, 1, 2, 3, 4, 5),
+        hot_retention_column="forecast_execution_date",
     ),
 }
 
@@ -417,6 +422,12 @@ def main(
                 )
             current_date += delta
 
+        _purge_retention_if_configured(
+            config=config,
+            database=database,
+            rows_processed=rows_processed,
+            run_logger=run_logger,
+        )
         run_logger.success(f"{feed_name} completed; {rows_processed} rows processed.")
     except Exception as exc:
         run_logger.exception(f"Pipeline failed: {exc}")
@@ -425,3 +436,28 @@ def main(
         script_logging.close_logging()
 
     return pd.concat(frames, ignore_index=True) if frames else None
+
+
+def _purge_retention_if_configured(
+    *,
+    config: ForecastFeedConfig,
+    database: str | None,
+    rows_processed: int,
+    run_logger,
+) -> int:
+    if rows_processed == 0:
+        run_logger.section("No rows processed; skipping retention purge.")
+        return 0
+
+    deleted_rows = retention.purge_rows_older_than(
+        schema=TARGET_SCHEMA,
+        table_name=config.target_table,
+        timestamp_column=config.hot_retention_column,
+        retention_days=config.hot_retention_days,
+        database=database,
+    )
+    run_logger.section(
+        "Retention purge removed "
+        f"{deleted_rows} rows older than {config.hot_retention_days} days."
+    )
+    return deleted_rows

@@ -1,0 +1,20 @@
+[Unit]
+Description=HeliosCTA PJM Meteologica hourly forecast refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-meteologica-forecast-hourly.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.meteologica_forecast_hourly
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-meteologica-forecast-hourly
+
+[Install]
+WantedBy=multi-user.target
+

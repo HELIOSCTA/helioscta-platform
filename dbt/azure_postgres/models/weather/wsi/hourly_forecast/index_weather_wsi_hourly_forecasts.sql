@@ -42,3 +42,8 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_hourly_fcst_updated_at
     ON weather.wsi_hourly_forecasts (
         updated_at DESC
     );
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_hourly_fcst_issue
+    ON weather.wsi_hourly_forecasts (
+        forecast_issued_at_utc DESC
+    );

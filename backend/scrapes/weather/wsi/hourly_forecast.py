@@ -16,7 +16,7 @@ import pandas as pd
 from backend import credentials
 from backend.scrapes.weather.wsi import client
 from backend.scrapes.weather.wsi.stations import STATION_BASKETS
-from backend.utils import db, script_logging
+from backend.utils import db, retention, script_logging
 from backend.utils.ops_logging import redact_secrets
 
 API_SCRAPE_NAME = "wsi_hourly_forecasts"
@@ -39,6 +39,7 @@ DEFAULT_WSI_REGION = "NA"
 DEFAULT_TEMP_UNITS = "F"
 DEFAULT_TIMEUTC = "true"
 DEFAULT_BATCH_SIZE = 10
+DEFAULT_RETENTION_DAYS = 90
 OUTPUT_COLUMNS = [
     "station_id",
     "station_name",
@@ -326,6 +327,20 @@ def _upsert(df: pd.DataFrame, database: str | None = None) -> None:
     )
 
 
+def _purge_old_rows(
+    *,
+    retention_days: int = DEFAULT_RETENTION_DAYS,
+    database: str | None = None,
+) -> int:
+    return retention.purge_rows_older_than(
+        schema=TARGET_SCHEMA,
+        table_name=TARGET_TABLE,
+        timestamp_column="forecast_issued_at_utc",
+        retention_days=retention_days,
+        database=database,
+    )
+
+
 def main(
     *,
     region: str = DEFAULT_REGION,
@@ -364,6 +379,14 @@ def main(
         else:
             run_logger.section(f"Upserting {len(df)} rows...")
             _upsert(df, database=database)
+            deleted_rows = _purge_old_rows(
+                retention_days=DEFAULT_RETENTION_DAYS,
+                database=database,
+            )
+            run_logger.section(
+                "Retention purge removed "
+                f"{deleted_rows} rows older than {DEFAULT_RETENTION_DAYS} days."
+            )
             run_logger.success(
                 f"{API_SCRAPE_NAME} completed; {len(df)} rows processed."
             )

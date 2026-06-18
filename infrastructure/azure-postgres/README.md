@@ -37,6 +37,8 @@ passwords before execution. Do not commit real passwords.
      or ISO-NE forecast table SQL under
      `dbt/azure_postgres/models/power/isone/forecast_feeds/`
      or
+     `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/table_meteologica_pjm_forecast_hourly.sql`
+     or
      `dbt/azure_postgres/models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql`
      or
      `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`

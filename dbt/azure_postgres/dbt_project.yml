@@ -207,6 +207,18 @@ models:
             +enabled: false
           index_pjm_load_frcstd_7_day:
             +enabled: false
+        hourly_solar_power_forecast:
+          +materialized: ephemeral
+          table_pjm_hourly_solar_power_forecast:
+            +enabled: false
+          index_pjm_hourly_solar_power_forecast:
+            +enabled: false
+        hourly_wind_power_forecast:
+          +materialized: ephemeral
+          table_pjm_hourly_wind_power_forecast:
+            +enabled: false
+          index_pjm_hourly_wind_power_forecast:
+            +enabled: false
         gen_outages_by_type:
           +materialized: ephemeral
           table_pjm_gen_outages_by_type:
@@ -362,6 +374,15 @@ models:
           table_miso_real_time_total_load:
             +enabled: false
           index_miso_real_time_total_load:
+            +enabled: false
+      meteologica:
+        +schema: meteologica
+        +materialized: ephemeral
+        pjm_forecast_hourly:
+          +materialized: ephemeral
+          table_meteologica_pjm_forecast_hourly:
+            +enabled: false
+          index_meteologica_pjm_forecast_hourly:
             +enabled: false
     weather:
       +schema: weather

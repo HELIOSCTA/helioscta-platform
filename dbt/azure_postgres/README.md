@@ -278,6 +278,37 @@ cd dbt/azure_postgres
 dbt compile --profiles-dir . --select path:models/power/miso/real_time_total_load/miso_real_time_total_load
 ```
 
+## Meteologica PJM Forecast Layout
+
+Meteologica PJM hourly forecast validation and query shaping uses:
+
+```text
+models/power/meteologica/pjm_forecast_hourly/
+models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_latest_curves/
+models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_da_cutoff_curves/
+models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_vintage_changes/
+```
+
+`table_meteologica_pjm_forecast_hourly.sql` and
+`index_meteologica_pjm_forecast_hourly.sql` are disabled operator SQL. The
+enabled models are read-only source, staging, latest-curve, DA-cutoff, and
+vintage-change shaping over `meteologica.pjm_forecast_hourly`.
+
+Source contract:
+Meteologica xTraders `contents/{content_id}/data`, table grain
+`content_id x update_id x forecast_period_start`, promoted metrics
+`load`, `solar`, and `wind`, promoted forecast areas `RTO`, `MIDATL`, `SOUTH`,
+and `WEST`. Backend runtime retention keeps 90 days of forecast issue history
+in `meteologica.pjm_forecast_hourly`; older rows are purged after successful
+upserts.
+
+Compile the Meteologica query-shaping models with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_latest_curves path:models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_da_cutoff_curves path:models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_vintage_changes
+```
+
 ## Weather Layout
 
 Weather feeds live under one folder per provider and feed:

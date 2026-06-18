@@ -88,22 +88,64 @@ with `Persistent=true` because the source is a morning PJM publication that was
 not available during the earlier `04:30 UTC` support batch. The service uses
 `flock` with `/tmp/helios-pjm-gen-outages-by-type.lock`.
 
-## PJM Seven-Day Load Forecast
+## PJM Hourly Forecasts
 
-The hourly PJM seven-day load forecast workflow has its own timer:
+The PJM Data Miner hourly load, solar, and wind forecast workflow has one
+combined timer:
 
 ```text
-helios-pjm-load-frcstd-7-day.service
-helios-pjm-load-frcstd-7-day.timer
+helios-pjm-forecast-hourly.service
+helios-pjm-forecast-hourly.timer
 ```
 
-It runs `backend.orchestration.power.pjm.load_frcstd_7_day`, upserts the
-current PJM Data Miner `load_frcstd_7_day` snapshot into
-`pjm.load_frcstd_7_day`, and writes API fetch telemetry to
-`ops.api_fetch_log`. The timer runs hourly at minute `25` UTC with
-`Persistent=false` because the source returns the current seven-day forecast
-snapshot. The service uses `flock` with
-`/tmp/helios-pjm-load-frcstd-7-day.lock`.
+It runs `backend.orchestration.power.pjm.forecast_hourly`, upserts the current
+PJM Data Miner `load_frcstd_7_day`, `hourly_solar_power_forecast`, and
+`hourly_wind_power_forecast` feeds into `pjm.load_frcstd_7_day`,
+`pjm.hourly_solar_power_forecast`, and `pjm.hourly_wind_power_forecast`, and
+writes API fetch telemetry to `ops.api_fetch_log`. The timer runs hourly at
+minute `35` UTC with `Persistent=false` because the sources return current
+forecast snapshots/native forecast vintages. The service uses `flock` with
+`/tmp/helios-pjm-forecast-hourly.lock`.
+
+Before enabling the timer, apply the table and index operator SQL under:
+
+```text
+dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/
+dbt/azure_postgres/models/power/pjm/hourly_solar_power_forecast/
+dbt/azure_postgres/models/power/pjm/hourly_wind_power_forecast/
+```
+
+## PJM Meteologica Hourly Forecasts
+
+The PJM Meteologica forecast workflow has its own timer:
+
+```text
+helios-pjm-meteologica-forecast-hourly.service
+helios-pjm-meteologica-forecast-hourly.timer
+```
+
+It runs `backend.orchestration.power.pjm.meteologica_forecast_hourly`, upserts
+load, solar, and wind hourly forecasts for `RTO`, `MIDATL`, `SOUTH`, and
+`WEST` into `meteologica.pjm_forecast_hourly`, writes Meteologica API telemetry
+to `ops.api_fetch_log`, and emits forecast freshness events to
+`ops.data_availability_events`. The timer runs every 30 minutes at `:20` and
+`:50` UTC with `Persistent=false` and `RandomizedDelaySec=2min`. The service
+uses `flock` with `/tmp/helios-pjm-meteologica-forecast-hourly.lock`.
+Successful runs purge forecast issues older than 90 days from the hot table.
+
+Do not enable this timer until `/etc/helioscta/backend.env` contains
+`XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the
+Meteologica schema/table/index operator SQL has been applied.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-pjm-meteologica-forecast-hourly.service
+sudo systemctl enable --now helios-pjm-meteologica-forecast-hourly.timer
+```
 
 ## RT Verified Five-Minute HRL LMPs
 
@@ -585,6 +627,14 @@ For the PJM seven-day load forecast refresh:
 systemctl status helios-pjm-load-frcstd-7-day.service
 systemctl status helios-pjm-load-frcstd-7-day.timer
 journalctl -u helios-pjm-load-frcstd-7-day.service -n 200 --no-pager
+```
+
+For the PJM Meteologica forecast refresh:
+
+```bash
+systemctl status helios-pjm-meteologica-forecast-hourly.service
+systemctl status helios-pjm-meteologica-forecast-hourly.timer
+journalctl -u helios-pjm-meteologica-forecast-hourly.service -n 200 --no-pager
 ```
 
 For the RT verified five-minute HRL LMP workflow:

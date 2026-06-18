@@ -874,7 +874,9 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-load-frcstd-7-day
 
-- Status: deployed; timer enabled and first timer run succeeded.
+- Status: retired after promotion of combined
+  `helios-pjm-forecast-hourly.timer`; keep the lower-level orchestration module
+  for manual reruns, but do not keep this timer enabled with the combined job.
 - Workflow: PJM Seven-Day Load Forecast refresh.
 - Runtime module: `backend.orchestration.power.pjm.load_frcstd_7_day`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.load_frcstd_7_day`.
@@ -935,6 +937,151 @@ FROM ops.api_fetch_log
 WHERE pipeline_name = 'load_frcstd_7_day'
 ORDER BY created_at DESC
 LIMIT 10;
+```
+
+## helios-pjm-forecast-hourly
+
+- Status: promoted; source tables created and local manual run succeeded, but
+  VM timer state must be verified after install.
+- Workflow: PJM Data Miner hourly load, solar, and wind forecast refresh.
+- Runtime module: `backend.orchestration.power.pjm.forecast_hourly`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.pjm.load_frcstd_7_day`
+  - `backend.scrapes.power.pjm.hourly_solar_power_forecast`
+  - `backend.scrapes.power.pjm.hourly_wind_power_forecast`
+- Source system: PJM Data Miner 2 `load_frcstd_7_day`,
+  `hourly_solar_power_forecast`, and `hourly_wind_power_forecast`.
+- Destination tables:
+  - `pjm.load_frcstd_7_day`
+  - `pjm.hourly_solar_power_forecast`
+  - `pjm.hourly_wind_power_forecast`
+- Source grain:
+  - `load_frcstd_7_day`: `(evaluated_at_datetime_utc,
+    forecast_datetime_beginning_utc, forecast_area)`
+  - renewable feeds: `(evaluated_at_utc, datetime_beginning_utc)`
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-forecast-hourly.service`
+  - `infrastructure/systemd/helios-pjm-forecast-hourly.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-forecast-hourly.service`.
+- Schedule: hourly at minute `35` UTC with `RandomizedDelaySec=3min`.
+- Timer behavior: `Persistent=false`; missed hourly forecast runs do not
+  replay after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-forecast-hourly.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on each feed's source primary key.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/`,
+  `dbt/azure_postgres/models/power/pjm/hourly_solar_power_forecast/`, and
+  `dbt/azure_postgres/models/power/pjm/hourly_wind_power_forecast/`.
+- Local manual verification: `2026-06-18 15:43 UTC`; orchestration module
+  processed 4,200 load rows, 1,704 solar rows, and 9,677 wind rows into Azure
+  Postgres when run as separate predecessor jobs.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    'load' AS feed,
+    COUNT(*) AS rows,
+    MAX(evaluated_at_datetime_ept) AS latest_evaluated_at_ept,
+    MAX(forecast_datetime_beginning_ept) AS latest_forecast_hour_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.load_frcstd_7_day
+UNION ALL
+SELECT
+    'solar' AS feed,
+    COUNT(*) AS rows,
+    MAX(evaluated_at_ept) AS latest_evaluated_at_ept,
+    MAX(datetime_beginning_ept) AS latest_forecast_hour_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.hourly_solar_power_forecast
+UNION ALL
+SELECT
+    'wind' AS feed,
+    COUNT(*) AS rows,
+    MAX(evaluated_at_ept) AS latest_evaluated_at_ept,
+    MAX(datetime_beginning_ept) AS latest_forecast_hour_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.hourly_wind_power_forecast;
+```
+
+## helios-pjm-meteologica-forecast-hourly
+
+- Status: promoted for deployment; do not enable until operator SQL and
+  Meteologica ISO credentials are installed on the VM.
+- Workflow: PJM Meteologica hourly forecast refresh.
+- Runtime module: `backend.orchestration.power.pjm.meteologica_forecast_hourly`.
+- Lower-level scrape module:
+  `backend.scrapes.power.pjm.meteologica_forecast_hourly`.
+- Source system: Meteologica xTraders Markets API `contents/{content_id}/data`.
+- Destination table: `meteologica.pjm_forecast_hourly`.
+- Source grain: `content_id x update_id x forecast_period_start`.
+- Metrics and areas: load, solar, and wind for `RTO`, `MIDATL`, `SOUTH`, and
+  `WEST`; hydro is excluded from v1.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-pjm-meteologica-forecast-hourly.timer`
+- Schedule: every 30 minutes at `:20` and `:50` UTC with
+  `RandomizedDelaySec=2min`.
+- Timer behavior: `Persistent=false`; current forecast snapshots should not
+  replay after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-meteologica-forecast-hourly.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
+  `/etc/helioscta/backend.env`.
+- Operator SQL required before first run:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/table_meteologica_pjm_forecast_hourly.sql`,
+  and
+  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/index_meteologica_pjm_forecast_hourly.sql`.
+- Safe rerun story: upsert on
+  `(content_id, update_id, forecast_period_start)`.
+- Retention: 90 days by `issue_date` in the hot table; the runtime purges
+  older rows after successful upserts.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    forecast_area,
+    metric,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT update_id) AS update_count,
+    MAX(issue_date) AS latest_issue_date,
+    MIN(forecast_period_start) AS min_forecast_period_start,
+    MAX(forecast_period_start) AS max_forecast_period_start,
+    MAX(updated_at) AS latest_updated_at
+FROM meteologica.pjm_forecast_hourly
+GROUP BY forecast_area, metric
+ORDER BY forecast_area, metric;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    content_id,
+    feed_name,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'pjm_meteologica_forecast_hourly'
+ORDER BY created_at DESC
+LIMIT 20;
 ```
 
 ## helios-rt-fivemin-hrl-lmps

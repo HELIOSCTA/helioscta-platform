@@ -1,0 +1,13 @@
+[Unit]
+Description=Half-hourly HeliosCTA PJM Meteologica hourly forecast refresh timer
+
+[Timer]
+OnCalendar=*:20,50
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-pjm-meteologica-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target
+
