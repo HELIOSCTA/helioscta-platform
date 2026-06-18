@@ -3,7 +3,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
-  Area,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -59,6 +58,21 @@ export interface PjmOutagesFreshnessSummary {
 
 const API_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_REGION = "RTO";
+const REGION_LABELS: Record<string, string> = {
+  RTO: "RTO",
+  MIDATL_DOM: "Mid-Atlantic / Dominion",
+  WEST: "West",
+};
+const YEAR_COLORS = [
+  "#22c55e",
+  "#38bdf8",
+  "#f97316",
+  "#a78bfa",
+  "#facc15",
+  "#2dd4bf",
+  "#fb7185",
+  "#818cf8",
+];
 
 const OUTAGE_METRICS: Array<{ key: OutageMetricKey; label: string; color: string }> = [
   { key: "total_outages_mw", label: "Total", color: "#e5e7eb" },
@@ -176,14 +190,6 @@ function uniqueSorted(values: Array<string | null | undefined>, desc = false): s
   return desc ? sorted.reverse() : sorted;
 }
 
-function dayOfYear(value: string | null | undefined): number | null {
-  if (!value) return null;
-  const date = new Date(`${value.slice(0, 10)}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-  const start = new Date(date.getFullYear(), 0, 0);
-  return Math.floor((date.getTime() - start.getTime()) / 86_400_000);
-}
-
 function monthLabel(day: number): string {
   const labels = [
     [1, "Jan"],
@@ -213,44 +219,25 @@ function renderTooltipValue(value: unknown) {
   return `${Math.round(value).toLocaleString()} MW`;
 }
 
-function buildDateHeatBounds(rows: OutageRow[], metric: OutageMetricKey): Map<string, HeatBounds> {
-  const valuesByDate = new Map<string, number[]>();
-
-  rows.forEach((row) => {
-    if (!row.forecast_date) return;
-    const value = metricValue(row, metric);
-    if (value === null) return;
-    const values = valuesByDate.get(row.forecast_date) ?? [];
-    values.push(value);
-    valuesByDate.set(row.forecast_date, values);
-  });
-
-  const bounds = new Map<string, HeatBounds>();
-  valuesByDate.forEach((values, date) => {
-    bounds.set(date, {
-      min: Math.min(...values),
-      max: Math.max(...values),
-    });
-  });
-  return bounds;
+function buildMetricHeatBounds(rows: OutageRow[], metric: OutageMetricKey): HeatBounds | null {
+  const values = rows
+    .map((row) => metricValue(row, metric))
+    .filter((value): value is number => value !== null);
+  if (!values.length) return null;
+  return {
+    min: Math.min(...values),
+    max: Math.max(...values),
+  };
 }
 
 function buildSeasonalChartRows({
   seasonalRows,
-  forecastRows,
   metric,
-  currentYear,
-  lastYear,
-  averageYears,
-  latestExecDate,
+  years,
 }: {
   seasonalRows: OutageRow[];
-  forecastRows: OutageRow[];
   metric: OutageMetricKey;
-  currentYear: number | null;
-  lastYear: number | null;
-  averageYears: number[];
-  latestExecDate: string | undefined;
+  years: number[];
 }): SeasonalChartPoint[] {
   const byDay = new Map<number, SeasonalChartPoint>();
   for (let day = 1; day <= 366; day += 1) {
@@ -269,28 +256,10 @@ function buildSeasonalChartRows({
 
   byDay.forEach((point, day) => {
     const valuesByYear = valuesByDayYear.get(day);
-    if (!valuesByYear) return;
-
-    point.currentYear = currentYear ? valuesByYear.get(currentYear) ?? null : null;
-    point.lastYear = lastYear ? valuesByYear.get(lastYear) ?? null : null;
-
-    const rangeValues = averageYears
-      .map((year) => valuesByYear.get(year))
-      .filter((value): value is number => value !== undefined);
-    point.fiveYearRange = rangeValues.length
-      ? [Math.min(...rangeValues), Math.max(...rangeValues)]
-      : null;
-  });
-
-  forecastRows
-    .filter((row) => row.forecast_execution_date === latestExecDate)
-    .forEach((row) => {
-      const day = dayOfYear(row.forecast_date);
-      if (!day) return;
-      const point = byDay.get(day);
-      if (!point) return;
-      point.currentYearForecast = metricValue(row, metric);
+    years.forEach((year) => {
+      point[`year_${year}`] = valuesByYear?.get(year) ?? null;
     });
+  });
 
   return Array.from(byDay.values());
 }
@@ -435,39 +404,28 @@ export default function PjmOutages({
   const heatBoundsByMetric = useMemo(
     () =>
       new Map(
-        forecastMetrics.map((item) => [item.key, buildDateHeatBounds(rows, item.key)] as const)
+        forecastMetrics.map((item) => [item.key, buildMetricHeatBounds(rows, item.key)] as const)
       ),
     [forecastMetrics, rows]
   );
   const seasonalYears = useMemo(() => data?.seasonal.years ?? [], [data]);
-  const currentYear = seasonalYears.at(-1) ?? null;
-  const lastYear = seasonalYears.length >= 2 ? seasonalYears.at(-2) ?? null : null;
-  const averageYears = useMemo(
-    () => seasonalYears.filter((year) => currentYear === null || year < currentYear).slice(-5),
-    [currentYear, seasonalYears]
-  );
   const seasonalSeries: PlotSeries[] = useMemo(
-    () => [
-      ...(currentYear
-        ? [{ key: "currentYear", label: String(currentYear), color: "#22c55e", defaultVisible: true }]
-        : []),
-      ...(lastYear
-        ? [{ key: "lastYear", label: String(lastYear), color: "#38bdf8", defaultVisible: true }]
-        : []),
-      ...(averageYears.length
-        ? [{ key: "fiveYearRange", label: "5Y Range", color: "#facc15", defaultVisible: true }]
-        : []),
-    ],
-    [averageYears.length, currentYear, lastYear]
+    () =>
+      seasonalYears.map((year, index) => ({
+        key: `year_${year}`,
+        label: String(year),
+        color: YEAR_COLORS[index % YEAR_COLORS.length],
+        defaultVisible: true,
+      })),
+    [seasonalYears]
   );
   const seasonalSubtitle = useMemo(
     () =>
       [
-        `${region}: ${currentYear ?? "current"} by forecast date`,
-        ...(lastYear ? [`${lastYear} prior year`] : []),
-        ...(averageYears.length ? [`${averageYears.length}Y min/max range`] : []),
+        `${REGION_LABELS[region] ?? region}: same-day PJM publication by operating date`,
+        `${seasonalYears.length.toLocaleString()} years`,
       ].join(" | "),
-    [averageYears.length, currentYear, lastYear, region]
+    [region, seasonalYears.length]
   );
 
   const toggleSeasonalSeries = (key: string) => {
@@ -482,16 +440,9 @@ export default function PjmOutages({
   const renderSeasonalChart = (metric: OutageMetricKey, heightClass: string) => {
     const chartRows = buildSeasonalChartRows({
       seasonalRows,
-      forecastRows: rows,
       metric,
-      currentYear,
-      lastYear,
-      averageYears,
-      latestExecDate: execDates[0],
+      years: seasonalYears,
     });
-    const currentYearSeries = seasonalSeries.find((series) => series.key === "currentYear");
-    const lastYearSeries = seasonalSeries.find((series) => series.key === "lastYear");
-    const rangeSeries = seasonalSeries.find((series) => series.key === "fiveYearRange");
 
     return (
       <div className={heightClass}>
@@ -522,50 +473,19 @@ export default function PjmOutages({
               formatter={renderTooltipValue}
               labelFormatter={(value) => `Day ${value}`}
             />
-            {rangeSeries && !hiddenSeasonalSeries.has("fiveYearRange") && (
-              <Area
-                type="monotone"
-                dataKey="fiveYearRange"
-                name="5Y Range"
-                stroke="none"
-                fill="#facc15"
-                fillOpacity={0.14}
-                connectNulls
-              />
-            )}
-            {currentYearSeries && !hiddenSeasonalSeries.has("currentYear") && (
+            {seasonalSeries.map((series) =>
+              hiddenSeasonalSeries.has(series.key) ? null : (
               <Line
+                key={series.key}
                 type="monotone"
-                dataKey="currentYear"
-                name={currentYearSeries.label}
-                stroke={currentYearSeries.color}
+                dataKey={series.key}
+                name={series.label}
+                stroke={series.color}
                 dot={false}
-                strokeWidth={2.5}
+                strokeWidth={series.key.endsWith(String(seasonalYears.at(-1))) ? 2.5 : 1.6}
                 connectNulls
               />
-            )}
-            {currentYearSeries && !hiddenSeasonalSeries.has("currentYear") && (
-              <Line
-                type="monotone"
-                dataKey="currentYearForecast"
-                name={`${currentYearSeries.label} Forecast`}
-                stroke={currentYearSeries.color}
-                dot={false}
-                strokeWidth={2.5}
-                strokeDasharray="5 3"
-                connectNulls
-              />
-            )}
-            {lastYearSeries && !hiddenSeasonalSeries.has("lastYear") && (
-              <Line
-                type="monotone"
-                dataKey="lastYear"
-                name={lastYearSeries.label}
-                stroke={lastYearSeries.color}
-                dot={false}
-                strokeWidth={1.8}
-                connectNulls
-              />
+              )
             )}
           </ComposedChart>
         </ResponsiveContainer>
@@ -595,7 +515,7 @@ export default function PjmOutages({
             >
               {regions.map((item) => (
                 <option key={item} value={item}>
-                  {item}
+                  {REGION_LABELS[item] ?? item}
                 </option>
               ))}
             </select>
@@ -663,7 +583,7 @@ export default function PjmOutages({
               <DataTableShell
                 key={item.key}
                 title={`${item.label} Forecast Vintage Heatmap`}
-                subtitle={`${region}: latest ${execDates.length} forecast publications`}
+                subtitle={`${REGION_LABELS[region] ?? region}: latest ${execDates.length} forecast publications`}
                 action={
                   <TableHeatmapToggle
                     enabled={tableHeatmapEnabled}
@@ -706,7 +626,7 @@ export default function PjmOutages({
                           {forecastDates.map((date) => {
                             const row = byForecastDate.get(date);
                             const value = row ? metricValue(row, item.key) : null;
-                            const bounds = heatBoundsByMetric.get(item.key)?.get(date);
+                            const bounds = heatBoundsByMetric.get(item.key);
                             return (
                               <td
                                 key={date}

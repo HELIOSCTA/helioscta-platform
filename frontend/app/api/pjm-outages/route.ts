@@ -19,7 +19,7 @@ const ROUTE_CONFIG = {
   freshnessSource: "pjm.gen_outages_by_type.forecast_execution_date_ept",
 } as const;
 type OutagesView = "forecast" | "seasonal";
-type Region = "RTO" | "WEST" | "OTHER";
+type Region = "RTO" | "WEST" | "MIDATL_DOM";
 
 interface OutageSourceRow {
   forecast_execution_date: string;
@@ -29,15 +29,12 @@ interface OutageSourceRow {
   planned_outages_mw?: number | string | null;
   maintenance_outages_mw?: number | string | null;
   forced_outages_mw?: number | string | null;
-  rto_mw: number | string | null;
-  west_mw: number | string | null;
-  other_mw: number | string | null;
 }
 
 const REGION_SOURCE_NAMES: Record<Region, string> = {
   RTO: "PJM RTO",
   WEST: "Western",
-  OTHER: "Mid Atlantic - Dominion",
+  MIDATL_DOM: "Mid Atlantic - Dominion",
 };
 
 function parseView(value: string | null): OutagesView {
@@ -45,7 +42,9 @@ function parseView(value: string | null): OutagesView {
 }
 
 function parseRegion(value: string | null): Region {
-  return value === "WEST" || value === "OTHER" ? value : "RTO";
+  if (value === "WEST") return "WEST";
+  if (value === "MIDATL_DOM" || value === "OTHER") return "MIDATL_DOM";
+  return "RTO";
 }
 
 function parseBoundedInt(raw: string | null, fallback: number, min: number, max: number): number {
@@ -60,14 +59,8 @@ function toNumber(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function valueForRegion(row: OutageSourceRow, region: Region): number | null {
-  if (region === "WEST") return toNumber(row.west_mw);
-  if (region === "OTHER") return toNumber(row.other_mw);
-  return toNumber(row.rto_mw);
-}
-
 function normalize(row: OutageSourceRow, region: Region, view: OutagesView) {
-  const total = toNumber(row.total_outages_mw) ?? valueForRegion(row, region);
+  const total = toNumber(row.total_outages_mw);
   const base = {
     region,
     total_outages_mw: total,
@@ -129,10 +122,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
             total_outages_mw::float8 as total_outages_mw,
             planned_outages_mw::float8 as planned_outages_mw,
             maintenance_outages_mw::float8 as maintenance_outages_mw,
-            forced_outages_mw::float8 as forced_outages_mw,
-            null::float8 as rto_mw,
-            null::float8 as west_mw,
-            null::float8 as other_mw
+            forced_outages_mw::float8 as forced_outages_mw
           from pjm.gen_outages_by_type
           where forecast_execution_date_ept in (select forecast_execution_date_ept from recent_exec_dates)
             and region = $2
@@ -144,24 +134,23 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
             select distinct extract(year from forecast_date)::int as year
             from pjm.gen_outages_by_type
             where region = $2
+              and (forecast_date - forecast_execution_date_ept)::int = 0
             order by year desc
             limit $1
           )
-          select distinct on (forecast_date)
+          select
             forecast_execution_date_ept::text as forecast_execution_date,
             forecast_date::text as forecast_date,
             (forecast_date - forecast_execution_date_ept)::int as lead_days,
             total_outages_mw::float8 as total_outages_mw,
             planned_outages_mw::float8 as planned_outages_mw,
             maintenance_outages_mw::float8 as maintenance_outages_mw,
-            forced_outages_mw::float8 as forced_outages_mw,
-            null::float8 as rto_mw,
-            null::float8 as west_mw,
-            null::float8 as other_mw
+            forced_outages_mw::float8 as forced_outages_mw
           from pjm.gen_outages_by_type
           where extract(year from forecast_date)::int in (select year from recent_years)
             and region = $2
-          order by forecast_date, forecast_execution_date_ept desc
+            and (forecast_date - forecast_execution_date_ept)::int = 0
+          order by forecast_date, region
         `,
     [view === "forecast" ? executionLimit : seasonalYearLimit, REGION_SOURCE_NAMES[region]],
   );
@@ -192,7 +181,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     payload: {
       view,
       region,
-      regions: ["RTO", "WEST", "OTHER"],
+      regions: ["RTO", "MIDATL_DOM", "WEST"],
       executionLimit,
       seasonalYearLimit,
       years,
