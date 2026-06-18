@@ -23,6 +23,16 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_hourly_obs_region_time
         updated_at
     );
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_hourly_obs_region_station_time
+    ON weather.wsi_hourly_observed_temperatures (
+        region,
+        station_id,
+        observation_time_local DESC
+    )
+    INCLUDE (
+        station_name
+    );
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_hourly_obs_station_time
     ON weather.wsi_hourly_observed_temperatures (
         station_id,

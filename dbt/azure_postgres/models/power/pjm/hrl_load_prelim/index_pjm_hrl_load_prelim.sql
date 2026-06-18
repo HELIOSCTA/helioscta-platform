@@ -20,3 +20,13 @@ create index concurrently if not exists idx_hrl_load_prelim_pk_lookup
     on pjm.hrl_load_prelim (
         datetime_beginning_utc, load_area
     );
+
+create index concurrently if not exists idx_hrl_load_prelim_area_ept
+    on pjm.hrl_load_prelim (
+        load_area,
+        datetime_beginning_ept
+    )
+    include (
+        prelim_load_avg_hourly,
+        updated_at
+    );

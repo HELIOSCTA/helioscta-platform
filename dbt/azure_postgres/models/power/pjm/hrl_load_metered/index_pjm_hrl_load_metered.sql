@@ -18,3 +18,14 @@ create index concurrently if not exists idx_hrl_load_metered_pk_lookup
     on pjm.hrl_load_metered (
         datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified
     );
+
+create index concurrently if not exists idx_hrl_load_metered_area_ept_verified
+    on pjm.hrl_load_metered (
+        load_area,
+        datetime_beginning_ept,
+        is_verified
+    )
+    include (
+        mw,
+        updated_at
+    );

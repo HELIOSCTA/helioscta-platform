@@ -11,20 +11,27 @@ Covered workflows:
 - `backend.backfills.power.pjm.da_hrl_lmps`
 - `backend.backfills.power.pjm.rt_hrl_lmps`
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- `backend.backfills.power.pjm.hrl_load_metered`
+- `backend.backfills.power.pjm.hrl_load_prelim`
 - `backend.backfills.power.pjm.gen_outages_by_type`
+- `backend.backfills.weather.wsi.hourly_observed`
 
 Destination tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
 - `pjm.rt_unverified_hrl_lmps`
+- `pjm.hrl_load_metered`
+- `pjm.hrl_load_prelim`
 - `pjm.gen_outages_by_type`
+- `weather.wsi_hourly_observed_temperatures`
 
 Backfill runs add `run_mode=backfill`, `backfill_workflow`,
 `backfill_start_date`, and `backfill_end_date` to `ops.api_fetch_log.metadata`
-for the PJM API requests they issue. Backfill entry points call lower-level
-scrape modules; scheduled orchestrators remain responsible for polling and
-data-readiness events.
+for the API requests they issue. PJM backfill entry points call lower-level
+scrape modules; scheduled PJM orchestrators remain responsible for polling and
+data-readiness events. WSI hourly observed backfills call the existing WSI
+orchestration path and emit the same weather freshness event as scheduled runs.
 
 ## Safety Rules
 
@@ -34,7 +41,10 @@ data-readiness events.
   - DA hourly LMPs: `31` days.
   - RT verified hourly LMPs: `31` days.
   - RT unverified hourly LMPs: `30` days.
+  - PJM metered hourly load: `31` days.
+  - PJM preliminary hourly load: `31` days.
   - Generation outages by type: `31` execution dates.
+  - WSI hourly observed weather: `31` local observation dates.
 - Future dates are rejected unless `allow_future=True` is passed.
 - Do not run a backfill during the matching scheduled timer window unless the
   overlap is intentional.
@@ -95,6 +105,59 @@ PY
 
 sudo systemd-run --unit=helios-rt-unverified-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_rt-unverified-hrl-backfill.py
 rm -f /tmp/helios_rt-unverified-hrl-backfill.py
+```
+
+## PJM Metered Hourly Load Backfill
+
+This replays PJM Data Miner 2 `hrl_load_metered` by
+`datetime_beginning_ept`. It upserts into `pjm.hrl_load_metered` using
+`datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified`.
+
+```bash
+cat > /tmp/helios-hrl-load-metered-backfill.py <<'PY'
+from backend.backfills.power.pjm.hrl_load_metered import main
+
+print(main(start_date="2026-06-01", end_date="2026-06-07"))
+PY
+
+sudo systemd-run --unit=helios-hrl-load-metered-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-hrl-load-metered-backfill.py
+rm -f /tmp/helios-hrl-load-metered-backfill.py
+```
+
+## PJM Preliminary Hourly Load Backfill
+
+This replays PJM Data Miner 2 `hrl_load_prelim` by
+`datetime_beginning_ept`. It upserts into `pjm.hrl_load_prelim` using
+`datetime_beginning_utc, load_area`.
+
+```bash
+cat > /tmp/helios-hrl-load-prelim-backfill.py <<'PY'
+from backend.backfills.power.pjm.hrl_load_prelim import main
+
+print(main(start_date="2026-06-01", end_date="2026-06-07"))
+PY
+
+sudo systemd-run --unit=helios-hrl-load-prelim-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-hrl-load-prelim-backfill.py
+rm -f /tmp/helios-hrl-load-prelim-backfill.py
+```
+
+## WSI Hourly Observed Weather Backfill
+
+This replays WSI Trader `GetHistoricalObservations` for the configured PJM
+station basket, including the `station_id = 'PJM'` aggregate used by the initial
+PJM load-growth join. It upserts into
+`weather.wsi_hourly_observed_temperatures` using
+`station_id, observation_time_local, region`.
+
+```bash
+cat > /tmp/helios-wsi-hourly-observed-backfill.py <<'PY'
+from backend.backfills.weather.wsi.hourly_observed import main
+
+print(main(start_date="2026-06-16", end_date="2026-06-17"))
+PY
+
+sudo systemd-run --unit=helios-wsi-hourly-observed-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-wsi-hourly-observed-backfill.py
+rm -f /tmp/helios-wsi-hourly-observed-backfill.py
 ```
 
 ## Generation Outages By Type Backfill
@@ -182,5 +245,71 @@ SELECT
 FROM pjm.gen_outages_by_type
 GROUP BY forecast_execution_date_ept
 ORDER BY forecast_execution_date_ept DESC
+LIMIT 30;
+```
+
+Check PJM hourly load coverage:
+
+```sql
+SELECT
+    'metered' AS feed,
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT load_area) AS load_areas,
+    MIN(datetime_beginning_ept) AS min_ts,
+    MAX(datetime_beginning_ept) AS max_ts
+FROM pjm.hrl_load_metered
+GROUP BY datetime_beginning_ept::date
+UNION ALL
+SELECT
+    'prelim' AS feed,
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT load_area) AS load_areas,
+    MIN(datetime_beginning_ept) AS min_ts,
+    MAX(datetime_beginning_ept) AS max_ts
+FROM pjm.hrl_load_prelim
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC, feed
+LIMIT 30;
+```
+
+Check WSI hourly observed coverage for the initial PJM load-growth weather
+join:
+
+```sql
+SELECT
+    observation_time_local::date AS observation_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT station_id) AS stations,
+    MIN(observation_time_local) AS min_ts,
+    MAX(observation_time_local) AS max_ts
+FROM weather.wsi_hourly_observed_temperatures
+WHERE
+    region = 'PJM'
+    AND station_id = 'PJM'
+GROUP BY observation_time_local::date
+ORDER BY observation_date DESC
+LIMIT 30;
+```
+
+Check the preliminary-load to WSI local-hour join expected by the first
+load-growth frontend:
+
+```sql
+SELECT
+    p.datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS prelim_rows,
+    COUNT(w.observation_time_local) AS rows_with_wsi_pjm,
+    COUNT(*) - COUNT(w.observation_time_local) AS missing_wsi_pjm_rows,
+    MIN(p.datetime_beginning_ept) AS min_ts,
+    MAX(p.datetime_beginning_ept) AS max_ts
+FROM pjm.hrl_load_prelim p
+LEFT JOIN weather.wsi_hourly_observed_temperatures w
+    ON p.datetime_beginning_ept = w.observation_time_local
+    AND w.region = 'PJM'
+    AND w.station_id = 'PJM'
+GROUP BY p.datetime_beginning_ept::date
+ORDER BY market_date DESC
 LIMIT 30;
 ```
