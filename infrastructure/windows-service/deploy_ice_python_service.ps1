@@ -38,6 +38,20 @@ function Resolve-CommandPath {
     }
 
     if ($Executable -ieq "nssm.exe") {
+        $serviceRegistryPath = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+        if (Test-Path -Path $serviceRegistryPath) {
+            $imagePath = (Get-ItemProperty -Path $serviceRegistryPath).ImagePath
+            if ($imagePath) {
+                $match = [regex]::Match($imagePath, '^\s*"([^"]+nssm\.exe)"')
+                if (-not $match.Success) {
+                    $match = [regex]::Match($imagePath, '^\s*([^\s]+nssm\.exe)')
+                }
+                if ($match.Success -and (Test-Path -Path $match.Groups[1].Value)) {
+                    return (Resolve-Path -Path $match.Groups[1].Value).Path
+                }
+            }
+        }
+
         $candidate = Get-ChildItem `
             -Path "C:\ProgramData\chocolatey\bin", "C:\Program Files", "C:\Program Files (x86)", "C:\Users" `
             -Recurse `
