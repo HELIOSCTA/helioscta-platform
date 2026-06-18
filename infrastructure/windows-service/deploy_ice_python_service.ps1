@@ -37,6 +37,23 @@ function Resolve-CommandPath {
         return $command.Source
     }
 
+    if ($Executable -ieq "nssm.exe") {
+        $candidate = Get-ChildItem `
+            -Path "C:\ProgramData\chocolatey\bin", "C:\Program Files", "C:\Program Files (x86)", "C:\Users" `
+            -Recurse `
+            -Filter "nssm.exe" `
+            -ErrorAction SilentlyContinue |
+            Where-Object {
+                $_.FullName -like "*\win64\nssm.exe" -or
+                $_.FullName -like "*\nssm.exe"
+            } |
+            Sort-Object FullName |
+            Select-Object -First 1
+        if ($null -ne $candidate) {
+            return $candidate.FullName
+        }
+    }
+
     throw "Could not resolve executable: $Executable"
 }
 
