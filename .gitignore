@@ -33,6 +33,7 @@ dbt/**/.user.yml
 # Runtime logs
 *.log
 backend/**/logs/
+backend/mcp_server/runs/
 
 # dbt
 dbt/**/target/
