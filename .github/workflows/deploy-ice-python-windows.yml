@@ -56,15 +56,15 @@ jobs:
           $runImportSmoke = [System.Convert]::ToBoolean("${{ inputs.run_import_smoke }}")
           $jobTimeoutSeconds = [int]"${{ inputs.job_timeout_seconds }}"
 
-          $deployArgs = @(
-            "-RepoRoot", "${{ inputs.repo_root }}",
-            "-PythonExe", "${{ inputs.python_exe }}",
-            "-GitBranch", "${{ inputs.git_branch }}",
-            "-JobTimeoutSeconds", "$jobTimeoutSeconds"
-          )
+          $deployArgs = @{
+            RepoRoot = "${{ inputs.repo_root }}"
+            PythonExe = "${{ inputs.python_exe }}"
+            GitBranch = "${{ inputs.git_branch }}"
+            JobTimeoutSeconds = $jobTimeoutSeconds
+          }
 
           if ($runImportSmoke) {
-            $deployArgs += "-RunImportSmoke"
+            $deployArgs.RunImportSmoke = $true
           }
 
           .\infrastructure\windows-service\deploy_ice_python_service.ps1 @deployArgs
