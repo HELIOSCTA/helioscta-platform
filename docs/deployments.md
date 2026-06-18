@@ -1013,8 +1013,12 @@ FROM pjm.hourly_wind_power_forecast;
 
 ## helios-pjm-meteologica-forecast-hourly
 
-- Status: promoted for deployment; do not enable until operator SQL and
-  Meteologica ISO credentials are installed on the VM.
+- Status: deployed and enabled on `helioscta-prod-vm-01`.
+- Deployed commit: `4329a189d38443b623bf17cafbf1dc8e2cef1321`.
+- Deployment verification: manual systemd service run succeeded on
+  2026-06-18 at 17:06 UTC, upserting 4,116 rows and emitting API telemetry plus
+  a forecast freshness event. Timer enabled with next scheduled run visible in
+  `systemctl list-timers`.
 - Workflow: PJM Meteologica hourly forecast refresh.
 - Runtime module: `backend.orchestration.power.pjm.meteologica_forecast_hourly`.
 - Lower-level scrape module:
