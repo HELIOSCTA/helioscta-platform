@@ -10,7 +10,7 @@ on:
       repo_root:
         description: Permanent production clone on the Windows ICE host.
         required: true
-        default: "C:\\HeliosCTA\\helioscta-platform"
+        default: "C:\\Services\\HeliosCTA\\helioscta-platform"
       python_exe:
         description: Python executable with local ICE dependencies.
         required: true

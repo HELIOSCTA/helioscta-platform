@@ -14,7 +14,7 @@ long-running NSSM-managed service that runs the settlement schedule.
 GitHub workflow_dispatch
   -> self-hosted Windows runner label: helioscta-ice-python
     -> infrastructure/windows-service/deploy_ice_python_service.ps1
-      -> clean production clone: C:\HeliosCTA\helioscta-platform
+      -> clean production clone: C:\Services\HeliosCTA\helioscta-platform
       -> NSSM stop HeliosCTA-IcePython
       -> git pull --ff-only origin main
       -> pip install local Windows requirements
@@ -31,15 +31,15 @@ Run these steps from Administrator PowerShell on the licensed Windows ICE host.
 Create a production clone that is separate from the development checkout:
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\HeliosCTA | Out-Null
-git clone https://github.com/HELIOSCTA/helioscta-platform.git C:\HeliosCTA\helioscta-platform
+New-Item -ItemType Directory -Force -Path C:\Services\HeliosCTA | Out-Null
+git clone https://github.com/HELIOSCTA/helioscta-platform.git C:\Services\HeliosCTA\helioscta-platform
 ```
 
 Install local runtime dependencies into the Python environment used by the
 service:
 
 ```powershell
-cd C:\HeliosCTA\helioscta-platform
+cd C:\Services\HeliosCTA\helioscta-platform
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -m pip install -r backend\requirements-local-windows.txt -e backend
 ```
 
@@ -49,6 +49,18 @@ Install the proprietary ICE Python wheel outside this repo, then verify:
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -c "import icepython; print('icepython ok')"
 ```
 
+Configure Azure Postgres writer credentials for the production service account.
+Use machine/service-account environment variables, or keep an untracked
+`backend\.env` in the production clone:
+
+```powershell
+Copy-Item C:\path\to\dev\helioscta-platform\backend\.env C:\Services\HeliosCTA\helioscta-platform\backend\.env
+```
+
+The deploy script refuses to stop the running service unless it can see writer
+host, user, and password config from environment variables or that production
+clone `backend\.env` file.
+
 Install or update the ICE service once:
 
 ```powershell
@@ -56,8 +68,8 @@ $nssm = Get-ChildItem "$env:LOCALAPPDATA\Microsoft\WinGet\Packages" -Recurse -Fi
   Where-Object { $_.FullName -like "*\win64\nssm.exe" } |
   Select-Object -First 1 -ExpandProperty FullName
 
-C:\HeliosCTA\helioscta-platform\infrastructure\windows-service\install_ice_python_service.ps1 `
-  -RepoRoot C:\HeliosCTA\helioscta-platform `
+C:\Services\HeliosCTA\helioscta-platform\infrastructure\windows-service\install_ice_python_service.ps1 `
+  -RepoRoot C:\Services\HeliosCTA\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -NssmExe $nssm `
   -JobTimeoutSeconds 2700
@@ -69,7 +81,7 @@ If `gh` is authenticated as a repo admin on the host, bootstrap the runner with
 one command from Administrator PowerShell:
 
 ```powershell
-C:\HeliosCTA\helioscta-platform\infrastructure\windows-service\bootstrap_github_runner.ps1 `
+C:\Services\HeliosCTA\helioscta-platform\infrastructure\windows-service\bootstrap_github_runner.ps1 `
   -RunnerRoot C:\actions-runner `
   -RunnerName "helioscta-ice-python-$env:COMPUTERNAME" `
   -RunnerLabels "helioscta-ice-python"
@@ -96,7 +108,7 @@ If you prefer the GitHub UI-generated commands:
 Use a dedicated Windows account such as `helios-deploy` when possible. That
 account needs:
 
-- Read/write access to `C:\HeliosCTA\helioscta-platform`.
+- Read/write access to `C:\Services\HeliosCTA\helioscta-platform`.
 - Access to the selected Python environment and ICE Python installation.
 - Rights to stop, install/update, and start `HeliosCTA-IcePython`.
 - Access to the NSSM executable.
@@ -125,7 +137,7 @@ From any authenticated shell with the GitHub CLI:
 gh workflow run deploy-ice-python-windows.yml `
   --ref main `
   -f git_branch=main `
-  -f repo_root='C:\HeliosCTA\helioscta-platform' `
+  -f repo_root='C:\Services\HeliosCTA\helioscta-platform' `
   -f python_exe='C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe' `
   -f job_timeout_seconds=2700 `
   -f run_import_smoke=true

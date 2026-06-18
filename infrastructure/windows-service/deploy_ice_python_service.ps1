@@ -180,6 +180,95 @@ function Get-GitOutput {
     return ($output | Out-String).Trim()
 }
 
+function Test-DotenvDefinesAnyName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$EnvFile,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names
+    )
+
+    if (-not (Test-Path -Path $EnvFile)) {
+        return $false
+    }
+
+    foreach ($line in Get-Content -Path $EnvFile) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        foreach ($name in $Names) {
+            if ($trimmed -match "^\s*$([regex]::Escape($name))\s*=") {
+                return $true
+            }
+        }
+    }
+
+    return $false
+}
+
+function Test-ConfigDefinesAnyName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Names,
+        [Parameter(Mandatory = $true)]
+        [string]$EnvFile
+    )
+
+    foreach ($name in $Names) {
+        if ([Environment]::GetEnvironmentVariable($name, "Process")) {
+            return $true
+        }
+        if ([Environment]::GetEnvironmentVariable($name, "Machine")) {
+            return $true
+        }
+        if ([Environment]::GetEnvironmentVariable($name, "User")) {
+            return $true
+        }
+    }
+
+    return Test-DotenvDefinesAnyName -EnvFile $EnvFile -Names $Names
+}
+
+function Assert-BackendWriterConfig {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$RepoRoot
+    )
+
+    $envFile = Join-Path $RepoRoot "backend\.env"
+    $requirements = @(
+        @{
+            Label = "Azure Postgres writer host"
+            Names = @("AZURE_POSTGRES_WRITER_HOST", "AZURE_POSTGRESQL_DB_HOST")
+        },
+        @{
+            Label = "Azure Postgres writer user"
+            Names = @("AZURE_POSTGRES_WRITER_USER", "AZURE_POSTGRESQL_DB_USER")
+        },
+        @{
+            Label = "Azure Postgres writer password"
+            Names = @("AZURE_POSTGRES_WRITER_PASSWORD", "AZURE_POSTGRESQL_DB_PASSWORD")
+        }
+    )
+
+    $missing = @()
+    foreach ($requirement in $requirements) {
+        if (-not (Test-ConfigDefinesAnyName -Names $requirement.Names -EnvFile $envFile)) {
+            $missing += $requirement.Label
+        }
+    }
+
+    if ($missing.Count -gt 0) {
+        throw (
+            "Production checkout is missing backend writer config: " +
+            ($missing -join ", ") +
+            ". Set machine/service-account environment variables or create an " +
+            "untracked backend\.env file in the production clone before deploy."
+        )
+    }
+}
+
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 $resolvedNssmExe = Resolve-CommandPath -Executable $NssmExe
@@ -235,6 +324,8 @@ if (-not $SkipGitPull) {
         "$GitRemote/$GitBranch"
     )
 }
+
+Assert-BackendWriterConfig -RepoRoot $resolvedRepoRoot
 
 $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($null -ne $existingService -and $existingService.Status -ne "Stopped") {
