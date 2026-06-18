@@ -185,7 +185,7 @@ def resolve_state_file(state_file: str | Path | None = None) -> Path:
 def _normalize_run_record(value: object) -> RUN_RECORD | None:
     if isinstance(value, str):
         return {
-            "status": "succeeded",
+            "status": "attempted",
             "started_at": value,
             "finished_at": value,
             "legacy_state": True,
@@ -278,7 +278,7 @@ def is_job_due(
     if record is None:
         return True
 
-    status = str(record.get("status", "succeeded"))
+    status = str(record.get("status", "attempted"))
     if status == "running" and _is_running_record_stale(job, current_time, record):
         return True
     if status:

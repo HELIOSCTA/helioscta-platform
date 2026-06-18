@@ -119,6 +119,23 @@ def test_run_due_jobs_records_failed_attempt_without_retrying_same_hour():
     assert service.due_jobs(current_time, run_state, jobs=[job]) == []
 
 
+def test_legacy_timestamp_state_is_attempted_not_succeeded(tmp_path):
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        '{"gas_balmo:2026-06-18T14": "2026-06-18T14:00:15.476167-06:00"}\n',
+        encoding="utf-8",
+    )
+    current_time = datetime(2026, 6, 18, 14, 30, tzinfo=LOCAL_TZ)
+    job = _job("gas_balmo")
+
+    run_state = service.load_run_state(state_file)
+    record = run_state[service.job_run_key(job, current_time)]
+
+    assert record["status"] == "attempted"
+    assert record["legacy_state"] is True
+    assert service.due_jobs(current_time, run_state, jobs=[job]) == []
+
+
 def test_stale_running_state_is_due_after_timeout():
     current_time = datetime(2026, 6, 18, 14, 10, tzinfo=LOCAL_TZ)
     job = service.ServiceJob(
