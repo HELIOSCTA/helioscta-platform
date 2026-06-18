@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import pandas as pd
 
@@ -33,7 +33,7 @@ def test_wsi_hourly_forecast_normalizes_live_shape():
         station_id="KDCA",
         station_name="Washington",
         source_banner="NA-KDCA , Hourly Forecast Made Jun 18 2026 1028 UTC",
-        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=UTC),
+        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=timezone.utc),
     )
 
     assert df.to_dict("records") == [
@@ -76,7 +76,7 @@ UTC Time, Temp, DewPoint
         text,
         region="PJM",
         station_names={"KDCA": "Washington", "KPHL": "Philadelphia"},
-        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=UTC),
+        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=timezone.utc),
     )
 
     assert df[["station_id", "station_name", "temp_f", "dew_point_f"]].to_dict(
@@ -122,7 +122,7 @@ def test_wsi_hourly_forecast_pull_uses_batched_site_ids(monkeypatch):
         stations={"KDCA": "Washington", "KPHL": "Philadelphia", "KPIT": "Pittsburgh"},
         run_id="run-1",
         database="helios_prod",
-        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=UTC),
+        scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=timezone.utc),
         batch_size=2,
     )
 

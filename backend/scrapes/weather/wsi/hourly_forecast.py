@@ -6,7 +6,7 @@ import csv
 import logging
 import re
 from collections.abc import Iterable, Mapping
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from io import StringIO
 from pathlib import Path
 from uuid import uuid4
@@ -422,7 +422,7 @@ def _parse_forecast_issued_at_utc(source_banner: str) -> datetime:
             f"Could not parse WSI forecast issue timestamp from banner: {source_banner}"
         )
     issued = datetime.strptime(match.group("issued"), "%b %d %Y %H%M")
-    return issued.replace(tzinfo=UTC)
+    return issued.replace(tzinfo=timezone.utc)
 
 
 def _chunked(values: Iterable[str], size: int) -> Iterable[list[str]]:
@@ -452,7 +452,7 @@ def _numeric_series(series: pd.Series) -> pd.Series:
 
 
 def _utc_now() -> datetime:
-    return datetime.now(tz=UTC).replace(microsecond=0)
+    return datetime.now(tz=timezone.utc).replace(microsecond=0)
 
 
 if __name__ == "__main__":
