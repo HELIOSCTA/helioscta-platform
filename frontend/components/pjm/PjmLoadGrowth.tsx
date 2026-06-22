@@ -17,7 +17,6 @@ import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type WeatherMetric = "tempF" | "dewPointF" | "feelsLikeF";
-type LoadGrowthTab = "daily" | "hourly";
 type LoadShape = "flat" | "onpeak" | "offpeak" | "peak";
 type DayType = "all" | "weekdays" | "weekends";
 type DateMode = "lookback" | "range" | "month-years";
@@ -25,10 +24,7 @@ type LoadAreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 type LoadGrowthTableKey =
   | "dailyFitStats"
   | "dailyGrowthBands"
-  | "dailyPairs"
-  | "hourlyFitStats"
-  | "hourlyGrowthBands"
-  | "hourlyPairs";
+  | "dailyPairs";
 
 interface AvailableArea {
   area: string;
@@ -92,9 +88,9 @@ interface PjmLoadGrowthYoyPayload {
     lastYearAvgFeelsLikeF: number | null;
     currentHourCount: number;
     lastYearHourCount: number;
-    currentVerifiedHours: number;
+    currentUnverifiedHours: number;
     currentPrelimHours: number;
-    lastYearVerifiedHours: number;
+    lastYearUnverifiedHours: number;
     lastYearPrelimHours: number;
   };
   daily: Array<{
@@ -111,26 +107,10 @@ interface PjmLoadGrowthYoyPayload {
     lastYearFeelsLikeF: number | null;
     currentHourCount: number;
     lastYearHourCount: number;
-    currentVerifiedHours: number;
+    currentUnverifiedHours: number;
     currentPrelimHours: number;
-    lastYearVerifiedHours: number;
+    lastYearUnverifiedHours: number;
     lastYearPrelimHours: number;
-  }>;
-  hourly: Array<{
-    mmDd: string;
-    currentDatetimeEpt: string | null;
-    lastYearDatetimeEpt: string | null;
-    hourEnding: number;
-    currentLoadMw: number | null;
-    lastYearLoadMw: number | null;
-    diffMw: number | null;
-    growthPct: number | null;
-    currentTempF: number | null;
-    lastYearTempF: number | null;
-    currentFeelsLikeF: number | null;
-    lastYearFeelsLikeF: number | null;
-    currentSource: string | null;
-    lastYearSource: string | null;
   }>;
 }
 
@@ -337,17 +317,10 @@ function addDaysIsoDate(value: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function loadSourceLabel(source: string | null | undefined): string {
-  if (source === "preferred") return "Metered then Prelim";
-  if (source === "metered" || source === "metered_verified") return "Verified Metered";
-  if (source === "prelim") return "Prelim";
-  return "-";
-}
-
-function loadSourceMixLabel(meteredHours: number, prelimHours: number): string {
-  if (meteredHours > 0 && prelimHours === 0) return "Verified Metered";
-  if (prelimHours > 0 && meteredHours === 0) return "Prelim";
-  if (meteredHours > 0 && prelimHours > 0) return `Mixed: ${meteredHours} metered / ${prelimHours} prelim`;
+function loadSourceMixLabel(unverifiedHours: number, prelimHours: number): string {
+  if (unverifiedHours > 0 && prelimHours === 0) return "Unverified Metered";
+  if (prelimHours > 0 && unverifiedHours === 0) return "Prelim";
+  if (unverifiedHours > 0 && prelimHours > 0) return `Mixed: ${unverifiedHours} unverified / ${prelimHours} prelim`;
   return "-";
 }
 
@@ -382,17 +355,6 @@ function metricConfig(metric: WeatherMetric) {
 
 function dailyWeatherValue(
   row: PjmLoadGrowthYoyPayload["daily"][number],
-  metric: WeatherMetric,
-  period: "current" | "lastYear",
-): number | null {
-  if (metric === "feelsLikeF") {
-    return period === "current" ? row.currentFeelsLikeF : row.lastYearFeelsLikeF;
-  }
-  return period === "current" ? row.currentTempF : row.lastYearTempF;
-}
-
-function hourlyWeatherValue(
-  row: PjmLoadGrowthYoyPayload["hourly"][number],
   metric: WeatherMetric,
   period: "current" | "lastYear",
 ): number | null {
@@ -566,7 +528,7 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
       y: row.currentLoadMw,
       date: row.currentDate ?? row.mmDd,
       label: row.currentDate ?? row.mmDd,
-      loadSourceDetail: loadSourceMixLabel(row.currentVerifiedHours, row.currentPrelimHours),
+      loadSourceDetail: loadSourceMixLabel(row.currentUnverifiedHours, row.currentPrelimHours),
     }))
     .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
   const lastYearPoints = sorted
@@ -575,7 +537,7 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
       y: row.lastYearLoadMw,
       date: row.lastYearDate ?? row.mmDd,
       label: row.lastYearDate ?? row.mmDd,
-      loadSourceDetail: loadSourceMixLabel(row.lastYearVerifiedHours, row.lastYearPrelimHours),
+      loadSourceDetail: loadSourceMixLabel(row.lastYearUnverifiedHours, row.lastYearPrelimHours),
     }))
     .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
   const currentFit = fitSeries(currentPoints, "Current Year");
@@ -610,79 +572,6 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
     lookbackPoints: currentPoints
       .slice(-Math.max(1, selectedLookbackDays))
       .map((point, index, rows) => ({ ...point, size: 9 + index * (10 / Math.max(rows.length - 1, 1)) })),
-    currentFit,
-    lastYearFit,
-    fitStats: [currentFit.stats, lastYearFit.stats],
-    growthBands,
-  };
-}
-
-function buildHourlyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetric, selectedLookbackDays: number): DailyFitResult | null {
-  if (!data?.hourly.length) return null;
-  const sorted = [...data.hourly].sort((left, right) =>
-    String(left.currentDatetimeEpt).localeCompare(String(right.currentDatetimeEpt)),
-  );
-  const currentPoints = sorted
-    .flatMap((row): DailyFitPoint[] => {
-      const x = hourlyWeatherValue(row, metric, "current");
-      const y = row.currentLoadMw;
-      if (x === null || y === null) return [];
-      return [{
-        x,
-        y,
-        date: row.currentDatetimeEpt ?? row.mmDd,
-        label: row.currentDatetimeEpt ?? row.mmDd,
-        hourEnding: row.hourEnding,
-        loadSourceDetail: loadSourceLabel(row.currentSource),
-      }];
-    });
-  const lastYearPoints = sorted
-    .flatMap((row): DailyFitPoint[] => {
-      const x = hourlyWeatherValue(row, metric, "lastYear");
-      const y = row.lastYearLoadMw;
-      if (x === null || y === null) return [];
-      return [{
-        x,
-        y,
-        date: row.lastYearDatetimeEpt ?? row.mmDd,
-        label: row.lastYearDatetimeEpt ?? row.mmDd,
-        hourEnding: row.hourEnding,
-        loadSourceDetail: loadSourceLabel(row.lastYearSource),
-      }];
-    });
-  const currentFit = fitSeries(currentPoints, "Current Year");
-  const lastYearFit = fitSeries(lastYearPoints, "Last Year");
-  const minX = Math.max(Math.min(...currentPoints.map((point) => point.x)), Math.min(...lastYearPoints.map((point) => point.x)));
-  const maxX = Math.min(Math.max(...currentPoints.map((point) => point.x)), Math.max(...lastYearPoints.map((point) => point.x)));
-  const bandStart = Math.floor(minX / 2) * 2;
-  const bandEnd = Math.ceil(maxX / 2) * 2;
-  const growthBands: GrowthBandRow[] =
-    currentFit.coeffs && lastYearFit.coeffs && Number.isFinite(bandStart) && Number.isFinite(bandEnd)
-      ? Array.from({ length: Math.max(0, Math.floor((bandEnd - bandStart) / 2) + 1) }, (_, index) => {
-          const weatherValue = bandStart + index * 2;
-          const currentFitValue = evalPoly(currentFit.coeffs!, weatherValue);
-          const lastYearFitValue = evalPoly(lastYearFit.coeffs!, weatherValue);
-          return {
-            weatherValue,
-            currentFit: currentFitValue,
-            lastYearFit: lastYearFitValue,
-            diff: currentFitValue - lastYearFitValue,
-            growthPct: lastYearFitValue === 0 ? null : ((currentFitValue - lastYearFitValue) / lastYearFitValue) * 100,
-          };
-        })
-      : [];
-  const avgDiff = mean(growthBands.map((row) => row.diff));
-  const avgGrowth = mean(growthBands.map((row) => row.growthPct).filter((value): value is number => value !== null));
-  if (growthBands[0]) {
-    growthBands[0] = { ...growthBands[0], averageDiff: avgDiff ?? undefined, averageGrowthPct: avgGrowth };
-  }
-  const lookbackPointCount = Math.max(1, selectedLookbackDays * 24);
-  return {
-    currentPoints,
-    lastYearPoints,
-    lookbackPoints: currentPoints
-      .slice(-lookbackPointCount)
-      .map((point, index, rows) => ({ ...point, size: 7 + index * (9 / Math.max(rows.length - 1, 1)) })),
     currentFit,
     lastYearFit,
     fitStats: [currentFit.stats, lastYearFit.stats],
@@ -799,22 +688,6 @@ function freshnessFromYoyPayload(payload: PjmLoadGrowthYoyPayload | null): PjmLo
   };
 }
 
-function WarningStack({ warnings }: { warnings: string[] }) {
-  if (!warnings.length) return null;
-  return (
-    <div className="space-y-2">
-      {warnings.map((warning) => (
-        <div
-          key={warning}
-          className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-100"
-        >
-          {warning}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 export default function PjmLoadGrowth({
   refreshToken = 0,
   onFreshnessChange,
@@ -835,18 +708,12 @@ export default function PjmLoadGrowth({
   const [dateMode, setDateMode] = useState<DateMode>(DEFAULT_DATE_MODE);
   const [selectedMonth, setSelectedMonth] = useState(DEFAULT_MONTH);
   const [selectedYears, setSelectedYears] = useState<string[]>(DEFAULT_YEARS);
-  const [activeTab, setActiveTab] = useState<LoadGrowthTab>("daily");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const hourlyEnabled = activeTab === "hourly";
   const [hiddenDailyFitSeries, setHiddenDailyFitSeries] = useState<Set<string>>(() => new Set());
-  const [hiddenHourlyFitSeries, setHiddenHourlyFitSeries] = useState<Set<string>>(() => new Set());
   const [openTables, setOpenTables] = useState<Record<LoadGrowthTableKey, boolean>>({
     dailyFitStats: true,
     dailyGrowthBands: true,
     dailyPairs: false,
-    hourlyFitStats: true,
-    hourlyGrowthBands: true,
-    hourlyPairs: false,
   });
   const [yoyData, setYoyData] = useState<PjmLoadGrowthYoyPayload | null>(null);
   const [yoyLoading, setYoyLoading] = useState(true);
@@ -935,10 +802,6 @@ export default function PjmLoadGrowth({
     () => buildDailyFit(yoyData, weatherMetric, plotLookbackDays),
     [plotLookbackDays, weatherMetric, yoyData],
   );
-  const hourlyYoyFit = useMemo(
-    () => buildHourlyFit(yoyData, weatherMetric, plotLookbackDays),
-    [plotLookbackDays, weatherMetric, yoyData],
-  );
   const sharedAreas = useMemo(
     () => (yoyData?.availableAreas.length ? yoyData.availableAreas : [{ area, rowCount: 0, minEpt: null, maxEpt: null }]),
     [area, yoyData],
@@ -986,25 +849,9 @@ export default function PjmLoadGrowth({
     lastYearR2: dailyFit?.lastYearFit.stats.rSquared,
     currentMae: dailyFit?.currentFit.stats.mae,
   };
-  const hourlyFitSummary = {
-    averageDiff: hourlyYoyFit?.growthBands[0]?.averageDiff,
-    averageGrowthPct: hourlyYoyFit?.growthBands[0]?.averageGrowthPct,
-    currentR2: hourlyYoyFit?.currentFit.stats.rSquared,
-    lastYearR2: hourlyYoyFit?.lastYearFit.stats.rSquared,
-    currentMae: hourlyYoyFit?.currentFit.stats.mae,
-  };
 
   const toggleDailyFitSeries = (key: string) => {
     setHiddenDailyFitSeries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const toggleHourlyFitSeries = (key: string) => {
-    setHiddenHourlyFitSeries((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -1469,42 +1316,23 @@ export default function PjmLoadGrowth({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-2" role="tablist" aria-label="Load growth views">
-        {[
-          { key: "daily", label: "Daily Load" },
-          { key: "hourly", label: "Hourly" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.key}
-            onClick={() => setActiveTab(tab.key as LoadGrowthTab)}
-            className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-              activeTab === tab.key
-                ? "border-sky-500/50 bg-sky-500/10 text-white"
-                : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "daily" && (
+      {yoyError && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {yoyError}
+        </div>
+      )}
+      {yoyLoading && (
+        <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4 text-sm text-gray-500">
+          Loading daily load-growth data...
+        </div>
+      )}
+      {yoyData && !yoyLoading && yoyData.daily.length === 0 && (
+        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500 shadow-xl shadow-black/20">
+          No paired daily load-weather rows are available for this selection.
+        </div>
+      )}
+      {yoyData && !yoyLoading && yoyData.daily.length > 0 && (
         <>
-          {yoyError && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-              {yoyError}
-            </div>
-          )}
-          {yoyLoading && (
-            <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4 text-sm text-gray-500">
-              Loading daily load-growth data...
-            </div>
-          )}
-          {yoyData && !yoyLoading && (
-            <>
               <PlotCard
                 title={`${yoyData.selected.loadArea}. Load per ${selectedMetric.label}`}
                 subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${selectedStationLabel} | ${fmtDate(yoyData.windows.currentStart)} to ${fmtDate(yoyData.windows.currentEndExclusive)} | ${dateSelectionLabel}`}
@@ -1685,220 +1513,6 @@ export default function PjmLoadGrowth({
                   </tbody>
                 </table>
               </DataTableShell>
-            </>
-          )}
-        </>
-      )}
-
-      {hourlyEnabled && yoyError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {yoyError}
-        </div>
-      )}
-      {hourlyEnabled && yoyLoading && (
-        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-          Loading hourly load-growth data...
-        </div>
-      )}
-
-      {hourlyEnabled && yoyData && !yoyLoading && (
-        <>
-          {yoyData.freshness.reason && (
-            <WarningStack warnings={[yoyData.freshness.reason]} />
-          )}
-
-          {yoyData.hourly.length === 0 && (
-            <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-              No paired hourly rows are available for this selection.
-            </div>
-          )}
-
-          {yoyData.hourly.length > 0 && (
-            <>
-              <PlotCard
-                title={`${yoyData.selected.loadArea}. Hourly Load per ${selectedMetric.label}`}
-                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${selectedStationLabel} | ${fmtDate(yoyData.windows.currentStart)} to ${fmtDate(yoyData.windows.currentEndExclusive)} | metered preferred, prelim fallback`}
-                series={DAILY_FIT_SERIES}
-                hiddenSeries={hiddenHourlyFitSeries}
-                onToggleSeries={toggleHourlyFitSeries}
-                onShowAll={() => setHiddenHourlyFitSeries(new Set())}
-                onHideAll={() =>
-                  setHiddenHourlyFitSeries(new Set(DAILY_FIT_SERIES.map((series) => series.key)))
-                }
-                focusedChildren={renderDailyFitChart("h-[72vh]", hourlyYoyFit, hourlyFitSummary, hiddenHourlyFitSeries)}
-              >
-                {renderDailyFitChart("h-[520px]", hourlyYoyFit, hourlyFitSummary, hiddenHourlyFitSeries)}
-              </PlotCard>
-
-              <DataTableShell
-                title="Fit Statistics"
-                subtitle={`${hourlyYoyFit?.currentPoints.length ?? 0} current hourly points | ${hourlyYoyFit?.lastYearPoints.length ?? 0} last-year hourly points`}
-                collapsible
-                open={openTables.hourlyFitStats}
-                onToggle={() => toggleTable("hourlyFitStats")}
-                bodyClassName="max-h-[360px] overflow-y-auto"
-              >
-                <table className="w-full min-w-[980px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                  <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                    <tr>
-                      {[
-                        "Data Source",
-                        "Degree",
-                        "MAE",
-                        "RMSE",
-                        "MAPE",
-                        "Spearman",
-                        "Explained Var",
-                        "R2",
-                        "Adj R2",
-                      ].map((label) => (
-                        <th
-                          key={label}
-                          className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left"
-                        >
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {(hourlyYoyFit?.fitStats ?? []).map((row) => (
-                      <tr key={row.dataSource} className="hover:bg-gray-900/60">
-                        <td className="px-3 py-2 text-left font-medium text-gray-300">{row.dataSource}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{row.degree ?? "-"}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.mae)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.rmse)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.mape, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.spearmanCorrelation, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.explainedVariance, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.rSquared, 2)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.adjustedRSquared, 2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </DataTableShell>
-
-              <DataTableShell
-                title="YoY Growth"
-                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} hourly fitted load difference by ${selectedMetric.label.toLowerCase()} band`}
-                collapsible
-                open={openTables.hourlyGrowthBands}
-                onToggle={() => toggleTable("hourlyGrowthBands")}
-                bodyClassName="max-h-[360px] overflow-y-auto"
-              >
-                <table className="w-full min-w-[780px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                  <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                    <tr>
-                      {[
-                        `${selectedMetric.label} Range`,
-                        "Current Fit",
-                        "Last Year Fit",
-                        "Diff",
-                        "Growth",
-                        "Avg Diff",
-                        "Avg Growth",
-                      ].map((label) => (
-                        <th
-                          key={label}
-                          className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left"
-                        >
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {(hourlyYoyFit?.growthBands ?? []).map((row) => (
-                      <tr key={row.weatherValue} className="hover:bg-gray-900/60">
-                        <td className="px-3 py-2 text-left font-medium text-gray-300">{fmtTemp(row.weatherValue)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.currentFit)}</td>
-                        <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.lastYearFit)}</td>
-                        <td className={`px-3 py-2 text-right tabular-nums ${row.diff >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                          {fmtShortMw(row.diff)}
-                        </td>
-                        <td className={`px-3 py-2 text-right tabular-nums ${(row.growthPct ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                          {fmtPct(row.growthPct)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                          {row.averageDiff === undefined ? "-" : fmtShortMw(row.averageDiff)}
-                        </td>
-                        <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-                          {row.averageGrowthPct === undefined ? "-" : fmtPct(row.averageGrowthPct)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </DataTableShell>
-
-              <DataTableShell
-                title={`${selectedMetric.label} vs Hourly Load`}
-                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${yoyData.hourly.length.toLocaleString()} hourly pairs | current, recent, and last-year comparison rows`}
-                collapsible
-                open={openTables.hourlyPairs}
-                onToggle={() => toggleTable("hourlyPairs")}
-                bodyClassName="max-h-[460px] overflow-y-auto"
-              >
-                <table className="w-full min-w-[1240px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                  <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                    <tr>
-                      {[
-                        "Hour EPT",
-                        "Highlight Wx",
-                        "Highlight Load",
-                        "Current Wx",
-                        "Current Load",
-                        "Current Src",
-                        "LY Hour EPT",
-                        "LY Wx",
-                        "LY Load",
-                        "LY Src",
-                        "Diff",
-                        "Growth",
-                      ].map((label) => (
-                        <th
-                          key={label}
-                          className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:sticky first:left-0 first:z-20 first:bg-gray-950 first:text-left"
-                        >
-                          {label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-800">
-                    {[...yoyData.hourly].reverse().map((row, index, rows) => {
-                      const currentWx = hourlyWeatherValue(row, weatherMetric, "current");
-                      const lastYearWx = hourlyWeatherValue(row, weatherMetric, "lastYear");
-                      const inLookback = index >= rows.length - plotLookbackDays * 24;
-                      return (
-                        <tr key={`${row.currentDatetimeEpt}-${row.lastYearDatetimeEpt}-${row.hourEnding}`} className="group hover:bg-gray-900/60">
-                          <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 text-left font-medium text-gray-300 group-hover:bg-gray-900">
-                            {fmtDateTime(row.currentDatetimeEpt)}
-                          </td>
-                          <td className="px-3 py-2 text-right tabular-nums">{inLookback ? fmtTemp(currentWx) : "-"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{inLookback ? fmtShortMw(row.currentLoadMw) : "-"}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtTemp(currentWx)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.currentLoadMw)}</td>
-                          <td className="px-3 py-2 text-right text-gray-500">{loadSourceLabel(row.currentSource)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtDateTime(row.lastYearDatetimeEpt)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtTemp(lastYearWx)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(row.lastYearLoadMw)}</td>
-                          <td className="px-3 py-2 text-right text-gray-500">{loadSourceLabel(row.lastYearSource)}</td>
-                          <td className={`px-3 py-2 text-right tabular-nums ${(row.diffMw ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                            {fmtShortMw(row.diffMw)}
-                          </td>
-                          <td className={`px-3 py-2 text-right tabular-nums ${(row.growthPct ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-                            {fmtPct(row.growthPct)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </DataTableShell>
-            </>
-          )}
         </>
       )}
     </div>

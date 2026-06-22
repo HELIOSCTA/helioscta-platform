@@ -12,6 +12,7 @@ const DEFAULT_LOOKBACK_DAYS = 56;
 const MAX_LOOKBACK_DAYS = 120;
 const MAX_DATE_RANGE_DAYS = 120;
 const MAX_MONTH_YEAR_COUNT = 6;
+const MIN_AREA_RECENT_ROWS = 14 * 24;
 const ROUTE_CONFIG = {
   route: "/api/pjm-load-growth-yoy",
   cacheHeader: CACHE_HEADER,
@@ -41,27 +42,10 @@ interface DailyYoyRow {
   last_year_feels_like_f: number | string | null;
   current_hour_count: number | string;
   last_year_hour_count: number | string;
-  current_verified_hours: number | string;
+  current_unverified_hours: number | string;
   current_prelim_hours: number | string;
-  last_year_verified_hours: number | string;
+  last_year_unverified_hours: number | string;
   last_year_prelim_hours: number | string;
-}
-
-interface HourlyYoyRow {
-  mm_dd: string;
-  current_datetime_ept: string;
-  last_year_datetime_ept: string;
-  hour_ending: number | string;
-  current_load_mw: number | string | null;
-  last_year_load_mw: number | string | null;
-  diff_mw: number | string | null;
-  growth_pct: number | string | null;
-  current_temp_f: number | string | null;
-  last_year_temp_f: number | string | null;
-  current_feels_like_f: number | string | null;
-  last_year_feels_like_f: number | string | null;
-  current_source: string | null;
-  last_year_source: string | null;
 }
 
 interface CoverageRow {
@@ -176,7 +160,8 @@ async function loadAreas(): Promise<AreaRow[]> {
           min(datetime_beginning_ept) as min_ept,
           max(datetime_beginning_ept) as max_ept
         from pjm.hrl_load_metered
-        where is_verified
+        where is_verified = false
+          and datetime_beginning_ept >= current_date - interval '395 days'
         group by load_area
         union all
         select
@@ -185,6 +170,7 @@ async function loadAreas(): Promise<AreaRow[]> {
           min(datetime_beginning_ept) as min_ept,
           max(datetime_beginning_ept) as max_ept
         from pjm.hrl_load_prelim
+        where datetime_beginning_ept >= current_date - interval '395 days'
         group by load_area
       )
       select
@@ -194,6 +180,7 @@ async function loadAreas(): Promise<AreaRow[]> {
         to_char(max(max_ept), 'YYYY-MM-DD"T"HH24:MI:SS') as max_ept
       from area_rows
       group by load_area
+      having sum(row_count) >= ${MIN_AREA_RECENT_ROWS}
       order by case when load_area in ('DOM', 'RTO', 'RTO_COMBINED') then 0 else 1 end, load_area
     `,
   );
@@ -202,14 +189,15 @@ async function loadAreas(): Promise<AreaRow[]> {
 async function weatherStations(region: string): Promise<WeatherStationRow[]> {
   return query<WeatherStationRow>(
     `
-      select distinct on (station_id)
+      select
         station_id,
-        station_name,
+        max(station_name) as station_name,
         region
       from weather.wsi_hourly_observed_temperatures
       where region = $1
         and observation_time_local >= current_date - interval '120 days'
-      order by station_id, observation_time_local desc
+      group by station_id, region
+      order by station_id
     `,
     [region],
   );
@@ -297,14 +285,14 @@ load_candidates as (
     d.period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    'metered_verified' as source,
+    'metered_unverified' as source,
     1 as priority
   from pjm.hrl_load_metered m
   cross join params p
   join comparison_dates d
     on m.datetime_beginning_ept >= d.selected_dt
    and m.datetime_beginning_ept < d.selected_dt + interval '1 day'
-  where m.is_verified
+  where m.is_verified = false
     and m.load_area = p.load_area
   union all
   select
@@ -402,7 +390,7 @@ daily as (
     avg(temp_f) as avg_temp_f,
     avg(feels_like_f) as avg_feels_like_f,
     count(*) as hour_count,
-    count(*) filter (where source = 'metered_verified') as verified_hours,
+    count(*) filter (where source = 'metered_unverified') as unverified_hours,
     count(*) filter (where source = 'prelim') as prelim_hours,
     max(period) as period
   from shaped_hourly
@@ -421,9 +409,9 @@ paired as (
     ly.avg_feels_like_f as last_year_feels_like_f,
     c.hour_count as current_hour_count,
     ly.hour_count as last_year_hour_count,
-    c.verified_hours as current_verified_hours,
+    c.unverified_hours as current_unverified_hours,
     c.prelim_hours as current_prelim_hours,
-    ly.verified_hours as last_year_verified_hours,
+    ly.unverified_hours as last_year_unverified_hours,
     ly.prelim_hours as last_year_prelim_hours
   from daily c
   join daily ly
@@ -445,56 +433,261 @@ select
   last_year_feels_like_f,
   current_hour_count,
   last_year_hour_count,
-  current_verified_hours,
+  current_unverified_hours,
   current_prelim_hours,
-  last_year_verified_hours,
+  last_year_unverified_hours,
   last_year_prelim_hours
 from paired
 order by current_dt desc
 `;
 
-const HOURLY_SQL = `
-${DAILY_SQL.slice(0, DAILY_SQL.lastIndexOf("\ndaily as ("))}
-paired_hourly as (
+const DAILY_RANGE_SQL = `
+with params as (
+  select
+    $1::text as load_area,
+    $2::text as station_id,
+    $3::text as region,
+    $4::int as lookback_days,
+    coalesce($5::date, current_date)::date as as_of_date,
+    $6::text as load_shape,
+    $7::text as day_type,
+    $8::text as date_mode,
+    $9::date as requested_start,
+    $10::date as requested_end,
+    $11::int as selected_month,
+    $12::int[] as selected_years
+),
+range_bounds as (
+  select
+    *,
+    least(coalesce(requested_start, as_of_date - (lookback_days * interval '1 day')), coalesce(requested_end, as_of_date - interval '1 day'))::date as range_start,
+    greatest(coalesce(requested_start, as_of_date - (lookback_days * interval '1 day')), coalesce(requested_end, as_of_date - interval '1 day'))::date as range_end
+  from params
+),
+window_base as (
+  select
+    load_area,
+    station_id,
+    region,
+    lookback_days,
+    load_shape,
+    day_type,
+    case
+      when date_mode = 'range' then greatest(range_start, (range_end - interval '${MAX_DATE_RANGE_DAYS - 1} days')::date)
+      else (as_of_date - (lookback_days * interval '1 day'))::date
+    end as current_start,
+    case
+      when date_mode = 'range' then (range_end + interval '1 day')::date
+      else as_of_date
+    end as current_end
+  from range_bounds
+),
+windows as (
+  select
+    *,
+    (current_start - interval '1 year')::date as last_year_start,
+    (current_end - interval '1 year')::date as last_year_end
+  from window_base
+),
+load_candidates as (
+  select
+    m.datetime_beginning_ept::date as anchor_dt,
+    'current'::text as period,
+    m.datetime_beginning_ept,
+    m.mw::float8 as load_mw,
+    'metered_unverified' as source,
+    1 as priority
+  from pjm.hrl_load_metered m
+  cross join windows w
+  where m.is_verified = false
+    and m.load_area = w.load_area
+    and m.datetime_beginning_ept >= w.current_start
+    and m.datetime_beginning_ept < w.current_end
+  union all
+  select
+    (m.datetime_beginning_ept + interval '1 year')::date as anchor_dt,
+    'last_year'::text as period,
+    m.datetime_beginning_ept,
+    m.mw::float8 as load_mw,
+    'metered_unverified' as source,
+    1 as priority
+  from pjm.hrl_load_metered m
+  cross join windows w
+  where m.is_verified = false
+    and m.load_area = w.load_area
+    and m.datetime_beginning_ept >= w.last_year_start
+    and m.datetime_beginning_ept < w.last_year_end
+  union all
+  select
+    p.datetime_beginning_ept::date as anchor_dt,
+    'current'::text as period,
+    p.datetime_beginning_ept,
+    p.prelim_load_avg_hourly::float8 as load_mw,
+    'prelim' as source,
+    2 as priority
+  from pjm.hrl_load_prelim p
+  cross join windows w
+  where p.load_area = w.load_area
+    and p.datetime_beginning_ept >= w.current_start
+    and p.datetime_beginning_ept < w.current_end
+  union all
+  select
+    (p.datetime_beginning_ept + interval '1 year')::date as anchor_dt,
+    'last_year'::text as period,
+    p.datetime_beginning_ept,
+    p.prelim_load_avg_hourly::float8 as load_mw,
+    'prelim' as source,
+    2 as priority
+  from pjm.hrl_load_prelim p
+  cross join windows w
+  where p.load_area = w.load_area
+    and p.datetime_beginning_ept >= w.last_year_start
+    and p.datetime_beginning_ept < w.last_year_end
+),
+load_hourly as (
+  select *
+  from (
+    select
+      *,
+      row_number() over (partition by anchor_dt, period, datetime_beginning_ept order by priority) as rn
+    from load_candidates
+  ) ranked
+  where rn = 1
+),
+weather_hourly as (
+  select
+    wobs.observation_time_local::date as anchor_dt,
+    'current'::text as period,
+    wobs.observation_time_local,
+    max(wobs.station_name) as station_name,
+    avg(wobs.temp_f::float8) as temp_f,
+    avg(wobs.feels_like_f::float8) as feels_like_f
+  from weather.wsi_hourly_observed_temperatures wobs
+  cross join windows w
+  where wobs.station_id = w.station_id
+    and wobs.region = w.region
+    and wobs.observation_time_local >= w.current_start
+    and wobs.observation_time_local < w.current_end
+  group by wobs.observation_time_local
+  union all
+  select
+    (wobs.observation_time_local + interval '1 year')::date as anchor_dt,
+    'last_year'::text as period,
+    wobs.observation_time_local,
+    max(wobs.station_name) as station_name,
+    avg(wobs.temp_f::float8) as temp_f,
+    avg(wobs.feels_like_f::float8) as feels_like_f
+  from weather.wsi_hourly_observed_temperatures wobs
+  cross join windows w
+  where wobs.station_id = w.station_id
+    and wobs.region = w.region
+    and wobs.observation_time_local >= w.last_year_start
+    and wobs.observation_time_local < w.last_year_end
+  group by wobs.observation_time_local
+),
+joined_hourly as (
+  select
+    l.anchor_dt,
+    l.datetime_beginning_ept,
+    l.datetime_beginning_ept::date as dt,
+    to_char(l.anchor_dt, 'MM-DD') as mm_dd,
+    extract(hour from l.datetime_beginning_ept)::int + 1 as hour_ending,
+    extract(isodow from l.datetime_beginning_ept)::int as iso_dow,
+    l.load_mw,
+    l.source,
+    w.temp_f,
+    w.feels_like_f,
+    l.period
+  from load_hourly l
+  join weather_hourly w
+    on w.anchor_dt = l.anchor_dt
+   and w.period = l.period
+   and w.observation_time_local = l.datetime_beginning_ept
+),
+filtered_hourly as (
+  select j.*
+  from joined_hourly j
+  cross join windows w
+  where (
+      w.load_shape in ('flat', 'peak')
+      or (w.load_shape = 'onpeak' and j.hour_ending between 8 and 23)
+      or (w.load_shape = 'offpeak' and (j.hour_ending between 1 and 7 or j.hour_ending = 24))
+    )
+    and (
+      w.day_type = 'all'
+      or (w.day_type = 'weekdays' and j.iso_dow between 1 and 5)
+      or (w.day_type = 'weekends' and j.iso_dow in (6, 7))
+    )
+),
+shaped_hourly as (
+  select *
+  from (
+    select
+      f.*,
+      row_number() over (partition by f.anchor_dt, f.period order by f.load_mw desc nulls last, f.datetime_beginning_ept) as peak_rank,
+      (select load_shape from windows) as load_shape
+    from filtered_hourly f
+  ) ranked
+  where load_shape <> 'peak' or peak_rank = 1
+),
+daily as (
+  select
+    anchor_dt,
+    dt,
+    mm_dd,
+    case when (select load_shape from windows) = 'peak' then max(load_mw) else avg(load_mw) end as load_mw,
+    avg(temp_f) as avg_temp_f,
+    avg(feels_like_f) as avg_feels_like_f,
+    count(*) as hour_count,
+    count(*) filter (where source = 'metered_unverified') as unverified_hours,
+    count(*) filter (where source = 'prelim') as prelim_hours,
+    max(period) as period
+  from shaped_hourly
+  group by anchor_dt, dt, mm_dd, period
+),
+paired as (
   select
     c.mm_dd,
-    c.datetime_beginning_ept as current_datetime_ept,
-    ly.datetime_beginning_ept as last_year_datetime_ept,
-    c.hour_ending,
+    c.dt as current_dt,
+    ly.dt as last_year_dt,
     c.load_mw as current_load_mw,
     ly.load_mw as last_year_load_mw,
-    c.load_mw - ly.load_mw as diff_mw,
-    ((c.load_mw / nullif(ly.load_mw, 0)) - 1) * 100 as growth_pct,
-    c.temp_f as current_temp_f,
-    ly.temp_f as last_year_temp_f,
-    c.feels_like_f as current_feels_like_f,
-    ly.feels_like_f as last_year_feels_like_f,
-    c.source as current_source,
-    ly.source as last_year_source
-  from shaped_hourly c
-  join shaped_hourly ly
+    c.avg_temp_f as current_temp_f,
+    ly.avg_temp_f as last_year_temp_f,
+    c.avg_feels_like_f as current_feels_like_f,
+    ly.avg_feels_like_f as last_year_feels_like_f,
+    c.hour_count as current_hour_count,
+    ly.hour_count as last_year_hour_count,
+    c.unverified_hours as current_unverified_hours,
+    c.prelim_hours as current_prelim_hours,
+    ly.unverified_hours as last_year_unverified_hours,
+    ly.prelim_hours as last_year_prelim_hours
+  from daily c
+  join daily ly
     on ly.anchor_dt = c.anchor_dt
    and ly.period = 'last_year'
-   and ((select load_shape from params) = 'peak' or ly.hour_ending = c.hour_ending)
   where c.period = 'current'
 )
 select
   mm_dd,
-  to_char(current_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as current_datetime_ept,
-  to_char(last_year_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as last_year_datetime_ept,
-  hour_ending,
+  to_char(current_dt, 'YYYY-MM-DD') as current_date,
+  to_char(last_year_dt, 'YYYY-MM-DD') as last_year_date,
   current_load_mw,
   last_year_load_mw,
-  diff_mw,
-  growth_pct,
+  current_load_mw - last_year_load_mw as diff_mw,
+  ((current_load_mw / nullif(last_year_load_mw, 0)) - 1) * 100 as growth_pct,
   current_temp_f,
   last_year_temp_f,
   current_feels_like_f,
   last_year_feels_like_f,
-  current_source,
-  last_year_source
-from paired_hourly
-order by current_datetime_ept desc
+  current_hour_count,
+  last_year_hour_count,
+  current_unverified_hours,
+  current_prelim_hours,
+  last_year_unverified_hours,
+  last_year_prelim_hours
+from paired
+order by current_dt desc
 `;
 
 const COVERAGE_SQL = `
@@ -568,19 +761,32 @@ load_coverage as (
     min(datetime_beginning_ept) as load_min_ept,
     max(datetime_beginning_ept) as load_max_ept
   from (
-    select datetime_beginning_ept from pjm.hrl_load_metered where load_area = $1
+    select m.datetime_beginning_ept
+    from pjm.hrl_load_metered m
+    join windows w
+      on m.datetime_beginning_ept >= w.last_year_start
+     and m.datetime_beginning_ept < w.current_end
+    where m.load_area = $1
     union all
-    select datetime_beginning_ept from pjm.hrl_load_prelim where load_area = $1
+    select p.datetime_beginning_ept
+    from pjm.hrl_load_prelim p
+    join windows w
+      on p.datetime_beginning_ept >= w.last_year_start
+     and p.datetime_beginning_ept < w.current_end
+    where p.load_area = $1
   ) l
 ),
 weather_coverage as (
   select
-    max(station_name) as station_name,
-    min(observation_time_local) as weather_min_local,
-    max(observation_time_local) as weather_max_local
-  from weather.wsi_hourly_observed_temperatures
-  where station_id = $2
-    and region = $3
+    max(wobs.station_name) as station_name,
+    min(wobs.observation_time_local) as weather_min_local,
+    max(wobs.observation_time_local) as weather_max_local
+  from weather.wsi_hourly_observed_temperatures wobs
+  join windows w
+    on wobs.observation_time_local >= w.last_year_start
+   and wobs.observation_time_local < w.current_end
+  where wobs.station_id = $2
+    and wobs.region = $3
 )
 select
   w.load_area,
@@ -600,8 +806,8 @@ from windows w, load_coverage lc, weather_coverage wc
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
-  const loadArea = parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA);
-  const stationId = parseIdentifier(searchParams.get("stationId"), DEFAULT_STATION_ID);
+  const requestedLoadArea = parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA);
+  const requestedStationId = parseIdentifier(searchParams.get("stationId"), DEFAULT_STATION_ID);
   const region = parseIdentifier(searchParams.get("region"), DEFAULT_REGION);
   const lookbackDays = parseLookbackDays(searchParams.get("lookbackDays"));
   const asOfDate = parseDate(searchParams.get("asOfDate"));
@@ -612,6 +818,19 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const endDate = parseDate(searchParams.get("end"));
   const selectedMonth = parseMonth(searchParams.get("month"));
   const selectedYears = parseYears(searchParams.get("years"));
+  const [areaRows, stationRows] = await Promise.all([loadAreas(), weatherStations(region)]);
+  const areaNames = areaRows.map((row) => row.load_area);
+  const loadArea = areaNames.includes(requestedLoadArea)
+    ? requestedLoadArea
+    : areaNames.includes(DEFAULT_LOAD_AREA)
+      ? DEFAULT_LOAD_AREA
+      : areaNames[0] ?? requestedLoadArea;
+  const stationIds = stationRows.map((row) => row.station_id);
+  const stationId = stationIds.includes(requestedStationId)
+    ? requestedStationId
+    : stationIds.includes(DEFAULT_STATION_ID)
+      ? DEFAULT_STATION_ID
+      : stationIds[0] ?? requestedStationId;
   const params = [
     loadArea,
     stationId,
@@ -639,11 +858,11 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     selectedYears,
   ];
 
-  const dailyRows = await query<DailyYoyRow>(DAILY_SQL, params);
-  const hourlyRows = await query<HourlyYoyRow>(HOURLY_SQL, params);
-  const coverageRows = await query<CoverageRow>(COVERAGE_SQL, coverageParams);
-  const areaRows = await loadAreas();
-  const stationRows = await weatherStations(region);
+  const dailySql = dateMode === "month-years" ? DAILY_SQL : DAILY_RANGE_SQL;
+  const [dailyRows, coverageRows] = await Promise.all([
+    query<DailyYoyRow>(dailySql, params),
+    query<CoverageRow>(COVERAGE_SQL, coverageParams),
+  ]);
   const coverage = coverageRows[0];
   const runAt = new Date().toISOString();
   const currentAvgLoadMw = avgNumbers(dailyRows, (row) => row.current_load_mw);
@@ -655,7 +874,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
 
   const payload = {
     iso: "pjm",
-    source: "metered_verified_then_prelim",
+    source: "metered_unverified_then_prelim",
     selected: {
       loadArea,
       stationId,
@@ -715,9 +934,9 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lastYearAvgFeelsLikeF: avgNumbers(dailyRows, (row) => row.last_year_feels_like_f),
       currentHourCount: sumNumbers(dailyRows, (row) => row.current_hour_count),
       lastYearHourCount: sumNumbers(dailyRows, (row) => row.last_year_hour_count),
-      currentVerifiedHours: sumNumbers(dailyRows, (row) => row.current_verified_hours),
+      currentUnverifiedHours: sumNumbers(dailyRows, (row) => row.current_unverified_hours),
       currentPrelimHours: sumNumbers(dailyRows, (row) => row.current_prelim_hours),
-      lastYearVerifiedHours: sumNumbers(dailyRows, (row) => row.last_year_verified_hours),
+      lastYearUnverifiedHours: sumNumbers(dailyRows, (row) => row.last_year_unverified_hours),
       lastYearPrelimHours: sumNumbers(dailyRows, (row) => row.last_year_prelim_hours),
     },
     daily: dailyRows.map((row) => ({
@@ -734,26 +953,10 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lastYearFeelsLikeF: toNumber(row.last_year_feels_like_f),
       currentHourCount: Math.trunc(toNumber(row.current_hour_count) ?? 0),
       lastYearHourCount: Math.trunc(toNumber(row.last_year_hour_count) ?? 0),
-      currentVerifiedHours: Math.trunc(toNumber(row.current_verified_hours) ?? 0),
+      currentUnverifiedHours: Math.trunc(toNumber(row.current_unverified_hours) ?? 0),
       currentPrelimHours: Math.trunc(toNumber(row.current_prelim_hours) ?? 0),
-      lastYearVerifiedHours: Math.trunc(toNumber(row.last_year_verified_hours) ?? 0),
+      lastYearUnverifiedHours: Math.trunc(toNumber(row.last_year_unverified_hours) ?? 0),
       lastYearPrelimHours: Math.trunc(toNumber(row.last_year_prelim_hours) ?? 0),
-    })),
-    hourly: hourlyRows.map((row) => ({
-      mmDd: row.mm_dd,
-      currentDatetimeEpt: isoLocal(row.current_datetime_ept),
-      lastYearDatetimeEpt: isoLocal(row.last_year_datetime_ept),
-      hourEnding: Math.trunc(toNumber(row.hour_ending) ?? 0),
-      currentLoadMw: toNumber(row.current_load_mw),
-      lastYearLoadMw: toNumber(row.last_year_load_mw),
-      diffMw: toNumber(row.diff_mw),
-      growthPct: toNumber(row.growth_pct),
-      currentTempF: toNumber(row.current_temp_f),
-      lastYearTempF: toNumber(row.last_year_temp_f),
-      currentFeelsLikeF: toNumber(row.current_feels_like_f),
-      lastYearFeelsLikeF: toNumber(row.last_year_feels_like_f),
-      currentSource: row.current_source,
-      lastYearSource: row.last_year_source,
     })),
   };
 

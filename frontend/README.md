@@ -50,7 +50,7 @@ GET /api/pjm-meteologica-forecast-explorer
 GET /api/pjm-meteologica-forecast-differences?area=RTO&date=YYYY-MM-DD&lookbackHours=72
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
-GET /api/pjm-load-growth?source=prelim&loadArea=AEP&weatherStation=PJM&region=PJM
+GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
 ```
 
 Local development also exposes a clearly separated `DEV` sidebar section:
@@ -91,16 +91,23 @@ Each selected year's hourly prices are sorted descending. The x-axis is
 exceedance share, not chronological time. `weekday_onpeak` is Monday-Friday
 HE8-23 and does not exclude holidays in v1.
 
-## PJM Load-Weather Explorer Source Contract
+## PJM Daily Load Growth Source Contract
 
-The Load Growth section is a limited-history load-weather explorer. It reads
+The Load Growth section is a daily weather-normalized YoY explorer. It reads
 `pjm.hrl_load_prelim`, `pjm.hrl_load_metered`, and
 `weather.wsi_hourly_observed_temperatures` with `helios_readonly` and joins load
-to WSI observed weather on local EPT hour:
+to WSI observed weather on local EPT hour before aggregating to daily rows:
 `datetime_beginning_ept = observation_time_local`.
 
+The production endpoint returns daily pairs only. It intentionally does not
+return hourly records because the hourly payload/query path is too slow for the
+production website.
+
 Current promoted coverage is shallow, so the UI must not treat the result as
-confirmed structural load growth. Preliminary load currently has one row per
+confirmed structural load growth. The production endpoint currently prefers
+company-unverified metered rows from `pjm.hrl_load_metered`
+(`is_verified = false`) and falls back to `pjm.hrl_load_prelim` when matching
+metered rows are missing. Preliminary load currently has one row per
 `(datetime_beginning_utc, load_area)`. Metered load is keyed by
 `datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified`;
 RTO is the preferred metered area, and non-RTO metered views should be inspected

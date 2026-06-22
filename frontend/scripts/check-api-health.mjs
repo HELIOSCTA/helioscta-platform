@@ -38,8 +38,8 @@ const endpoints = [
   },
   {
     name: "PJM load growth",
-    path: "/api/pjm-load-growth?source=prelim&loadArea=AEP&weatherStation=PJM&region=PJM",
-    targetMs: 1_000,
+    path: "/api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all",
+    targetMs: 1_500,
   },
   {
     name: "PJM forecast explorer",
