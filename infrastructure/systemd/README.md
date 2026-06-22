@@ -88,10 +88,12 @@ helios-pjm-gen-outages-by-type.timer
 It runs `backend.scrapes.power.pjm.gen_outages_by_type`, upserts the current
 PJM Data Miner `gen_outages_by_type` publication into
 `pjm.gen_outages_by_type`, and writes API fetch telemetry to
-`ops.api_fetch_log`. The timer runs daily at `13:45`, `14:15`, and `15:15 UTC`
-with `Persistent=true` because the source is a morning PJM publication that was
-not available during the earlier `04:30 UTC` support batch. The service uses
-`flock` with `/tmp/helios-pjm-gen-outages-by-type.lock`.
+`ops.api_fetch_log`. PJM Data Miner lists the source update availability as
+daily `06:00 a.m.` EPT, so the timer runs daily at `06:05`, `06:30`, and
+`07:00 America/New_York` with `Persistent=true` and `AccuracySec=1min`.
+During daylight saving time that is `10:05`, `10:30`, and `11:00 UTC`; during
+standard time it is `11:05`, `11:30`, and `12:00 UTC`. The service uses `flock` with
+`/tmp/helios-pjm-gen-outages-by-type.lock`.
 
 ## PJM Hourly Forecasts
 

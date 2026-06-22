@@ -32,9 +32,9 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
-  - `helios-pjm-gen-outages-by-type.timer`, daily at `13:45`, `14:15`, and
-    `15:15 UTC`,
-    `Persistent=true`, `RandomizedDelaySec=5min`.
+  - `helios-pjm-gen-outages-by-type.timer`, daily at `06:05`, `06:30`, and
+    `07:00 America/New_York` (`10:05`, `10:30`, and `11:00 UTC` during
+    daylight saving time), `Persistent=true`, `AccuracySec=1min`.
   - `helios-prod-health-check.timer`, daily at `10:15 UTC` and `16:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=2min`.
 - Log retention: journald drop-in installed from
@@ -69,7 +69,8 @@ available on the VM and their database tables/indexes have been applied in
 `helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
 data-readiness events. `helios-pjm-load-frcstd-7-day.timer` refreshes the PJM
 seven-day load forecast hourly. `helios-pjm-gen-outages-by-type.timer` refreshes
-the PJM outage dashboard source after the morning PJM publication window, while
+the PJM outage dashboard source 5, 30, and 60 minutes after the 06:00 EPT
+PJM Data Miner publication, while
 `helios-pjm-data-miner-batch.timer` runs the remaining 27 support lower-level
 scrape modules daily.
 `helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health

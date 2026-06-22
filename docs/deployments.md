@@ -860,8 +860,11 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-pjm-gen-outages-by-type.service`.
-- Schedule: daily at `13:45`, `14:15`, and `15:15 UTC` with
-  `RandomizedDelaySec=5min`.
+- Schedule: daily at `06:05`, `06:30`, and `07:00 America/New_York` with
+  `AccuracySec=1min`, targeting 5, 30, and 60 minutes after PJM Data Miner's
+  documented `06:00 a.m.` EPT update availability. During daylight saving time
+  this is `10:05`, `10:30`, and `11:00 UTC`; during standard time this is
+  `11:05`, `11:30`, and `12:00 UTC`.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-gen-outages-by-type.lock`.
