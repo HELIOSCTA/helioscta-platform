@@ -26,6 +26,11 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
+    name: "PJM term bible",
+    path: "/api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpeak&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7",
+    targetMs: 2_500,
+  },
+  {
     name: "PJM duration curves",
     path: "/api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak",
     targetMs: 1_500,

@@ -12,6 +12,10 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/pjm-term-bible/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/pjm-forecasts/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]

@@ -13,6 +13,7 @@ import PjmOutages, { type PjmOutagesFreshnessSummary } from "@/components/pjm/Pj
 import PjmPriceDurationCurves, {
   type PjmPriceDurationCurvesFreshnessSummary,
 } from "@/components/pjm/PjmPriceDurationCurves";
+import PjmTermBible, { type PjmTermBibleFreshnessSummary } from "@/components/pjm/PjmTermBible";
 import WeatherDashboard, {
   type WeatherDashboardFreshnessSummary,
 } from "@/components/weather/WeatherDashboard";
@@ -40,6 +41,15 @@ const DEFAULT_PJM_PRICE_DURATION_FRESHNESS: PjmPriceDurationCurvesFreshnessSumma
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Duration curves --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_TERM_BIBLE_FRESHNESS: PjmTermBibleFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Term Bible --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -85,6 +95,7 @@ function parseInitialSection(
     return "pjm-price-duration-curves";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
+  if (value === "pjm-term-bible") return "pjm-term-bible";
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
@@ -105,12 +116,14 @@ export default function HomePageClient({
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
+  const [pjmTermBibleRefreshToken, setPjmTermBibleRefreshToken] = useState(0);
   const [pjmLoadGrowthRefreshToken, setPjmLoadGrowthRefreshToken] = useState(0);
   const [pjmForecastsRefreshToken, setPjmForecastsRefreshToken] = useState(0);
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
+  const [pjmTermBibleFreshnessOpen, setPjmTermBibleFreshnessOpen] = useState(false);
   const [pjmLoadGrowthFreshnessOpen, setPjmLoadGrowthFreshnessOpen] = useState(false);
   const [pjmForecastsFreshnessOpen, setPjmForecastsFreshnessOpen] = useState(false);
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
@@ -121,6 +134,8 @@ export default function HomePageClient({
     useState<PjmPriceDurationCurvesFreshnessSummary>(
       DEFAULT_PJM_PRICE_DURATION_FRESHNESS,
     );
+  const [pjmTermBibleFreshness, setPjmTermBibleFreshness] =
+    useState<PjmTermBibleFreshnessSummary>(DEFAULT_PJM_TERM_BIBLE_FRESHNESS);
   const [pjmLoadGrowthFreshness, setPjmLoadGrowthFreshness] =
     useState<PjmLoadGrowthFreshnessSummary>(DEFAULT_PJM_LOAD_GROWTH_FRESHNESS);
   const [pjmForecastsFreshness, setPjmForecastsFreshness] =
@@ -150,6 +165,13 @@ export default function HomePageClient({
         title: "Price Analytics",
         subtitle: "Historical PJM hourly LMP duration curves by hub, market, component, month, and year.",
         footer: "Price Analytics | Source: PJM hourly LMPs / Azure PostgreSQL",
+      };
+    }
+    if (activeSection === "pjm-term-bible") {
+      return {
+        title: "Term Bible",
+        subtitle: "PJM LMP monthly term history by hub, market, component, and strip.",
+        footer: "Term Bible | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
     if (activeSection === "pjm-forecasts") {
@@ -275,6 +297,28 @@ export default function HomePageClient({
               />
             )}
 
+            {activeSection === "pjm-term-bible" && (
+              <FreshnessCard
+                statusLabel={pjmTermBibleFreshness.status}
+                statusClass={pjmTermBibleFreshness.statusClass}
+                summary={pjmTermBibleFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmTermBibleFreshness.status,
+                    className: pjmTermBibleFreshness.statusClass,
+                  },
+                  { label: "Selection", value: pjmTermBibleFreshness.targetDateLabel },
+                  { label: "Data Window", value: pjmTermBibleFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmTermBibleFreshness.latestUpdateLabel },
+                ]}
+                open={pjmTermBibleFreshnessOpen}
+                onToggle={() => setPjmTermBibleFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmTermBibleRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {activeSection === "pjm-load-growth" && (
               <FreshnessCard
                 statusLabel={pjmLoadGrowthFreshness.status}
@@ -354,6 +398,12 @@ export default function HomePageClient({
             <PjmPriceDurationCurves
               refreshToken={pjmPriceDurationRefreshToken}
               onFreshnessChange={setPjmPriceDurationFreshness}
+            />
+          )}
+          {activeSection === "pjm-term-bible" && (
+            <PjmTermBible
+              refreshToken={pjmTermBibleRefreshToken}
+              onFreshnessChange={setPjmTermBibleFreshness}
             />
           )}
           {activeSection === "pjm-load-growth" && (

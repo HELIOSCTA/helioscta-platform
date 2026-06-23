@@ -43,6 +43,7 @@ GET /api/ops/readiness
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
+GET /api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpeak&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7
 GET /api/pjm-forecast-explorer
 GET /api/pjm-forecasts?area=RTO_COMBINED
 GET /api/pjm-forecast-differences?area=RTO_COMBINED&date=YYYY-MM-DD&lookbackHours=72
@@ -70,6 +71,28 @@ builds hide the sidebar section and return `404` from these routes.
 Every dashboard API route should use the shared server observability wrapper in
 `lib/server/apiObservability.ts` and the measured Postgres helper in
 `lib/server/db.ts`.
+
+## PJM Term Bible Source Contract
+
+The Term Bible view reads historical hourly PJM LMPs with `helios_readonly`
+from `pjm.da_hrl_lmps`, `pjm.rt_hrl_lmps`, and
+`pjm.rt_unverified_hrl_lmps`.
+
+Source system: PJM Data Miner 2 hourly LMP feeds.
+
+Promoted table grain:
+DA and verified RT are keyed by
+`datetime_beginning_utc x pnode_id x pnode_name x row_is_current x version_nbr`.
+Unverified RT is keyed by `datetime_beginning_utc x pnode_name x type`.
+
+The route `GET /api/pjm-term-bible` accepts bounded params: `product=rt|da`,
+`rtSource=verified|unverified`, `hub`, `component=total|energy|congestion|loss`,
+`period=onpeak|offpeak|flat`, `month`, `startYear`, and `endYear`. The response
+returns monthly values, monthly mean/min/max, yearly stats, and daily values for
+the selected detail month. `onpeak` is Monday-Friday HE8-23, `offpeak` is
+weekday HE1-7/HE24 plus weekend flat daily values, and no NERC holiday calendar
+is applied in this v1 production view. Hub spreads in the UI are derived
+client-side from two route payloads as `To Hub - From Hub`.
 
 ## Local DEV PJM Price Duration Curves Source Contract
 
