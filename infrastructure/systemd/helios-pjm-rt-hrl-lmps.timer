@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM verified hourly RT LMP post-publish refresh timer
+
+[Timer]
+OnCalendar=*-*-* 18:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-pjm-rt-hrl-lmps.service
+
+[Install]
+WantedBy=timers.target

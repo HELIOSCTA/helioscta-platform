@@ -810,13 +810,41 @@ FROM isone.seven_day_solar_forecast;
   window, and reported `2 succeeded, 0 failed`.
 - Next scheduled run observed: `2026-06-14 12:25:49 UTC`.
 
+## helios-pjm-rt-hrl-lmps
+
+- Status: deployed; timer enabled and manual VM run succeeded.
+- Workflow: PJM verified hourly Real-Time LMP post-publish refresh.
+- Runtime module: `backend.orchestration.power.pjm.rt_hrl_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
+- Source system: PJM Data Miner 2 `rt_hrl_lmps`.
+- Destination table: `pjm.rt_hrl_lmps`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-rt-hrl-lmps.service`
+  - `infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-rt-hrl-lmps.service`.
+- Schedule: daily at `18:00 UTC` with `RandomizedDelaySec=5min`, after PJM's
+  documented daily verified hourly RT posting window between `11 a.m.` and
+  `12 p.m.` EPT.
+- Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with the shared
+  `/tmp/helios-pjm-data-miner-batch.lock` so it cannot overlap the PJM support
+  batch.
+- Safe rerun story: upsert on `(datetime_beginning_utc, pnode_id, pnode_name,
+  row_is_current, version_nbr)`.
+
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.
 - Scope: 31 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 27 support scrapes run through the shared batch
-  after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `load_frcstd_7_day`, and
-  `gen_outages_by_type` were promoted to dedicated timers.
+  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
+  after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
+  `load_frcstd_7_day`, and `gen_outages_by_type` were promoted to dedicated
+  timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -838,11 +866,13 @@ FROM isone.seven_day_solar_forecast;
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-da-hrl-lmps.timer` and
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
-  workflows emit data-readiness events. `helios-pjm-load-frcstd-7-day.timer`
-  remains separate because the forecast source posts hourly and drives the
-  forecast dashboard. `helios-pjm-gen-outages-by-type.timer` runs later because
-  the source was observed unavailable at the early `04:30 UTC` batch but
-  available during a manual `13:55 UTC` VM run.
+  workflows emit data-readiness events. `helios-pjm-rt-hrl-lmps.timer` runs
+  later because verified hourly RT LMPs post after the early support batch.
+  `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
+  source posts hourly and drives the forecast dashboard.
+  `helios-pjm-gen-outages-by-type.timer` runs later because the source was
+  observed unavailable at the early `04:30 UTC` batch but available during a
+  manual `13:55 UTC` VM run.
 
 ## helios-pjm-gen-outages-by-type
 

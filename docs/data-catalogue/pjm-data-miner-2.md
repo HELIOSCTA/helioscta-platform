@@ -141,7 +141,9 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc`, `pnode_id`, `pnode_name`,
   `row_is_current`, `version_nbr`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.rt_hrl_lmps`.
+- Scheduled orchestration: `backend.orchestration.power.pjm.rt_hrl_lmps`,
+  running daily after PJM's verified hourly RT posting window.
+- Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
 - dbt folder: `dbt/azure_postgres/models/power/pjm/rt_hrl_lmps/`.
 - Manual table DDL:
   `dbt/azure_postgres/models/power/pjm/rt_hrl_lmps/table_pjm_rt_hrl_lmps.sql`.

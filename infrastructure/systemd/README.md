@@ -506,6 +506,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.servic
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
@@ -547,6 +549,7 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /
 sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
@@ -577,6 +580,7 @@ Run the workflow once on demand:
 ```bash
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-pjm-rt-hrl-lmps.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
@@ -650,6 +654,14 @@ For the RT verified five-minute HRL LMP workflow:
 systemctl status helios-rt-fivemin-hrl-lmps.service
 systemctl status helios-rt-fivemin-hrl-lmps.timer
 journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
+```
+
+For the PJM verified hourly RT LMP post-publish refresh:
+
+```bash
+systemctl status helios-pjm-rt-hrl-lmps.service
+systemctl status helios-pjm-rt-hrl-lmps.timer
+journalctl -u helios-pjm-rt-hrl-lmps.service -n 200 --no-pager
 ```
 
 For the production health digest:

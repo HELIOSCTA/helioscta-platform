@@ -33,7 +33,6 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "rt_default_mv_override",
     "rt_dispatch_reserves",
     "rt_fivemin_mnt_lmps",
-    "rt_hrl_lmps",
     "rt_marginal_value",
     "rt_short_term_mv_override",
     "rt_unverified_hrl_lmps",
