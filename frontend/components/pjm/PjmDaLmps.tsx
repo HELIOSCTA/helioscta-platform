@@ -74,9 +74,25 @@ type SettleSortDirection = "asc" | "desc";
 // plus one per hour-ending ("he1" … "he24"). "date" sorts the leading column.
 type SettleColumnKey = "onpeak" | "offpeak" | "flat" | `he${number}`;
 type SettleSortKey = "date" | SettleColumnKey;
+type MetricTableId = "single-day" | "compare-dates" | "compare-hubs";
 interface SettleSortState {
   key: SettleSortKey;
   direction: SettleSortDirection;
+}
+
+interface LastMetricCell {
+  tableId: MetricTableId;
+  rowKey: string;
+  column: SettleColumnKey;
+}
+
+interface SelectionStats {
+  cells: number;
+  observations: number;
+  avg: number | null;
+  sum: number | null;
+  min: number | null;
+  max: number | null;
 }
 
 interface ComponentConfig {
@@ -191,9 +207,19 @@ const SETTLE_DAY_TYPE_LABELS: Record<SettleDayType, string> = {
   weekend: "Weekend",
   holiday: "Holiday",
 };
+const METRIC_TABLE_COLUMNS: SettleColumnKey[] = [
+  "onpeak",
+  "offpeak",
+  "flat",
+  ...HOURS.map((hour) => `he${hour}` as SettleColumnKey),
+];
 
 function settleCellKey(date: string, column: SettleColumnKey): string {
   return `${date}|${column}`;
+}
+
+function metricCellKey(tableId: MetricTableId, rowKey: string, column: SettleColumnKey): string {
+  return `${tableId}|${rowKey}|${column}`;
 }
 
 function fmtPrice(value: number | null): string {
@@ -332,6 +358,36 @@ function settleColumnValue(
   if (column === "flat") return day.flat;
   const hour = Number(column.slice(2));
   return Number.isFinite(hour) ? day.hourly[hour - 1] ?? null : null;
+}
+
+function componentRowColumnValue(row: ComponentRow, column: SettleColumnKey): number | null {
+  if (column === "onpeak") return row.onPeakAvg;
+  if (column === "offpeak") return row.offPeakAvg;
+  if (column === "flat") return row.flatAvg;
+  const hour = Number(column.slice(2));
+  return Number.isFinite(hour) ? row.values.get(hour) ?? null : null;
+}
+
+function buildSelectionStats(
+  selectedKeys: Set<string>,
+  visibleValues: Map<string, number | null>
+): SelectionStats | null {
+  const visibleSelectedKeys = Array.from(selectedKeys).filter((key) => visibleValues.has(key));
+  if (visibleSelectedKeys.length === 0) return null;
+
+  const values = visibleSelectedKeys
+    .map((key) => visibleValues.get(key) ?? null)
+    .filter((value): value is number => value !== null);
+  const sum = values.reduce((total, value) => total + value, 0);
+
+  return {
+    cells: visibleSelectedKeys.length,
+    observations: values.length,
+    avg: values.length > 0 ? sum / values.length : null,
+    sum: values.length > 0 ? sum : null,
+    min: values.length > 0 ? Math.min(...values) : null,
+    max: values.length > 0 ? Math.max(...values) : null,
+  };
 }
 
 function subtractValue(left: number | null, right: number | null): number | null {
@@ -812,6 +868,101 @@ function SettleCell({
   );
 }
 
+function SelectableMetricCell({
+  value,
+  selected,
+  heatmapEnabled,
+  heatStyleValue,
+  onSelect,
+  extraClass = "",
+}: {
+  value: number | null;
+  selected: boolean;
+  heatmapEnabled: boolean;
+  heatStyleValue: React.CSSProperties;
+  onSelect: (shiftKey: boolean) => void;
+  extraClass?: string;
+}) {
+  const stateClass = selected
+    ? "bg-sky-500/25 text-sky-50 outline outline-1 -outline-offset-1 outline-sky-400/70"
+    : "text-gray-200 hover:bg-sky-500/10";
+
+  return (
+    <td
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={(event) => onSelect(event.shiftKey)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onSelect(event.shiftKey);
+        }
+      }}
+      className={`cursor-pointer select-none px-2 py-2 text-right tabular-nums transition-colors ${extraClass} ${stateClass}`}
+      style={!selected && heatmapEnabled ? heatStyleValue : undefined}
+    >
+      {fmtPrice(value)}
+    </td>
+  );
+}
+
+function SelectionStatsBar({
+  label,
+  stats,
+  onClear,
+  extra,
+}: {
+  label: string;
+  stats: SelectionStats;
+  onClear: () => void;
+  extra?: React.ReactNode;
+}) {
+  return (
+    <div className="fixed bottom-4 left-1/2 z-40 w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 rounded-lg border border-sky-500/30 bg-[#090d15]/95 px-3 py-2 shadow-2xl shadow-black/40 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-300">
+        <span className="font-semibold text-sky-100">{label}</span>
+        <span>
+          <span className="text-gray-500">Count:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {stats.observations.toLocaleString()}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Avg:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.avg)}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Sum:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.sum)}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Min:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.min)}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Max:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.max)}</span>
+        </span>
+        <span>
+          <span className="text-gray-500">Cells:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {stats.cells.toLocaleString()}
+          </span>
+        </span>
+        {extra}
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function PjmDaLmps({
   initialDate = null,
   refreshToken = 0,
@@ -844,6 +995,8 @@ export default function PjmDaLmps({
   });
   const [selectedSettleCells, setSelectedSettleCells] = useState<Set<string>>(() => new Set());
   const [lastSelectedSettleCell, setLastSelectedSettleCell] = useState<string | null>(null);
+  const [selectedMetricCells, setSelectedMetricCells] = useState<Set<string>>(() => new Set());
+  const [lastSelectedMetricCell, setLastSelectedMetricCell] = useState<LastMetricCell | null>(null);
   // Seed the settles range to the latest available date once, the first time PJM data
   // loads — so we don't land on an empty "today" window before settles are posted.
   const settlesRangeSeededRef = useRef(false);
@@ -1372,6 +1525,92 @@ export default function PjmDaLmps({
     setLastSelectedSettleCell(null);
   };
 
+  const metricCellValues = useMemo(() => {
+    const values = new Map<string, number | null>();
+    const rows =
+      activeView === "single-day"
+        ? visibleComponentRows.map((row) => ({ tableId: "single-day" as const, row }))
+        : activeView === "compare-dates"
+          ? compareTableRows.map((row) => ({ tableId: "compare-dates" as const, row }))
+          : activeView === "compare-hubs"
+            ? hubCompareTableRows.map((row) => ({ tableId: "compare-hubs" as const, row }))
+            : [];
+
+    rows.forEach(({ tableId, row }) => {
+      METRIC_TABLE_COLUMNS.forEach((column) => {
+        values.set(metricCellKey(tableId, row.key, column), componentRowColumnValue(row, column));
+      });
+    });
+
+    return values;
+  }, [activeView, compareTableRows, hubCompareTableRows, visibleComponentRows]);
+  const metricRowOrder = useMemo(() => {
+    if (activeView === "single-day") return visibleComponentRows.map((row) => row.key);
+    if (activeView === "compare-dates") return compareTableRows.map((row) => row.key);
+    if (activeView === "compare-hubs") return hubCompareTableRows.map((row) => row.key);
+    return [];
+  }, [activeView, compareTableRows, hubCompareTableRows, visibleComponentRows]);
+  const metricSelectionStats = useMemo(
+    () => buildSelectionStats(selectedMetricCells, metricCellValues),
+    [metricCellValues, selectedMetricCells]
+  );
+  const toggleMetricCell = (
+    tableId: MetricTableId,
+    rowKey: string,
+    column: SettleColumnKey,
+    shiftKey: boolean
+  ) => {
+    const key = metricCellKey(tableId, rowKey, column);
+    if (
+      shiftKey &&
+      lastSelectedMetricCell?.tableId === tableId &&
+      lastSelectedMetricCell.column === column &&
+      metricRowOrder.includes(lastSelectedMetricCell.rowKey) &&
+      metricRowOrder.includes(rowKey)
+    ) {
+      const start = metricRowOrder.indexOf(lastSelectedMetricCell.rowKey);
+      const end = metricRowOrder.indexOf(rowKey);
+      const [from, to] = start <= end ? [start, end] : [end, start];
+      setSelectedMetricCells((prev) => {
+        const next = new Set(prev);
+        for (let index = from; index <= to; index += 1) {
+          next.add(metricCellKey(tableId, metricRowOrder[index], column));
+        }
+        return next;
+      });
+    } else {
+      setSelectedMetricCells((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+    setLastSelectedMetricCell({ tableId, rowKey, column });
+  };
+  const clearMetricSelection = () => {
+    setSelectedMetricCells(new Set());
+    setLastSelectedMetricCell(null);
+  };
+
+  useEffect(() => {
+    setSelectedMetricCells(new Set());
+    setLastSelectedMetricCell(null);
+  }, [
+    activeProduct,
+    activeView,
+    compareBaseDate,
+    compareComponent,
+    compareDate,
+    compareHubA,
+    compareHubB,
+    compareHubComponent,
+    data?.targetDate,
+    rtSource,
+    selectedHub,
+    singleComponent,
+  ]);
+
   const handleViewChange = (nextView: LmpView) => {
     setActiveView(nextView);
   };
@@ -1646,6 +1885,14 @@ export default function PjmDaLmps({
       : activeProduct === "rt"
       ? `RT ${RT_SOURCE_LABELS[rtSource]} LMPs`
       : `PJM ${PRODUCT_LABELS[activeProduct]}`;
+  const metricSelectionLabel =
+    activeView === "single-day"
+      ? `${selected?.hub ?? selectedHub} ${activeProductLabel} selection`
+      : activeView === "compare-dates"
+        ? `${selectedHub} ${compareConfig.label} comparison selection`
+        : activeView === "compare-hubs"
+          ? `${hubCompareConfig.label} hub comparison selection`
+          : "";
 
   if (loading && !data) {
     return <p className="text-sm text-gray-500">Loading LMPs...</p>;
@@ -2130,40 +2377,49 @@ export default function PjmDaLmps({
                       {row.label}
                     </span>
                   </td>
-                  <td
-                    className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
-                  >
-                    {fmtPrice(row.onPeakAvg)}
-                  </td>
-                  <td
-                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
-                  >
-                    {fmtPrice(row.offPeakAvg)}
-                  </td>
-                  <td
-                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                    style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
-                  >
-                    {fmtPrice(row.flatAvg)}
-                  </td>
+                  <SelectableMetricCell
+                    value={row.onPeakAvg}
+                    selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "onpeak"))}
+                    heatmapEnabled={tableHeatmapEnabled}
+                    heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
+                    onSelect={(shiftKey) => toggleMetricCell("single-day", row.key, "onpeak", shiftKey)}
+                    extraClass="border-l border-gray-700 bg-gray-950/70 font-semibold text-gray-100"
+                  />
+                  <SelectableMetricCell
+                    value={row.offPeakAvg}
+                    selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "offpeak"))}
+                    heatmapEnabled={tableHeatmapEnabled}
+                    heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
+                    onSelect={(shiftKey) => toggleMetricCell("single-day", row.key, "offpeak", shiftKey)}
+                    extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                  />
+                  <SelectableMetricCell
+                    value={row.flatAvg}
+                    selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "flat"))}
+                    heatmapEnabled={tableHeatmapEnabled}
+                    heatStyleValue={tableHeatStyle(row, row.flatAvg)}
+                    onSelect={(shiftKey) => toggleMetricCell("single-day", row.key, "flat", shiftKey)}
+                    extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                  />
                   {HOURS.map((hour) => {
                     const value = row.values.get(hour) ?? null;
+                    const column = `he${hour}` as SettleColumnKey;
                     return (
-                      <td
+                      <SelectableMetricCell
                         key={hour}
-                        className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                        value={value}
+                        selected={selectedMetricCells.has(metricCellKey("single-day", row.key, column))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, value)}
+                        onSelect={(shiftKey) => toggleMetricCell("single-day", row.key, column, shiftKey)}
+                        extraClass={`text-gray-300 ${
                           hour === 1 ? "border-l border-gray-700" : ""
                         } ${
                           hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
                         } ${
                           hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
                         }`}
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
-                      >
-                        {fmtPrice(value)}
-                      </td>
+                      />
                     );
                   })}
                 </tr>
@@ -2322,40 +2578,59 @@ export default function PjmDaLmps({
                           {compareConfig.label}
                         </span>
                       </td>
-                      <td
-                        className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
-                      >
-                        {fmtPrice(row.onPeakAvg)}
-                      </td>
-                      <td
-                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
-                      >
-                        {fmtPrice(row.offPeakAvg)}
-                      </td>
-                      <td
-                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
-                      >
-                        {fmtPrice(row.flatAvg)}
-                      </td>
+                      <SelectableMetricCell
+                        value={row.onPeakAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "onpeak"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-dates", row.key, "onpeak", shiftKey)
+                        }
+                        extraClass="border-l border-gray-700 bg-gray-950/70 font-semibold text-gray-100"
+                      />
+                      <SelectableMetricCell
+                        value={row.offPeakAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "offpeak"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-dates", row.key, "offpeak", shiftKey)
+                        }
+                        extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                      />
+                      <SelectableMetricCell
+                        value={row.flatAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "flat"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.flatAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-dates", row.key, "flat", shiftKey)
+                        }
+                        extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                      />
                       {HOURS.map((hour) => {
                         const value = row.values.get(hour) ?? null;
+                        const column = `he${hour}` as SettleColumnKey;
                         return (
-                          <td
+                          <SelectableMetricCell
                             key={hour}
-                            className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                            value={value}
+                            selected={selectedMetricCells.has(
+                              metricCellKey("compare-dates", row.key, column)
+                            )}
+                            heatmapEnabled={tableHeatmapEnabled}
+                            heatStyleValue={tableHeatStyle(row, value)}
+                            onSelect={(shiftKey) =>
+                              toggleMetricCell("compare-dates", row.key, column, shiftKey)
+                            }
+                            extraClass={`text-gray-300 ${
                               hour === 1 ? "border-l border-gray-700" : ""
                             } ${
                               hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
                             } ${
                               hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
                             }`}
-                            style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
-                          >
-                            {fmtPrice(value)}
-                          </td>
+                          />
                         );
                       })}
                     </tr>
@@ -2514,40 +2789,59 @@ export default function PjmDaLmps({
                           {hubCompareConfig.label}
                         </span>
                       </td>
-                      <td
-                        className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.onPeakAvg) : undefined}
-                      >
-                        {fmtPrice(row.onPeakAvg)}
-                      </td>
-                      <td
-                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.offPeakAvg) : undefined}
-                      >
-                        {fmtPrice(row.offPeakAvg)}
-                      </td>
-                      <td
-                        className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                        style={tableHeatmapEnabled ? tableHeatStyle(row, row.flatAvg) : undefined}
-                      >
-                        {fmtPrice(row.flatAvg)}
-                      </td>
+                      <SelectableMetricCell
+                        value={row.onPeakAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "onpeak"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-hubs", row.key, "onpeak", shiftKey)
+                        }
+                        extraClass="border-l border-gray-700 bg-gray-950/70 font-semibold text-gray-100"
+                      />
+                      <SelectableMetricCell
+                        value={row.offPeakAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "offpeak"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-hubs", row.key, "offpeak", shiftKey)
+                        }
+                        extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                      />
+                      <SelectableMetricCell
+                        value={row.flatAvg}
+                        selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "flat"))}
+                        heatmapEnabled={tableHeatmapEnabled}
+                        heatStyleValue={tableHeatStyle(row, row.flatAvg)}
+                        onSelect={(shiftKey) =>
+                          toggleMetricCell("compare-hubs", row.key, "flat", shiftKey)
+                        }
+                        extraClass="bg-gray-950/70 font-semibold text-gray-100"
+                      />
                       {HOURS.map((hour) => {
                         const value = row.values.get(hour) ?? null;
+                        const column = `he${hour}` as SettleColumnKey;
                         return (
-                          <td
+                          <SelectableMetricCell
                             key={hour}
-                            className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                            value={value}
+                            selected={selectedMetricCells.has(
+                              metricCellKey("compare-hubs", row.key, column)
+                            )}
+                            heatmapEnabled={tableHeatmapEnabled}
+                            heatStyleValue={tableHeatStyle(row, value)}
+                            onSelect={(shiftKey) =>
+                              toggleMetricCell("compare-hubs", row.key, column, shiftKey)
+                            }
+                            extraClass={`text-gray-300 ${
                               hour === 1 ? "border-l border-gray-700" : ""
                             } ${
                               hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
                             } ${
                               hour === 23 ? "border-r border-dotted border-sky-700/70" : ""
                             }`}
-                            style={tableHeatmapEnabled ? tableHeatStyle(row, value) : undefined}
-                          >
-                            {fmtPrice(value)}
-                          </td>
+                          />
                         );
                       })}
                     </tr>
@@ -2557,6 +2851,14 @@ export default function PjmDaLmps({
             </div>
           </SectionCard>
         </>
+      )}
+
+      {metricSelectionStats && (
+        <SelectionStatsBar
+          label={metricSelectionLabel}
+          stats={metricSelectionStats}
+          onClear={clearMetricSelection}
+        />
       )}
     </div>
   );

@@ -5,7 +5,6 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const CACHE_HEADER = "public, s-maxage=300, stale-while-revalidate=60";
-const MAX_SETTLE_RANGE_DAYS = 31;
 const ROUTE_CONFIG = {
   route: "/api/pjm-lmp-settles",
   cacheHeader: CACHE_HEADER,
@@ -120,17 +119,6 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       headers: { "Cache-Control": "no-store" },
     };
   }
-  if (dayCount > MAX_SETTLE_RANGE_DAYS) {
-    return {
-      status: 400,
-      payload: {
-        error: `Date range cannot exceed ${MAX_SETTLE_RANGE_DAYS} days`,
-        maxDays: MAX_SETTLE_RANGE_DAYS,
-      },
-      headers: { "Cache-Control": "no-store" },
-    };
-  }
-
   const daValue = componentExpr("lmps", "da", component);
   const rtValue = componentExpr("lmps", "rt", component);
   const [daRows, rtRows] = await Promise.all([
@@ -207,7 +195,6 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       component,
       rtSource: rtConfig.rtSource,
       rtSourceTable: rtConfig.sourceTable,
-      maxRangeDays: MAX_SETTLE_RANGE_DAYS,
       rowCount: rows.length,
       summary: {
         rowCount: rows.length,
