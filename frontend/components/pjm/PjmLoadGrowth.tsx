@@ -88,8 +88,10 @@ interface PjmLoadGrowthYoyPayload {
     lastYearAvgFeelsLikeF: number | null;
     currentHourCount: number;
     lastYearHourCount: number;
+    currentVerifiedHours: number;
     currentUnverifiedHours: number;
     currentPrelimHours: number;
+    lastYearVerifiedHours: number;
     lastYearUnverifiedHours: number;
     lastYearPrelimHours: number;
   };
@@ -107,8 +109,10 @@ interface PjmLoadGrowthYoyPayload {
     lastYearFeelsLikeF: number | null;
     currentHourCount: number;
     lastYearHourCount: number;
+    currentVerifiedHours: number;
     currentUnverifiedHours: number;
     currentPrelimHours: number;
+    lastYearVerifiedHours: number;
     lastYearUnverifiedHours: number;
     lastYearPrelimHours: number;
   }>;
@@ -317,10 +321,19 @@ function addDaysIsoDate(value: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
-function loadSourceMixLabel(unverifiedHours: number, prelimHours: number): string {
-  if (unverifiedHours > 0 && prelimHours === 0) return "Unverified Metered";
-  if (prelimHours > 0 && unverifiedHours === 0) return "Prelim";
-  if (unverifiedHours > 0 && prelimHours > 0) return `Mixed: ${unverifiedHours} unverified / ${prelimHours} prelim`;
+function loadSourceMixLabel(verifiedHours: number, unverifiedHours: number, prelimHours: number): string {
+  if (verifiedHours > 0 && unverifiedHours === 0 && prelimHours === 0) return "Verified Metered";
+  if (unverifiedHours > 0 && verifiedHours === 0 && prelimHours === 0) return "Unverified Metered";
+  if (prelimHours > 0 && verifiedHours === 0 && unverifiedHours === 0) return "Prelim";
+  if (verifiedHours > 0 || unverifiedHours > 0 || prelimHours > 0) {
+    return [
+      verifiedHours > 0 ? `${verifiedHours} verified` : null,
+      unverifiedHours > 0 ? `${unverifiedHours} unverified` : null,
+      prelimHours > 0 ? `${prelimHours} prelim` : null,
+    ]
+      .filter(Boolean)
+      .join(" / ");
+  }
   return "-";
 }
 
@@ -528,7 +541,11 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
       y: row.currentLoadMw,
       date: row.currentDate ?? row.mmDd,
       label: row.currentDate ?? row.mmDd,
-      loadSourceDetail: loadSourceMixLabel(row.currentUnverifiedHours, row.currentPrelimHours),
+      loadSourceDetail: loadSourceMixLabel(
+        row.currentVerifiedHours,
+        row.currentUnverifiedHours,
+        row.currentPrelimHours,
+      ),
     }))
     .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
   const lastYearPoints = sorted
@@ -537,7 +554,11 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
       y: row.lastYearLoadMw,
       date: row.lastYearDate ?? row.mmDd,
       label: row.lastYearDate ?? row.mmDd,
-      loadSourceDetail: loadSourceMixLabel(row.lastYearUnverifiedHours, row.lastYearPrelimHours),
+      loadSourceDetail: loadSourceMixLabel(
+        row.lastYearVerifiedHours,
+        row.lastYearUnverifiedHours,
+        row.lastYearPrelimHours,
+      ),
     }))
     .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
   const currentFit = fitSeries(currentPoints, "Current Year");

@@ -122,14 +122,17 @@ The Load Growth section is a daily weather-normalized YoY explorer. It reads
 to WSI observed weather on local EPT hour before aggregating to daily rows:
 `datetime_beginning_ept = observation_time_local`.
 
-The production endpoint returns daily pairs only. It intentionally does not
-return hourly records because the hourly payload/query path is too slow for the
-production website.
+The production endpoint returns daily comparison rows only. In `month-years`
+mode, selected calendar dates are retained when either the selected-year or
+prior-year side is available, so missing load coverage is visible as null values
+instead of silently dropping the date. It intentionally does not return hourly
+records because the hourly payload/query path is too slow for the production
+website.
 
 Current promoted coverage is shallow, so the UI must not treat the result as
-confirmed structural load growth. The production endpoint currently prefers
-company-unverified metered rows from `pjm.hrl_load_metered`
-(`is_verified = false`) and falls back to `pjm.hrl_load_prelim` when matching
+confirmed structural load growth. The production endpoint prefers verified
+metered rows from `pjm.hrl_load_metered` (`is_verified = true`), then
+unverified metered rows, then falls back to `pjm.hrl_load_prelim` when matching
 metered rows are missing. Preliminary load currently has one row per
 `(datetime_beginning_utc, load_area)`. Metered load is keyed by
 `datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified`;

@@ -42,8 +42,10 @@ interface DailyYoyRow {
   last_year_feels_like_f: number | string | null;
   current_hour_count: number | string;
   last_year_hour_count: number | string;
+  current_verified_hours: number | string;
   current_unverified_hours: number | string;
   current_prelim_hours: number | string;
+  last_year_verified_hours: number | string;
   last_year_unverified_hours: number | string;
   last_year_prelim_hours: number | string;
 }
@@ -285,15 +287,14 @@ load_candidates as (
     d.period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    'metered_unverified' as source,
-    1 as priority
+    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
+    case when m.is_verified then 1 else 2 end as priority
   from pjm.hrl_load_metered m
   cross join params p
   join comparison_dates d
     on m.datetime_beginning_ept >= d.selected_dt
    and m.datetime_beginning_ept < d.selected_dt + interval '1 day'
-  where m.is_verified = false
-    and m.load_area = p.load_area
+  where m.load_area = p.load_area
   union all
   select
     d.anchor_dt,
@@ -301,7 +302,7 @@ load_candidates as (
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
-    2 as priority
+    3 as priority
   from pjm.hrl_load_prelim p
   cross join params prm
   join comparison_dates d
@@ -390,6 +391,7 @@ daily as (
     avg(temp_f) as avg_temp_f,
     avg(feels_like_f) as avg_feels_like_f,
     count(*) as hour_count,
+    count(*) filter (where source = 'metered_verified') as verified_hours,
     count(*) filter (where source = 'metered_unverified') as unverified_hours,
     count(*) filter (where source = 'prelim') as prelim_hours,
     max(period) as period
@@ -398,8 +400,8 @@ daily as (
 ),
 paired as (
   select
-    c.mm_dd,
-    c.dt as current_dt,
+    to_char(t.target_dt, 'MM-DD') as mm_dd,
+    t.target_dt as current_dt,
     ly.dt as last_year_dt,
     c.load_mw as current_load_mw,
     ly.load_mw as last_year_load_mw,
@@ -409,15 +411,21 @@ paired as (
     ly.avg_feels_like_f as last_year_feels_like_f,
     c.hour_count as current_hour_count,
     ly.hour_count as last_year_hour_count,
+    c.verified_hours as current_verified_hours,
     c.unverified_hours as current_unverified_hours,
     c.prelim_hours as current_prelim_hours,
+    ly.verified_hours as last_year_verified_hours,
     ly.unverified_hours as last_year_unverified_hours,
     ly.prelim_hours as last_year_prelim_hours
-  from daily c
-  join daily ly
-    on ly.anchor_dt = c.anchor_dt
+  from target_dates t
+  left join daily c
+    on c.anchor_dt = t.target_dt
+   and c.period = 'current'
+  left join daily ly
+    on ly.anchor_dt = t.target_dt
    and ly.period = 'last_year'
-  where c.period = 'current'
+  where c.dt is not null
+     or ly.dt is not null
 )
 select
   mm_dd,
@@ -433,8 +441,10 @@ select
   last_year_feels_like_f,
   current_hour_count,
   last_year_hour_count,
+  current_verified_hours,
   current_unverified_hours,
   current_prelim_hours,
+  last_year_verified_hours,
   last_year_unverified_hours,
   last_year_prelim_hours
 from paired
@@ -495,12 +505,11 @@ load_candidates as (
     'current'::text as period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    'metered_unverified' as source,
-    1 as priority
+    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
+    case when m.is_verified then 1 else 2 end as priority
   from pjm.hrl_load_metered m
   cross join windows w
-  where m.is_verified = false
-    and m.load_area = w.load_area
+  where m.load_area = w.load_area
     and m.datetime_beginning_ept >= w.current_start
     and m.datetime_beginning_ept < w.current_end
   union all
@@ -509,12 +518,11 @@ load_candidates as (
     'last_year'::text as period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    'metered_unverified' as source,
-    1 as priority
+    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
+    case when m.is_verified then 1 else 2 end as priority
   from pjm.hrl_load_metered m
   cross join windows w
-  where m.is_verified = false
-    and m.load_area = w.load_area
+  where m.load_area = w.load_area
     and m.datetime_beginning_ept >= w.last_year_start
     and m.datetime_beginning_ept < w.last_year_end
   union all
@@ -524,7 +532,7 @@ load_candidates as (
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
-    2 as priority
+    3 as priority
   from pjm.hrl_load_prelim p
   cross join windows w
   where p.load_area = w.load_area
@@ -537,7 +545,7 @@ load_candidates as (
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
-    2 as priority
+    3 as priority
   from pjm.hrl_load_prelim p
   cross join windows w
   where p.load_area = w.load_area
@@ -639,6 +647,7 @@ daily as (
     avg(temp_f) as avg_temp_f,
     avg(feels_like_f) as avg_feels_like_f,
     count(*) as hour_count,
+    count(*) filter (where source = 'metered_verified') as verified_hours,
     count(*) filter (where source = 'metered_unverified') as unverified_hours,
     count(*) filter (where source = 'prelim') as prelim_hours,
     max(period) as period
@@ -658,8 +667,10 @@ paired as (
     ly.avg_feels_like_f as last_year_feels_like_f,
     c.hour_count as current_hour_count,
     ly.hour_count as last_year_hour_count,
+    c.verified_hours as current_verified_hours,
     c.unverified_hours as current_unverified_hours,
     c.prelim_hours as current_prelim_hours,
+    ly.verified_hours as last_year_verified_hours,
     ly.unverified_hours as last_year_unverified_hours,
     ly.prelim_hours as last_year_prelim_hours
   from daily c
@@ -682,8 +693,10 @@ select
   last_year_feels_like_f,
   current_hour_count,
   last_year_hour_count,
+  current_verified_hours,
   current_unverified_hours,
   current_prelim_hours,
+  last_year_verified_hours,
   last_year_unverified_hours,
   last_year_prelim_hours
 from paired
@@ -874,7 +887,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
 
   const payload = {
     iso: "pjm",
-    source: "metered_unverified_then_prelim",
+    source: "metered_verified_then_unverified_then_prelim",
     selected: {
       loadArea,
       stationId,
@@ -934,8 +947,10 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lastYearAvgFeelsLikeF: avgNumbers(dailyRows, (row) => row.last_year_feels_like_f),
       currentHourCount: sumNumbers(dailyRows, (row) => row.current_hour_count),
       lastYearHourCount: sumNumbers(dailyRows, (row) => row.last_year_hour_count),
+      currentVerifiedHours: sumNumbers(dailyRows, (row) => row.current_verified_hours),
       currentUnverifiedHours: sumNumbers(dailyRows, (row) => row.current_unverified_hours),
       currentPrelimHours: sumNumbers(dailyRows, (row) => row.current_prelim_hours),
+      lastYearVerifiedHours: sumNumbers(dailyRows, (row) => row.last_year_verified_hours),
       lastYearUnverifiedHours: sumNumbers(dailyRows, (row) => row.last_year_unverified_hours),
       lastYearPrelimHours: sumNumbers(dailyRows, (row) => row.last_year_prelim_hours),
     },
@@ -953,8 +968,10 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lastYearFeelsLikeF: toNumber(row.last_year_feels_like_f),
       currentHourCount: Math.trunc(toNumber(row.current_hour_count) ?? 0),
       lastYearHourCount: Math.trunc(toNumber(row.last_year_hour_count) ?? 0),
+      currentVerifiedHours: Math.trunc(toNumber(row.current_verified_hours) ?? 0),
       currentUnverifiedHours: Math.trunc(toNumber(row.current_unverified_hours) ?? 0),
       currentPrelimHours: Math.trunc(toNumber(row.current_prelim_hours) ?? 0),
+      lastYearVerifiedHours: Math.trunc(toNumber(row.last_year_verified_hours) ?? 0),
       lastYearUnverifiedHours: Math.trunc(toNumber(row.last_year_unverified_hours) ?? 0),
       lastYearPrelimHours: Math.trunc(toNumber(row.last_year_prelim_hours) ?? 0),
     })),
