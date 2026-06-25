@@ -2,13 +2,16 @@
 
 import { useEffect, useState, useRef } from "react";
 
+type MultiSelectOption = string | { value: string; label: string };
+
 interface MultiSelectProps {
   label: string;
-  options: string[];
+  options: MultiSelectOption[];
   selected: string[];
   onChange: (v: string[]) => void;
   placeholder?: string;
   width?: string;
+  maxSelected?: number;
 }
 
 export default function MultiSelect({
@@ -18,6 +21,7 @@ export default function MultiSelect({
   onChange,
   placeholder = "Select...",
   width = "w-64",
+  maxSelected,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
@@ -33,15 +37,22 @@ export default function MultiSelect({
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const filtered = options.filter((o) =>
-    o.toLowerCase().includes(filter.toLowerCase())
+  const normalizedOptions = options.map((option) =>
+    typeof option === "string" ? { value: option, label: option } : option,
+  );
+
+  const labelByValue = new Map(normalizedOptions.map((option) => [option.value, option.label]));
+
+  const filtered = normalizedOptions.filter((option) =>
+    `${option.label} ${option.value}`.toLowerCase().includes(filter.toLowerCase())
   );
 
   const toggle = (option: string) => {
     if (selected.includes(option)) {
       onChange(selected.filter((s) => s !== option));
     } else {
-      onChange([...selected, option]);
+      const next = [...selected, option];
+      onChange(maxSelected ? next.slice(-maxSelected) : next);
     }
   };
 
@@ -49,7 +60,7 @@ export default function MultiSelect({
     selected.length === 0
       ? placeholder
       : selected.length <= 2
-        ? selected.join(", ")
+        ? selected.map((value) => labelByValue.get(value) ?? value).join(", ")
         : `${selected.length} selected`;
 
   return (
@@ -95,16 +106,16 @@ export default function MultiSelect({
             ) : (
               filtered.map((option) => (
                 <label
-                  key={option}
+                  key={option.value}
                   className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 cursor-pointer"
                 >
                   <input
                     type="checkbox"
-                    checked={selected.includes(option)}
-                    onChange={() => toggle(option)}
+                    checked={selected.includes(option.value)}
+                    onChange={() => toggle(option.value)}
                     className="rounded accent-blue-500"
                   />
-                  <span className="truncate">{option}</span>
+                  <span className="truncate">{option.label}</span>
                 </label>
               ))
             )}

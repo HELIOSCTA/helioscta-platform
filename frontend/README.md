@@ -122,22 +122,37 @@ The Load Growth section is a daily weather-normalized YoY explorer. It reads
 to WSI observed weather on local EPT hour before aggregating to daily rows:
 `datetime_beginning_ept = observation_time_local`.
 
-The production endpoint returns daily comparison rows only. In `month-years`
-mode, selected calendar dates are retained when either the selected-year or
-prior-year side is available, so missing load coverage is visible as null values
-instead of silently dropping the date. It intentionally does not return hourly
-records because the hourly payload/query path is too slow for the production
-website.
+The production endpoint returns daily comparison rows plus a compact latest
+forecast daily series. In `month-years` mode, selected calendar dates are
+retained when either selected comparison year is available, so missing load
+coverage is visible as null values instead of silently dropping the date. The
+route accepts comma-separated `months` and exactly two comparison years in
+`years`; the later year is plotted as the current year and the earlier year is
+the comparison year. Defaults are the current calendar month, current year, and
+previous year. It intentionally does not return hourly actual records because
+the hourly payload/query path is too slow for the production website.
+
+The date-range UI uses `MM-DD` start and end selectors plus the same two-year
+YoY selector. The client expands those month/day values into concrete dates in
+the later selected year before calling the API. The API preserves rows when only
+the earlier comparison year has actual load/weather, so users can inspect
+future current-year calendar days against last-year actuals.
 
 Current promoted coverage is shallow, so the UI must not treat the result as
-confirmed structural load growth. The production endpoint prefers verified
-metered rows from `pjm.hrl_load_metered` (`is_verified = true`), then
-unverified metered rows, then falls back to `pjm.hrl_load_prelim` when matching
-metered rows are missing. Preliminary load currently has one row per
+confirmed structural load growth. The production endpoint uses unverified
+metered rows from `pjm.hrl_load_metered` (`is_verified = false`), then falls
+back to `pjm.hrl_load_prelim` when matching metered rows are missing.
+Preliminary load currently has one row per
 `(datetime_beginning_utc, load_area)`. Metered load is keyed by
 `datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified`;
 RTO is the preferred metered area, and non-RTO metered views should be inspected
 with the component count caveat.
+
+Forecast points in the Load Growth chart use latest-vintage
+`pjm.load_frcstd_7_day` load forecasts joined to latest-vintage
+`weather.wsi_hourly_forecasts` for the selected station on EPT/local hour. The
+daily forecast series applies the same load shape and weekday/weekend filters as
+the actual daily series and is plotted as a separate non-fit overlay.
 
 ## WSI Weather Source Contract
 

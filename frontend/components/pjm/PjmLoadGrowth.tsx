@@ -44,6 +44,7 @@ interface PjmLoadGrowthYoyPayload {
   source: string;
   selected: {
     loadArea: string;
+    forecastLoadArea: string;
     stationId: string;
     stationName: string;
     region: string;
@@ -53,6 +54,7 @@ interface PjmLoadGrowthYoyPayload {
     startDate: string | null;
     endDate: string | null;
     month: number;
+    months: number[];
     years: number[];
     loadShape: LoadShape;
     dayType: DayType;
@@ -84,6 +86,8 @@ interface PjmLoadGrowthYoyPayload {
     avgLoadGrowthPct: number | null;
     currentAvgTempF: number | null;
     lastYearAvgTempF: number | null;
+    currentAvgDewPointF: number | null;
+    lastYearAvgDewPointF: number | null;
     currentAvgFeelsLikeF: number | null;
     lastYearAvgFeelsLikeF: number | null;
     currentHourCount: number;
@@ -105,6 +109,8 @@ interface PjmLoadGrowthYoyPayload {
     growthPct: number | null;
     currentTempF: number | null;
     lastYearTempF: number | null;
+    currentDewPointF: number | null;
+    lastYearDewPointF: number | null;
     currentFeelsLikeF: number | null;
     lastYearFeelsLikeF: number | null;
     currentHourCount: number;
@@ -115,6 +121,17 @@ interface PjmLoadGrowthYoyPayload {
     lastYearVerifiedHours: number;
     lastYearUnverifiedHours: number;
     lastYearPrelimHours: number;
+  }>;
+  forecastDaily: Array<{
+    forecastDate: string | null;
+    forecastLoadMw: number | null;
+    forecastTempF: number | null;
+    forecastDewPointF: number | null;
+    forecastFeelsLikeF: number | null;
+    forecastHourCount: number;
+    loadForecastArea: string | null;
+    loadForecastEvaluatedAtEpt: string | null;
+    weatherForecastIssuedAtUtc: string | null;
   }>;
 }
 
@@ -159,6 +176,7 @@ interface DailyFitPoint {
 interface DailyFitResult {
   currentPoints: DailyFitPoint[];
   lastYearPoints: DailyFitPoint[];
+  forecastPoints: DailyFitPoint[];
   lookbackPoints: Array<DailyFitPoint & { size: number }>;
   currentFit: FitSeries;
   lastYearFit: FitSeries;
@@ -188,19 +206,21 @@ export interface PjmLoadGrowthFreshnessSummary {
 }
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_AREA = "DOM";
+const DEFAULT_AREA = "RTO";
 const DEFAULT_REGION = "PJM";
-const DEFAULT_WEATHER_STATION = "KRIC";
+const DEFAULT_WEATHER_STATION = "PJM";
 const DEFAULT_LOOKBACK_DAYS = 56;
 const DEFAULT_PLOT_LOOKBACK_DAYS = 10;
 const DEFAULT_LOAD_SHAPE: LoadShape = "flat";
 const DEFAULT_DAY_TYPE: DayType = "all";
 const DEFAULT_DATE_MODE: DateMode = "range";
-const DEFAULT_MONTH = 1;
-const DEFAULT_YEARS = ["2024", "2025", "2026"];
+const DEFAULT_MONTH = new Date().getMonth() + 1;
+const DEFAULT_MONTHS = [String(DEFAULT_MONTH)];
+const DEFAULT_YEARS = [String(new Date().getFullYear() - 1), String(new Date().getFullYear())];
 const DEFAULT_END = addDaysIsoDate(todayIsoDate(), -1);
 const DEFAULT_START = addDaysIsoDate(DEFAULT_END, -(DEFAULT_LOOKBACK_DAYS - 1));
 const STATION_NAME_FALLBACK: Record<string, string> = {
+  PJM: "PJM",
   KRIC: "Richmond",
   KDCA: "Washington",
 };
@@ -249,9 +269,11 @@ const MONTHS = [
   { value: 12, label: "Dec" },
 ];
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index)).sort();
+const MONTH_OPTIONS = MONTHS.map((month) => ({ value: String(month.value), label: month.label }));
 const DAILY_FIT_SERIES: PlotSeries[] = [
   { key: "currentYear", label: "Current Year", color: "#ef4444", defaultVisible: true },
   { key: "lastYear", label: "Last Year", color: "#a855f7", defaultVisible: true },
+  { key: "forecast", label: "Forecast", color: "#22c55e", defaultVisible: true },
   { key: "lookback", label: "Lookback", color: "#7dd3fc", defaultVisible: true },
   { key: "currentFit", label: "Current Fit", color: "#ef4444", defaultVisible: true },
   { key: "lastYearFit", label: "Last Year Fit", color: "#a855f7", defaultVisible: true },
@@ -321,8 +343,43 @@ function addDaysIsoDate(value: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+function monthDayFromIsoDate(value: string): string {
+  return value.slice(5, 10);
+}
+
+function normalizeMonthDay(value: string, fallback: string): string {
+  const match = value.trim().match(/^(\d{1,2})-(\d{1,2})$/);
+  if (!match) return fallback;
+  const month = Number(match[1]);
+  const day = Number(match[2]);
+  if (!Number.isInteger(month) || !Number.isInteger(day) || month < 1 || month > 12) return fallback;
+  const daysInMonth = new Date(Date.UTC(2024, month, 0)).getUTCDate();
+  if (day < 1 || day > daysInMonth) return fallback;
+  return `${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function compareMonthDay(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function isoDateForMonthDay(year: number, monthDay: string): string {
+  return `${year}-${monthDay}`;
+}
+
+function rangeDatesFromMonthDays(year: number, startMmDd: string, endMmDd: string) {
+  const start = normalizeMonthDay(startMmDd, monthDayFromIsoDate(DEFAULT_START));
+  const end = normalizeMonthDay(endMmDd, monthDayFromIsoDate(DEFAULT_END));
+  const endYear = compareMonthDay(start, end) <= 0 ? year : year + 1;
+  return {
+    startDate: isoDateForMonthDay(year, start),
+    endDate: isoDateForMonthDay(endYear, end),
+    startMmDd: start,
+    endMmDd: end,
+  };
+}
+
 function loadSourceMixLabel(verifiedHours: number, unverifiedHours: number, prelimHours: number): string {
-  if (verifiedHours > 0 && unverifiedHours === 0 && prelimHours === 0) return "Verified Metered";
+  if (verifiedHours > 0 && unverifiedHours === 0 && prelimHours === 0) return "Metered";
   if (unverifiedHours > 0 && verifiedHours === 0 && prelimHours === 0) return "Unverified Metered";
   if (prelimHours > 0 && verifiedHours === 0 && unverifiedHours === 0) return "Prelim";
   if (verifiedHours > 0 || unverifiedHours > 0 || prelimHours > 0) {
@@ -374,7 +431,19 @@ function dailyWeatherValue(
   if (metric === "feelsLikeF") {
     return period === "current" ? row.currentFeelsLikeF : row.lastYearFeelsLikeF;
   }
+  if (metric === "dewPointF") {
+    return period === "current" ? row.currentDewPointF : row.lastYearDewPointF;
+  }
   return period === "current" ? row.currentTempF : row.lastYearTempF;
+}
+
+function forecastWeatherValue(
+  row: PjmLoadGrowthYoyPayload["forecastDaily"][number],
+  metric: WeatherMetric,
+): number | null {
+  if (metric === "feelsLikeF") return row.forecastFeelsLikeF;
+  if (metric === "dewPointF") return row.forecastDewPointF;
+  return row.forecastTempF;
 }
 
 function mean(values: number[]): number | null {
@@ -561,6 +630,16 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
       ),
     }))
     .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
+  const forecastPoints = [...(data.forecastDaily ?? [])]
+    .sort((left, right) => String(left.forecastDate).localeCompare(String(right.forecastDate)))
+    .map((row) => ({
+      x: forecastWeatherValue(row, metric),
+      y: row.forecastLoadMw,
+      date: row.forecastDate ?? "Forecast",
+      label: row.forecastDate ?? "Forecast",
+      loadSourceDetail: `Forecast ${row.loadForecastArea ?? data.selected.forecastLoadArea}`,
+    }))
+    .filter((point): point is DailyFitPoint => point.x !== null && point.y !== null);
   const currentFit = fitSeries(currentPoints, "Current Year");
   const lastYearFit = fitSeries(lastYearPoints, "Last Year");
   const minX = Math.max(Math.min(...currentPoints.map((point) => point.x)), Math.min(...lastYearPoints.map((point) => point.x)));
@@ -590,6 +669,7 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
   return {
     currentPoints,
     lastYearPoints,
+    forecastPoints,
     lookbackPoints: currentPoints
       .slice(-Math.max(1, selectedLookbackDays))
       .map((point, index, rows) => ({ ...point, size: 9 + index * (10 / Math.max(rows.length - 1, 1)) })),
@@ -608,7 +688,7 @@ function buildYoyApiUrl({
   dateMode,
   startDate,
   endDate,
-  month,
+  months,
   years,
   loadShape,
   dayType,
@@ -621,7 +701,7 @@ function buildYoyApiUrl({
   dateMode: DateMode;
   startDate: string;
   endDate: string;
-  month: number;
+  months: string[];
   years: string[];
   loadShape: LoadShape;
   dayType: DayType;
@@ -633,12 +713,13 @@ function buildYoyApiUrl({
     region,
     lookbackDays: String(lookbackDays),
     dateMode,
-    month: String(month),
+    month: months[0] ?? String(DEFAULT_MONTH),
     loadShape,
     dayType,
   });
   if (dateMode === "range" && startDate) params.set("start", startDate);
   if (dateMode === "range" && endDate) params.set("end", endDate);
+  if (months.length) params.set("months", months.join(","));
   if (years.length) params.set("years", years.join(","));
   if (refresh) params.set("refresh", "1");
   return `/api/pjm-load-growth-yoy?${params.toString()}`;
@@ -652,7 +733,7 @@ function yoyCacheKey({
   dateMode,
   startDate,
   endDate,
-  month,
+  months,
   years,
   loadShape,
   dayType,
@@ -664,7 +745,7 @@ function yoyCacheKey({
   dateMode: DateMode;
   startDate: string;
   endDate: string;
-  month: number;
+  months: string[];
   years: string[];
   loadShape: LoadShape;
   dayType: DayType;
@@ -678,7 +759,7 @@ function yoyCacheKey({
     dateMode,
     startDate,
     endDate,
-    month,
+    months.join(","),
     years.join(","),
     loadShape,
     dayType,
@@ -709,6 +790,37 @@ function freshnessFromYoyPayload(payload: PjmLoadGrowthYoyPayload | null): PjmLo
   };
 }
 
+function normalizeMonthSelection(months: string[]): string[] {
+  const valid = Array.from(
+    new Set(
+      months.filter((month) => {
+        const parsed = Number(month);
+        return Number.isInteger(parsed) && parsed >= 1 && parsed <= 12;
+      }),
+    ),
+  ).sort((left, right) => Number(left) - Number(right));
+  return valid.length ? valid : DEFAULT_MONTHS;
+}
+
+function normalizeCompareYears(years: string[]): string[] {
+  const currentYear = new Date().getFullYear();
+  const valid = Array.from(
+    new Set(
+      years
+        .map((year) => Number(year))
+        .filter((year) => Number.isInteger(year) && year >= 2000 && year <= currentYear + 1),
+    ),
+  ).sort((left, right) => left - right);
+  if (!valid.length) return DEFAULT_YEARS;
+  if (valid.length === 1) return [String(valid[0] - 1), String(valid[0])];
+  return valid.slice(-2).map(String);
+}
+
+function monthSelectionLabel(months: string[]): string {
+  const labels = normalizeMonthSelection(months).map((value) => MONTHS.find((item) => item.value === Number(value))?.label ?? value);
+  return labels.length <= 3 ? labels.join(", ") : `${labels.length} months`;
+}
+
 export default function PjmLoadGrowth({
   refreshToken = 0,
   onFreshnessChange,
@@ -717,8 +829,8 @@ export default function PjmLoadGrowth({
   onFreshnessChange?: (freshness: PjmLoadGrowthFreshnessSummary) => void;
 }) {
   const [area, setArea] = useState(DEFAULT_AREA);
-  const [startDate, setStartDate] = useState(DEFAULT_START);
-  const [endDate, setEndDate] = useState(DEFAULT_END);
+  const [rangeStartMmDd, setRangeStartMmDd] = useState(monthDayFromIsoDate(DEFAULT_START));
+  const [rangeEndMmDd, setRangeEndMmDd] = useState(monthDayFromIsoDate(DEFAULT_END));
   const [weatherStation, setWeatherStation] = useState(DEFAULT_WEATHER_STATION);
   const [region] = useState(DEFAULT_REGION);
   const [weatherMetric, setWeatherMetric] = useState<WeatherMetric>("feelsLikeF");
@@ -727,7 +839,7 @@ export default function PjmLoadGrowth({
   const [loadShape, setLoadShape] = useState<LoadShape>(DEFAULT_LOAD_SHAPE);
   const [dayType, setDayType] = useState<DayType>(DEFAULT_DAY_TYPE);
   const [dateMode, setDateMode] = useState<DateMode>(DEFAULT_DATE_MODE);
-  const [selectedMonth, setSelectedMonth] = useState(DEFAULT_MONTH);
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(DEFAULT_MONTHS);
   const [selectedYears, setSelectedYears] = useState<string[]>(DEFAULT_YEARS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hiddenDailyFitSeries, setHiddenDailyFitSeries] = useState<Set<string>>(() => new Set());
@@ -739,6 +851,11 @@ export default function PjmLoadGrowth({
   const [yoyData, setYoyData] = useState<PjmLoadGrowthYoyPayload | null>(null);
   const [yoyLoading, setYoyLoading] = useState(true);
   const [yoyError, setYoyError] = useState<string | null>(null);
+  const normalizedYears = useMemo(() => normalizeCompareYears(selectedYears), [selectedYears]);
+  const currentComparisonYear = Number(normalizedYears.at(-1) ?? new Date().getFullYear());
+  const rangeDates = rangeDatesFromMonthDays(currentComparisonYear, rangeStartMmDd, rangeEndMmDd);
+  const effectiveStartDate = dateMode === "range" ? rangeDates.startDate : DEFAULT_START;
+  const effectiveEndDate = dateMode === "range" ? rangeDates.endDate : DEFAULT_END;
 
   useEffect(() => {
     let active = true;
@@ -752,10 +869,10 @@ export default function PjmLoadGrowth({
         region,
         lookbackDays,
         dateMode,
-        startDate,
-        endDate,
-        month: selectedMonth,
-        years: selectedYears,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
+        months: selectedMonths,
+        years: normalizedYears,
         loadShape,
         dayType,
       }),
@@ -765,10 +882,10 @@ export default function PjmLoadGrowth({
         region,
         lookbackDays,
         dateMode,
-        startDate,
-        endDate,
-        month: selectedMonth,
-        years: selectedYears,
+        startDate: effectiveStartDate,
+        endDate: effectiveEndDate,
+        months: selectedMonths,
+        years: normalizedYears,
         loadShape,
         dayType,
         refresh: refreshToken > 0,
@@ -783,6 +900,10 @@ export default function PjmLoadGrowth({
         onFreshnessChange?.(freshnessFromYoyPayload(payload));
         if (payload.selected.loadArea !== area) setArea(payload.selected.loadArea);
         if (payload.selected.stationId !== weatherStation) setWeatherStation(payload.selected.stationId);
+        const payloadMonths = normalizeMonthSelection(payload.selected.months.map(String));
+        if (payloadMonths.join(",") !== selectedMonths.join(",")) setSelectedMonths(payloadMonths);
+        const payloadYears = normalizeCompareYears(payload.selected.years.map(String));
+        if (payloadYears.join(",") !== selectedYears.join(",")) setSelectedYears(payloadYears);
       })
       .catch((err: Error) => {
         if (!active || err.name === "AbortError") return;
@@ -806,15 +927,18 @@ export default function PjmLoadGrowth({
     area,
     dateMode,
     dayType,
-    endDate,
+    effectiveEndDate,
+    effectiveStartDate,
     loadShape,
     lookbackDays,
+    normalizedYears,
     onFreshnessChange,
+    rangeEndMmDd,
+    rangeStartMmDd,
     refreshToken,
     region,
-    selectedMonth,
+    selectedMonths,
     selectedYears,
-    startDate,
     weatherStation,
   ]);
 
@@ -857,11 +981,10 @@ export default function PjmLoadGrowth({
   const selectedStationLabel = stationDisplayName(selectedStation);
   const selectedShapeLabel = LOAD_SHAPES.find((item) => item.key === loadShape)?.label ?? "Flat";
   const selectedDayTypeLabel = DAY_TYPES.find((item) => item.key === dayType)?.label ?? "All Days";
-  const selectedMonthLabel = MONTHS.find((item) => item.value === selectedMonth)?.label ?? "Jan";
   const dateSelectionLabel =
     dateMode === "month-years"
-      ? `${selectedMonthLabel} ${selectedYears.join(", ")}`
-      : `${startDate || "Start"} to ${endDate || "End"}`;
+      ? `${monthSelectionLabel(selectedMonths)} ${selectedYears.join(" vs ")}`
+      : `${rangeDates.startMmDd} to ${rangeDates.endMmDd} ${normalizedYears.join(" vs ")}`;
   const plotLookbackLabel = `Highlight ${plotLookbackDays}d`;
   const dailyFitSummary = {
     averageDiff: dailyFit?.growthBands[0]?.averageDiff,
@@ -885,11 +1008,10 @@ export default function PjmLoadGrowth({
   };
 
   const applyDataLookback = (days: number) => {
-    const anchorEnd = endDate || DEFAULT_END;
     setDateMode("range");
     setLookbackDays(days);
-    setEndDate(anchorEnd);
-    setStartDate(addDaysIsoDate(anchorEnd, -(days - 1)));
+    setRangeEndMmDd(monthDayFromIsoDate(DEFAULT_END));
+    setRangeStartMmDd(monthDayFromIsoDate(addDaysIsoDate(DEFAULT_END, -(days - 1))));
   };
 
   const renderTooltipRow = (label: string, value: string, color?: string) => (
@@ -1004,6 +1126,27 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("lastYear") && (
             <Scatter name="Last Year" data={fit?.lastYearPoints ?? []} fill="#a855f7" shape="square" fillOpacity={0.64} />
+          )}
+          {!hiddenSeries.has("forecast") && (
+            <Scatter
+              name="Forecast"
+              data={fit?.forecastPoints ?? []}
+              shape={(props: unknown) => {
+                const point = props as { cx?: number; cy?: number };
+                const cx = point.cx ?? 0;
+                const cy = point.cy ?? 0;
+                const size = 7;
+                return (
+                  <path
+                    d={`M ${cx} ${cy - size} L ${cx + size} ${cy} L ${cx} ${cy + size} L ${cx - size} ${cy} Z`}
+                    fill="#22c55e"
+                    stroke="#dcfce7"
+                    strokeWidth={1.2}
+                    opacity={0.9}
+                  />
+                );
+              }}
+            />
           )}
           {!hiddenSeries.has("lookback") && (
             <Scatter
@@ -1130,31 +1273,44 @@ export default function PjmLoadGrowth({
                     <>
                       <label className="block">
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                          Start
+                          Start MM-DD
                         </span>
                         <input
-                          type="date"
-                          value={startDate}
-                          onChange={(event) => setStartDate(event.target.value)}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="06-01"
+                          value={rangeStartMmDd}
+                          onChange={(event) => setRangeStartMmDd(event.target.value)}
+                          onBlur={() => setRangeStartMmDd((value) => normalizeMonthDay(value, rangeDates.startMmDd))}
                           className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                         />
                       </label>
 
                       <label className="block">
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                          End
+                          End MM-DD
                         </span>
                         <input
-                          type="date"
-                          value={endDate}
-                          onChange={(event) => {
-                            const nextEnd = event.target.value;
-                            setEndDate(nextEnd);
-                            setStartDate(addDaysIsoDate(nextEnd, -(lookbackDays - 1)));
-                          }}
+                          type="text"
+                          inputMode="numeric"
+                          maxLength={5}
+                          placeholder="07-31"
+                          value={rangeEndMmDd}
+                          onChange={(event) => setRangeEndMmDd(event.target.value)}
+                          onBlur={() => setRangeEndMmDd((value) => normalizeMonthDay(value, rangeDates.endMmDd))}
                           className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                         />
                       </label>
+
+                      <MultiSelect
+                        label="Years"
+                        options={YEAR_OPTIONS}
+                        selected={selectedYears}
+                        onChange={(years) => setSelectedYears(normalizeCompareYears(years))}
+                        width="w-full"
+                        maxSelected={2}
+                      />
 
                     <label className="block">
                       <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -1177,29 +1333,22 @@ export default function PjmLoadGrowth({
 
                   {dateMode === "month-years" && (
                     <>
-                      <label className="block">
-                        <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                          Month
-                        </span>
-                        <select
-                          value={selectedMonth}
-                          onChange={(event) => setSelectedMonth(Number(event.target.value))}
-                          className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-                        >
-                          {MONTHS.map((item) => (
-                            <option key={item.value} value={item.value}>
-                              {item.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <MultiSelect
+                        label="Months"
+                        options={MONTH_OPTIONS}
+                        selected={selectedMonths}
+                        onChange={(months) => setSelectedMonths(normalizeMonthSelection(months))}
+                        placeholder="Select months"
+                        width="w-full"
+                      />
 
                       <MultiSelect
                         label="Years"
                         options={YEAR_OPTIONS}
                         selected={selectedYears}
-                        onChange={(years) => setSelectedYears(years.length ? years : DEFAULT_YEARS)}
+                        onChange={(years) => setSelectedYears(normalizeCompareYears(years))}
                         width="w-full"
+                        maxSelected={2}
                       />
                     </>
                   )}
@@ -1356,7 +1505,7 @@ export default function PjmLoadGrowth({
         <>
               <PlotCard
                 title={`${yoyData.selected.loadArea}. Load per ${selectedMetric.label}`}
-                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${selectedStationLabel} | ${fmtDate(yoyData.windows.currentStart)} to ${fmtDate(yoyData.windows.currentEndExclusive)} | ${dateSelectionLabel}`}
+                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${selectedStationLabel} | ${fmtDate(yoyData.windows.currentStart)} to ${fmtDate(yoyData.windows.currentEndExclusive)} | ${dateSelectionLabel} | ${yoyData.forecastDaily.length} forecast days`}
                 series={DAILY_FIT_SERIES}
                 hiddenSeries={hiddenDailyFitSeries}
                 onToggleSeries={toggleDailyFitSeries}
@@ -1371,7 +1520,7 @@ export default function PjmLoadGrowth({
 
               <DataTableShell
                 title="Fit Statistics"
-                subtitle={`${dailyFit?.currentPoints.length ?? 0} current points | ${dailyFit?.lastYearPoints.length ?? 0} last-year points`}
+                subtitle={`${dailyFit?.currentPoints.length ?? 0} current points | ${dailyFit?.lastYearPoints.length ?? 0} last-year points | ${dailyFit?.forecastPoints.length ?? 0} forecast points`}
                 collapsible
                 open={openTables.dailyFitStats}
                 onToggle={() => toggleTable("dailyFitStats")}
@@ -1473,7 +1622,7 @@ export default function PjmLoadGrowth({
 
               <DataTableShell
                 title={`${selectedMetric.label} vs Load`}
-                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${yoyData.daily.length.toLocaleString()} daily pairs | current, recent, and last-year comparison rows`}
+                subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${yoyData.daily.length.toLocaleString()} daily pairs | ${yoyData.forecastDaily.length.toLocaleString()} forecast days from ${yoyData.selected.forecastLoadArea}`}
                 collapsible
                 open={openTables.dailyPairs}
                 onToggle={() => toggleTable("dailyPairs")}

@@ -5,13 +5,13 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const CACHE_HEADER = "public, s-maxage=900, stale-while-revalidate=300";
-const DEFAULT_LOAD_AREA = "DOM";
-const DEFAULT_STATION_ID = "KRIC";
+const DEFAULT_LOAD_AREA = "RTO";
+const DEFAULT_STATION_ID = "PJM";
 const DEFAULT_REGION = "PJM";
 const DEFAULT_LOOKBACK_DAYS = 56;
 const MAX_LOOKBACK_DAYS = 120;
 const MAX_DATE_RANGE_DAYS = 120;
-const MAX_MONTH_YEAR_COUNT = 6;
+const MAX_MONTH_COUNT = 12;
 const MIN_AREA_RECENT_ROWS = 14 * 24;
 const ROUTE_CONFIG = {
   route: "/api/pjm-load-growth-yoy",
@@ -21,7 +21,7 @@ const ROUTE_CONFIG = {
   purpose: "PJM daily weather-normalization load-growth YoY summary",
   p95TargetMs: 750,
   freshnessSource:
-    "pjm.hrl_load_metered.updated_at, pjm.hrl_load_prelim.updated_at, weather.wsi_hourly_observed_temperatures.updated_at",
+    "pjm.hrl_load_metered.updated_at, pjm.hrl_load_prelim.updated_at, weather.wsi_hourly_observed_temperatures.updated_at, pjm.load_frcstd_7_day.updated_at, weather.wsi_hourly_forecasts.updated_at",
 } as const;
 
 type LoadShape = "flat" | "onpeak" | "offpeak" | "peak";
@@ -38,6 +38,8 @@ interface DailyYoyRow {
   growth_pct: number | string | null;
   current_temp_f: number | string | null;
   last_year_temp_f: number | string | null;
+  current_dew_point_f: number | string | null;
+  last_year_dew_point_f: number | string | null;
   current_feels_like_f: number | string | null;
   last_year_feels_like_f: number | string | null;
   current_hour_count: number | string;
@@ -48,6 +50,18 @@ interface DailyYoyRow {
   last_year_verified_hours: number | string;
   last_year_unverified_hours: number | string;
   last_year_prelim_hours: number | string;
+}
+
+interface ForecastDailyRow {
+  forecast_date: string;
+  forecast_load_mw: number | string | null;
+  forecast_temp_f: number | string | null;
+  forecast_dew_point_f: number | string | null;
+  forecast_feels_like_f: number | string | null;
+  forecast_hour_count: number | string;
+  load_forecast_area: string | null;
+  load_forecast_evaluated_at_ept: string | null;
+  weather_forecast_issued_at_utc: string | null;
 }
 
 interface CoverageRow {
@@ -116,6 +130,15 @@ function parseMonth(value: string | null): number {
   return parsed;
 }
 
+function parseMonths(monthsValue: string | null, monthValue: string | null): number[] {
+  const parsed = (monthsValue ?? monthValue ?? "")
+    .split(",")
+    .map((part) => Number(part.trim()))
+    .filter((month) => Number.isInteger(month) && month >= 1 && month <= 12);
+  const unique = Array.from(new Set(parsed)).sort((left, right) => left - right);
+  return unique.length ? unique.slice(0, MAX_MONTH_COUNT) : [new Date().getUTCMonth() + 1];
+}
+
 function parseYears(value: string | null): number[] {
   const currentYear = new Date().getUTCFullYear();
   const parsed = (value ?? "")
@@ -123,7 +146,9 @@ function parseYears(value: string | null): number[] {
     .map((part) => Number(part.trim()))
     .filter((year) => Number.isInteger(year) && year >= 2000 && year <= currentYear + 1);
   const unique = Array.from(new Set(parsed)).sort((left, right) => left - right);
-  return unique.length ? unique.slice(0, MAX_MONTH_YEAR_COUNT) : [currentYear];
+  if (!unique.length) return [currentYear - 1, currentYear];
+  if (unique.length === 1) return [unique[0] - 1, unique[0]];
+  return unique.slice(-2);
 }
 
 function toNumber(value: unknown): number | null {
@@ -150,6 +175,31 @@ function avgNumbers<T>(rows: T[], selector: (row: T) => unknown): number | null 
 function isoDate(value: string | null | undefined): string | null {
   if (!value) return null;
   return value.slice(0, 10);
+}
+
+function forecastAreaForLoadArea(loadArea: string): string {
+  const map: Record<string, string> = {
+    AECO: "AE/MIDATL",
+    BC: "BG&E/MIDATL",
+    CE: "COMED",
+    DAY: "DAYTON",
+    DOM: "DOMINION",
+    DPLCO: "DP&L/MIDATL",
+    DUQ: "DUQUESNE",
+    JC: "JCP&L/MIDATL",
+    ME: "METED/MIDATL",
+    MIDATL: "MID_ATLANTIC_REGION",
+    PE: "PECO/MIDATL",
+    PLCO: "PPL/MIDATL",
+    PN: "PENELEC/MIDATL",
+    PS: "PSE&G/MIDATL",
+    PJM: "RTO_COMBINED",
+    RTO: "RTO_COMBINED",
+    SOUTH: "SOUTHERN_REGION",
+    UGI: "UGI/MIDATL",
+    WEST: "WESTERN_REGION",
+  };
+  return map[loadArea] ?? loadArea;
 }
 
 async function loadAreas(): Promise<AreaRow[]> {
@@ -218,7 +268,7 @@ with params as (
     $8::text as date_mode,
     $9::date as requested_start,
     $10::date as requested_end,
-    $11::int as selected_month,
+    $11::int[] as selected_months,
     $12::int[] as selected_years
 ),
 range_bounds as (
@@ -246,10 +296,13 @@ target_dates_raw as (
   union all
   select gs::date as target_dt
   from params p
-  cross join lateral unnest(p.selected_years) selected_year
+  cross join lateral unnest(p.selected_months) selected_month
+  cross join lateral (
+    select p.selected_years[array_length(p.selected_years, 1)] as selected_year
+  ) selected_year_pair
   cross join lateral generate_series(
-    make_date(selected_year, p.selected_month, 1),
-    (make_date(selected_year, p.selected_month, 1) + interval '1 month - 1 day')::date,
+    make_date(selected_year_pair.selected_year, selected_month, 1),
+    (make_date(selected_year_pair.selected_year, selected_month, 1) + interval '1 month - 1 day')::date,
     interval '1 day'
   ) gs
   where p.date_mode = 'month-years'
@@ -264,8 +317,16 @@ comparison_dates as (
   select target_dt as anchor_dt, target_dt as selected_dt, 'current'::text as period
   from target_dates
   union all
-  select target_dt as anchor_dt, (target_dt - interval '1 year')::date as selected_dt, 'last_year'::text as period
-  from target_dates
+  select
+    t.target_dt as anchor_dt,
+    case
+      when p.date_mode in ('month-years', 'range')
+        then (t.target_dt - make_interval(years => greatest(1, p.selected_years[array_length(p.selected_years, 1)] - p.selected_years[1])))::date
+      else (t.target_dt - interval '1 year')::date
+    end as selected_dt,
+    'last_year'::text as period
+  from target_dates t
+  cross join params p
 ),
 windows as (
   select
@@ -275,11 +336,25 @@ windows as (
     p.lookback_days,
     min(t.target_dt)::date as current_start,
     (max(t.target_dt) + interval '1 day')::date as current_end,
-    min((t.target_dt - interval '1 year')::date) as last_year_start,
-    (max((t.target_dt - interval '1 year')::date) + interval '1 day')::date as last_year_end
+    min(
+      case
+        when p.date_mode in ('month-years', 'range')
+          then (t.target_dt - make_interval(years => greatest(1, p.selected_years[array_length(p.selected_years, 1)] - p.selected_years[1])))::date
+        else (t.target_dt - interval '1 year')::date
+      end
+    ) as last_year_start,
+    (
+      max(
+        case
+          when p.date_mode in ('month-years', 'range')
+            then (t.target_dt - make_interval(years => greatest(1, p.selected_years[array_length(p.selected_years, 1)] - p.selected_years[1])))::date
+          else (t.target_dt - interval '1 year')::date
+        end
+      ) + interval '1 day'
+    )::date as last_year_end
   from params p
   left join target_dates t on true
-  group by p.load_area, p.station_id, p.region, p.lookback_days
+  group by p.load_area, p.station_id, p.region, p.lookback_days, p.date_mode, p.selected_years
 ),
 load_candidates as (
   select
@@ -287,14 +362,15 @@ load_candidates as (
     d.period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
-    case when m.is_verified then 1 else 2 end as priority
+    'metered_unverified' as source,
+    1 as priority
   from pjm.hrl_load_metered m
   cross join params p
   join comparison_dates d
     on m.datetime_beginning_ept >= d.selected_dt
    and m.datetime_beginning_ept < d.selected_dt + interval '1 day'
   where m.load_area = p.load_area
+    and m.is_verified = false
   union all
   select
     d.anchor_dt,
@@ -327,6 +403,7 @@ weather_hourly as (
     wobs.observation_time_local,
     max(wobs.station_name) as station_name,
     avg(wobs.temp_f::float8) as temp_f,
+    avg(wobs.dew_point_f::float8) as dew_point_f,
     avg(wobs.feels_like_f::float8) as feels_like_f
   from weather.wsi_hourly_observed_temperatures wobs
   cross join params p
@@ -348,6 +425,7 @@ joined_hourly as (
     l.load_mw,
     l.source,
     w.temp_f,
+    w.dew_point_f,
     w.feels_like_f,
     l.period
   from load_hourly l
@@ -389,6 +467,7 @@ daily as (
     mm_dd,
     case when (select load_shape from params) = 'peak' then max(load_mw) else avg(load_mw) end as load_mw,
     avg(temp_f) as avg_temp_f,
+    avg(dew_point_f) as avg_dew_point_f,
     avg(feels_like_f) as avg_feels_like_f,
     count(*) as hour_count,
     count(*) filter (where source = 'metered_verified') as verified_hours,
@@ -407,6 +486,8 @@ paired as (
     ly.load_mw as last_year_load_mw,
     c.avg_temp_f as current_temp_f,
     ly.avg_temp_f as last_year_temp_f,
+    c.avg_dew_point_f as current_dew_point_f,
+    ly.avg_dew_point_f as last_year_dew_point_f,
     c.avg_feels_like_f as current_feels_like_f,
     ly.avg_feels_like_f as last_year_feels_like_f,
     c.hour_count as current_hour_count,
@@ -437,6 +518,8 @@ select
   ((current_load_mw / nullif(last_year_load_mw, 0)) - 1) * 100 as growth_pct,
   current_temp_f,
   last_year_temp_f,
+  current_dew_point_f,
+  last_year_dew_point_f,
   current_feels_like_f,
   last_year_feels_like_f,
   current_hour_count,
@@ -464,7 +547,7 @@ with params as (
     $8::text as date_mode,
     $9::date as requested_start,
     $10::date as requested_end,
-    $11::int as selected_month,
+    $11::int[] as selected_months,
     $12::int[] as selected_years
 ),
 range_bounds as (
@@ -505,11 +588,12 @@ load_candidates as (
     'current'::text as period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
-    case when m.is_verified then 1 else 2 end as priority
+    'metered_unverified' as source,
+    1 as priority
   from pjm.hrl_load_metered m
   cross join windows w
   where m.load_area = w.load_area
+    and m.is_verified = false
     and m.datetime_beginning_ept >= w.current_start
     and m.datetime_beginning_ept < w.current_end
   union all
@@ -518,11 +602,12 @@ load_candidates as (
     'last_year'::text as period,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
-    case when m.is_verified then 'metered_verified' else 'metered_unverified' end as source,
-    case when m.is_verified then 1 else 2 end as priority
+    'metered_unverified' as source,
+    1 as priority
   from pjm.hrl_load_metered m
   cross join windows w
   where m.load_area = w.load_area
+    and m.is_verified = false
     and m.datetime_beginning_ept >= w.last_year_start
     and m.datetime_beginning_ept < w.last_year_end
   union all
@@ -569,6 +654,7 @@ weather_hourly as (
     wobs.observation_time_local,
     max(wobs.station_name) as station_name,
     avg(wobs.temp_f::float8) as temp_f,
+    avg(wobs.dew_point_f::float8) as dew_point_f,
     avg(wobs.feels_like_f::float8) as feels_like_f
   from weather.wsi_hourly_observed_temperatures wobs
   cross join windows w
@@ -584,6 +670,7 @@ weather_hourly as (
     wobs.observation_time_local,
     max(wobs.station_name) as station_name,
     avg(wobs.temp_f::float8) as temp_f,
+    avg(wobs.dew_point_f::float8) as dew_point_f,
     avg(wobs.feels_like_f::float8) as feels_like_f
   from weather.wsi_hourly_observed_temperatures wobs
   cross join windows w
@@ -604,6 +691,7 @@ joined_hourly as (
     l.load_mw,
     l.source,
     w.temp_f,
+    w.dew_point_f,
     w.feels_like_f,
     l.period
   from load_hourly l
@@ -645,6 +733,7 @@ daily as (
     mm_dd,
     case when (select load_shape from windows) = 'peak' then max(load_mw) else avg(load_mw) end as load_mw,
     avg(temp_f) as avg_temp_f,
+    avg(dew_point_f) as avg_dew_point_f,
     avg(feels_like_f) as avg_feels_like_f,
     count(*) as hour_count,
     count(*) filter (where source = 'metered_verified') as verified_hours,
@@ -663,6 +752,8 @@ paired as (
     ly.load_mw as last_year_load_mw,
     c.avg_temp_f as current_temp_f,
     ly.avg_temp_f as last_year_temp_f,
+    c.avg_dew_point_f as current_dew_point_f,
+    ly.avg_dew_point_f as last_year_dew_point_f,
     c.avg_feels_like_f as current_feels_like_f,
     ly.avg_feels_like_f as last_year_feels_like_f,
     c.hour_count as current_hour_count,
@@ -689,6 +780,8 @@ select
   ((current_load_mw / nullif(last_year_load_mw, 0)) - 1) * 100 as growth_pct,
   current_temp_f,
   last_year_temp_f,
+  current_dew_point_f,
+  last_year_dew_point_f,
   current_feels_like_f,
   last_year_feels_like_f,
   current_hour_count,
@@ -714,7 +807,7 @@ with params as (
     $6::text as date_mode,
     $7::date as requested_start,
     $8::date as requested_end,
-    $9::int as selected_month,
+    $9::int[] as selected_months,
     $10::int[] as selected_years
 ),
 range_bounds as (
@@ -742,10 +835,13 @@ target_dates_raw as (
   union all
   select gs::date as target_dt
   from params p
-  cross join lateral unnest(p.selected_years) selected_year
+  cross join lateral unnest(p.selected_months) selected_month
+  cross join lateral (
+    select p.selected_years[array_length(p.selected_years, 1)] as selected_year
+  ) selected_year_pair
   cross join lateral generate_series(
-    make_date(selected_year, p.selected_month, 1),
-    (make_date(selected_year, p.selected_month, 1) + interval '1 month - 1 day')::date,
+    make_date(selected_year_pair.selected_year, selected_month, 1),
+    (make_date(selected_year_pair.selected_year, selected_month, 1) + interval '1 month - 1 day')::date,
     interval '1 day'
   ) gs
   where p.date_mode = 'month-years'
@@ -763,11 +859,25 @@ windows as (
     p.region,
     min(t.target_dt)::date as current_start,
     (max(t.target_dt) + interval '1 day')::date as current_end,
-    min((t.target_dt - interval '1 year')::date) as last_year_start,
-    (max((t.target_dt - interval '1 year')::date) + interval '1 day')::date as last_year_end
+    min(
+      case
+        when p.date_mode in ('month-years', 'range')
+          then (t.target_dt - make_interval(years => greatest(1, p.selected_years[array_length(p.selected_years, 1)] - p.selected_years[1])))::date
+        else (t.target_dt - interval '1 year')::date
+      end
+    ) as last_year_start,
+    (
+      max(
+        case
+          when p.date_mode in ('month-years', 'range')
+            then (t.target_dt - make_interval(years => greatest(1, p.selected_years[array_length(p.selected_years, 1)] - p.selected_years[1])))::date
+          else (t.target_dt - interval '1 year')::date
+        end
+      ) + interval '1 day'
+    )::date as last_year_end
   from params p
   left join target_dates t on true
-  group by p.load_area, p.station_id, p.region
+  group by p.load_area, p.station_id, p.region, p.date_mode, p.selected_years
 ),
 load_coverage as (
   select
@@ -817,6 +927,117 @@ select
 from windows w, load_coverage lc, weather_coverage wc
 `;
 
+const FORECAST_DAILY_SQL = `
+with params as (
+  select
+    $1::text as forecast_area,
+    $2::text as station_id,
+    $3::text as region,
+    $4::text as load_shape,
+    $5::text as day_type
+),
+latest_load_run as (
+  select max(loads.evaluated_at_datetime_utc) as evaluated_at_datetime_utc
+  from pjm.load_frcstd_7_day loads
+  cross join params p
+  where loads.forecast_area = p.forecast_area
+),
+latest_weather_run as (
+  select max(forecast.forecast_issued_at_utc) as forecast_issued_at_utc
+  from weather.wsi_hourly_forecasts forecast
+  cross join params p
+  where forecast.station_id = p.station_id
+    and forecast.region = p.region
+),
+load_hourly as (
+  select
+    loads.forecast_area,
+    loads.evaluated_at_datetime_ept,
+    loads.forecast_datetime_beginning_ept,
+    loads.forecast_datetime_beginning_ept::date as forecast_date,
+    extract(hour from loads.forecast_datetime_beginning_ept)::int + 1 as hour_ending,
+    extract(isodow from loads.forecast_datetime_beginning_ept)::int as iso_dow,
+    loads.forecast_load_mw::float8 as forecast_load_mw
+  from pjm.load_frcstd_7_day loads
+  cross join params p
+  join latest_load_run latest
+    on loads.evaluated_at_datetime_utc = latest.evaluated_at_datetime_utc
+  where loads.forecast_area = p.forecast_area
+    and loads.forecast_datetime_beginning_ept::date >= current_date
+    and loads.forecast_datetime_beginning_ept::date < current_date + interval '8 days'
+),
+weather_hourly as (
+  select
+    (forecast.forecast_time_utc at time zone 'America/New_York') as forecast_time_local,
+    forecast.forecast_issued_at_utc,
+    forecast.temp_f::float8 as temp_f,
+    forecast.dew_point_f::float8 as dew_point_f,
+    forecast.feels_like_f::float8 as feels_like_f
+  from weather.wsi_hourly_forecasts forecast
+  cross join params p
+  join latest_weather_run latest
+    on forecast.forecast_issued_at_utc = latest.forecast_issued_at_utc
+  where forecast.station_id = p.station_id
+    and forecast.region = p.region
+),
+joined_hourly as (
+  select
+    l.forecast_area,
+    l.evaluated_at_datetime_ept,
+    w.forecast_issued_at_utc,
+    l.forecast_datetime_beginning_ept,
+    l.forecast_date,
+    l.hour_ending,
+    l.iso_dow,
+    l.forecast_load_mw,
+    w.temp_f,
+    w.dew_point_f,
+    w.feels_like_f
+  from load_hourly l
+  join weather_hourly w
+    on w.forecast_time_local = l.forecast_datetime_beginning_ept
+),
+filtered_hourly as (
+  select j.*
+  from joined_hourly j
+  cross join params p
+  where (
+      p.load_shape in ('flat', 'peak')
+      or (p.load_shape = 'onpeak' and j.hour_ending between 8 and 23)
+      or (p.load_shape = 'offpeak' and (j.hour_ending between 1 and 7 or j.hour_ending = 24))
+    )
+    and (
+      p.day_type = 'all'
+      or (p.day_type = 'weekdays' and j.iso_dow between 1 and 5)
+      or (p.day_type = 'weekends' and j.iso_dow in (6, 7))
+    )
+),
+shaped_hourly as (
+  select *
+  from (
+    select
+      f.*,
+      row_number() over (partition by f.forecast_date order by f.forecast_load_mw desc nulls last, f.forecast_datetime_beginning_ept) as peak_rank,
+      (select load_shape from params) as load_shape
+    from filtered_hourly f
+  ) ranked
+  where load_shape <> 'peak' or peak_rank = 1
+)
+select
+  forecast_date::text as forecast_date,
+  case when (select load_shape from params) = 'peak' then max(forecast_load_mw) else avg(forecast_load_mw) end as forecast_load_mw,
+  avg(temp_f) as forecast_temp_f,
+  avg(dew_point_f) as forecast_dew_point_f,
+  avg(feels_like_f) as forecast_feels_like_f,
+  count(*) as forecast_hour_count,
+  max(forecast_area) as load_forecast_area,
+  to_char(max(evaluated_at_datetime_ept), 'YYYY-MM-DD"T"HH24:MI:SS') as load_forecast_evaluated_at_ept,
+  to_char(max(forecast_issued_at_utc), 'YYYY-MM-DD"T"HH24:MI:SS') as weather_forecast_issued_at_utc
+from shaped_hourly
+group by forecast_date
+order by forecast_date
+`;
+
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const requestedLoadArea = parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA);
@@ -829,7 +1050,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const dateMode = parseDateMode(searchParams.get("dateMode"));
   const startDate = parseDate(searchParams.get("start"));
   const endDate = parseDate(searchParams.get("end"));
-  const selectedMonth = parseMonth(searchParams.get("month"));
+  const selectedMonths = parseMonths(searchParams.get("months"), searchParams.get("month"));
+  const selectedMonth = selectedMonths[0] ?? parseMonth(searchParams.get("month"));
   const selectedYears = parseYears(searchParams.get("years"));
   const [areaRows, stationRows] = await Promise.all([loadAreas(), weatherStations(region)]);
   const areaNames = areaRows.map((row) => row.load_area);
@@ -838,6 +1060,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     : areaNames.includes(DEFAULT_LOAD_AREA)
       ? DEFAULT_LOAD_AREA
       : areaNames[0] ?? requestedLoadArea;
+  const forecastLoadArea = forecastAreaForLoadArea(loadArea);
   const stationIds = stationRows.map((row) => row.station_id);
   const stationId = stationIds.includes(requestedStationId)
     ? requestedStationId
@@ -855,7 +1078,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     dateMode,
     startDate,
     endDate,
-    selectedMonth,
+    selectedMonths,
     selectedYears,
   ];
   const coverageParams = [
@@ -867,14 +1090,16 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     dateMode,
     startDate,
     endDate,
-    selectedMonth,
+    selectedMonths,
     selectedYears,
   ];
+  const forecastParams = [forecastLoadArea, stationId, region, loadShape, dayType];
 
-  const dailySql = dateMode === "month-years" ? DAILY_SQL : DAILY_RANGE_SQL;
-  const [dailyRows, coverageRows] = await Promise.all([
+  const dailySql = dateMode === "lookback" ? DAILY_RANGE_SQL : DAILY_SQL;
+  const [dailyRows, coverageRows, forecastRows] = await Promise.all([
     query<DailyYoyRow>(dailySql, params),
     query<CoverageRow>(COVERAGE_SQL, coverageParams),
+    query<ForecastDailyRow>(FORECAST_DAILY_SQL, forecastParams),
   ]);
   const coverage = coverageRows[0];
   const runAt = new Date().toISOString();
@@ -887,9 +1112,10 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
 
   const payload = {
     iso: "pjm",
-    source: "metered_verified_then_unverified_then_prelim",
+    source: "metered_unverified_then_prelim+pjm_load_forecast+wsi_weather_forecast",
     selected: {
       loadArea,
+      forecastLoadArea,
       stationId,
       stationName: coverage?.station_name ?? stationId,
       region,
@@ -899,6 +1125,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       startDate,
       endDate,
       month: selectedMonth,
+      months: selectedMonths,
       years: selectedYears,
       loadShape,
       dayType,
@@ -943,6 +1170,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       avgLoadGrowthPct,
       currentAvgTempF: avgNumbers(dailyRows, (row) => row.current_temp_f),
       lastYearAvgTempF: avgNumbers(dailyRows, (row) => row.last_year_temp_f),
+      currentAvgDewPointF: avgNumbers(dailyRows, (row) => row.current_dew_point_f),
+      lastYearAvgDewPointF: avgNumbers(dailyRows, (row) => row.last_year_dew_point_f),
       currentAvgFeelsLikeF: avgNumbers(dailyRows, (row) => row.current_feels_like_f),
       lastYearAvgFeelsLikeF: avgNumbers(dailyRows, (row) => row.last_year_feels_like_f),
       currentHourCount: sumNumbers(dailyRows, (row) => row.current_hour_count),
@@ -964,6 +1193,8 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       growthPct: toNumber(row.growth_pct),
       currentTempF: toNumber(row.current_temp_f),
       lastYearTempF: toNumber(row.last_year_temp_f),
+      currentDewPointF: toNumber(row.current_dew_point_f),
+      lastYearDewPointF: toNumber(row.last_year_dew_point_f),
       currentFeelsLikeF: toNumber(row.current_feels_like_f),
       lastYearFeelsLikeF: toNumber(row.last_year_feels_like_f),
       currentHourCount: Math.trunc(toNumber(row.current_hour_count) ?? 0),
@@ -974,6 +1205,17 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
       lastYearVerifiedHours: Math.trunc(toNumber(row.last_year_verified_hours) ?? 0),
       lastYearUnverifiedHours: Math.trunc(toNumber(row.last_year_unverified_hours) ?? 0),
       lastYearPrelimHours: Math.trunc(toNumber(row.last_year_prelim_hours) ?? 0),
+    })),
+    forecastDaily: forecastRows.map((row) => ({
+      forecastDate: isoDate(row.forecast_date),
+      forecastLoadMw: toNumber(row.forecast_load_mw),
+      forecastTempF: toNumber(row.forecast_temp_f),
+      forecastDewPointF: toNumber(row.forecast_dew_point_f),
+      forecastFeelsLikeF: toNumber(row.forecast_feels_like_f),
+      forecastHourCount: Math.trunc(toNumber(row.forecast_hour_count) ?? 0),
+      loadForecastArea: row.load_forecast_area,
+      loadForecastEvaluatedAtEpt: isoLocal(row.load_forecast_evaluated_at_ept),
+      weatherForecastIssuedAtUtc: isoLocal(row.weather_forecast_issued_at_utc),
     })),
   };
 
