@@ -839,8 +839,7 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-hourly-price-backfill-7-day
 
-- Status: pending deployment; unit files and orchestration are promoted in the
-  repo but must be installed and enabled on `helioscta-prod-vm-01`.
+- Status: deployed; timer enabled and initial VM repair run succeeded.
 - Workflow: PJM hourly LMP price seven-day backfill repair.
 - Runtime module:
   `backend.orchestration.power.pjm.hourly_price_backfill_7_day`.
@@ -874,6 +873,18 @@ FROM isone.seven_day_solar_forecast;
   - DA hourly LMPs: current PJM market date through six days back.
   - Verified RT hourly LMPs: two market dates back through eight days back.
   - Unverified RT hourly LMPs: prior market date through seven days back.
+- Deployed commit: `2db4459`.
+- Deployed at: `2026-06-29 14:28 UTC`.
+- Initial VM verification: manual service run exited `status=0/SUCCESS` on
+  `2026-06-29 14:27 UTC`, upserted 2,016 DA hourly rows for `2026-06-23`
+  through `2026-06-29`, 1,440 verified RT hourly rows for posted dates in the
+  `2026-06-21` through `2026-06-27` repair window, and 6,765 unverified RT
+  hourly rows for `2026-06-22` through `2026-06-28`; journal summary reported
+  `3 succeeded, 0 failed`.
+- Next scheduled run observed: `2026-06-30 06:00:23 UTC`.
+- Deployment note: prior VM untracked forecast files that conflicted with the
+  fast-forward pull were preserved under
+  `/tmp/helioscta-untracked-backup-20260629T142628Z`.
 
 ## pjm-data-miner-scrape-modules
 
