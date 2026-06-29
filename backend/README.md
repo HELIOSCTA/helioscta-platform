@@ -218,3 +218,19 @@ WSI hourly observed backfills call the existing weather orchestration path, so
 successful runs also emit the current WSI freshness event. Use the read-only
 coverage SQL in `docs/operations/manual-backfills.md` before handing historical
 coverage to frontend consumers.
+
+## Scheduled PJM Hourly Price Repair
+
+`backend.orchestration.power.pjm.hourly_price_backfill_7_day` runs a nightly
+seven-day repair over the promoted PJM hourly LMP price tables:
+
+- `pjm.da_hrl_lmps`
+- `pjm.rt_hrl_lmps`
+- `pjm.rt_unverified_hrl_lmps`
+
+The VM timer is `helios-pjm-hourly-price-backfill-7-day.timer`, scheduled at
+`02:00 America/New_York`. It uses feed-specific publication lags: DA through
+the current PJM market date, unverified RT through the prior market date, and
+verified RT through two market dates back. Each underlying backfill writes
+`run_mode=backfill` metadata to `ops.api_fetch_log` and uses the existing
+primary-key upsert path.

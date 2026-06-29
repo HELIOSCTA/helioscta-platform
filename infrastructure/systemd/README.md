@@ -76,6 +76,27 @@ The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
 
+## PJM Hourly Price Backfill Repair
+
+The promoted hourly LMP price repair workflow has one daily timer:
+
+```text
+helios-pjm-hourly-price-backfill-7-day.service
+helios-pjm-hourly-price-backfill-7-day.timer
+```
+
+It runs `backend.orchestration.power.pjm.hourly_price_backfill_7_day`, which
+executes seven-day backfills for `da_hrl_lmps`, `rt_hrl_lmps`, and
+`rt_unverified_hrl_lmps`. The job writes to the canonical `pjm` price tables
+through the existing idempotent upsert keys and stamps PJM API telemetry with
+`run_mode=backfill` metadata in `ops.api_fetch_log`.
+
+The timer runs daily at `02:00 America/New_York` with `Persistent=true` and
+`RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
+DA through the current PJM market date, unverified RT through the prior market
+date, and verified RT through two market dates back. The service uses `flock`
+with `/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
+
 ## PJM Generation Outages By Type
 
 The PJM seven-day generation outage by type feed has its own daily timer:
@@ -355,7 +376,7 @@ The timer runs daily at `13:35 UTC` with `Persistent=true` and
 
 ## Manual PJM Backfills
 
-PJM backfills are manual operator workflows, not timers:
+Most PJM backfills are manual operator workflows, not timers:
 
 ```text
 backend.backfills.power.pjm.da_hrl_lmps
@@ -365,10 +386,13 @@ backend.backfills.power.pjm.gen_outages_by_type
 ```
 
 Deploy them with the repo, but do not install persistent `.service` or
-`.timer` units for them. Run them on demand with `systemd-run` so
+`.timer` units for one-off backfill modules. Run them on demand with `systemd-run` so
 `/etc/helioscta/backend.env` is loaded by systemd instead of shell-sourced.
 This avoids corrupting secrets that contain characters such as `$`. See
 `docs/operations/manual-backfills.md` for exact commands and verification SQL.
+The exception is `backend.orchestration.power.pjm.hourly_price_backfill_7_day`,
+which is a promoted scheduled repair wrapper around the hourly LMP backfill
+modules.
 
 ## NOAA METAR Weather
 
@@ -508,6 +532,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmp
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
@@ -550,6 +576,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
@@ -581,6 +608,7 @@ Run the workflow once on demand:
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
 sudo systemctl start helios-pjm-rt-hrl-lmps.service
+sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
@@ -662,6 +690,14 @@ For the PJM verified hourly RT LMP post-publish refresh:
 systemctl status helios-pjm-rt-hrl-lmps.service
 systemctl status helios-pjm-rt-hrl-lmps.timer
 journalctl -u helios-pjm-rt-hrl-lmps.service -n 200 --no-pager
+```
+
+For the PJM hourly price seven-day backfill repair:
+
+```bash
+systemctl status helios-pjm-hourly-price-backfill-7-day.service
+systemctl status helios-pjm-hourly-price-backfill-7-day.timer
+journalctl -u helios-pjm-hourly-price-backfill-7-day.service -n 240 --no-pager
 ```
 
 For the production health digest:

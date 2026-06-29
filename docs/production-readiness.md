@@ -47,6 +47,7 @@ A backend workflow is production-ready when it has:
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 26 support scrapes daily at `04:30 UTC`; `helios-pjm-gen-outages-by-type.timer` refreshes outage forecasts at `13:45`, `14:15`, and `15:15 UTC`. |
+| PJM hourly price repair | In place | `helios-pjm-hourly-price-backfill-7-day.timer` reruns seven-day DA, verified RT hourly, and unverified RT hourly LMP backfills nightly at `02:00 America/New_York`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
@@ -116,6 +117,7 @@ on downstream value, feed update cadence, and database cost.
 | `rt_fivemin_hrl_lmps` | Scheduled daily with readiness event | Priority verified five-minute RT price feed for hub, zone, and interface prices. |
 | `load_frcstd_7_day` | Scheduled hourly with API telemetry | Hourly PJM load forecast snapshots drive the forecast dashboard and vintage comparisons. |
 | `rt_hrl_lmps` | Scheduled daily after PJM's publish window with API telemetry | Verified hourly RT hub prices drive frontend term/history views and post later than the early support batch. |
+| `rt_unverified_hrl_lmps` | Scheduled daily in the PJM Data Miner batch and repaired nightly by hourly price backfill | Short-retention unverified hourly prices can have late or missing values, so the repair window reruns the last seven posted market dates. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |
 
@@ -125,6 +127,9 @@ Current criticality decision:
   `ercot-dam-stlmnt-pnt-prices`, and `ercot-settlement-point-prices`.
 - Dedicated support price timer: `rt_hrl_lmps`, because the verified hourly RT
   feed posts after the early PJM Data Miner support batch.
+- Nightly repair timer: `hourly_price_backfill_7_day` reruns recent hourly LMP
+  price backfills with feed-specific publication lags and logs backfill
+  telemetry in `ops.api_fetch_log`.
 - Support batch: all other currently promoted PJM Data Miner feeds, including
   `rt_fivemin_mnt_lmps`.
 - Promote `rt_fivemin_mnt_lmps` only when a downstream consumer needs
@@ -179,7 +184,9 @@ scheduled jobs, and tag PJM API telemetry with `run_mode=backfill` in
 `ops.api_fetch_log.metadata`. Scheduled orchestrators remain responsible for
 polling and readiness events; manual backfill wrappers call lower-level scrape
 modules where available. Use `docs/operations/manual-backfills.md` for exact VM
-commands and verification SQL. No separate backfill tables or timers are used.
+commands and verification SQL. The hourly LMP price wrappers also run through
+the nightly `helios-pjm-hourly-price-backfill-7-day.timer` repair job; other
+backfills remain on demand only.
 
 RT verified five-minute HRL LMP API note:
 

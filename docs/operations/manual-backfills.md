@@ -15,6 +15,8 @@ Covered workflows:
 - `backend.backfills.power.pjm.hrl_load_prelim`
 - `backend.backfills.power.pjm.gen_outages_by_type`
 - `backend.backfills.weather.wsi.hourly_observed`
+- `backend.orchestration.power.pjm.hourly_price_backfill_7_day` for the
+  scheduled seven-day hourly LMP repair wrapper.
 
 Destination tables:
 
@@ -32,6 +34,22 @@ for the API requests they issue. PJM backfill entry points call lower-level
 scrape modules; scheduled PJM orchestrators remain responsible for polling and
 data-readiness events. WSI hourly observed backfills call the existing WSI
 orchestration path and emit the same weather freshness event as scheduled runs.
+
+## Scheduled Hourly Price Repair
+
+`helios-pjm-hourly-price-backfill-7-day.timer` runs
+`backend.orchestration.power.pjm.hourly_price_backfill_7_day` nightly at
+`02:00 America/New_York`. It replays seven market dates per feed:
+
+- DA hourly LMPs through the current PJM market date.
+- Verified RT hourly LMPs through two market dates back, because the verified
+  source posts later in the day.
+- Unverified RT hourly LMPs through the prior market date.
+
+This scheduled repair writes to the same canonical `pjm` tables and uses the
+same `ops.api_fetch_log.metadata` backfill fields as manual runs. It does not
+replace the one-off manual command pattern below for older ranges or non-price
+PJM feeds.
 
 ## Safety Rules
 

@@ -837,6 +837,44 @@ FROM isone.seven_day_solar_forecast;
 - Safe rerun story: upsert on `(datetime_beginning_utc, pnode_id, pnode_name,
   row_is_current, version_nbr)`.
 
+## helios-pjm-hourly-price-backfill-7-day
+
+- Status: pending deployment; unit files and orchestration are promoted in the
+  repo but must be installed and enabled on `helioscta-prod-vm-01`.
+- Workflow: PJM hourly LMP price seven-day backfill repair.
+- Runtime module:
+  `backend.orchestration.power.pjm.hourly_price_backfill_7_day`.
+- Backfill modules:
+  - `backend.backfills.power.pjm.da_hrl_lmps`
+  - `backend.backfills.power.pjm.rt_hrl_lmps`
+  - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- Source system: PJM Data Miner 2 LMP feeds.
+- Destination tables:
+  - `pjm.da_hrl_lmps`
+  - `pjm.rt_hrl_lmps`
+  - `pjm.rt_unverified_hrl_lmps`
+- API telemetry: `ops.api_fetch_log` with `run_mode=backfill` metadata.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service`
+  - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs:
+  `journalctl -u helios-pjm-hourly-price-backfill-7-day.service`.
+- Schedule: daily at `02:00 America/New_York` with
+  `RandomizedDelaySec=10min`.
+- Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
+- Safe rerun story: each backfill uses the destination table's existing
+  primary-key upsert.
+- Repair windows:
+  - DA hourly LMPs: current PJM market date through six days back.
+  - Verified RT hourly LMPs: two market dates back through eight days back.
+  - Unverified RT hourly LMPs: prior market date through seven days back.
+
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.
