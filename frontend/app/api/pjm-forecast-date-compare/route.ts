@@ -88,19 +88,42 @@ const METEOLOGICA_LOAD_COMPARE_SQL = `
   )
   select
     latest_load_issues.forecast_date::text as forecast_date,
-    to_char(load.issue_date, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
-    extract(hour from load.forecast_period_start)::int as he_start,
+    to_char(latest_load_issues.issue_date, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
+    extract(hour from forecast_hours.forecast_period_start)::int as he_start,
     load.forecast_mw::float8 as load_mw,
     to_char(load.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as updated_at
   from latest_load_issues
-  join meteologica.pjm_forecast_hourly as load
-    on load.region = 'PJM'
-    and load.forecast_area = $1
-    and load.metric = 'load'
-    and load.issue_date = latest_load_issues.issue_date
-    and load.forecast_period_start::date = latest_load_issues.forecast_date
-    and load.forecast_mw is not null
-  order by latest_load_issues.forecast_date, load.forecast_period_start
+  join lateral (
+    select distinct load_hour.forecast_period_start
+    from meteologica.pjm_forecast_hourly as load_hour
+    where load_hour.region = 'PJM'
+      and load_hour.forecast_area = $1
+      and load_hour.metric = 'load'
+      and load_hour.forecast_period_start::date = latest_load_issues.forecast_date
+      and load_hour.forecast_mw is not null
+      and (
+        (latest_load_issues.forecast_date = current_date and load_hour.issue_date <= latest_load_issues.issue_date)
+        or (latest_load_issues.forecast_date <> current_date and load_hour.issue_date = latest_load_issues.issue_date)
+      )
+  ) forecast_hours on true
+  join lateral (
+    select
+      load.forecast_mw,
+      load.updated_at
+    from meteologica.pjm_forecast_hourly as load
+    where load.region = 'PJM'
+      and load.forecast_area = $1
+      and load.metric = 'load'
+      and load.forecast_period_start = forecast_hours.forecast_period_start
+      and load.forecast_mw is not null
+      and (
+        (latest_load_issues.forecast_date = current_date and load.issue_date <= latest_load_issues.issue_date)
+        or (latest_load_issues.forecast_date <> current_date and load.issue_date = latest_load_issues.issue_date)
+      )
+    order by load.issue_date desc
+    limit 1
+  ) load on true
+  order by latest_load_issues.forecast_date, forecast_hours.forecast_period_start
 `;
 
 function parseSource(value: string | null): ForecastSourceMode {

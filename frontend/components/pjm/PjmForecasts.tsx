@@ -607,7 +607,7 @@ export default function PjmForecasts({
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [explorerData, setExplorerData] = useState<PjmForecastExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<PjmForecastDifferencesPayload | null>(null);
-  const [compareData, setCompareData] = useState<ForecastDateComparePayload | null>(null);
+  const [compareDataByArea, setCompareDataByArea] = useState<Record<string, ForecastDateComparePayload>>({});
   const [explorerLoading, setExplorerLoading] = useState(true);
   const [diffLoading, setDiffLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -618,10 +618,10 @@ export default function PjmForecasts({
     area: string;
     forecastDate: string;
   } | null>(null);
-  const [compareArea, setCompareArea] = useState("RTO_COMBINED");
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
+  const [collapsedCompareCards, setCollapsedCompareCards] = useState<Set<string>>(() => new Set());
   const [lookbackHours, setLookbackHours] = useState<number>(DEFAULT_LOOKBACK_HOURS);
   const [hiddenLookbackSeries, setHiddenLookbackSeries] = useState<Set<string>>(() => new Set());
   const [visibleVintageWindows, setVisibleVintageWindows] = useState<Set<number>>(
@@ -641,10 +641,10 @@ export default function PjmForecasts({
     setSelectedExplorerCell(null);
     setDiffData(null);
     setDiffError(null);
-    setCompareData(null);
+    setCompareDataByArea({});
     setCompareError(null);
     setCompareRampingEnabled(false);
-    setCompareArea(sourceMode === "meteologica" ? "RTO" : "RTO_COMBINED");
+    setCollapsedCompareCards(new Set());
     setCompareBaseDate(null);
     setCompareTargetDate(null);
   }, [sourceMode]);
@@ -679,63 +679,80 @@ export default function PjmForecasts({
     if (!explorerData || forecastType !== "load") return;
 
     const dates = explorerData.forecastDates ?? [];
-    const areas = explorerData.areas ?? [];
-    setCompareArea((current) => {
-      if (areas.includes(current)) return current;
-      if (areas.includes("RTO_COMBINED")) return "RTO_COMBINED";
-      if (areas.includes("RTO")) return "RTO";
-      return areas[0] ?? (sourceMode === "meteologica" ? "RTO" : "RTO_COMBINED");
-    });
     setCompareBaseDate((current) => (current && dates.includes(current) ? current : dates[0] ?? null));
     setCompareTargetDate((current) =>
       current && dates.includes(current) ? current : dates[1] ?? dates[0] ?? null,
     );
-  }, [explorerData, forecastType, sourceMode]);
+  }, [explorerData, forecastType]);
 
   useEffect(() => {
+    const compareAreas = explorerData?.areas ?? [];
     if (
       forecastType !== "load" ||
       forecastMode !== "compareDay" ||
       !compareBaseDate ||
-      !compareTargetDate
+      !compareTargetDate ||
+      !compareAreas.length
     ) {
       setCompareLoading(false);
-      if (forecastType !== "load") setCompareData(null);
+      setCompareDataByArea({});
       return;
     }
 
-    const controller = new AbortController();
     let active = true;
+    const areas = [...compareAreas];
     setCompareLoading(true);
     setCompareError(null);
 
-    fetchJsonWithCache<ForecastDateComparePayload>({
-      key: buildCompareCacheKey({
-        sourceMode,
-        area: compareArea,
-        baseDate: compareBaseDate,
-        compareDate: compareTargetDate,
-      }),
-      url: buildCompareApiUrl({
-        sourceMode,
-        area: compareArea,
-        baseDate: compareBaseDate,
-        compareDate: compareTargetDate,
-        refresh: refreshToken > 0,
-      }),
-      ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
-      cacheMode: refreshToken > 0 ? "no-store" : "default",
-      forceRefresh: refreshToken > 0,
-    })
-      .then((payload) => {
+    Promise.allSettled(
+      areas.map((area) =>
+        fetchJsonWithCache<ForecastDateComparePayload>({
+          key: buildCompareCacheKey({
+            sourceMode,
+            area,
+            baseDate: compareBaseDate,
+            compareDate: compareTargetDate,
+          }),
+          url: buildCompareApiUrl({
+            sourceMode,
+            area,
+            baseDate: compareBaseDate,
+            compareDate: compareTargetDate,
+            refresh: refreshToken > 0,
+          }),
+          ttlMs: API_CACHE_TTL_MS,
+          cacheMode: refreshToken > 0 ? "no-store" : "default",
+          forceRefresh: refreshToken > 0,
+        }),
+      ),
+    )
+      .then((results) => {
         if (!active) return;
-        setCompareData(payload);
+        const nextData: Record<string, ForecastDateComparePayload> = {};
+        const failures: string[] = [];
+        results.forEach((result, index) => {
+          const area = areas[index] ?? "Unknown";
+          if (result.status === "fulfilled") {
+            nextData[area] = result.value;
+          } else {
+            const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            failures.push(`${area}: ${reason}`);
+          }
+        });
+
+        setCompareDataByArea(nextData);
+        if (failures.length) {
+          setCompareError(
+            `Some regions failed to load: ${failures.slice(0, 3).join("; ")}${
+              failures.length > 3 ? "..." : ""
+            }`,
+          );
+        }
       })
       .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
+        if (!active) return;
         setCompareError(err.message || `Failed to load ${sourceLabel(sourceMode)} load date comparison`);
-        setCompareData(null);
+        setCompareDataByArea({});
       })
       .finally(() => {
         if (active) setCompareLoading(false);
@@ -743,12 +760,11 @@ export default function PjmForecasts({
 
     return () => {
       active = false;
-      controller.abort();
     };
   }, [
-    compareArea,
     compareBaseDate,
     compareTargetDate,
+    explorerData,
     forecastMode,
     forecastType,
     refreshToken,
@@ -871,7 +887,41 @@ export default function PjmForecasts({
       ),
     })).filter((group) => group.areas.length > 0);
   }, [explorerData]);
+  const visibleAreas = useMemo(
+    () => visibleAreaGroups.flatMap((group) => group.areas),
+    [visibleAreaGroups],
+  );
   const visibleAreaCount = visibleAreaGroups.reduce((count, group) => count + group.areas.length, 0);
+
+  useEffect(() => {
+    const visibleAreaSet = new Set(visibleAreas);
+    setCollapsedCompareCards((current) => {
+      const next = new Set<string>();
+      current.forEach((area) => {
+        if (visibleAreaSet.has(area)) next.add(area);
+      });
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleAreas]);
+
+  const toggleCompareCard = useCallback((area: string) => {
+    startTransition(() => {
+      setCollapsedCompareCards((current) => {
+        const next = new Set(current);
+        if (next.has(area)) next.delete(area);
+        else next.add(area);
+        return next;
+      });
+    });
+  }, []);
+
+  const expandAllCompareCards = useCallback(() => {
+    startTransition(() => setCollapsedCompareCards(new Set()));
+  }, []);
+
+  const collapseAllCompareCards = useCallback(() => {
+    startTransition(() => setCollapsedCompareCards(new Set(visibleAreas)));
+  }, [visibleAreas]);
 
   const explorerCellMap = useMemo(() => {
     const map = new Map<string, ForecastExplorerCell>();
@@ -1016,16 +1066,22 @@ export default function PjmForecasts({
       )}`
     : undefined;
   const compareDateOptions = explorerData?.forecastDates ?? [];
-  const compareAreaOptions = explorerData?.areas ?? [];
-  const loadCompareRows = useMemo(() => compareChartRows(compareData?.rows ?? []), [compareData]);
+  const compareDataList = visibleAreas
+    .map((area) => compareDataByArea[area])
+    .filter((payload): payload is ForecastDateComparePayload => Boolean(payload));
+  const compareLatestUpdate = compareDataList
+    .map((payload) => payload.latestUpdate)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
   const compareBaseDateLabel = fmtDate(compareBaseDate);
   const compareTargetDateLabel = fmtDate(compareTargetDate);
   const compareValueKey = compareRampingEnabled ? "baseRamp" : "base";
   const compareTargetValueKey = compareRampingEnabled ? "compareRamp" : "compare";
   const compareDeltaValueKey = compareRampingEnabled ? "rampDelta" : "delta";
-  const loadCompareSubtitle = compareData
-    ? `${compareData.sourceLabel} | ${compareData.area} | ${compareBaseDateLabel} vs ${compareTargetDateLabel} | ${compareData.completeHourCount}/24 complete hours`
-    : `${sourceLabel(sourceMode)} | ${compareArea} | ${compareBaseDateLabel} vs ${compareTargetDateLabel}`;
+  const loadCompareSubtitle = `${sourceLabel(sourceMode)} | ${compareDataList.length}/${
+    visibleAreaCount || visibleAreas.length
+  } regions loaded | ${compareBaseDateLabel} vs ${compareTargetDateLabel}`;
 
   const renderCurveChart = ({
     heightClass,
@@ -1102,20 +1158,21 @@ export default function PjmForecasts({
       hiddenSeries: hiddenLookbackSeries,
     });
 
-  const renderLoadCompareChart = () => (
+  const renderLoadCompareChart = (
+    payload: ForecastDateComparePayload,
+    loadCompareRows: Array<Record<string, number | null>>,
+  ) => (
     <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
       <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <h3 className="text-base font-semibold text-gray-100">{compareArea}</h3>
-        {compareData && (
-          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
-            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-              {compareBaseDateLabel} issue: {fmtDateTime(compareData.baseIssue)}
-            </span>
-            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-              {compareTargetDateLabel} issue: {fmtDateTime(compareData.compareIssue)}
-            </span>
-          </div>
-        )}
+        <h3 className="text-base font-semibold text-gray-100">{payload.area}</h3>
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
+          <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+            {compareBaseDateLabel} issue: {fmtDateTime(payload.baseIssue)}
+          </span>
+          <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+            {compareTargetDateLabel} issue: {fmtDateTime(payload.compareIssue)}
+          </span>
+        </div>
       </div>
       <div className="h-[300px]">
         <ResponsiveContainer width="100%" height="100%">
@@ -1209,7 +1266,7 @@ export default function PjmForecasts({
     </div>
   );
 
-  const renderLoadCompareTable = () => {
+  const renderLoadCompareTable = (loadCompareRows: Array<Record<string, number | null>>) => {
     const valueFormatter = compareRampingEnabled ? fmtSignedMw : fmtMw;
     const loadCompareValueStats = (valueKey: string) => {
       const values = loadCompareRows
@@ -1339,99 +1396,149 @@ export default function PjmForecasts({
     );
   };
 
-  const renderLoadCompareSection = () => (
-    <SectionCard title="Forecast Date Compare" subtitle={loadCompareSubtitle}>
-      <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_170px_130px_1fr] lg:items-end">
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Area
-          </span>
-          <select
-            value={compareArea}
-            disabled={!compareAreaOptions.length}
-            onChange={(event) => setCompareArea(event.target.value)}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {(compareAreaOptions.length ? compareAreaOptions : [compareArea]).map((area) => (
-              <option key={area} value={area}>
-                {area}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Date A
-          </span>
-          <select
-            value={compareBaseDate ?? ""}
-            disabled={!compareDateOptions.length}
-            onChange={(event) => setCompareBaseDate(event.target.value || null)}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {!compareDateOptions.length && <option value="">--</option>}
-            {compareDateOptions.map((date) => (
-              <option key={date} value={date}>
-                {fmtDate(date)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Date B
-          </span>
-          <select
-            value={compareTargetDate ?? ""}
-            disabled={!compareDateOptions.length}
-            onChange={(event) => setCompareTargetDate(event.target.value || null)}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {!compareDateOptions.length && <option value="">--</option>}
-            {compareDateOptions.map((date) => (
-              <option key={date} value={date}>
-                {fmtDate(date)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Mode
-          </span>
-          <button
-            type="button"
-            aria-pressed={compareRampingEnabled}
-            onClick={() => setCompareRampingEnabled((enabled) => !enabled)}
-            className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-              compareRampingEnabled
-                ? "border-sky-500/50 bg-sky-500/10 text-white"
-                : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-            }`}
-          >
-            Ramping
-          </button>
-        </div>
-      </div>
+  const renderLoadCompareSection = () => {
+    const compareCardControlClass =
+      "rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-100";
 
-      {compareError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {compareError}
+    return (
+      <SectionCard title="Forecast Date Compare" subtitle={loadCompareSubtitle}>
+        <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_130px_1fr] lg:items-end">
+          <label>
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Date A
+            </span>
+            <select
+              value={compareBaseDate ?? ""}
+              disabled={!compareDateOptions.length}
+              onChange={(event) => {
+                const nextDate = event.target.value || null;
+                startTransition(() => setCompareBaseDate(nextDate));
+              }}
+              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+            >
+              {!compareDateOptions.length && <option value="">--</option>}
+              {compareDateOptions.map((date) => (
+                <option key={date} value={date}>
+                  {fmtDate(date)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Date B
+            </span>
+            <select
+              value={compareTargetDate ?? ""}
+              disabled={!compareDateOptions.length}
+              onChange={(event) => {
+                const nextDate = event.target.value || null;
+                startTransition(() => setCompareTargetDate(nextDate));
+              }}
+              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+            >
+              {!compareDateOptions.length && <option value="">--</option>}
+              {compareDateOptions.map((date) => (
+                <option key={date} value={date}>
+                  {fmtDate(date)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div>
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Mode
+            </span>
+            <button
+              type="button"
+              aria-pressed={compareRampingEnabled}
+              onClick={() => {
+                startTransition(() => setCompareRampingEnabled((enabled) => !enabled));
+              }}
+              className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+                compareRampingEnabled
+                  ? "border-sky-500/50 bg-sky-500/10 text-white"
+                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+              }`}
+            >
+              Ramping
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-4 rounded-sm bg-[#60a5fa]" />
+              {compareBaseDateLabel}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-4 rounded-sm bg-[#fb923c]" />
+              {compareTargetDateLabel}
+            </span>
+            {compareLatestUpdate && (
+              <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>
+            )}
+            <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
+              Expand all
+            </button>
+            <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
+              Collapse all
+            </button>
+          </div>
         </div>
-      )}
-      {compareLoading && (
-        <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
-          Loading date comparison...
-        </div>
-      )}
-      {compareData && !compareLoading && (
-        <div className="space-y-3">
-          {renderLoadCompareChart()}
-          {renderLoadCompareTable()}
-        </div>
-      )}
-    </SectionCard>
-  );
+
+        {compareError && (
+          <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+            {compareError}
+          </div>
+        )}
+        {compareLoading && (
+          <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
+            Loading date comparison...
+          </div>
+        )}
+        {!compareLoading && compareDataList.length === 0 && !compareError && (
+          <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
+            No complete date comparison regions are available for these dates.
+          </div>
+        )}
+        {!compareLoading && compareDataList.length > 0 && (
+          <div className="space-y-3">
+            {visibleAreaGroups.flatMap((group) =>
+              group.areas.map((area) => {
+                const payload = compareDataByArea[area];
+                if (!payload) return null;
+                const open = !collapsedCompareCards.has(area);
+                const rows = compareChartRows(payload.rows);
+
+                return (
+                  <DataTableShell
+                    key={area}
+                    title={area}
+                    subtitle={`${group.label} | ${payload.completeHourCount}/24 complete hours | ${
+                      open ? "expanded" : "collapsed"
+                    }`}
+                    action={
+                      <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-300">
+                        Updated {fmtDateTime(payload.latestUpdate)}
+                      </span>
+                    }
+                    collapsible
+                    open={open}
+                    onToggle={() => toggleCompareCard(area)}
+                    bodyClassName="bg-[#0d1119] p-3"
+                  >
+                    <div className="space-y-3">
+                      {renderLoadCompareChart(payload, rows)}
+                      {renderLoadCompareTable(rows)}
+                    </div>
+                  </DataTableShell>
+                );
+              }),
+            )}
+          </div>
+        )}
+      </SectionCard>
+    );
+  };
 
   const renderVintageTable = () => (
     <DataTableShell

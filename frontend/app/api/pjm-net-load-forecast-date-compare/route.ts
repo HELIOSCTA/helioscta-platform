@@ -69,23 +69,48 @@ const METEOLOGICA_COMPARE_SQL = `
   load_rows as (
     select
       latest_load_issues.forecast_date,
-      latest_load_issues.issue_date,
-      load.forecast_period_start,
+      latest_load_issues.issue_date as evaluated_at_ept,
+      load.issue_date as load_issue_date,
+      forecast_hours.forecast_period_start,
       load.forecast_mw as load_mw,
       load.updated_at as load_updated_at
     from latest_load_issues
-    join meteologica.pjm_forecast_hourly as load
-      on load.region = 'PJM'
-      and load.forecast_area = $1
-      and load.metric = 'load'
-      and load.issue_date = latest_load_issues.issue_date
-      and load.forecast_period_start::date = latest_load_issues.forecast_date
-      and load.forecast_mw is not null
+    join lateral (
+      select distinct load_hour.forecast_period_start
+      from meteologica.pjm_forecast_hourly as load_hour
+      where load_hour.region = 'PJM'
+        and load_hour.forecast_area = $1
+        and load_hour.metric = 'load'
+        and load_hour.forecast_period_start::date = latest_load_issues.forecast_date
+        and load_hour.forecast_mw is not null
+        and (
+          (latest_load_issues.forecast_date = current_date and load_hour.issue_date <= latest_load_issues.issue_date)
+          or (latest_load_issues.forecast_date <> current_date and load_hour.issue_date = latest_load_issues.issue_date)
+        )
+    ) forecast_hours on true
+    join lateral (
+      select
+        load.issue_date,
+        load.forecast_mw,
+        load.updated_at
+      from meteologica.pjm_forecast_hourly as load
+      where load.region = 'PJM'
+        and load.forecast_area = $1
+        and load.metric = 'load'
+        and load.forecast_period_start = forecast_hours.forecast_period_start
+        and load.forecast_mw is not null
+        and (
+          (latest_load_issues.forecast_date = current_date and load.issue_date <= latest_load_issues.issue_date)
+          or (latest_load_issues.forecast_date <> current_date and load.issue_date = latest_load_issues.issue_date)
+        )
+      order by load.issue_date desc
+      limit 1
+    ) load on true
   ),
   paired_components as (
     select
       load_rows.forecast_date,
-      load_rows.issue_date,
+      load_rows.evaluated_at_ept,
       load_rows.forecast_period_start,
       load_rows.load_mw,
       solar_mw,
@@ -105,7 +130,7 @@ const METEOLOGICA_COMPARE_SQL = `
         and solar.forecast_area = $1
         and solar.metric = 'solar'
         and solar.forecast_period_start = load_rows.forecast_period_start
-        and solar.issue_date <= load_rows.issue_date
+        and solar.issue_date <= load_rows.load_issue_date
         and solar.forecast_mw is not null
       order by solar.issue_date desc
       limit 1
@@ -119,7 +144,7 @@ const METEOLOGICA_COMPARE_SQL = `
         and wind.forecast_area = $1
         and wind.metric = 'wind'
         and wind.forecast_period_start = load_rows.forecast_period_start
-        and wind.issue_date <= load_rows.issue_date
+        and wind.issue_date <= load_rows.load_issue_date
         and wind.forecast_mw is not null
       order by wind.issue_date desc
       limit 1
@@ -127,7 +152,7 @@ const METEOLOGICA_COMPARE_SQL = `
   )
   select
     forecast_date::text as forecast_date,
-    to_char(issue_date, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
+    to_char(evaluated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
     extract(hour from forecast_period_start)::int as he_start,
     load_mw::float8 as load_mw,
     solar_mw::float8 as solar_mw,

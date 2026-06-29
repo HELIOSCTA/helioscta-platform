@@ -102,10 +102,100 @@ function pickAnchor(rows: SummaryRow[], latest: SummaryRow, hours: number): Summ
 export const GET = observedJsonRoute(ROUTE_CONFIG, async () => {
   const rows = await query<SummaryRow>(
     `
+      with load_issues as (
+        select
+          forecast_area,
+          forecast_period_start::date as forecast_date,
+          issue_date
+        from meteologica.pjm_forecast_hourly
+        where region = 'PJM'
+          and metric = 'load'
+          and forecast_area is not null
+          and forecast_period_start::date >= current_date
+          and issue_date is not null
+          and forecast_mw is not null
+        group by
+          forecast_area,
+          forecast_period_start::date,
+          issue_date
+      ),
+      issue_stats as (
+        select
+          forecast_area,
+          forecast_date,
+          max(issue_date) as latest_issue_date
+        from load_issues
+        group by forecast_area, forecast_date
+      ),
+      exact_rows as (
+        select
+          load.forecast_area,
+          load.forecast_period_start::date as forecast_date,
+          load.issue_date as evaluated_at_ept,
+          load.forecast_period_start,
+          load.forecast_mw,
+          load.updated_at
+        from meteologica.pjm_forecast_hourly as load
+        join issue_stats
+          on issue_stats.forecast_area = load.forecast_area
+          and issue_stats.forecast_date = load.forecast_period_start::date
+        where load.region = 'PJM'
+          and load.metric = 'load'
+          and load.forecast_area is not null
+          and load.forecast_period_start::date >= current_date
+          and load.issue_date is not null
+          and load.forecast_mw is not null
+          and not (
+            issue_stats.forecast_date = current_date
+            and load.issue_date = issue_stats.latest_issue_date
+          )
+      ),
+      stitched_current_latest as (
+        select
+          issue_stats.forecast_area,
+          issue_stats.forecast_date,
+          issue_stats.latest_issue_date as evaluated_at_ept,
+          forecast_hours.forecast_period_start,
+          load.forecast_mw,
+          load.updated_at
+        from issue_stats
+        join lateral (
+          select distinct load_hour.forecast_period_start
+          from meteologica.pjm_forecast_hourly as load_hour
+          where load_hour.region = 'PJM'
+            and load_hour.forecast_area = issue_stats.forecast_area
+            and load_hour.metric = 'load'
+            and load_hour.forecast_period_start::date = issue_stats.forecast_date
+            and load_hour.issue_date is not null
+            and load_hour.forecast_mw is not null
+            and load_hour.issue_date <= issue_stats.latest_issue_date
+        ) forecast_hours on true
+        join lateral (
+          select
+            load.forecast_mw,
+            load.updated_at
+          from meteologica.pjm_forecast_hourly as load
+          where load.region = 'PJM'
+            and load.forecast_area = issue_stats.forecast_area
+            and load.metric = 'load'
+            and load.forecast_period_start = forecast_hours.forecast_period_start
+            and load.issue_date is not null
+            and load.forecast_mw is not null
+            and load.issue_date <= issue_stats.latest_issue_date
+          order by load.issue_date desc
+          limit 1
+        ) load on true
+        where issue_stats.forecast_date = current_date
+      ),
+      load_rows as (
+        select * from exact_rows
+        union all
+        select * from stitched_current_latest
+      )
       select
         forecast_area,
-        forecast_period_start::date::text as forecast_date,
-        to_char(issue_date, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
+        forecast_date::text as forecast_date,
+        to_char(evaluated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as evaluated_at_ept,
         avg(forecast_mw)::float8 as flat_avg,
         avg(forecast_mw) filter (
           where extract(hour from forecast_period_start)::int between 7 and 22
@@ -117,16 +207,12 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async () => {
         max(forecast_mw)::float8 as peak_mw,
         min(forecast_mw)::float8 as min_mw,
         to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as updated_at
-      from meteologica.pjm_forecast_hourly
-      where region = 'PJM'
-        and metric = 'load'
-        and forecast_period_start::date >= current_date
-        and issue_date is not null
+      from load_rows
       group by
         forecast_area,
-        forecast_period_start::date,
-        issue_date
-      order by forecast_area, forecast_date, issue_date
+        forecast_date,
+        evaluated_at_ept
+      order by forecast_area, forecast_date, evaluated_at_ept
     `,
   );
 

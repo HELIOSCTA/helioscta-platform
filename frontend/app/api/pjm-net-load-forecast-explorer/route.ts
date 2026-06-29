@@ -131,14 +131,16 @@ const METEOLOGICA_SUMMARY_SQL = `
       forecast_area,
       forecast_date,
       latest_issue_date as issue_date,
-      vintage_count
+      vintage_count,
+      forecast_date = current_date as use_latest_hourly
     from issue_stats
     union
     select
       issue_stats.forecast_area,
       issue_stats.forecast_date,
       anchor.issue_date,
-      issue_stats.vintage_count
+      issue_stats.vintage_count,
+      false as use_latest_hourly
     from issue_stats
     cross join (values (1), (12), (24), (48), (72)) as lag_hours(hours)
     join lateral (
@@ -168,12 +170,13 @@ const METEOLOGICA_SUMMARY_SQL = `
       limit 1
     ) anchor on true
   ),
-  load_rows as (
+  exact_load_rows as (
     select
       selected_issues.forecast_area,
       selected_issues.forecast_date,
       selected_issues.issue_date as evaluated_at_ept,
       selected_issues.vintage_count,
+      load.issue_date as load_issue_date,
       load.forecast_period_start,
       load.forecast_mw as load_mw,
       load.updated_at as load_updated_at
@@ -185,6 +188,56 @@ const METEOLOGICA_SUMMARY_SQL = `
       and load.issue_date = selected_issues.issue_date
       and load.forecast_period_start::date = selected_issues.forecast_date
       and load.forecast_mw is not null
+    where not selected_issues.use_latest_hourly
+  ),
+  stitched_load_rows as (
+    select
+      selected_issues.forecast_area,
+      selected_issues.forecast_date,
+      selected_issues.issue_date as evaluated_at_ept,
+      selected_issues.vintage_count,
+      load.issue_date as load_issue_date,
+      forecast_hours.forecast_period_start,
+      load.forecast_mw as load_mw,
+      load.updated_at as load_updated_at
+    from selected_issues
+    join lateral (
+      select distinct load_hour.forecast_period_start
+      from meteologica.pjm_forecast_hourly as load_hour
+      where load_hour.region = 'PJM'
+        and load_hour.forecast_area = selected_issues.forecast_area
+        and load_hour.metric = 'load'
+        and load_hour.forecast_period_start::date = selected_issues.forecast_date
+        and load_hour.forecast_mw is not null
+        and (
+          (selected_issues.use_latest_hourly and load_hour.issue_date <= selected_issues.issue_date)
+          or (not selected_issues.use_latest_hourly and load_hour.issue_date = selected_issues.issue_date)
+        )
+    ) forecast_hours on true
+    join lateral (
+      select
+        load.issue_date,
+        load.forecast_mw,
+        load.updated_at
+      from meteologica.pjm_forecast_hourly as load
+      where load.region = 'PJM'
+        and load.forecast_area = selected_issues.forecast_area
+        and load.metric = 'load'
+        and load.forecast_period_start = forecast_hours.forecast_period_start
+        and load.forecast_mw is not null
+        and (
+          (selected_issues.use_latest_hourly and load.issue_date <= selected_issues.issue_date)
+          or (not selected_issues.use_latest_hourly and load.issue_date = selected_issues.issue_date)
+        )
+      order by load.issue_date desc
+      limit 1
+    ) load on true
+    where selected_issues.use_latest_hourly
+  ),
+  load_rows as (
+    select * from exact_load_rows
+    union all
+    select * from stitched_load_rows
   ),
   paired_components as (
     select
@@ -211,7 +264,7 @@ const METEOLOGICA_SUMMARY_SQL = `
         and solar.forecast_area = load_rows.forecast_area
         and solar.metric = 'solar'
         and solar.forecast_period_start = load_rows.forecast_period_start
-        and solar.issue_date <= load_rows.evaluated_at_ept
+        and solar.issue_date <= load_rows.load_issue_date
         and solar.forecast_mw is not null
       order by solar.issue_date desc
       limit 1
@@ -225,7 +278,7 @@ const METEOLOGICA_SUMMARY_SQL = `
         and wind.forecast_area = load_rows.forecast_area
         and wind.metric = 'wind'
         and wind.forecast_period_start = load_rows.forecast_period_start
-        and wind.issue_date <= load_rows.evaluated_at_ept
+        and wind.issue_date <= load_rows.load_issue_date
         and wind.forecast_mw is not null
       order by wind.issue_date desc
       limit 1
