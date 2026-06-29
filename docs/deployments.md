@@ -889,7 +889,7 @@ FROM isone.seven_day_solar_forecast;
   `2026-06-27`, 84,672 verified RT five-minute HRL rows for `2026-06-21`
   through `2026-06-27`, and 6,765 unverified RT hourly rows for `2026-06-22`
   through `2026-06-28`.
-- Next scheduled run observed: `2026-06-30 06:09:32 UTC`.
+- Next scheduled run observed: `2026-06-30 06:04:29 UTC`.
 - Deployment note: prior VM untracked forecast files that conflicted with the
   fast-forward pull were preserved under
   `/tmp/helioscta-untracked-backup-20260629T142628Z`.
