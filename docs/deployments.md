@@ -889,11 +889,11 @@ FROM isone.seven_day_solar_forecast;
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.
-- Scope: 31 promoted PJM Data Miner scrape modules under
+- Scope: 35 promoted PJM Data Miner scrape modules under
   `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
-  `load_frcstd_7_day`, and `gen_outages_by_type` were promoted to dedicated
-  timers.
+  `load_frcstd_7_day`, `gen_outages_by_type`, and the four Operations Summary
+  feeds were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -922,6 +922,73 @@ FROM isone.seven_day_solar_forecast;
   `helios-pjm-gen-outages-by-type.timer` runs later because the source was
   observed unavailable at the early `04:30 UTC` batch but available during a
   manual `13:55 UTC` VM run.
+  `helios-pjm-ops-sum.timer` runs after the source's 05:00-08:00 EPT refresh
+  window because these feeds are frontend dashboard context.
+
+## helios-pjm-ops-sum
+
+- Status: promoted for VM deployment; operator SQL must be applied before
+  enabling the timer.
+- Workflow: PJM Operations Summary refresh.
+- Runtime module: `backend.orchestration.power.pjm.ops_sum`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.pjm.ops_sum_frcst_peak_area`
+  - `backend.scrapes.power.pjm.ops_sum_frcst_peak_rto`
+  - `backend.scrapes.power.pjm.ops_sum_prev_period`
+  - `backend.scrapes.power.pjm.ops_sum_prjctd_tie_flow`
+- Source system: PJM Data Miner 2 Operations Summary feeds.
+- Destination tables:
+  - `pjm.ops_sum_frcst_peak_area`
+  - `pjm.ops_sum_frcst_peak_rto`
+  - `pjm.ops_sum_prev_period`
+  - `pjm.ops_sum_prjctd_tie_flow`
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-ops-sum.service`
+  - `infrastructure/systemd/helios-pjm-ops-sum.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-ops-sum.service`.
+- Schedule: daily at `08:30 America/New_York` with `Persistent=true`,
+  `RandomizedDelaySec=5min`, and `AccuracySec=1min`.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-ops-sum.lock`.
+- Safe rerun story: each feed upserts by source timestamp plus
+  `generated_at_ept` and dimension, preserving PJM morning refresh vintages.
+- Historical shape note: `ops_sum_prev_period` is sparse peak/valley history
+  before `2017-05-31`; complete hourly-by-area rows begin `2017-05-31`.
+- Operator SQL:
+  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/`,
+  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/`,
+  `dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/`, and
+  `dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/`.
+- Post-run smoke SQL:
+
+```sql
+SELECT 'ops_sum_frcst_peak_area' AS table_name, COUNT(*) AS rows, MAX(generated_at_ept) AS latest_generated
+FROM pjm.ops_sum_frcst_peak_area
+UNION ALL
+SELECT 'ops_sum_frcst_peak_rto', COUNT(*), MAX(generated_at_ept)
+FROM pjm.ops_sum_frcst_peak_rto
+UNION ALL
+SELECT 'ops_sum_prev_period', COUNT(*), MAX(generated_at_ept)
+FROM pjm.ops_sum_prev_period
+UNION ALL
+SELECT 'ops_sum_prjctd_tie_flow', COUNT(*), MAX(generated_at_ept)
+FROM pjm.ops_sum_prjctd_tie_flow;
+
+SELECT
+    pipeline_name,
+    status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name LIKE 'ops_sum_%'
+ORDER BY created_at DESC
+LIMIT 20;
+```
 
 ## helios-pjm-gen-outages-by-type
 

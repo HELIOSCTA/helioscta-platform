@@ -222,6 +222,30 @@ models:
             +enabled: false
           index_pjm_load_frcstd_7_day:
             +enabled: false
+        ops_sum_frcst_peak_area:
+          +materialized: ephemeral
+          table_pjm_ops_sum_frcst_peak_area:
+            +enabled: false
+          index_pjm_ops_sum_frcst_peak_area:
+            +enabled: false
+        ops_sum_frcst_peak_rto:
+          +materialized: ephemeral
+          table_pjm_ops_sum_frcst_peak_rto:
+            +enabled: false
+          index_pjm_ops_sum_frcst_peak_rto:
+            +enabled: false
+        ops_sum_prev_period:
+          +materialized: ephemeral
+          table_pjm_ops_sum_prev_period:
+            +enabled: false
+          index_pjm_ops_sum_prev_period:
+            +enabled: false
+        ops_sum_prjctd_tie_flow:
+          +materialized: ephemeral
+          table_pjm_ops_sum_prjctd_tie_flow:
+            +enabled: false
+          index_pjm_ops_sum_prjctd_tie_flow:
+            +enabled: false
         hourly_solar_power_forecast:
           +materialized: ephemeral
           table_pjm_hourly_solar_power_forecast:

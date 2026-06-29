@@ -332,6 +332,11 @@ def test_health_evaluation_warns_for_unmanaged_helios_timers():
                 "helios-da-hrl-lmps.timer helios-da-hrl-lmps.service"
             ),
             (
+                "Sat 2026-06-13 12:30:00 UTC 1h left "
+                "Fri 2026-06-12 12:30:00 UTC 23h ago "
+                "helios-pjm-ops-sum.timer helios-pjm-ops-sum.service"
+            ),
+            (
                 "Sat 2026-06-13 16:06:00 UTC 1h left "
                 "Fri 2026-06-12 16:06:00 UTC 23h ago "
                 "helios-pjm-forecast-hourly.timer helios-pjm-forecast-hourly.service"
@@ -342,6 +347,7 @@ def test_health_evaluation_warns_for_unmanaged_helios_timers():
     warnings = [issue for issue in issues if issue.severity == "WARN"]
     assert any(issue.subject == "helios-pjm-forecast-hourly.timer" for issue in warnings)
     assert not any(issue.subject == "helios-da-hrl-lmps.timer" for issue in warnings)
+    assert not any(issue.subject == "helios-pjm-ops-sum.timer" for issue in warnings)
 
 
 def test_unmanaged_helios_timers_parses_timer_lines():

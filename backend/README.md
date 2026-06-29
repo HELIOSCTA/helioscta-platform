@@ -110,6 +110,14 @@ the table keeps 90 days of forecast vintages. Historical PJM Data Miner
 `pjm.load_frcstd_hist` and outage forecast tables remain indefinite unless
 operators explicitly decide to truncate archive history.
 
+PJM Data Miner Operations Summary helpers run through
+`backend.orchestration.power.pjm.ops_sum` and write
+`ops_sum_frcst_peak_area`, `ops_sum_frcst_peak_rto`, `ops_sum_prev_period`,
+and `ops_sum_prjctd_tie_flow` to the `pjm` schema. They log API telemetry to
+`ops.api_fetch_log` and preserve source `generated_at_ept` vintages in the
+upsert keys. `ops_sum_prev_period` contains sparse peak/valley historical rows
+before 2017-05-31 and complete hourly-by-area rows from 2017-05-31 forward.
+
 Meteologica xTraders helpers use the existing
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment
 variables. The promoted PJM forecast runtime module is

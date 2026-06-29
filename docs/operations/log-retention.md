@@ -35,6 +35,7 @@ journalctl --disk-usage
 journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
 journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
+journalctl -u helios-pjm-ops-sum.service -n 200 --no-pager
 journalctl -u helios-prod-health-check.service -n 120 --no-pager
 sudo find /var/log/helioscta -type f -mtime +30 -print
 ```

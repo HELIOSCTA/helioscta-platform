@@ -56,6 +56,10 @@ These feeds define the current PJM pricing foundation.
 | pnode | Pricing Nodes | Active pricing-node reference table | Active nodes only |
 | agg_definitions | Fixed Weighted Average Aggregate Definitions | Active aggregate pricing-node composition | Active definitions only |
 | rt_unverified_hrl_lmps | Real-Time Unverified Hourly LMPs | Faster hourly RT price before verified settlement data | Short lookback; hub/zone/interface scope |
+| ops_sum_frcst_peak_area | Operations Summary - Projected Area Statistics at Peak | Frontend operations dashboard context | Daily post-08:00 EPT refresh |
+| ops_sum_frcst_peak_rto | Operations Summary - Projected RTO Statistics at Peak | Frontend operations dashboard context | Daily post-08:00 EPT refresh |
+| ops_sum_prev_period | Operations Summary - Actual Operational Statistics | Frontend operations dashboard context | Daily post-08:00 EPT refresh; sparse before 2017-05-31 |
+| ops_sum_prjctd_tie_flow | Operations Summary - Projected Scheduled Tie Flow | Frontend operations dashboard context | Daily post-08:00 EPT refresh |
 
 ### Tier 1 - Promote Next
 
@@ -138,7 +142,7 @@ Do not promote these until a consumer asks for them.
 | Uplift | demand_response_uplift_credit, gen_specific_uplift_credit, uplift_charges_by_zone, uplift_credits_by_zone | Monthly charge allocation rather than price-formation driver |
 | Emissions | fivemin_marginal_emissions, hourly_marginal_emissions, hourly_emission_rates | Useful later for carbon analytics; not required for the core PJM power stack |
 | Monthly operations | mnt_efor, off_cost_ops, ops_init_commit, reg_market_results | Low cadence and specialized operational context |
-| Operations summary | ops_sum_frcst_peak_area, ops_sum_frcst_peak_rto, ops_sum_frcstd_tran_lim, ops_sum_prev_period, ops_sum_prjctd_tie_flow | Useful dashboard context, but not needed before granular load/generation feeds |
+| Operations summary remainder | ops_sum_frcstd_tran_lim | Useful dashboard context, but not requested for the first Ops Sum scrape set |
 | Retired | ancillary_services_fivemin_mnt, ancillary_services_monthly, da_tempset, dasr_results, non_sync_reserve, rt_transn_constraints, sync_reserve_prelim_bill, uplift_by_zone | Retired feed category; avoid unless historical compatibility is required |
 | Reserve billing reference | non_sync_reserve_prelim_billing, reg_zone_prelim_bill, secondary_nonsync_reserve_prelim_billing, sync_reserve_events, sync_reserve_prelim_billing, sync_pri_reserves_buses_list, sync_pri_reserves_resources_list | Reserve billing and reference workflows should follow reserve market consumers |
 | Administrative load | annual_zonal_nspl, hrl_load_estimated | Less useful than preliminary, metered, and forecast load for price analysis |

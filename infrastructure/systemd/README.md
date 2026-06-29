@@ -76,6 +76,33 @@ The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
 
+## PJM Operations Summary
+
+The PJM Operations Summary feeds have one daily batch timer:
+
+```text
+helios-pjm-ops-sum.service
+helios-pjm-ops-sum.timer
+```
+
+It runs `backend.orchestration.power.pjm.ops_sum`, upserts
+`ops_sum_frcst_peak_area`, `ops_sum_frcst_peak_rto`,
+`ops_sum_prev_period`, and `ops_sum_prjctd_tie_flow` into the `pjm` schema,
+and writes API fetch telemetry to `ops.api_fetch_log`. PJM Data Miner refreshes
+these feeds on top of the hour from 05:00 through 08:00 EPT, so the timer runs
+daily at `08:30 America/New_York` with `Persistent=true` and
+`RandomizedDelaySec=5min`. The service uses `flock` with
+`/tmp/helios-pjm-ops-sum.lock`.
+
+Before enabling the timer, apply the table and index operator SQL under:
+
+```text
+dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/
+dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/
+dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/
+dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/
+```
+
 ## PJM Hourly Price Backfill Repair
 
 The promoted hourly LMP price repair workflow has one daily timer:
@@ -538,6 +565,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
@@ -579,6 +608,7 @@ sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
+sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
@@ -611,6 +641,7 @@ sudo systemctl start helios-pjm-rt-hrl-lmps.service
 sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
+sudo systemctl start helios-pjm-ops-sum.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
@@ -650,6 +681,14 @@ For the PJM Data Miner batch:
 systemctl status helios-pjm-data-miner-batch.service
 systemctl status helios-pjm-data-miner-batch.timer
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
+```
+
+For the PJM Operations Summary refresh:
+
+```bash
+systemctl status helios-pjm-ops-sum.service
+systemctl status helios-pjm-ops-sum.timer
+journalctl -u helios-pjm-ops-sum.service -n 200 --no-pager
 ```
 
 For the PJM generation outages by type refresh:

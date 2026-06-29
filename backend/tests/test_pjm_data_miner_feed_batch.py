@@ -37,6 +37,10 @@ BATCH_FEEDS = [
     "rt_short_term_mv_override",
     "rt_unverified_hrl_lmps",
     "load_frcstd_7_day",
+    "ops_sum_frcst_peak_area",
+    "ops_sum_frcst_peak_rto",
+    "ops_sum_prev_period",
+    "ops_sum_prjctd_tie_flow",
     "gen_outages_by_type",
     "solar_gen",
     "wind_gen",
@@ -351,3 +355,75 @@ def test_configured_numeric_type_wins_for_all_null_columns(monkeypatch):
         "DOUBLE PRECISION",
         "DOUBLE PRECISION",
     ]
+
+
+def test_ops_sum_configs_preserve_generated_vintages():
+    expected_keys = {
+        "ops_sum_frcst_peak_area": [
+            "projected_peak_datetime_utc",
+            "generated_at_ept",
+            "area",
+        ],
+        "ops_sum_frcst_peak_rto": [
+            "projected_peak_datetime_utc",
+            "generated_at_ept",
+            "area",
+        ],
+        "ops_sum_prev_period": [
+            "datetime_beginning_utc",
+            "generated_at_ept",
+            "area",
+        ],
+        "ops_sum_prjctd_tie_flow": [
+            "projected_peak_datetime_utc",
+            "generated_at_ept",
+            "interface",
+        ],
+    }
+
+    for feed_name, primary_key in expected_keys.items():
+        config = FEED_CONFIGS[feed_name]
+        assert list(config.primary_key) == primary_key
+        assert "generated_at_ept" in config.datetime_columns
+        assert config.retention_time == "Indefinitely"
+
+    assert FEED_CONFIGS["ops_sum_prev_period"].default_lookahead_days == -1
+
+
+def test_ops_sum_prev_period_normalization_marks_latest_duplicate():
+    config = FEED_CONFIGS["ops_sum_prev_period"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "actual_load": "11920",
+                    "area": " AEP ",
+                    "area_load_forecast": "12060",
+                    "datetime_beginning_ept": "8/23/2011 3:00:00 AM",
+                    "datetime_beginning_utc": "8/23/2011 7:00:00 AM",
+                    "datetime_ending_ept": "8/23/2011 4:00:00 AM",
+                    "datetime_ending_utc": "8/23/2011 8:00:00 AM",
+                    "dispatch_rate": "",
+                    "generated_at_ept": "8/24/2011 8:30:20 AM",
+                },
+                {
+                    "actual_load": "11940",
+                    "area": " AEP ",
+                    "area_load_forecast": "12060",
+                    "datetime_beginning_ept": "8/23/2011 3:00:00 AM",
+                    "datetime_beginning_utc": "8/23/2011 7:00:00 AM",
+                    "datetime_ending_ept": "8/23/2011 4:00:00 AM",
+                    "datetime_ending_utc": "8/23/2011 8:00:00 AM",
+                    "dispatch_rate": "29.53",
+                    "generated_at_ept": "8/24/2011 8:30:20 AM",
+                },
+            ]
+        ),
+        config,
+    )
+
+    assert len(df) == 1
+    assert df["area"].iloc[0] == "AEP"
+    assert df["actual_load"].iloc[0] == 11940
+    assert df["dispatch_rate"].iloc[0] == 29.53
+    assert pd.api.types.is_datetime64_any_dtype(df["generated_at_ept"])

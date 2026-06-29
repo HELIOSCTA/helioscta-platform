@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM Operations Summary scrape batch timer
+
+[Timer]
+OnCalendar=*-*-* 08:30:00 America/New_York
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-pjm-ops-sum.service
+
+[Install]
+WantedBy=timers.target
