@@ -81,8 +81,8 @@ scrape modules daily.
 `helios-pjm-ops-sum.timer` refreshes PJM Operations Summary dashboard context
 after the source's 05:00-08:00 EPT update window.
 `helios-pjm-hourly-price-backfill-7-day.timer` repairs recent DA, verified RT
-hourly, and unverified RT hourly LMP gaps every night at `02:00
-America/New_York`.
+hourly, verified RT five-minute HRL, and unverified RT hourly LMP gaps every
+night at `02:00 America/New_York`.
 `helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health
 digest in journald, including support-batch API and table freshness.
 

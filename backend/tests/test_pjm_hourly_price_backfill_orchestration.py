@@ -2,14 +2,17 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
+import pandas as pd
+
 from backend.backfills.power.pjm._shared import BackfillResult
 from backend.orchestration.power.pjm import hourly_price_backfill_7_day
 
 
-def test_default_workflows_cover_promoted_hourly_lmp_price_backfills():
+def test_default_workflows_cover_promoted_lmp_price_backfills():
     assert [workflow.name for workflow in hourly_price_backfill_7_day.DEFAULT_WORKFLOWS] == [
         "da_hrl_lmps",
         "rt_hrl_lmps",
+        "rt_fivemin_hrl_lmps",
         "rt_unverified_hrl_lmps",
     ]
 
@@ -60,6 +63,11 @@ def test_main_runs_each_workflow_with_feed_specific_lags():
             end_lag_days=2,
         ),
         hourly_price_backfill_7_day.PriceBackfillWorkflow(
+            name="rt_fivemin_hrl_lmps",
+            runner=make_runner("rt_fivemin_hrl_lmps"),
+            end_lag_days=2,
+        ),
+        hourly_price_backfill_7_day.PriceBackfillWorkflow(
             name="rt_unverified_hrl_lmps",
             runner=make_runner("rt_unverified_hrl_lmps"),
             end_lag_days=1,
@@ -83,6 +91,13 @@ def test_main_runs_each_workflow_with_feed_specific_lags():
         },
         {
             "name": "rt_hrl_lmps",
+            "start_date": date(2026, 6, 21),
+            "end_date": date(2026, 6, 27),
+            "dry_run": False,
+            "database": "stage_db",
+        },
+        {
+            "name": "rt_fivemin_hrl_lmps",
             "start_date": date(2026, 6, 21),
             "end_date": date(2026, 6, 27),
             "dry_run": False,
@@ -141,3 +156,68 @@ def test_main_continues_and_returns_nonzero_when_a_workflow_fails():
 
     assert result == 1
     assert calls == ["good", "bad", "good"]
+
+
+def test_rt_fivemin_backfill_adapter_calls_orchestration_with_backfill_metadata(
+    monkeypatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_main(**kwargs):
+        captured.update(kwargs)
+        return pd.DataFrame(
+            {
+                "datetime_beginning_utc": pd.date_range(
+                    "2026-06-26", periods=2, freq="5min"
+                )
+            }
+        )
+
+    monkeypatch.setattr(
+        hourly_price_backfill_7_day.rt_fivemin_hrl_lmps,
+        "main",
+        fake_main,
+    )
+
+    result = hourly_price_backfill_7_day._run_rt_fivemin_hrl_lmps_backfill(
+        start_date=date(2026, 6, 26),
+        end_date=date(2026, 6, 28),
+        database="stage_db",
+    )
+
+    assert result == BackfillResult(
+        pipeline_name="rt_fivemin_hrl_lmps",
+        start_date=date(2026, 6, 26),
+        end_date=date(2026, 6, 28),
+        days_requested=3,
+        rows_processed=2,
+        status="success",
+    )
+    assert captured["start_date"] == datetime(2026, 6, 26)
+    assert captured["end_date"] == datetime(2026, 6, 28)
+    assert captured["database"] == "stage_db"
+    assert captured["run_mode"] == "backfill"
+    assert captured["metadata"] == {
+        "run_mode": "backfill",
+        "backfill_workflow": "rt_fivemin_hrl_lmps",
+        "backfill_start_date": "2026-06-26",
+        "backfill_end_date": "2026-06-28",
+    }
+
+
+def test_rt_fivemin_backfill_adapter_supports_dry_run():
+    result = hourly_price_backfill_7_day._run_rt_fivemin_hrl_lmps_backfill(
+        start_date=date(2026, 6, 26),
+        end_date=date(2026, 6, 28),
+        dry_run=True,
+    )
+
+    assert result == BackfillResult(
+        pipeline_name="rt_fivemin_hrl_lmps",
+        start_date=date(2026, 6, 26),
+        end_date=date(2026, 6, 28),
+        days_requested=3,
+        rows_processed=0,
+        status="dry_run",
+        dry_run=True,
+    )

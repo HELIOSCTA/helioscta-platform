@@ -1,5 +1,5 @@
 [Unit]
-Description=HeliosCTA PJM hourly price seven-day backfill repair
+Description=HeliosCTA PJM price seven-day backfill repair
 Wants=network-online.target
 After=network-online.target
 

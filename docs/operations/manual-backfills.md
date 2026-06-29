@@ -16,12 +16,13 @@ Covered workflows:
 - `backend.backfills.power.pjm.gen_outages_by_type`
 - `backend.backfills.weather.wsi.hourly_observed`
 - `backend.orchestration.power.pjm.hourly_price_backfill_7_day` for the
-  scheduled seven-day hourly LMP repair wrapper.
+  scheduled seven-day LMP price repair wrapper.
 
 Destination tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
+- `pjm.rt_fivemin_hrl_lmps`
 - `pjm.rt_unverified_hrl_lmps`
 - `pjm.hrl_load_metered`
 - `pjm.hrl_load_prelim`
@@ -35,7 +36,7 @@ scrape modules; scheduled PJM orchestrators remain responsible for polling and
 data-readiness events. WSI hourly observed backfills call the existing WSI
 orchestration path and emit the same weather freshness event as scheduled runs.
 
-## Scheduled Hourly Price Repair
+## Scheduled Price Repair
 
 `helios-pjm-hourly-price-backfill-7-day.timer` runs
 `backend.orchestration.power.pjm.hourly_price_backfill_7_day` nightly at
@@ -44,12 +45,15 @@ orchestration path and emit the same weather freshness event as scheduled runs.
 - DA hourly LMPs through the current PJM market date.
 - Verified RT hourly LMPs through two market dates back, because the verified
   source posts later in the day.
+- Verified RT five-minute HRL LMPs through two market dates back, using the
+  same hub, zone, and interface scope as the dedicated workflow.
 - Unverified RT hourly LMPs through the prior market date.
 
 This scheduled repair writes to the same canonical `pjm` tables and uses the
-same `ops.api_fetch_log.metadata` backfill fields as manual runs. It does not
-replace the one-off manual command pattern below for older ranges or non-price
-PJM feeds.
+same `ops.api_fetch_log.metadata` backfill fields as manual runs. The verified
+RT five-minute repair also emits complete-day readiness events when a repaired
+date is complete. It does not replace the one-off manual command pattern below
+for older ranges or non-price PJM feeds.
 
 ## Safety Rules
 
@@ -245,6 +249,17 @@ SELECT
     MIN(datetime_beginning_ept) AS min_ts,
     MAX(datetime_beginning_ept) AS max_ts
 FROM pjm.rt_unverified_hrl_lmps
+GROUP BY datetime_beginning_ept::date
+UNION ALL
+SELECT
+    'rt_verified_fivemin' AS feed,
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT pnode_name) AS nodes,
+    MIN(datetime_beginning_ept) AS min_ts,
+    MAX(datetime_beginning_ept) AS max_ts
+FROM pjm.rt_fivemin_hrl_lmps
+WHERE row_is_current = true
 GROUP BY datetime_beginning_ept::date
 ORDER BY market_date DESC, feed
 LIMIT 30;

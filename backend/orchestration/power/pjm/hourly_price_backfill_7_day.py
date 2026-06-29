@@ -1,4 +1,4 @@
-"""Run nightly seven-day PJM hourly LMP price backfills."""
+"""Run nightly seven-day PJM LMP price backfills."""
 
 from __future__ import annotations
 
@@ -9,12 +9,20 @@ from datetime import date, datetime, timedelta
 from time import perf_counter
 from zoneinfo import ZoneInfo
 
+from dateutil.relativedelta import relativedelta
+
 from backend.backfills.power.pjm import (
     da_hrl_lmps,
     rt_hrl_lmps,
     rt_unverified_hrl_lmps,
 )
-from backend.backfills.power.pjm._shared import BackfillResult
+from backend.backfills.power.pjm._shared import (
+    BackfillResult,
+    backfill_metadata,
+    rows_processed,
+    start_of_day,
+)
+from backend.orchestration.power.pjm import rt_fivemin_hrl_lmps
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 DEFAULT_LOOKBACK_DAYS = 7
@@ -39,6 +47,47 @@ class PriceBackfillRunSummary:
     error: str | None = None
 
 
+def _run_rt_fivemin_hrl_lmps_backfill(
+    *,
+    start_date: date,
+    end_date: date,
+    dry_run: bool = False,
+    database: str | None = None,
+) -> BackfillResult:
+    days_requested = (end_date - start_date).days + 1
+    if dry_run:
+        return BackfillResult(
+            pipeline_name=rt_fivemin_hrl_lmps.API_SCRAPE_NAME,
+            start_date=start_date,
+            end_date=end_date,
+            days_requested=days_requested,
+            rows_processed=0,
+            status="dry_run",
+            dry_run=True,
+        )
+
+    frame = rt_fivemin_hrl_lmps.main(
+        start_date=start_of_day(start_date),
+        end_date=start_of_day(end_date),
+        delta=relativedelta(days=1),
+        database=database,
+        run_mode="backfill",
+        metadata=backfill_metadata(
+            start_date=start_date,
+            end_date=end_date,
+            workflow=rt_fivemin_hrl_lmps.API_SCRAPE_NAME,
+        ),
+    )
+    return BackfillResult(
+        pipeline_name=rt_fivemin_hrl_lmps.API_SCRAPE_NAME,
+        start_date=start_date,
+        end_date=end_date,
+        days_requested=days_requested,
+        rows_processed=rows_processed(frame),
+        status="success",
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="da_hrl_lmps",
@@ -50,6 +99,12 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
         name="rt_hrl_lmps",
         runner=rt_hrl_lmps.main,
         # Verified RT hourly prices post after the nightly 02:00 EPT repair.
+        end_lag_days=2,
+    ),
+    PriceBackfillWorkflow(
+        name="rt_fivemin_hrl_lmps",
+        runner=_run_rt_fivemin_hrl_lmps_backfill,
+        # Verified RT five-minute prices post after the nightly 02:00 EPT repair.
         end_lag_days=2,
     ),
     PriceBackfillWorkflow(
@@ -108,7 +163,7 @@ def _run_workflow(
         )
     except Exception as exc:
         elapsed = perf_counter() - started
-        print(f"PJM hourly price backfill failed: {workflow.name}", flush=True)
+        print(f"PJM price backfill failed: {workflow.name}", flush=True)
         traceback.print_exc()
         return PriceBackfillRunSummary(
             workflow_name=workflow.name,
@@ -142,7 +197,7 @@ def main(
 ) -> int:
     market_today = _market_today(now)
     print(
-        "Starting PJM hourly price backfill repair for "
+        "Starting PJM price backfill repair for "
         f"{len(workflows)} workflows; market_today={market_today}; "
         f"lookback_days={lookback_days}; dry_run={dry_run}",
         flush=True,
@@ -162,7 +217,7 @@ def main(
     for result in results:
         if result.status in {"success", "dry_run"}:
             print(
-                "PJM hourly price backfill "
+                "PJM price backfill "
                 f"{result.status}: {result.workflow_name} "
                 f"{result.start_date} to {result.end_date}; "
                 f"days={result.days_requested}; rows={result.rows_processed}; "
@@ -171,7 +226,7 @@ def main(
             )
         else:
             print(
-                "PJM hourly price backfill failed: "
+                "PJM price backfill failed: "
                 f"{result.workflow_name} "
                 f"{result.start_date} to {result.end_date}; "
                 f"elapsed={result.elapsed_seconds:.1f}s; error={result.error}",
@@ -180,7 +235,7 @@ def main(
 
     failures = [result for result in results if result.status not in {"success", "dry_run"}]
     print(
-        "Completed PJM hourly price backfill repair: "
+        "Completed PJM price backfill repair: "
         f"{len(results) - len(failures)} succeeded, {len(failures)} failed",
         flush=True,
     )

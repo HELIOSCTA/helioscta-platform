@@ -103,9 +103,9 @@ dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/
 dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/
 ```
 
-## PJM Hourly Price Backfill Repair
+## PJM Price Backfill Repair
 
-The promoted hourly LMP price repair workflow has one daily timer:
+The promoted LMP price repair workflow has one daily timer:
 
 ```text
 helios-pjm-hourly-price-backfill-7-day.service
@@ -113,16 +113,19 @@ helios-pjm-hourly-price-backfill-7-day.timer
 ```
 
 It runs `backend.orchestration.power.pjm.hourly_price_backfill_7_day`, which
-executes seven-day backfills for `da_hrl_lmps`, `rt_hrl_lmps`, and
-`rt_unverified_hrl_lmps`. The job writes to the canonical `pjm` price tables
-through the existing idempotent upsert keys and stamps PJM API telemetry with
-`run_mode=backfill` metadata in `ops.api_fetch_log`.
+executes seven-day backfills for `da_hrl_lmps`, `rt_hrl_lmps`,
+`rt_fivemin_hrl_lmps`, and `rt_unverified_hrl_lmps`. The job writes to the
+canonical `pjm` price tables through the existing idempotent upsert keys and
+stamps PJM API telemetry with `run_mode=backfill` metadata in
+`ops.api_fetch_log`. The verified RT five-minute leg also emits complete-day
+readiness events through the existing orchestration path.
 
 The timer runs daily at `02:00 America/New_York` with `Persistent=true` and
 `RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
-DA through the current PJM market date, unverified RT through the prior market
-date, and verified RT through two market dates back. The service uses `flock`
-with `/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
+DA through the current PJM market date, unverified RT hourly through the prior
+market date, and verified RT hourly and verified RT five-minute through two
+market dates back. The service uses `flock` with
+`/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
 
 ## PJM Generation Outages By Type
 

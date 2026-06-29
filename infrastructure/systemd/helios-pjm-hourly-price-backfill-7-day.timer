@@ -1,5 +1,5 @@
 [Unit]
-Description=Nightly HeliosCTA PJM hourly price seven-day backfill repair timer
+Description=Nightly HeliosCTA PJM price seven-day backfill repair timer
 
 [Timer]
 OnCalendar=*-*-* 02:00:00 America/New_York

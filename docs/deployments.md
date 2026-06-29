@@ -840,19 +840,24 @@ FROM isone.seven_day_solar_forecast;
 ## helios-pjm-hourly-price-backfill-7-day
 
 - Status: deployed; timer enabled and initial VM repair run succeeded.
-- Workflow: PJM hourly LMP price seven-day backfill repair.
+- Workflow: PJM LMP price seven-day backfill repair.
 - Runtime module:
   `backend.orchestration.power.pjm.hourly_price_backfill_7_day`.
 - Backfill modules:
   - `backend.backfills.power.pjm.da_hrl_lmps`
   - `backend.backfills.power.pjm.rt_hrl_lmps`
   - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+  - `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps` via the repair
+    workflow adapter.
 - Source system: PJM Data Miner 2 LMP feeds.
 - Destination tables:
   - `pjm.da_hrl_lmps`
   - `pjm.rt_hrl_lmps`
+  - `pjm.rt_fivemin_hrl_lmps`
   - `pjm.rt_unverified_hrl_lmps`
 - API telemetry: `ops.api_fetch_log` with `run_mode=backfill` metadata.
+- Data readiness: the verified RT five-minute leg emits complete-day
+  `ops.data_availability_events` through the existing orchestration path.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service`
   - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer`
@@ -872,6 +877,8 @@ FROM isone.seven_day_solar_forecast;
 - Repair windows:
   - DA hourly LMPs: current PJM market date through six days back.
   - Verified RT hourly LMPs: two market dates back through eight days back.
+  - Verified RT five-minute HRL LMPs: two market dates back through eight days
+    back.
   - Unverified RT hourly LMPs: prior market date through seven days back.
 - Deployed commit: `2db4459`.
 - Deployed at: `2026-06-29 14:28 UTC`.
