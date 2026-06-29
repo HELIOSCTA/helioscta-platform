@@ -71,6 +71,51 @@ export function deltaCellStyle(value: number | null, bound: number): CSSProperti
   };
 }
 
+export const FORECAST_EXPLORER_TABLE_CLASS =
+  "w-max table-auto border-collapse bg-[#0d1119] text-[11px] text-gray-200";
+export const FORECAST_EXPLORER_ROW_HEADER_COL_CLASS = "w-[150px]";
+export const FORECAST_EXPLORER_DATE_COL_CLASS = "w-[96px]";
+
+export const FORECAST_POPUP_TABLE_CLASS =
+  "w-max table-auto border-collapse bg-[#0d1119] text-[11px] text-gray-200";
+export const FORECAST_POPUP_PINNED_SHADOW = "shadow-[2px_0_0_rgba(31,41,55,0.9)]";
+export const FORECAST_POPUP_PINNED_LEFT_CLASSES = ["left-0", "left-[104px]", "left-[246px]"] as const;
+export const FORECAST_POPUP_DESCRIPTOR_COL_CLASSES = ["w-[104px]", "w-[142px]", "w-[78px]"] as const;
+export const FORECAST_POPUP_METRIC_COL_CLASS = "w-[82px]";
+export const FORECAST_POPUP_HOUR_COL_CLASS = "w-[62px]";
+
+export function forecastPopupColCount(metricCount: number): number {
+  return 3 + metricCount + 24;
+}
+
+export function forecastPopupMinWidthClass(metricCount: number): string {
+  return metricCount >= 4 ? "min-w-[2140px]" : "min-w-[2060px]";
+}
+
+export function forecastPopupHourDividerClass(hour: number): string {
+  return hour % 6 === 0 ? "border-l border-gray-700/90" : "border-l border-gray-800/80";
+}
+
+export function forecastPopupMetricBorderClass(metricIndex: number): string {
+  return metricIndex === 0 ? "border-l border-gray-700/90" : "border-l border-gray-800/80";
+}
+
+export function ForecastPopupColGroup({ metricCount }: { metricCount: number }) {
+  return (
+    <colgroup>
+      {FORECAST_POPUP_DESCRIPTOR_COL_CLASSES.map((className, index) => (
+        <col key={`descriptor-${index}`} className={className} />
+      ))}
+      {Array.from({ length: metricCount }, (_, index) => (
+        <col key={`metric-${index}`} className={FORECAST_POPUP_METRIC_COL_CLASS} />
+      ))}
+      {Array.from({ length: 24 }, (_, hour) => (
+        <col key={`hour-${hour}`} className={FORECAST_POPUP_HOUR_COL_CLASS} />
+      ))}
+    </colgroup>
+  );
+}
+
 export function ForecastHeatmapToggle({
   enabled,
   onToggle,

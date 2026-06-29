@@ -3,9 +3,12 @@
 import type { CSSProperties, ReactNode } from "react";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -13,7 +16,24 @@ import {
 } from "recharts";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
-import { ForecastHeatmapToggle } from "@/components/pjm/forecastShared";
+import {
+  FORECAST_EXPLORER_DATE_COL_CLASS,
+  FORECAST_EXPLORER_ROW_HEADER_COL_CLASS,
+  FORECAST_EXPLORER_TABLE_CLASS,
+  FORECAST_POPUP_PINNED_SHADOW,
+  FORECAST_POPUP_PINNED_LEFT_CLASSES,
+  FORECAST_POPUP_TABLE_CLASS,
+  ForecastHeatmapToggle,
+  ForecastPopupColGroup,
+  forecastPopupColCount,
+  forecastPopupHourDividerClass,
+  forecastPopupMetricBorderClass,
+  forecastPopupMinWidthClass,
+} from "@/components/pjm/forecastShared";
+import PjmNetLoadForecast, {
+  type PjmNetLoadForecastFreshnessSummary,
+  type NetLoadForecastTab,
+} from "@/components/pjm/PjmNetLoadForecast";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 interface ForecastVintageCurve {
@@ -88,6 +108,29 @@ interface PjmForecastExplorerPayload {
   cells: ForecastExplorerCell[];
 }
 
+interface ForecastDateCompareHour {
+  he: number;
+  loadBaseMw: number | null;
+  loadCompareMw: number | null;
+  loadDeltaMw: number | null;
+}
+
+interface ForecastDateComparePayload {
+  iso: "pjm";
+  type: "load";
+  area: string;
+  baseDate: string;
+  compareDate: string;
+  baseIssue: string | null;
+  compareIssue: string | null;
+  sourceMode: ForecastSourceMode;
+  sourceLabel: string;
+  source: string;
+  completeHourCount: number;
+  latestUpdate: string | null;
+  rows: ForecastDateCompareHour[];
+}
+
 export interface PjmForecastsFreshnessSummary {
   status: string;
   statusClass: string;
@@ -99,6 +142,8 @@ export interface PjmForecastsFreshnessSummary {
 
 export type PjmForecastView = "explorer" | "profile" | "table" | "diffs";
 type ForecastSourceMode = "pjm" | "meteologica";
+export type ForecastType = "load" | "netLoad";
+type ForecastMode = "outright" | "compareDay";
 type ExplorerMetric =
   | "peakMw"
   | "onPeakAvg"
@@ -144,13 +189,27 @@ const FORECAST_SOURCE_TABS: Array<{
   label: string;
   scope: string;
 }> = [
-  { key: "pjm", label: "Load Forecasts", scope: "PJM Data Miner" },
-  { key: "meteologica", label: "Meteologica", scope: "Load forecasts" },
+  { key: "pjm", label: "PJM", scope: "Data Miner" },
+  { key: "meteologica", label: "Meteologica", scope: "xTraders hourly forecasts" },
 ];
-const POPUP_FORECAST_COL_COUNT = 30;
-const POPUP_FORECAST_TABLE_CLASS =
-  "w-full min-w-[2060px] table-fixed border-collapse bg-[#0d1119] text-[11px] text-gray-200";
-const POPUP_PINNED_SHADOW = "shadow-[2px_0_0_rgba(31,41,55,0.9)]";
+const FORECAST_TYPE_TABS: Array<{
+  key: ForecastType;
+  label: string;
+  scope: string;
+}> = [
+  { key: "load", label: "Load", scope: "Load forecast" },
+  { key: "netLoad", label: "Net Load", scope: "Load minus solar and wind" },
+];
+const FORECAST_MODE_TABS: Array<{
+  key: ForecastMode;
+  label: string;
+  scope: string;
+}> = [
+  { key: "outright", label: "Outright", scope: "Explorer and vintages" },
+  { key: "compareDay", label: "Compare Day", scope: "A/B forecast dates" },
+];
+const POPUP_FORECAST_METRIC_COUNT = 3;
+const POPUP_FORECAST_COL_COUNT = forecastPopupColCount(POPUP_FORECAST_METRIC_COUNT);
 const WEST_AREAS = new Set([
   "AEP",
   "AP",
@@ -202,6 +261,13 @@ function fmtMw(value: number | null | undefined): string {
 function fmtSignedMw(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString()}`;
+}
+
+function fmtCompactMw(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const absValue = Math.abs(value);
+  if (absValue >= 1000) return `${Math.round(value / 1000).toLocaleString()}k`;
+  return Math.round(value).toLocaleString();
 }
 
 function sourceLabel(sourceMode: ForecastSourceMode): string {
@@ -263,6 +329,44 @@ function buildDiffCacheKey({
   return [sourceKey, area, forecastDate, lookbackHours].join(":");
 }
 
+function buildCompareApiUrl({
+  sourceMode,
+  area,
+  baseDate,
+  compareDate,
+  refresh,
+}: {
+  sourceMode: ForecastSourceMode;
+  area: string;
+  baseDate: string;
+  compareDate: string;
+  refresh: boolean;
+}): string {
+  const params = new URLSearchParams({
+    source: sourceMode,
+    type: "load",
+    area,
+    baseDate,
+    compareDate,
+  });
+  if (refresh) params.set("refresh", "1");
+  return `/api/pjm-forecast-date-compare?${params.toString()}`;
+}
+
+function buildCompareCacheKey({
+  sourceMode,
+  area,
+  baseDate,
+  compareDate,
+}: {
+  sourceMode: ForecastSourceMode;
+  area: string;
+  baseDate: string;
+  compareDate: string;
+}): string {
+  return ["api:pjm-forecast-date-compare", sourceMode, "load", area, baseDate, compareDate].join(":");
+}
+
 function metricValue(cell: ForecastExplorerCell, metric: ExplorerMetric): number | null {
   return cell[metric];
 }
@@ -320,6 +424,32 @@ function curveChartRows(curves: ForecastVintageCurve[]): Array<Record<string, nu
     });
   });
   return rows;
+}
+
+function compareChartRows(rows: ForecastDateCompareHour[]): Array<Record<string, number | null>> {
+  return rows.map((row, index) => {
+    const previousRow = rows[index - 1];
+    const baseRamp =
+      row.loadBaseMw === null || previousRow === undefined || previousRow.loadBaseMw === null
+        ? null
+        : row.loadBaseMw - previousRow.loadBaseMw;
+    const compareRamp =
+      row.loadCompareMw === null ||
+      previousRow === undefined ||
+      previousRow.loadCompareMw === null
+        ? null
+        : row.loadCompareMw - previousRow.loadCompareMw;
+
+    return {
+      he: row.he,
+      base: row.loadBaseMw,
+      compare: row.loadCompareMw,
+      delta: row.loadDeltaMw,
+      baseRamp,
+      compareRamp,
+      rampDelta: baseRamp === null || compareRamp === null ? null : compareRamp - baseRamp,
+    };
+  });
 }
 
 function lookbackTagHour(tag: string | null | undefined): number | null {
@@ -414,26 +544,6 @@ function deltaCellStyle(value: number | null, bound: number): CSSProperties {
   };
 }
 
-function PopupForecastColGroup() {
-  return (
-    <colgroup>
-      <col className="w-[104px]" />
-      <col className="w-[142px]" />
-      <col className="w-[78px]" />
-      <col className="w-[82px]" />
-      <col className="w-[82px]" />
-      <col className="w-[82px]" />
-      {Array.from({ length: 24 }, (_, hour) => (
-        <col key={hour} className="w-[62px]" />
-      ))}
-    </colgroup>
-  );
-}
-
-function hourDividerClass(hour: number): string {
-  return hour % 6 === 0 ? "border-l border-gray-700/90" : "border-l border-gray-800/80";
-}
-
 function SectionCard({
   title,
   subtitle,
@@ -454,15 +564,29 @@ function SectionCard({
   );
 }
 
+function forecastSegmentButtonClass(active: boolean): string {
+  return `min-h-9 rounded px-3 py-1.5 text-center text-xs font-semibold transition-colors ${
+    active
+      ? "bg-sky-500/15 text-white shadow-sm ring-1 ring-inset ring-sky-400/30"
+      : "text-gray-500 hover:bg-gray-900 hover:text-gray-200"
+  }`;
+}
+
 export default function PjmForecasts({
+  initialForecastType = "load",
+  initialMode = "outright",
   refreshToken = 0,
   onFreshnessChange,
 }: {
   initialView?: PjmForecastView;
+  initialForecastType?: ForecastType;
+  initialMode?: ForecastMode;
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmForecastsFreshnessSummary) => void;
   onViewChange?: (view: PjmForecastView) => void;
 }) {
+  const [forecastType, setForecastType] = useState<ForecastType>(initialForecastType);
+  const [forecastMode, setForecastMode] = useState<ForecastMode>(initialMode);
   const [explorerViewMode, setExplorerViewMode] = useState<ExplorerViewMode>("latest");
   const [sourceMode, setSourceMode] = useState<ForecastSourceMode>("pjm");
   const [explorerMetric, setExplorerMetric] = useState<ExplorerMetric>("peakMw");
@@ -470,14 +594,21 @@ export default function PjmForecasts({
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [explorerData, setExplorerData] = useState<PjmForecastExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<PjmForecastDifferencesPayload | null>(null);
+  const [compareData, setCompareData] = useState<ForecastDateComparePayload | null>(null);
   const [explorerLoading, setExplorerLoading] = useState(true);
   const [diffLoading, setDiffLoading] = useState(false);
+  const [compareLoading, setCompareLoading] = useState(false);
   const [explorerError, setExplorerError] = useState<string | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
+  const [compareError, setCompareError] = useState<string | null>(null);
   const [selectedExplorerCell, setSelectedExplorerCell] = useState<{
     area: string;
     forecastDate: string;
   } | null>(null);
+  const [compareArea, setCompareArea] = useState("RTO_COMBINED");
+  const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
+  const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
+  const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
   const [lookbackHours, setLookbackHours] = useState<number>(DEFAULT_LOOKBACK_HOURS);
   const [hiddenLookbackSeries, setHiddenLookbackSeries] = useState<Set<string>>(() => new Set());
   const [visibleVintageWindows, setVisibleVintageWindows] = useState<Set<number>>(
@@ -497,9 +628,101 @@ export default function PjmForecasts({
     setSelectedExplorerCell(null);
     setDiffData(null);
     setDiffError(null);
+    setCompareData(null);
+    setCompareError(null);
+    setCompareRampingEnabled(false);
+    setCompareArea(sourceMode === "meteologica" ? "RTO" : "RTO_COMBINED");
+    setCompareBaseDate(null);
+    setCompareTargetDate(null);
   }, [sourceMode]);
 
   useEffect(() => {
+    if (!explorerData || forecastType !== "load") return;
+
+    const dates = explorerData.forecastDates ?? [];
+    const areas = explorerData.areas ?? [];
+    setCompareArea((current) => {
+      if (areas.includes(current)) return current;
+      if (areas.includes("RTO_COMBINED")) return "RTO_COMBINED";
+      if (areas.includes("RTO")) return "RTO";
+      return areas[0] ?? (sourceMode === "meteologica" ? "RTO" : "RTO_COMBINED");
+    });
+    setCompareBaseDate((current) => (current && dates.includes(current) ? current : dates[0] ?? null));
+    setCompareTargetDate((current) =>
+      current && dates.includes(current) ? current : dates[1] ?? dates[0] ?? null,
+    );
+  }, [explorerData, forecastType, sourceMode]);
+
+  useEffect(() => {
+    if (
+      forecastType !== "load" ||
+      forecastMode !== "compareDay" ||
+      !compareBaseDate ||
+      !compareTargetDate
+    ) {
+      setCompareLoading(false);
+      if (forecastType !== "load") setCompareData(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setCompareLoading(true);
+    setCompareError(null);
+
+    fetchJsonWithCache<ForecastDateComparePayload>({
+      key: buildCompareCacheKey({
+        sourceMode,
+        area: compareArea,
+        baseDate: compareBaseDate,
+        compareDate: compareTargetDate,
+      }),
+      url: buildCompareApiUrl({
+        sourceMode,
+        area: compareArea,
+        baseDate: compareBaseDate,
+        compareDate: compareTargetDate,
+        refresh: refreshToken > 0,
+      }),
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: refreshToken > 0 ? "no-store" : "default",
+      forceRefresh: refreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setCompareData(payload);
+      })
+      .catch((err: Error) => {
+        if (!active || err.name === "AbortError") return;
+        setCompareError(err.message || `Failed to load ${sourceLabel(sourceMode)} load date comparison`);
+        setCompareData(null);
+      })
+      .finally(() => {
+        if (active) setCompareLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    compareArea,
+    compareBaseDate,
+    compareTargetDate,
+    forecastMode,
+    forecastType,
+    refreshToken,
+    sourceMode,
+  ]);
+
+  useEffect(() => {
+    if (forecastType !== "load") {
+      setExplorerLoading(false);
+      setExplorerError(null);
+      return;
+    }
+
     const controller = new AbortController();
     let active = true;
     setExplorerLoading(true);
@@ -546,10 +769,10 @@ export default function PjmForecasts({
       active = false;
       controller.abort();
     };
-  }, [refreshToken, onFreshnessChange, sourceMode]);
+  }, [forecastType, refreshToken, onFreshnessChange, sourceMode]);
 
   useEffect(() => {
-    if (!selectedExplorerCell) return;
+    if (forecastType !== "load" || forecastMode !== "outright" || !selectedExplorerCell) return;
 
     const controller = new AbortController();
     let active = true;
@@ -592,7 +815,7 @@ export default function PjmForecasts({
       active = false;
       controller.abort();
     };
-  }, [lookbackHours, refreshToken, selectedExplorerCell, sourceMode]);
+  }, [forecastMode, forecastType, lookbackHours, refreshToken, selectedExplorerCell, sourceMode]);
 
   const visibleAreaGroups = useMemo(() => {
     const areas = explorerData?.areas ?? [];
@@ -753,6 +976,17 @@ export default function PjmForecasts({
         explorerData.asOf,
       )}`
     : undefined;
+  const compareDateOptions = explorerData?.forecastDates ?? [];
+  const compareAreaOptions = explorerData?.areas ?? [];
+  const loadCompareRows = useMemo(() => compareChartRows(compareData?.rows ?? []), [compareData]);
+  const compareBaseDateLabel = fmtDate(compareBaseDate);
+  const compareTargetDateLabel = fmtDate(compareTargetDate);
+  const compareValueKey = compareRampingEnabled ? "baseRamp" : "base";
+  const compareTargetValueKey = compareRampingEnabled ? "compareRamp" : "compare";
+  const compareDeltaValueKey = compareRampingEnabled ? "rampDelta" : "delta";
+  const loadCompareSubtitle = compareData
+    ? `${compareData.sourceLabel} | ${compareData.area} | ${compareBaseDateLabel} vs ${compareTargetDateLabel} | ${compareData.completeHourCount}/24 complete hours`
+    : `${sourceLabel(sourceMode)} | ${compareArea} | ${compareBaseDateLabel} vs ${compareTargetDateLabel}`;
 
   const renderCurveChart = ({
     heightClass,
@@ -829,6 +1063,308 @@ export default function PjmForecasts({
       hiddenSeries: hiddenLookbackSeries,
     });
 
+  const renderLoadCompareChart = () => (
+    <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
+      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <h3 className="text-base font-semibold text-gray-100">{compareArea}</h3>
+        {compareData && (
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
+            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+              {compareBaseDateLabel} issue: {fmtDateTime(compareData.baseIssue)}
+            </span>
+            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+              {compareTargetDateLabel} issue: {fmtDateTime(compareData.compareIssue)}
+            </span>
+          </div>
+        )}
+      </div>
+      <div className="h-[300px]">
+        <ResponsiveContainer width="100%" height="100%">
+          {compareRampingEnabled ? (
+            <BarChart
+              data={loadCompareRows}
+              margin={{ top: 8, right: 20, bottom: 18, left: 8 }}
+              barGap={1}
+              barCategoryGap="18%"
+            >
+              <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+              <XAxis
+                dataKey="he"
+                type="number"
+                domain={[1, 24]}
+                ticks={[2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]}
+                tick={{ fill: "#d1d5db", fontSize: 10 }}
+                label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
+              />
+              <YAxis
+                tick={{ fill: "#d1d5db", fontSize: 10 }}
+                tickFormatter={(value) => fmtCompactMw(Number(value))}
+                width={62}
+                label={{ value: "MW/hr", angle: -90, position: "insideLeft", fill: "#d1d5db" }}
+              />
+              <ReferenceLine y={0} stroke="#64748b" strokeDasharray="3 3" />
+              <Tooltip
+                contentStyle={{
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  borderRadius: 8,
+                  color: "#e5e7eb",
+                }}
+                labelFormatter={(value) => `HE ${value}`}
+                formatter={(value, name) => [fmtSignedMw(Number(value)), String(name)]}
+              />
+              <Bar dataKey="baseRamp" name={compareBaseDateLabel} fill="#60a5fa" isAnimationActive={false} />
+              <Bar dataKey="compareRamp" name={compareTargetDateLabel} fill="#fb923c" isAnimationActive={false} />
+            </BarChart>
+          ) : (
+            <LineChart data={loadCompareRows} margin={{ top: 8, right: 20, bottom: 18, left: 8 }}>
+              <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+              <XAxis
+                dataKey="he"
+                type="number"
+                domain={[1, 24]}
+                ticks={[2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24]}
+                tick={{ fill: "#d1d5db", fontSize: 10 }}
+                label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
+              />
+              <YAxis
+                tick={{ fill: "#d1d5db", fontSize: 10 }}
+                tickFormatter={(value) => fmtCompactMw(Number(value))}
+                width={62}
+                label={{ value: "MW", angle: -90, position: "insideLeft", fill: "#d1d5db" }}
+              />
+              <Tooltip
+                contentStyle={{
+                  background: "#111827",
+                  border: "1px solid #374151",
+                  borderRadius: 8,
+                  color: "#e5e7eb",
+                }}
+                labelFormatter={(value) => `HE ${value}`}
+                formatter={(value, name) => [fmtMw(Number(value)), String(name)]}
+              />
+              <Line
+                type="monotone"
+                dataKey="base"
+                name={compareBaseDateLabel}
+                stroke="#60a5fa"
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+              <Line
+                type="monotone"
+                dataKey="compare"
+                name={compareTargetDateLabel}
+                stroke="#fb923c"
+                strokeWidth={2}
+                dot={{ r: 2 }}
+                connectNulls={false}
+                isAnimationActive={false}
+              />
+            </LineChart>
+          )}
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+
+  const renderLoadCompareTable = () => {
+    const valueFormatter = compareRampingEnabled ? fmtSignedMw : fmtMw;
+    const seriesRows = [
+      {
+        key: "base",
+        label: compareBaseDateLabel,
+        valueKey: compareValueKey,
+        formatter: valueFormatter,
+        swatch: "#60a5fa",
+        isDelta: false,
+      },
+      {
+        key: "compare",
+        label: compareTargetDateLabel,
+        valueKey: compareTargetValueKey,
+        formatter: valueFormatter,
+        swatch: "#fb923c",
+        isDelta: false,
+      },
+      {
+        key: "delta",
+        label: "Delta",
+        valueKey: compareDeltaValueKey,
+        formatter: fmtSignedMw,
+        swatch: "#94a3b8",
+        isDelta: true,
+      },
+    ] as const;
+
+    return (
+      <div className="rounded-md border border-gray-800 bg-gray-950/30">
+        <div className="border-b border-gray-800 px-3 py-2">
+          <h3 className="text-sm font-semibold text-gray-100">Compare Day Data</h3>
+          <p className="mt-0.5 text-[11px] text-gray-500">
+            {compareRampingEnabled ? "Hourly ramps" : "Hourly levels"} | {compareRampingEnabled ? "MW/hr" : "MW"}
+          </p>
+        </div>
+        <div className="max-h-[48vh] overflow-auto">
+          <table className="w-max table-auto border-separate border-spacing-0 text-[11px]">
+            <thead className="sticky top-0 z-20 bg-gray-950 text-gray-500">
+              <tr>
+                <th className="sticky left-0 z-30 min-w-28 border-r border-gray-700 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                  Series
+                </th>
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <th
+                    key={hour}
+                    className={`px-2 py-1.5 text-right font-semibold uppercase tracking-wide ${forecastPopupHourDividerClass(
+                      hour,
+                    )}`}
+                  >
+                    HE{hour + 1}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {seriesRows.map((series, seriesIndex) => (
+                <tr key={series.key} className="hover:bg-gray-900/60">
+                  <td
+                    className={`sticky left-0 z-10 border-r border-gray-700 bg-[#0d1119] px-2 py-1.5 font-medium shadow-[2px_0_0_rgba(31,41,55,0.9)] ${
+                      seriesIndex === 0 ? "border-t border-gray-600" : "border-t border-gray-800"
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: series.swatch }} aria-hidden="true" />
+                      <span className={series.isDelta ? "text-sky-200" : "text-gray-300"}>
+                        {series.label}
+                      </span>
+                    </span>
+                  </td>
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const value = loadCompareRows[hour]?.[series.valueKey] ?? null;
+                    const signedClass =
+                      series.isDelta && typeof value === "number"
+                        ? value > 0
+                          ? "text-rose-200"
+                          : value < 0
+                            ? "text-emerald-200"
+                            : "text-gray-400"
+                        : "text-gray-300";
+                    return (
+                      <td
+                        key={hour}
+                        className={`border-t px-2 py-1.5 text-right tabular-nums ${signedClass} ${
+                          seriesIndex === 0 ? "border-gray-600" : "border-gray-800"
+                        } ${forecastPopupHourDividerClass(hour)}`}
+                      >
+                        {series.formatter(value)}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const renderLoadCompareSection = () => (
+    <SectionCard title="Forecast Date Compare" subtitle={loadCompareSubtitle}>
+      <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_170px_130px_1fr] lg:items-end">
+        <label>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            Area
+          </span>
+          <select
+            value={compareArea}
+            disabled={!compareAreaOptions.length}
+            onChange={(event) => setCompareArea(event.target.value)}
+            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+          >
+            {(compareAreaOptions.length ? compareAreaOptions : [compareArea]).map((area) => (
+              <option key={area} value={area}>
+                {area}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            Date A
+          </span>
+          <select
+            value={compareBaseDate ?? ""}
+            disabled={!compareDateOptions.length}
+            onChange={(event) => setCompareBaseDate(event.target.value || null)}
+            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+          >
+            {!compareDateOptions.length && <option value="">--</option>}
+            {compareDateOptions.map((date) => (
+              <option key={date} value={date}>
+                {fmtDate(date)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            Date B
+          </span>
+          <select
+            value={compareTargetDate ?? ""}
+            disabled={!compareDateOptions.length}
+            onChange={(event) => setCompareTargetDate(event.target.value || null)}
+            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+          >
+            {!compareDateOptions.length && <option value="">--</option>}
+            {compareDateOptions.map((date) => (
+              <option key={date} value={date}>
+                {fmtDate(date)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div>
+          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            Mode
+          </span>
+          <button
+            type="button"
+            aria-pressed={compareRampingEnabled}
+            onClick={() => setCompareRampingEnabled((enabled) => !enabled)}
+            className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+              compareRampingEnabled
+                ? "border-sky-500/50 bg-sky-500/10 text-white"
+                : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+            }`}
+          >
+            Ramping
+          </button>
+        </div>
+      </div>
+
+      {compareError && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {compareError}
+        </div>
+      )}
+      {compareLoading && (
+        <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
+          Loading date comparison...
+        </div>
+      )}
+      {compareData && !compareLoading && (
+        <div className="space-y-3">
+          {renderLoadCompareChart()}
+          {renderLoadCompareTable()}
+        </div>
+      )}
+    </SectionCard>
+  );
+
   const renderVintageTable = () => (
     <DataTableShell
       title="Forecast Vintage Detail"
@@ -896,39 +1432,39 @@ export default function PjmForecasts({
       }
       bodyClassName="max-h-[64vh] overflow-auto"
     >
-      <div className="min-w-[2060px]">
-        <table className={POPUP_FORECAST_TABLE_CLASS}>
-          <PopupForecastColGroup />
+      <div className={forecastPopupMinWidthClass(POPUP_FORECAST_METRIC_COUNT)}>
+        <table className={FORECAST_POPUP_TABLE_CLASS}>
+          <ForecastPopupColGroup metricCount={POPUP_FORECAST_METRIC_COUNT} />
           <thead className="sticky top-0 z-30 bg-gray-950 text-gray-500">
             <tr>
               <th
-                className={`sticky left-0 top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${POPUP_PINNED_SHADOW}`}
+                className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[0]} top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${FORECAST_POPUP_PINNED_SHADOW}`}
               >
                 Type
               </th>
               <th
-                className={`sticky left-[104px] top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${POPUP_PINNED_SHADOW}`}
+                className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[1]} top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${FORECAST_POPUP_PINNED_SHADOW}`}
               >
                 Run
               </th>
               <th
-                className={`sticky left-[246px] top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${POPUP_PINNED_SHADOW}`}
+                className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[2]} top-0 z-40 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide ${FORECAST_POPUP_PINNED_SHADOW}`}
               >
                 Tag
               </th>
-              <th className="sticky top-0 z-30 border-l border-gray-700/90 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide">
+              <th className={`sticky top-0 z-30 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide ${forecastPopupMetricBorderClass(0)}`}>
                 Peak
               </th>
-              <th className="sticky top-0 z-30 border-l border-gray-800/80 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide">
+              <th className={`sticky top-0 z-30 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide ${forecastPopupMetricBorderClass(1)}`}>
                 OnPeak
               </th>
-              <th className="sticky top-0 z-30 border-l border-gray-800/80 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide">
+              <th className={`sticky top-0 z-30 bg-gray-950 px-2 py-1.5 text-right font-semibold uppercase tracking-wide ${forecastPopupMetricBorderClass(2)}`}>
                 OffPeak
               </th>
               {Array.from({ length: 24 }, (_, hour) => (
                 <th
                   key={hour}
-                  className={`sticky top-0 z-30 bg-gray-950 px-1.5 py-1.5 text-right font-semibold uppercase tracking-wide ${hourDividerClass(
+                  className={`sticky top-0 z-30 bg-gray-950 px-1.5 py-1.5 text-right font-semibold uppercase tracking-wide ${forecastPopupHourDividerClass(
                     hour,
                   )}`}
                 >
@@ -960,7 +1496,7 @@ export default function PjmForecasts({
                   )}
                   <tr className="hover:bg-gray-900/60">
                     <td
-                      className={`sticky left-0 z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 ${POPUP_PINNED_SHADOW}`}
+                      className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[0]} z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 ${FORECAST_POPUP_PINNED_SHADOW}`}
                     >
                       <span
                         className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold ${
@@ -975,31 +1511,31 @@ export default function PjmForecasts({
                       </span>
                     </td>
                     <td
-                      className={`sticky left-[104px] z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 ${POPUP_PINNED_SHADOW}`}
+                      className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[1]} z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 ${FORECAST_POPUP_PINNED_SHADOW}`}
                     >
                       {fmtDateTime(row.evaluatedAtEpt)}
                     </td>
                     <td
-                      className={`sticky left-[246px] z-20 bg-[#0d1119] px-2 py-1.5 text-gray-400 ${POPUP_PINNED_SHADOW}`}
+                      className={`sticky ${FORECAST_POPUP_PINNED_LEFT_CLASSES[2]} z-20 bg-[#0d1119] px-2 py-1.5 text-gray-400 ${FORECAST_POPUP_PINNED_SHADOW}`}
                     >
                       {row.tag || "-"}
                     </td>
                     <td
-                      className="border-l border-gray-700/90 px-2 py-1.5 text-right tabular-nums"
+                      className={`px-2 py-1.5 text-right tabular-nums ${forecastPopupMetricBorderClass(0)}`}
                       style={isDelta ? deltaCellStyle(row.peak, diffBound) : undefined}
                     >
                       {isDelta && row.peak !== null && row.peak > 0 ? "+" : ""}
                       {fmtMw(row.peak)}
                     </td>
                     <td
-                      className="border-l border-gray-800/80 px-2 py-1.5 text-right tabular-nums"
+                      className={`px-2 py-1.5 text-right tabular-nums ${forecastPopupMetricBorderClass(1)}`}
                       style={isDelta ? deltaCellStyle(row.onPeak, diffBound) : undefined}
                     >
                       {isDelta && row.onPeak !== null && row.onPeak > 0 ? "+" : ""}
                       {fmtMw(row.onPeak)}
                     </td>
                     <td
-                      className="border-l border-gray-800/80 px-2 py-1.5 text-right tabular-nums"
+                      className={`px-2 py-1.5 text-right tabular-nums ${forecastPopupMetricBorderClass(2)}`}
                       style={isDelta ? deltaCellStyle(row.offPeak, diffBound) : undefined}
                     >
                       {isDelta && row.offPeak !== null && row.offPeak > 0 ? "+" : ""}
@@ -1008,7 +1544,7 @@ export default function PjmForecasts({
                     {row.hourly.map((value, hour) => (
                       <td
                         key={hour}
-                        className={`px-1.5 py-1.5 text-right tabular-nums text-gray-300 ${hourDividerClass(
+                        className={`px-1.5 py-1.5 text-right tabular-nums text-gray-300 ${forecastPopupHourDividerClass(
                           hour,
                         )}`}
                         style={
@@ -1062,11 +1598,11 @@ export default function PjmForecasts({
         }
         bodyClassName="max-h-[72vh] overflow-auto"
       >
-        <table className="w-full min-w-[860px] table-fixed border-collapse bg-[#0d1119] text-[11px] text-gray-200">
+        <table className={FORECAST_EXPLORER_TABLE_CLASS}>
           <colgroup>
-            <col className="w-[132px]" />
+            <col className={FORECAST_EXPLORER_ROW_HEADER_COL_CLASS} />
             {datesToRender.map((date) => (
-              <col key={date} className="w-[92px]" />
+              <col key={date} className={FORECAST_EXPLORER_DATE_COL_CLASS} />
             ))}
           </colgroup>
           <thead className="sticky top-0 z-30 bg-gray-950 text-gray-500">
@@ -1276,110 +1812,97 @@ export default function PjmForecasts({
     );
   };
 
+  const handleNetLoadFreshnessChange = (freshness: PjmNetLoadForecastFreshnessSummary) => {
+    onFreshnessChange?.({
+      status: freshness.status,
+      statusClass: freshness.statusClass,
+      summary: `Net Load | ${freshness.summary}`,
+      targetDateLabel: freshness.targetDateLabel,
+      latestDateLabel: freshness.latestDateLabel,
+      latestUpdateLabel: freshness.latestUpdateLabel,
+    });
+  };
+
   return (
     <div className="space-y-4">
-      <SectionCard title="Forecast Source">
-        <div className="grid gap-2 md:grid-cols-2" role="tablist" aria-label="Forecast source">
-          {FORECAST_SOURCE_TABS.map((tab) => (
-            <button
-              key={tab.key}
-              type="button"
-              role="tab"
-              aria-selected={sourceMode === tab.key}
-              onClick={() => setSourceMode(tab.key)}
-              className={`rounded-md border px-3 py-2 text-left transition-colors ${
-                sourceMode === tab.key
-                  ? "border-sky-500/60 bg-sky-500/10 text-white shadow-[inset_0_-2px_0_rgba(56,189,248,0.75)]"
-                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-              }`}
+      <SectionCard title="Forecast Controls">
+        <div className="grid gap-3 md:grid-cols-[minmax(260px,320px)_minmax(220px,260px)_minmax(260px,320px)] md:items-end">
+          <div className="min-w-0">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Data Source
+            </span>
+            <div
+              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
+              role="tablist"
+              aria-label="Forecast source"
             >
-              <span className="block text-xs font-semibold">{tab.label}</span>
-              <span className="mt-0.5 block text-[10px] font-medium uppercase tracking-wide text-gray-500">
-                {tab.scope}
-              </span>
-            </button>
-          ))}
-        </div>
-      </SectionCard>
+              {FORECAST_SOURCE_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={sourceMode === tab.key}
+                  title={tab.scope}
+                  onClick={() => setSourceMode(tab.key)}
+                  className={forecastSegmentButtonClass(sourceMode === tab.key)}
+                >
+                  <span className="block truncate">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <SectionCard title="Explorer Controls" subtitle={explorerSubtitle}>
-        <div className="grid gap-3 xl:grid-cols-[170px_1fr_300px] xl:items-end">
-          <div>
+          <div className="min-w-0">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Type
+            </span>
+            <div
+              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
+              role="tablist"
+              aria-label="Forecast type"
+            >
+              {FORECAST_TYPE_TABS.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={forecastType === tab.key}
+                  title={tab.scope}
+                  onClick={() => {
+                    setForecastType(tab.key);
+                    setSelectedExplorerCell(null);
+                  }}
+                  className={forecastSegmentButtonClass(forecastType === tab.key)}
+                >
+                  <span className="block truncate">{tab.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="min-w-0">
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
               View
             </span>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Explorer view">
-              {[
-                ["latest", "Latest"],
-                ["change", "Change"],
-              ].map(([key, label]) => (
+            <div
+              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
+              role="tablist"
+              aria-label="Forecast view"
+            >
+              {FORECAST_MODE_TABS.map((tab) => (
                 <button
-                  key={key}
+                  key={tab.key}
                   type="button"
-                  role="radio"
-                  aria-checked={explorerViewMode === key}
+                  role="tab"
+                  aria-selected={forecastMode === tab.key}
+                  title={tab.scope}
                   onClick={() => {
-                    setExplorerViewMode(key as ExplorerViewMode);
-                    if (key === "change") setLookbackHours(selectedWindow.hours);
+                    setForecastMode(tab.key);
+                    if (tab.key === "compareDay") setSelectedExplorerCell(null);
                   }}
-                  className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                    explorerViewMode === key
-                      ? "border-sky-500/50 bg-sky-500/10 text-white"
-                      : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                  }`}
+                  className={forecastSegmentButtonClass(forecastMode === tab.key)}
                 >
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Metric
-            </span>
-            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Explorer metric">
-              {EXPLORER_METRICS.map((metric) => (
-                <button
-                  key={metric.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={explorerMetric === metric.key}
-                  onClick={() => setExplorerMetric(metric.key)}
-                  className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                    explorerMetric === metric.key
-                      ? "border-sky-500/50 bg-sky-500/10 text-white"
-                      : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                  }`}
-                >
-                  {metric.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Window
-            </span>
-            <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Change window">
-              {CHANGE_WINDOWS.map((window) => (
-                <button
-                  key={window.key}
-                  type="button"
-                  role="radio"
-                  aria-checked={changeWindow === window.key}
-                  onClick={() => {
-                    setExplorerViewMode("change");
-                    selectChangeWindow(window.key);
-                  }}
-                  className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
-                    changeWindow === window.key
-                      ? "border-sky-500/50 bg-sky-500/10 text-white"
-                      : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                  }`}
-                >
-                  {window.label}
+                  <span className="block truncate">{tab.label}</span>
                 </button>
               ))}
             </div>
@@ -1387,18 +1910,129 @@ export default function PjmForecasts({
         </div>
       </SectionCard>
 
-      {explorerError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {explorerError}
-        </div>
+      {forecastType === "netLoad" ? (
+        <PjmNetLoadForecast
+          refreshToken={refreshToken}
+          sourceMode={sourceMode}
+          activeTab={forecastMode as NetLoadForecastTab}
+          embedded
+          onFreshnessChange={handleNetLoadFreshnessChange}
+        />
+      ) : forecastMode === "compareDay" ? (
+        <>
+          {explorerError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+              {explorerError}
+            </div>
+          )}
+          {explorerLoading && (
+            <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
+              Loading forecast dates...
+            </div>
+          )}
+          {!explorerLoading && renderLoadCompareSection()}
+        </>
+      ) : (
+        <>
+          <SectionCard title="Explorer Controls" subtitle={explorerSubtitle}>
+            <div className="grid gap-3 xl:grid-cols-[170px_1fr_300px] xl:items-end">
+              <div>
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  View
+                </span>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Explorer view">
+                  {[
+                    ["latest", "Latest"],
+                    ["change", "Change"],
+                  ].map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="radio"
+                      aria-checked={explorerViewMode === key}
+                      onClick={() => {
+                        setExplorerViewMode(key as ExplorerViewMode);
+                        if (key === "change") setLookbackHours(selectedWindow.hours);
+                      }}
+                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                        explorerViewMode === key
+                          ? "border-sky-500/50 bg-sky-500/10 text-white"
+                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Metric
+                </span>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Explorer metric">
+                  {EXPLORER_METRICS.map((metric) => (
+                    <button
+                      key={metric.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={explorerMetric === metric.key}
+                      onClick={() => setExplorerMetric(metric.key)}
+                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                        explorerMetric === metric.key
+                          ? "border-sky-500/50 bg-sky-500/10 text-white"
+                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                      }`}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Window
+                </span>
+                <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Change window">
+                  {CHANGE_WINDOWS.map((window) => (
+                    <button
+                      key={window.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={changeWindow === window.key}
+                      onClick={() => {
+                        setExplorerViewMode("change");
+                        selectChangeWindow(window.key);
+                      }}
+                      className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+                        changeWindow === window.key
+                          ? "border-sky-500/50 bg-sky-500/10 text-white"
+                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                      }`}
+                    >
+                      {window.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </SectionCard>
+
+          {explorerError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+              {explorerError}
+            </div>
+          )}
+          {explorerLoading && (
+            <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
+              Loading forecast explorer...
+            </div>
+          )}
+          {explorerData && !explorerLoading && renderExplorerMatrix()}
+          {renderExplorerModal()}
+        </>
       )}
-      {explorerLoading && (
-        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-          Loading forecast explorer...
-        </div>
-      )}
-      {explorerData && !explorerLoading && renderExplorerMatrix()}
-      {renderExplorerModal()}
     </div>
   );
 }
