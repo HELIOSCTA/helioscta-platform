@@ -20,10 +20,6 @@ export function isWeatherDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
 
-export function isNetLoadForecastDevEnabled(): boolean {
-  return isLocalOnlyFeatureEnabled();
-}
-
 export function isActualsRegimeScatterDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }

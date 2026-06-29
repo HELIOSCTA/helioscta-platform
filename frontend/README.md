@@ -198,9 +198,9 @@ Meteologica explorer routes. `Compare Day` for load uses
 two selected forecast dates plus `B - A` deltas.
 
 For `type=netLoad`, `GET /api/pjm-forecast-date-compare` forwards to the
-local-only net-load comparison route and preserves the same request contract.
+net-load comparison route and preserves the same request contract.
 
-## Local DEV PJM Net Load Forecast Source Contract
+## PJM Net Load Forecast Source Contract
 
 The Forecasts page derives net load from either PJM Data Miner or Meteologica
 forecast rows using `helios_readonly`.
@@ -229,8 +229,6 @@ The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
 `area`, `baseDate`, and `compareDate`. It returns the latest complete hourly
 load, solar, wind, and net-load curves for both selected forecast dates plus
 `B - A` deltas, using the same component-completeness rule as the explorer.
-The dev endpoints are hidden outside local Next.js runs and return `404` on
-Vercel.
 
 ## Local DEV PJM Price Distributions Source Contract
 

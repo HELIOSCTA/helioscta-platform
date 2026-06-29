@@ -1,6 +1,5 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isNetLoadForecastDevEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -13,7 +12,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "Local-dev PJM net load forecast explorer summary",
+  purpose: "PJM net load forecast explorer summary",
   p95TargetMs: 1_500,
   freshnessSource:
     "pjm.load_frcstd_7_day.evaluated_at_datetime_ept or meteologica.pjm_forecast_hourly.issue_date",
@@ -624,12 +623,5 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 });
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isNetLoadForecastDevEnabled()) {
-    return new Response(null, {
-      status: 404,
-      headers: { "Cache-Control": "no-store" },
-    });
-  }
-
   return observedGET(request);
 }
