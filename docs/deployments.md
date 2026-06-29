@@ -880,15 +880,16 @@ FROM isone.seven_day_solar_forecast;
   - Verified RT five-minute HRL LMPs: two market dates back through eight days
     back.
   - Unverified RT hourly LMPs: prior market date through seven days back.
-- Deployed commit: `2db4459`.
-- Deployed at: `2026-06-29 14:28 UTC`.
-- Initial VM verification: manual service run exited `status=0/SUCCESS` on
-  `2026-06-29 14:27 UTC`, upserted 2,016 DA hourly rows for `2026-06-23`
-  through `2026-06-29`, 1,440 verified RT hourly rows for posted dates in the
-  `2026-06-21` through `2026-06-27` repair window, and 6,765 unverified RT
-  hourly rows for `2026-06-22` through `2026-06-28`; journal summary reported
-  `3 succeeded, 0 failed`.
-- Next scheduled run observed: `2026-06-30 06:00:23 UTC`.
+- Deployed commit: `09911a1`.
+- Deployed at: `2026-06-29 15:15 UTC`.
+- Latest VM verification: manual service run exited `status=0/SUCCESS` on
+  `2026-06-29 15:20 UTC`; journal summary reported `4 succeeded, 0 failed`.
+  The run upserted 2,016 DA hourly rows for `2026-06-23` through
+  `2026-06-29`, 2,016 verified RT hourly rows for `2026-06-21` through
+  `2026-06-27`, 84,672 verified RT five-minute HRL rows for `2026-06-21`
+  through `2026-06-27`, and 6,765 unverified RT hourly rows for `2026-06-22`
+  through `2026-06-28`.
+- Next scheduled run observed: `2026-06-30 06:09:32 UTC`.
 - Deployment note: prior VM untracked forecast files that conflicted with the
   fast-forward pull were preserved under
   `/tmp/helioscta-untracked-backup-20260629T142628Z`.
