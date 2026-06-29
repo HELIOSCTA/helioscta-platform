@@ -179,6 +179,7 @@ type ViewMode = "latest" | "change";
 type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
 type DetailRowType = "Snapshot" | "Delta";
 type CompareMwField = Exclude<keyof NetLoadDateCompareHour, "he">;
+type ComparePlotRows = Map<ComponentKey, Array<Record<string, number | null>>>;
 
 interface DetailTableRow extends NetLoadVintageCurve {
   rowType: DetailRowType;
@@ -745,10 +746,11 @@ export default function PjmNetLoadForecast({
   const [viewMode, setViewMode] = useState<ViewMode>("latest");
   const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
+  const [collapsedAreaCards, setCollapsedAreaCards] = useState<Set<string>>(() => new Set());
   const [selectedStatistic, setSelectedStatistic] = useState<StatisticKey>("peak");
   const [explorerData, setExplorerData] = useState<NetLoadExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<NetLoadDifferencesPayload | null>(null);
-  const [compareData, setCompareData] = useState<NetLoadDateComparePayload | null>(null);
+  const [compareDataByArea, setCompareDataByArea] = useState<Record<string, NetLoadDateComparePayload>>({});
   const [explorerLoading, setExplorerLoading] = useState(true);
   const [diffLoading, setDiffLoading] = useState(false);
   const [compareLoading, setCompareLoading] = useState(false);
@@ -757,13 +759,13 @@ export default function PjmNetLoadForecast({
   const [compareError, setCompareError] = useState<string | null>(null);
   const [selectedForecastDate, setSelectedForecastDate] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState("RTO");
-  const [compareArea, setCompareArea] = useState("RTO");
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
   const [selectedComponent, setSelectedComponent] = useState<ComponentKey>("netLoad");
   const [lookbackHours, setLookbackHours] = useState(DEFAULT_LOOKBACK_HOURS);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set());
+  const [collapsedCompareCards, setCollapsedCompareCards] = useState<Set<string>>(() => new Set());
   const [visibleDetailWindows, setVisibleDetailWindows] = useState<Set<number>>(
     () => new Set(CHANGE_WINDOWS.map((window) => window.hours)),
   );
@@ -776,11 +778,12 @@ export default function PjmNetLoadForecast({
     setSelectedArea("RTO");
     setExplorerData(null);
     setDiffData(null);
-    setCompareData(null);
+    setCompareDataByArea({});
     setDiffError(null);
     setCompareError(null);
     setHiddenSeries(new Set());
-    setCompareArea("RTO");
+    setCollapsedAreaCards(new Set());
+    setCollapsedCompareCards(new Set());
     setCompareBaseDate(null);
     setCompareTargetDate(null);
     setCompareRampingEnabled(false);
@@ -876,67 +879,11 @@ export default function PjmNetLoadForecast({
     if (!explorerData) return;
 
     const dates = explorerData.forecastDates ?? [];
-    const areas = explorerData.areas ?? [];
-    setCompareArea((current) => {
-      if (areas.includes(current)) return current;
-      if (areas.includes("RTO")) return "RTO";
-      return areas[0] ?? "RTO";
-    });
     setCompareBaseDate((current) => (current && dates.includes(current) ? current : dates[0] ?? null));
     setCompareTargetDate((current) =>
       current && dates.includes(current) ? current : dates[1] ?? dates[0] ?? null,
     );
   }, [explorerData]);
-
-  useEffect(() => {
-    if (activeTab !== "compareDay" || !compareBaseDate || !compareTargetDate) {
-      setCompareData(null);
-      setCompareLoading(false);
-      return;
-    }
-
-    let active = true;
-    setCompareLoading(true);
-    setCompareError(null);
-
-    fetchJsonWithCache<NetLoadDateComparePayload>({
-      key: buildCompareCacheKey({
-        sourceMode,
-        area: compareArea,
-        baseDate: compareBaseDate,
-        compareDate: compareTargetDate,
-      }),
-      url: buildCompareUrl({
-        sourceMode,
-        area: compareArea,
-        baseDate: compareBaseDate,
-        compareDate: compareTargetDate,
-        refresh: refreshToken > 0,
-      }),
-      ttlMs: API_CACHE_TTL_MS,
-      cacheMode: refreshToken > 0 ? "no-store" : "default",
-      forceRefresh: refreshToken > 0,
-    })
-      .then((payload) => {
-        if (!active) return;
-        setCompareData(payload);
-      })
-      .catch((err: Error) => {
-        if (!active) return;
-        setCompareError(
-          err.message ||
-            `Failed to load ${sourceLabel(sourceMode)} ${compareArea} net load date comparison`,
-        );
-        setCompareData(null);
-      })
-      .finally(() => {
-        if (active) setCompareLoading(false);
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [activeTab, compareArea, compareBaseDate, compareTargetDate, refreshToken, sourceMode]);
 
   const visibleAreaGroups = useMemo(() => {
     const areas = explorerData?.areas ?? [];
@@ -953,7 +900,154 @@ export default function PjmNetLoadForecast({
       ),
     })).filter((group) => group.areas.length > 0);
   }, [explorerData]);
+  const visibleAreas = useMemo(
+    () => visibleAreaGroups.flatMap((group) => group.areas),
+    [visibleAreaGroups],
+  );
   const visibleAreaCount = visibleAreaGroups.reduce((count, group) => count + group.areas.length, 0);
+
+  useEffect(() => {
+    const visibleAreaSet = new Set(visibleAreas);
+    setCollapsedAreaCards((current) => {
+      const next = new Set<string>();
+      current.forEach((area) => {
+        if (visibleAreaSet.has(area)) next.add(area);
+      });
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleAreas]);
+
+  const toggleAreaCard = useCallback((area: string) => {
+    startTransition(() => {
+      setCollapsedAreaCards((current) => {
+        const next = new Set(current);
+        if (next.has(area)) next.delete(area);
+        else next.add(area);
+        return next;
+      });
+    });
+  }, []);
+
+  const expandAllAreaCards = useCallback(() => {
+    startTransition(() => setCollapsedAreaCards(new Set()));
+  }, []);
+
+  const collapseAllAreaCards = useCallback(() => {
+    startTransition(() => setCollapsedAreaCards(new Set(visibleAreas)));
+  }, [visibleAreas]);
+
+  useEffect(() => {
+    const visibleAreaSet = new Set(visibleAreas);
+    setCollapsedCompareCards((current) => {
+      const next = new Set<string>();
+      current.forEach((area) => {
+        if (visibleAreaSet.has(area)) next.add(area);
+      });
+      return next.size === current.size ? current : next;
+    });
+  }, [visibleAreas]);
+
+  const toggleCompareCard = useCallback((area: string) => {
+    startTransition(() => {
+      setCollapsedCompareCards((current) => {
+        const next = new Set(current);
+        if (next.has(area)) next.delete(area);
+        else next.add(area);
+        return next;
+      });
+    });
+  }, []);
+
+  const expandAllCompareCards = useCallback(() => {
+    startTransition(() => setCollapsedCompareCards(new Set()));
+  }, []);
+
+  const collapseAllCompareCards = useCallback(() => {
+    startTransition(() => setCollapsedCompareCards(new Set(visibleAreas)));
+  }, [visibleAreas]);
+
+  useEffect(() => {
+    if (
+      activeTab !== "compareDay" ||
+      !compareBaseDate ||
+      !compareTargetDate ||
+      !visibleAreas.length
+    ) {
+      setCompareDataByArea({});
+      setCompareLoading(false);
+      return;
+    }
+
+    let active = true;
+    const areas = [...visibleAreas];
+    setCompareLoading(true);
+    setCompareError(null);
+
+    Promise.allSettled(
+      areas.map((area) =>
+        fetchJsonWithCache<NetLoadDateComparePayload>({
+          key: buildCompareCacheKey({
+            sourceMode,
+            area,
+            baseDate: compareBaseDate,
+            compareDate: compareTargetDate,
+          }),
+          url: buildCompareUrl({
+            sourceMode,
+            area,
+            baseDate: compareBaseDate,
+            compareDate: compareTargetDate,
+            refresh: refreshToken > 0,
+          }),
+          ttlMs: API_CACHE_TTL_MS,
+          cacheMode: refreshToken > 0 ? "no-store" : "default",
+          forceRefresh: refreshToken > 0,
+        }),
+      ),
+    )
+      .then((results) => {
+        if (!active) return;
+        const nextData: Record<string, NetLoadDateComparePayload> = {};
+        const failures: string[] = [];
+        results.forEach((result, index) => {
+          const area = areas[index] ?? "Unknown";
+          if (result.status === "fulfilled") {
+            nextData[area] = result.value;
+          } else {
+            const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+            failures.push(`${area}: ${reason}`);
+          }
+        });
+
+        setCompareDataByArea(nextData);
+        if (failures.length) {
+          setCompareError(
+            `Some regions failed to load: ${failures.slice(0, 3).join("; ")}${
+              failures.length > 3 ? "..." : ""
+            }`,
+          );
+        }
+      })
+      .catch((err: Error) => {
+        if (!active) return;
+        setCompareError(err.message || `Failed to load ${sourceLabel(sourceMode)} net load date comparison`);
+        setCompareDataByArea({});
+      })
+      .finally(() => {
+        if (active) setCompareLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activeTab,
+    compareBaseDate,
+    compareTargetDate,
+    refreshToken,
+    sourceMode,
+    visibleAreas,
+  ]);
 
   const explorerCellMap = useMemo(
     () =>
@@ -967,13 +1061,14 @@ export default function PjmNetLoadForecast({
     viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"
   } | complete load, wind, and solar hours only`;
   const compareDateOptions = explorerData?.forecastDates ?? [];
-  const compareAreaOptions = explorerData?.areas ?? [];
-  const comparePlotRows = useMemo(() => {
-    const rows = compareData?.rows ?? [];
-    return new Map(
-      COMPARE_COMPONENTS.map((component) => [component.key, compareChartRows(rows, component)]),
-    );
-  }, [compareData]);
+  const compareDataList = visibleAreas
+    .map((area) => compareDataByArea[area])
+    .filter((payload): payload is NetLoadDateComparePayload => Boolean(payload));
+  const compareLatestUpdate = compareDataList
+    .map((payload) => payload.latestUpdate)
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
   const compareBaseDateLabel = fmtDate(compareBaseDate);
   const compareTargetDateLabel = fmtDate(compareTargetDate);
   const compareBaseLegend = `${compareBaseDateLabel} (${forecastDateOffsetLabel(
@@ -984,11 +1079,9 @@ export default function PjmNetLoadForecast({
     compareBaseDate,
     compareTargetDate,
   )})`;
-  const compareSubtitle = compareData
-    ? `${compareData.sourceLabel} | ${compareData.area} | ${compareBaseLegend} vs ${compareTargetLegend} | ${
-        compareData.completeHourCount
-      }/24 complete hours`
-    : `${sourceLabel(sourceMode)} | ${compareArea} | ${compareBaseLegend} vs ${compareTargetLegend}`;
+  const compareSubtitle = `${sourceLabel(sourceMode)} | ${compareDataList.length}/${
+    visibleAreaCount || visibleAreas.length
+  } regions loaded | ${compareBaseLegend} vs ${compareTargetLegend}`;
   const compareRenewableVintageNote =
     "Solar and wind use the latest non-null forecast at or before the selected load issue.";
 
@@ -1133,8 +1226,11 @@ export default function PjmNetLoadForecast({
     </div>
   );
 
-  const renderCompareProfileChart = (component: (typeof COMPARE_COMPONENTS)[number]) => {
-    const rows = comparePlotRows.get(component.key) ?? [];
+  const renderCompareProfileChart = (
+    component: (typeof COMPARE_COMPONENTS)[number],
+    plotRows: ComparePlotRows,
+  ) => {
+    const rows = plotRows.get(component.key) ?? [];
 
     return (
       <div
@@ -1197,8 +1293,11 @@ export default function PjmNetLoadForecast({
     );
   };
 
-  const renderCompareRampChart = (component: (typeof COMPARE_COMPONENTS)[number]) => {
-    const rows = comparePlotRows.get(component.key) ?? [];
+  const renderCompareRampChart = (
+    component: (typeof COMPARE_COMPONENTS)[number],
+    plotRows: ComparePlotRows,
+  ) => {
+    const rows = plotRows.get(component.key) ?? [];
 
     return (
       <div
@@ -1261,7 +1360,7 @@ export default function PjmNetLoadForecast({
     );
   };
 
-  const renderCompareDataTable = () => {
+  const renderCompareDataTable = (plotRows: ComparePlotRows) => {
     const baseKey = compareRampingEnabled ? "baseRamp" : "base";
     const compareKey = compareRampingEnabled ? "compareRamp" : "compare";
     const deltaKey = compareRampingEnabled ? "rampDelta" : "delta";
@@ -1320,7 +1419,7 @@ export default function PjmNetLoadForecast({
             </thead>
             <tbody>
               {COMPARE_COMPONENTS.flatMap((component) => {
-                const rows = comparePlotRows.get(component.key) ?? [];
+                const rows = plotRows.get(component.key) ?? [];
                 const seriesRows = [
                   {
                     key: "base",
@@ -1420,50 +1519,34 @@ export default function PjmNetLoadForecast({
     );
   };
 
-  const renderDateCompareSection = () => (
-    <SectionCard title="Forecast Date Compare" subtitle={compareSubtitle}>
-      <div className="mb-3 grid gap-3 lg:grid-cols-[160px_170px_170px_130px_1fr] lg:items-end">
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Area
-          </span>
-          <select
-            value={compareArea}
-            disabled={compareAreaOptions.length <= 1}
-            onChange={(event) => {
-              const nextArea = event.target.value;
-              startTransition(() => setCompareArea(nextArea));
-            }}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {(compareAreaOptions.length ? compareAreaOptions : [compareArea]).map((area) => (
-              <option key={area} value={area}>
-                {area}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Date A
-          </span>
-          <select
-            value={compareBaseDate ?? ""}
-            disabled={!compareDateOptions.length}
-            onChange={(event) => {
-              const nextDate = event.target.value || null;
-              startTransition(() => setCompareBaseDate(nextDate));
-            }}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {!compareDateOptions.length && <option value="">--</option>}
-            {compareDateOptions.map((date) => (
-              <option key={date} value={date}>
-                {fmtDate(date)}
-              </option>
-            ))}
-          </select>
-        </label>
+  const renderDateCompareSection = () => {
+    const compareCardControlClass =
+      "rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-100";
+
+    return (
+      <SectionCard title="Forecast Date Compare" subtitle={compareSubtitle}>
+        <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_130px_1fr] lg:items-end">
+          <label>
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Date A
+            </span>
+            <select
+              value={compareBaseDate ?? ""}
+              disabled={!compareDateOptions.length}
+              onChange={(event) => {
+                const nextDate = event.target.value || null;
+                startTransition(() => setCompareBaseDate(nextDate));
+              }}
+              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+            >
+              {!compareDateOptions.length && <option value="">--</option>}
+              {compareDateOptions.map((date) => (
+                <option key={date} value={date}>
+                  {fmtDate(date)}
+                </option>
+              ))}
+            </select>
+          </label>
         <label>
           <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
             Date B
@@ -1516,11 +1599,13 @@ export default function PjmNetLoadForecast({
             />
             {compareTargetLegend}
           </span>
-          {compareData && (
-            <span className="text-gray-500">
-              Updated {fmtDateTime(compareData.latestUpdate)}
-            </span>
-          )}
+          {compareLatestUpdate && <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>}
+          <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
+            Expand all
+          </button>
+          <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
+            Collapse all
+          </button>
         </div>
       </div>
 
@@ -1534,196 +1619,276 @@ export default function PjmNetLoadForecast({
           Loading date comparison...
         </div>
       )}
-      {compareData && !compareLoading && (
-        <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
-          <div className="mb-3 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
-            <h3 className="text-base font-semibold text-gray-100">{compareData.area}</h3>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
-              <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-                {compareBaseDateLabel} load issue: {fmtDateTime(compareData.baseIssue)}
-              </span>
-              <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-                {compareTargetDateLabel} load issue: {fmtDateTime(compareData.compareIssue)}
-              </span>
-              <span
-                className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1 text-gray-500"
-                title={compareRenewableVintageNote}
-              >
-                Renewables latest {"<="} load issue
-              </span>
-            </div>
-          </div>
-          <div className="grid gap-3 xl:grid-cols-4">
-            {COMPARE_COMPONENTS.map((component) =>
-              compareRampingEnabled
-                ? renderCompareRampChart(component)
-                : renderCompareProfileChart(component),
-            )}
-          </div>
-          {renderCompareDataTable()}
+      {!compareLoading && compareDataList.length === 0 && !compareError && (
+        <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
+          No complete date comparison regions are available for these dates.
+        </div>
+      )}
+      {!compareLoading && compareDataList.length > 0 && (
+        <div className="space-y-3">
+          {visibleAreaGroups.flatMap((group) =>
+            group.areas.map((area) => {
+              const payload = compareDataByArea[area];
+              if (!payload) return null;
+              const open = !collapsedCompareCards.has(area);
+              const plotRows = new Map(
+                COMPARE_COMPONENTS.map((component) => [
+                  component.key,
+                  compareChartRows(payload.rows, component),
+                ]),
+              ) as ComparePlotRows;
+
+              return (
+                <DataTableShell
+                  key={area}
+                  title={area}
+                  subtitle={`${group.label} | ${payload.completeHourCount}/24 complete hours | ${
+                    open ? "expanded" : "collapsed"
+                  }`}
+                  action={
+                    <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-300">
+                      Updated {fmtDateTime(payload.latestUpdate)}
+                    </span>
+                  }
+                  collapsible
+                  open={open}
+                  onToggle={() => toggleCompareCard(area)}
+                  bodyClassName="bg-[#0d1119] p-3"
+                >
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
+                    <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+                      {compareBaseDateLabel} load issue: {fmtDateTime(payload.baseIssue)}
+                    </span>
+                    <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+                      {compareTargetDateLabel} load issue: {fmtDateTime(payload.compareIssue)}
+                    </span>
+                    <span
+                      className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1 text-gray-500"
+                      title={compareRenewableVintageNote}
+                    >
+                      Renewables latest {"<="} load issue
+                    </span>
+                  </div>
+                  <div className="grid gap-3 xl:grid-cols-4">
+                    {COMPARE_COMPONENTS.map((component) =>
+                      compareRampingEnabled
+                        ? renderCompareRampChart(component, plotRows)
+                        : renderCompareProfileChart(component, plotRows),
+                    )}
+                  </div>
+                  {renderCompareDataTable(plotRows)}
+                </DataTableShell>
+              );
+            }),
+          )}
         </div>
       )}
     </SectionCard>
-  );
+    );
+  };
 
   const renderMatrix = () => {
     const dates = explorerData?.forecastDates ?? [];
     const isSigned = viewMode === "change";
+    const openAreaCount = Math.max(visibleAreaCount - collapsedAreaCards.size, 0);
+    const areaControlButtonClass =
+      "rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-100";
 
     return (
-      <DataTableShell
-        title="Net Load Forecast Explorer"
-        subtitle={
-          explorerData
-            ? `${explorerData.sourceLabel} | ${visibleAreaCount} areas x ${dates.length} dates | ${statisticLabel(
-                selectedStatistic,
-              )} over complete component hours | ${
-                viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"
-              } | ${explorerData.formula}`
-            : undefined
-        }
-        action={
-          <ForecastHeatmapToggle
-            enabled={tableHeatmapEnabled}
-            onToggle={() => {
-              startTransition(() => setTableHeatmapEnabled((enabled) => !enabled));
-            }}
-          />
-        }
-        bodyClassName="max-h-[72vh] overflow-auto"
-      >
-        <table className={FORECAST_EXPLORER_TABLE_CLASS}>
-          <colgroup>
-            <col className={FORECAST_EXPLORER_ROW_HEADER_COL_CLASS} />
-            {dates.map((date) => (
-              <col key={date} className={FORECAST_EXPLORER_DATE_COL_CLASS} />
-            ))}
-          </colgroup>
-          <thead className="sticky top-0 z-30 bg-gray-950 text-gray-500">
-            <tr>
-              <th className="sticky left-0 top-0 z-40 bg-gray-950 px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
-                Area / Component
-              </th>
-              {dates.map((date) => (
-                <th
-                  key={date}
-                  className="sticky top-0 z-30 whitespace-nowrap bg-gray-950 px-2 py-1.5 text-right text-[10px] font-semibold uppercase leading-tight tracking-wide"
-                >
-                  {fmtForecastHeaderDate(date)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-800">
-            {visibleAreaGroups.map((group) => (
-              <Fragment key={group.key}>
-                <tr>
-                  <td
-                    colSpan={dates.length + 1}
-                    className="sticky left-0 z-20 bg-gray-950/90 px-2 py-1.5 text-left text-[10px] font-bold uppercase tracking-wider text-sky-200 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
-                  >
-                    {group.label}
-                  </td>
-                </tr>
-                {group.areas.flatMap((area) =>
-                  COMPONENT_ROWS.map((component) => {
-                    const rowValues = dates
-                      .map((date) => {
-                        const cell = explorerCellMap.get(`${area}|${date}`);
-                        return cell
-                          ? matrixValue(
-                              cell,
-                              component.key,
-                              selectedStatistic,
-                              viewMode,
-                              changeWindow,
-                            )
-                          : null;
-                      })
-                      .filter((value): value is number => value !== null);
-                    const rowMin = rowValues.length ? Math.min(...rowValues) : 0;
-                    const rowMax = rowValues.length ? Math.max(...rowValues) : 0;
-                    const rowBound = rowValues.length
-                      ? Math.max(...rowValues.map((value) => Math.abs(value)))
-                      : 0;
+      <section className="space-y-3">
+        <div className="flex flex-col gap-3 rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:flex-row sm:items-start sm:justify-between sm:p-4">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-gray-100">Net Load Forecast Explorer</h2>
+            {explorerData && (
+              <p className="mt-1 text-xs text-gray-500">
+                {explorerData.sourceLabel} | {openAreaCount}/{visibleAreaCount} regions open |{" "}
+                {dates.length} dates | {statisticLabel(selectedStatistic)} over complete component
+                hours | {viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"} |{" "}
+                {explorerData.formula}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+            <ForecastHeatmapToggle
+              enabled={tableHeatmapEnabled}
+              onToggle={() => {
+                startTransition(() => setTableHeatmapEnabled((enabled) => !enabled));
+              }}
+            />
+            <button
+              type="button"
+              onClick={expandAllAreaCards}
+              className={areaControlButtonClass}
+            >
+              Expand all
+            </button>
+            <button
+              type="button"
+              onClick={collapseAllAreaCards}
+              className={areaControlButtonClass}
+            >
+              Collapse all
+            </button>
+          </div>
+        </div>
 
-                    return (
-                      <tr key={`${area}-${component.key}`} className="hover:bg-gray-900/60">
-                        <td className="sticky left-0 z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 shadow-[2px_0_0_rgba(31,41,55,0.9)]">
-                          <span className="text-gray-500">{area}</span>
-                          <span className="mx-1 text-gray-700">/</span>
-                          {component.label}
-                        </td>
-                        {dates.map((date) => {
-                          const cell = explorerCellMap.get(`${area}|${date}`);
-                          const value = cell
-                            ? matrixValue(
-                                cell,
-                                component.key,
-                                selectedStatistic,
-                                viewMode,
-                                changeWindow,
-                              )
-                            : null;
-                          const isSelected =
-                            selectedArea === area &&
-                            selectedForecastDate === date &&
-                            selectedComponent === component.key;
-                          return (
-                            <td
-                              key={date}
-                              className="px-1 py-1 text-right align-top tabular-nums text-gray-300"
-                              style={
-                                tableHeatmapEnabled
-                                  ? isSigned
-                                    ? deltaCellStyle(value, rowBound)
-                                    : componentHeatCellStyle(
-                                        value,
-                                        rowMin,
-                                        rowMax,
-                                        component.key,
-                                      )
-                                  : undefined
-                              }
-                            >
-                              <button
-                                type="button"
-                                disabled={!cell}
-                                onClick={() => {
-                                  if (!cell) return;
-                                  startTransition(() => {
-                                    setSelectedArea(cell.area);
-                                    setSelectedForecastDate(date);
-                                    setSelectedComponent(component.key);
-                                  });
-                                }}
-                                className={`min-h-7 w-full rounded px-1.5 py-1 text-right text-[11px] transition-colors hover:bg-gray-950/50 disabled:cursor-default disabled:hover:bg-transparent ${
-                                  isSelected ? "ring-1 ring-sky-300/80" : ""
-                                }`}
-                                title={
-                                  cell
-                                    ? `${cell.area} ${date} | ${component.label} ${statisticLabel(
-                                        selectedStatistic,
-                                      )} | ${cell.vintageCount} vintages | ${cell.completeHourCount}/24 complete hours | ${fmtDateTime(
-                                        cell.latestEvaluatedAtEpt,
-                                      )}`
-                                    : undefined
-                                }
-                              >
-                                {fmtMatrixValue(value, isSigned)}
-                              </button>
-                            </td>
-                          );
-                        })}
+        {visibleAreaCount === 0 ? (
+          <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
+            No complete net-load regions are available for this source.
+          </div>
+        ) : (
+          visibleAreaGroups.flatMap((group) =>
+            group.areas.map((area) => {
+              const open = !collapsedAreaCards.has(area);
+              const availableDateCount = dates.filter((date) =>
+                explorerCellMap.has(`${area}|${date}`),
+              ).length;
+              const summaryDate = dates[0] ?? null;
+              const summaryCell = summaryDate ? explorerCellMap.get(`${area}|${summaryDate}`) : null;
+              const summaryNetLoad = summaryCell
+                ? matrixValue(summaryCell, "netLoad", selectedStatistic, viewMode, changeWindow)
+                : null;
+
+              return (
+                <DataTableShell
+                  key={area}
+                  title={area}
+                  subtitle={`${group.label} | ${availableDateCount}/${dates.length} forecast dates | ${
+                    open ? "expanded" : "collapsed"
+                  }`}
+                  action={
+                    summaryCell ? (
+                      <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-xs font-semibold text-gray-300">
+                        Net Load {fmtMatrixValue(summaryNetLoad, isSigned)}
+                      </span>
+                    ) : null
+                  }
+                  collapsible
+                  open={open}
+                  onToggle={() => toggleAreaCard(area)}
+                  bodyClassName="overflow-auto"
+                >
+                  <table className={FORECAST_EXPLORER_TABLE_CLASS}>
+                    <colgroup>
+                      <col className={FORECAST_EXPLORER_ROW_HEADER_COL_CLASS} />
+                      {dates.map((date) => (
+                        <col key={date} className={FORECAST_EXPLORER_DATE_COL_CLASS} />
+                      ))}
+                    </colgroup>
+                    <thead className="sticky top-0 z-30 bg-gray-950 text-gray-500">
+                      <tr>
+                        <th className="sticky left-0 top-0 z-40 bg-gray-950 px-2 py-1.5 text-left text-[10px] font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                          Component
+                        </th>
+                        {dates.map((date) => (
+                          <th
+                            key={date}
+                            className="sticky top-0 z-30 whitespace-nowrap bg-gray-950 px-2 py-1.5 text-right text-[10px] font-semibold uppercase leading-tight tracking-wide"
+                          >
+                            {fmtForecastHeaderDate(date)}
+                          </th>
+                        ))}
                       </tr>
-                    );
-                  }),
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
-      </DataTableShell>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {COMPONENT_ROWS.map((component) => {
+                        const rowValues = dates
+                          .map((date) => {
+                            const cell = explorerCellMap.get(`${area}|${date}`);
+                            return cell
+                              ? matrixValue(
+                                  cell,
+                                  component.key,
+                                  selectedStatistic,
+                                  viewMode,
+                                  changeWindow,
+                                )
+                              : null;
+                          })
+                          .filter((value): value is number => value !== null);
+                        const rowMin = rowValues.length ? Math.min(...rowValues) : 0;
+                        const rowMax = rowValues.length ? Math.max(...rowValues) : 0;
+                        const rowBound = rowValues.length
+                          ? Math.max(...rowValues.map((value) => Math.abs(value)))
+                          : 0;
+
+                        return (
+                          <tr key={`${area}-${component.key}`} className="hover:bg-gray-900/60">
+                            <td className="sticky left-0 z-20 bg-[#0d1119] px-2 py-1.5 font-medium text-gray-300 shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                              {component.label}
+                            </td>
+                            {dates.map((date) => {
+                              const cell = explorerCellMap.get(`${area}|${date}`);
+                              const value = cell
+                                ? matrixValue(
+                                    cell,
+                                    component.key,
+                                    selectedStatistic,
+                                    viewMode,
+                                    changeWindow,
+                                  )
+                                : null;
+                              const isSelected =
+                                selectedArea === area &&
+                                selectedForecastDate === date &&
+                                selectedComponent === component.key;
+                              return (
+                                <td
+                                  key={date}
+                                  className="px-1 py-1 text-right align-top tabular-nums text-gray-300"
+                                  style={
+                                    tableHeatmapEnabled
+                                      ? isSigned
+                                        ? deltaCellStyle(value, rowBound)
+                                        : componentHeatCellStyle(
+                                            value,
+                                            rowMin,
+                                            rowMax,
+                                            component.key,
+                                          )
+                                      : undefined
+                                  }
+                                >
+                                  <button
+                                    type="button"
+                                    disabled={!cell}
+                                    onClick={() => {
+                                      if (!cell) return;
+                                      startTransition(() => {
+                                        setSelectedArea(cell.area);
+                                        setSelectedForecastDate(date);
+                                        setSelectedComponent(component.key);
+                                      });
+                                    }}
+                                    className={`min-h-7 w-full rounded px-1.5 py-1 text-right text-[11px] transition-colors hover:bg-gray-950/50 disabled:cursor-default disabled:hover:bg-transparent ${
+                                      isSelected ? "ring-1 ring-sky-300/80" : ""
+                                    }`}
+                                    title={
+                                      cell
+                                        ? `${cell.area} ${date} | ${component.label} ${statisticLabel(
+                                            selectedStatistic,
+                                          )} | ${cell.vintageCount} vintages | ${
+                                            cell.completeHourCount
+                                          }/24 complete hours | ${fmtDateTime(cell.latestEvaluatedAtEpt)}`
+                                        : undefined
+                                    }
+                                  >
+                                    {fmtMatrixValue(value, isSigned)}
+                                  </button>
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </DataTableShell>
+              );
+            }),
+          )
+        )}
+      </section>
     );
   };
 
