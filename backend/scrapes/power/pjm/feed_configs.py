@@ -658,7 +658,6 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         ),
         primary_key=(
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "area",
         ),
         datetime_columns=(
@@ -697,7 +696,6 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         ),
         primary_key=(
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "area",
         ),
         datetime_columns=(
@@ -738,7 +736,6 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         ),
         primary_key=(
             "datetime_beginning_utc",
-            "generated_at_ept",
             "area",
         ),
         datetime_columns=(
@@ -774,7 +771,6 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         ),
         primary_key=(
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "interface",
         ),
         datetime_columns=(
@@ -784,6 +780,34 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         ),
         numeric_columns=("scheduled_tie_flow",),
         text_columns=("interface",),
+        datetime_filter_field="projected_peak_datetime_ept",
+        default_lookback_days=3,
+        default_end_time="23:59",
+    ),
+    "ops_sum_frcstd_tran_lim": DataMinerFeedConfig(
+        feed_name="ops_sum_frcstd_tran_lim",
+        display_name="Operations Summary - Forecast Transfer Limits",
+        category="System Information",
+        posting_frequency="Hourly",
+        retention_time="Indefinitely",
+        columns=(
+            "generated_at_ept",
+            "projected_peak_datetime_ept",
+            "projected_peak_datetime_utc",
+            "transfer_limit_name",
+            "transfer_limit_mw",
+        ),
+        primary_key=(
+            "projected_peak_datetime_utc",
+            "transfer_limit_name",
+        ),
+        datetime_columns=(
+            "generated_at_ept",
+            "projected_peak_datetime_ept",
+            "projected_peak_datetime_utc",
+        ),
+        numeric_columns=("transfer_limit_mw",),
+        text_columns=("transfer_limit_name",),
         datetime_filter_field="projected_peak_datetime_ept",
         default_lookback_days=3,
         default_end_time="23:59",

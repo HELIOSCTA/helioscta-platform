@@ -6,7 +6,7 @@
 
 ---------------------------
 -- PJM Operations Summary projected scheduled tie flow.
--- Grain: projected peak UTC x generated_at_ept x interface.
+-- Grain: projected peak UTC x interface.
 ---------------------------
 
 SELECT

@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS pjm.ops_sum_prev_period (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (
         datetime_beginning_utc,
-        generated_at_ept,
         area
     )
 );

@@ -6,7 +6,7 @@
 
 ---------------------------
 -- PJM Operations Summary actual operational statistics.
--- Grain: operating hour UTC x generated_at_ept x area.
+-- Grain: operating hour UTC x area.
 ---------------------------
 
 SELECT

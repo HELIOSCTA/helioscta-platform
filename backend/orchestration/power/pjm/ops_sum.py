@@ -12,6 +12,7 @@ from typing import Any
 
 from backend.scrapes.power.pjm import ops_sum_frcst_peak_area
 from backend.scrapes.power.pjm import ops_sum_frcst_peak_rto
+from backend.scrapes.power.pjm import ops_sum_frcstd_tran_lim
 from backend.scrapes.power.pjm import ops_sum_prev_period
 from backend.scrapes.power.pjm import ops_sum_prjctd_tie_flow
 
@@ -19,6 +20,7 @@ from backend.scrapes.power.pjm import ops_sum_prjctd_tie_flow
 LOGGER = logging.getLogger(__name__)
 
 DEFAULT_FEEDS: tuple[ModuleType, ...] = (
+    ops_sum_frcstd_tran_lim,
     ops_sum_frcst_peak_area,
     ops_sum_frcst_peak_rto,
     ops_sum_prev_period,

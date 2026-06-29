@@ -53,6 +53,7 @@ Feed selection and promotion priority are documented in
 | rt_short_term_mv_override | Real-Time Short-Term Marginal Value Override | Constraints | posted_day window | pjm.rt_short_term_mv_override |
 | rt_unverified_hrl_lmps | Real-Time Unverified Hourly LMPs | Locational Marginal Prices | Current hub, zone, and interface rows only | pjm.rt_unverified_hrl_lmps |
 | load_frcstd_7_day | Seven-Day Load Forecast | Load Forecast | Current PJM snapshot endpoint | pjm.load_frcstd_7_day |
+| ops_sum_frcstd_tran_lim | Operations Summary - Forecast Transfer Limits | System Information | projected_peak_datetime_ept window | pjm.ops_sum_frcstd_tran_lim |
 | ops_sum_frcst_peak_area | Operations Summary - Projected Area Statistics at Peak | System Information | projected_peak_datetime_ept window | pjm.ops_sum_frcst_peak_area |
 | ops_sum_frcst_peak_rto | Operations Summary - Projected RTO Statistics at Peak | System Information | projected_peak_datetime_ept window | pjm.ops_sum_frcst_peak_rto |
 | ops_sum_prev_period | Operations Summary - Actual Operational Statistics | System Information | datetime_beginning_ept window | pjm.ops_sum_prev_period |
@@ -96,10 +97,11 @@ Feed selection and promotion priority are documented in
 | Promoted | rt_short_term_mv_override | Real-Time Short-Term Marginal Value Override | none | none | Hourly | 7 years | constraint_name, contingency_description, effective_datetime_utc |
 | Promoted | rt_unverified_hrl_lmps | Real-Time Unverified Hourly LMPs | none | none | Hourly | 30 days | datetime_beginning_utc, pnode_name, type |
 | Promoted | load_frcstd_7_day | Seven-Day Load Forecast | none | none | Hourly | None | evaluated_at_datetime_utc, forecast_datetime_beginning_utc, forecast_area |
-| Promoted | ops_sum_frcst_peak_area | Operations Summary - Projected Area Statistics at Peak | none | none | Daily | Indefinitely | projected_peak_datetime_utc, generated_at_ept, area |
-| Promoted | ops_sum_frcst_peak_rto | Operations Summary - Projected RTO Statistics at Peak | none | none | Daily | Indefinitely | projected_peak_datetime_utc, generated_at_ept, area |
-| Promoted | ops_sum_prev_period | Operations Summary - Actual Operational Statistics | none | none | Daily | Indefinitely | datetime_beginning_utc, generated_at_ept, area |
-| Promoted | ops_sum_prjctd_tie_flow | Operations Summary - Projected Scheduled Tie Flow | none | none | Daily | Indefinitely | projected_peak_datetime_utc, generated_at_ept, interface |
+| Promoted | ops_sum_frcstd_tran_lim | Operations Summary - Forecast Transfer Limits | none | none | Hourly | Indefinitely | projected_peak_datetime_utc, transfer_limit_name |
+| Promoted | ops_sum_frcst_peak_area | Operations Summary - Projected Area Statistics at Peak | none | none | Daily | Indefinitely | projected_peak_datetime_utc, area |
+| Promoted | ops_sum_frcst_peak_rto | Operations Summary - Projected RTO Statistics at Peak | none | none | Daily | Indefinitely | projected_peak_datetime_utc, area |
+| Promoted | ops_sum_prev_period | Operations Summary - Actual Operational Statistics | none | none | Daily | Indefinitely | datetime_beginning_utc, area |
+| Promoted | ops_sum_prjctd_tie_flow | Operations Summary - Projected Scheduled Tie Flow | none | none | Daily | Indefinitely | projected_peak_datetime_utc, interface |
 | Promoted | gen_outages_by_type | Generation Outage for Seven Days by Type | none | none | Daily | Indefinitely | forecast_execution_date_ept, forecast_date, region |
 | Promoted | solar_gen | Solar Generation | none | none | Daily | Indefinitely | datetime_beginning_utc, area |
 | Promoted | wind_gen | Wind Generation | none | none | Daily | Indefinitely | datetime_beginning_utc, area |
@@ -546,13 +548,28 @@ Feed selection and promotion priority are documented in
 - Manual table DDL:
   `dbt/azure_postgres/models/power/pjm/wind_gen/table_pjm_wind_gen.sql`.
 
+### ops_sum_frcstd_tran_lim
+
+- Source system: PJM Data Miner 2 `ops_sum_frcstd_tran_lim`.
+- Destination: `pjm.ops_sum_frcstd_tran_lim`.
+- Grain: one projected peak and transfer-limit name.
+- Uniqueness key:
+  `projected_peak_datetime_utc, transfer_limit_name`.
+- Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
+- Runtime: `backend.scrapes.power.pjm.ops_sum_frcstd_tran_lim`.
+- Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
+- dbt folder:
+  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/`.
+- Manual table DDL:
+  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/table_pjm_ops_sum_frcstd_tran_lim.sql`.
+
 ### ops_sum_frcst_peak_area
 
 - Source system: PJM Data Miner 2 `ops_sum_frcst_peak_area`.
 - Destination: `pjm.ops_sum_frcst_peak_area`.
-- Grain: one projected peak, source generation timestamp, and area.
+- Grain: one projected peak and area.
 - Uniqueness key:
-  `projected_peak_datetime_utc, generated_at_ept, area`.
+  `projected_peak_datetime_utc, area`.
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_frcst_peak_area`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
@@ -565,9 +582,9 @@ Feed selection and promotion priority are documented in
 
 - Source system: PJM Data Miner 2 `ops_sum_frcst_peak_rto`.
 - Destination: `pjm.ops_sum_frcst_peak_rto`.
-- Grain: one projected peak, source generation timestamp, and RTO area row.
+- Grain: one projected peak and RTO area row.
 - Uniqueness key:
-  `projected_peak_datetime_utc, generated_at_ept, area`.
+  `projected_peak_datetime_utc, area`.
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_frcst_peak_rto`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
@@ -580,9 +597,9 @@ Feed selection and promotion priority are documented in
 
 - Source system: PJM Data Miner 2 `ops_sum_prev_period`.
 - Destination: `pjm.ops_sum_prev_period`.
-- Grain: one operating hour, source generation timestamp, and area.
+- Grain: one operating hour and area.
 - Uniqueness key:
-  `datetime_beginning_utc, generated_at_ept, area`.
+  `datetime_beginning_utc, area`.
 - Freshness field: `generated_at_ept` and `datetime_beginning_ept`.
 - Historical shape note: source rows are sparse peak/valley history before
   `2017-05-31`; complete hourly-by-area rows begin `2017-05-31`.
@@ -597,9 +614,9 @@ Feed selection and promotion priority are documented in
 
 - Source system: PJM Data Miner 2 `ops_sum_prjctd_tie_flow`.
 - Destination: `pjm.ops_sum_prjctd_tie_flow`.
-- Grain: one projected peak, source generation timestamp, and interface.
+- Grain: one projected peak and interface.
 - Uniqueness key:
-  `projected_peak_datetime_utc, generated_at_ept, interface`.
+  `projected_peak_datetime_utc, interface`.
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_prjctd_tie_flow`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.

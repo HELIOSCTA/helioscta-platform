@@ -86,12 +86,13 @@ helios-pjm-ops-sum.timer
 ```
 
 It runs `backend.orchestration.power.pjm.ops_sum`, upserts
-`ops_sum_frcst_peak_area`, `ops_sum_frcst_peak_rto`,
-`ops_sum_prev_period`, and `ops_sum_prjctd_tie_flow` into the `pjm` schema,
-and writes API fetch telemetry to `ops.api_fetch_log`. PJM Data Miner refreshes
-these feeds on top of the hour from 05:00 through 08:00 EPT, so the timer runs
-daily at `08:30 America/New_York` with `Persistent=true` and
-`RandomizedDelaySec=5min`. The service uses `flock` with
+`ops_sum_frcstd_tran_lim`, `ops_sum_frcst_peak_area`,
+`ops_sum_frcst_peak_rto`, `ops_sum_prev_period`, and
+`ops_sum_prjctd_tie_flow` into the `pjm` schema, and writes API fetch
+telemetry to `ops.api_fetch_log`. PJM Data Miner refreshes these feeds on top
+of the hour from 05:00 through 08:00 EPT, so the timer runs daily at `05:05`,
+`06:05`, `07:05`, and `08:05 America/New_York` with `Persistent=true` and
+`AccuracySec=1min`. The service uses `flock` with
 `/tmp/helios-pjm-ops-sum.lock`.
 
 Before enabling the timer, apply the table and index operator SQL under:
@@ -99,6 +100,7 @@ Before enabling the timer, apply the table and index operator SQL under:
 ```text
 dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/
 dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/
+dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/
 dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/
 dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/
 ```

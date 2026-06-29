@@ -37,6 +37,7 @@ BATCH_FEEDS = [
     "rt_short_term_mv_override",
     "rt_unverified_hrl_lmps",
     "load_frcstd_7_day",
+    "ops_sum_frcstd_tran_lim",
     "ops_sum_frcst_peak_area",
     "ops_sum_frcst_peak_rto",
     "ops_sum_prev_period",
@@ -357,34 +358,36 @@ def test_configured_numeric_type_wins_for_all_null_columns(monkeypatch):
     ]
 
 
-def test_ops_sum_configs_preserve_generated_vintages():
+def test_ops_sum_configs_retain_generated_timestamp_outside_keys():
     expected_keys = {
         "ops_sum_frcst_peak_area": [
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "area",
         ],
         "ops_sum_frcst_peak_rto": [
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "area",
         ],
         "ops_sum_prev_period": [
             "datetime_beginning_utc",
-            "generated_at_ept",
             "area",
         ],
         "ops_sum_prjctd_tie_flow": [
             "projected_peak_datetime_utc",
-            "generated_at_ept",
             "interface",
+        ],
+        "ops_sum_frcstd_tran_lim": [
+            "projected_peak_datetime_utc",
+            "transfer_limit_name",
         ],
     }
 
     for feed_name, primary_key in expected_keys.items():
         config = FEED_CONFIGS[feed_name]
         assert list(config.primary_key) == primary_key
+        assert "generated_at_ept" in config.columns
         assert "generated_at_ept" in config.datetime_columns
+        assert "generated_at_ept" not in config.primary_key
         assert config.retention_time == "Indefinitely"
 
     assert FEED_CONFIGS["ops_sum_prev_period"].default_lookahead_days == -1
@@ -426,4 +429,35 @@ def test_ops_sum_prev_period_normalization_marks_latest_duplicate():
     assert df["area"].iloc[0] == "AEP"
     assert df["actual_load"].iloc[0] == 11940
     assert df["dispatch_rate"].iloc[0] == 29.53
+    assert pd.api.types.is_datetime64_any_dtype(df["generated_at_ept"])
+
+
+def test_ops_sum_transfer_limits_normalization_uses_latest_refresh_for_key():
+    config = FEED_CONFIGS["ops_sum_frcstd_tran_lim"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "generated_at_ept": "6/29/2026 5:00:35 AM",
+                    "projected_peak_datetime_ept": "6/29/2026 5:00:00 PM",
+                    "projected_peak_datetime_utc": "6/29/2026 9:00:00 PM",
+                    "transfer_limit_name": " WESTERN TRANSFER ",
+                    "transfer_limit_mw": "5400",
+                },
+                {
+                    "generated_at_ept": "6/29/2026 8:00:35 AM",
+                    "projected_peak_datetime_ept": "6/29/2026 5:00:00 PM",
+                    "projected_peak_datetime_utc": "6/29/2026 9:00:00 PM",
+                    "transfer_limit_name": " WESTERN TRANSFER ",
+                    "transfer_limit_mw": "5600",
+                },
+            ]
+        ),
+        config,
+    )
+
+    assert len(df) == 1
+    assert df["transfer_limit_name"].iloc[0] == "WESTERN TRANSFER"
+    assert df["transfer_limit_mw"].iloc[0] == 5600
+    assert str(df["generated_at_ept"].iloc[0]) == "2026-06-29 08:00:35"
     assert pd.api.types.is_datetime64_any_dtype(df["generated_at_ept"])

@@ -86,6 +86,7 @@ PJM_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
     SupportFeed("hrl_load_prelim", "pjm", "hrl_load_prelim"),
     SupportFeed("load_frcstd_7_day", "pjm", "load_frcstd_7_day"),
     SupportFeed("load_frcstd_hist", "pjm", "load_frcstd_hist"),
+    SupportFeed("ops_sum_frcstd_tran_lim", "pjm", "ops_sum_frcstd_tran_lim"),
     SupportFeed("ops_sum_frcst_peak_area", "pjm", "ops_sum_frcst_peak_area"),
     SupportFeed("ops_sum_frcst_peak_rto", "pjm", "ops_sum_frcst_peak_rto"),
     SupportFeed("ops_sum_prev_period", "pjm", "ops_sum_prev_period"),

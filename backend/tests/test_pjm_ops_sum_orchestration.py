@@ -5,8 +5,9 @@ from types import SimpleNamespace
 from backend.orchestration.power.pjm import ops_sum
 
 
-def test_ops_sum_feed_list_uses_four_unique_requested_feeds():
+def test_ops_sum_feed_list_uses_requested_feeds():
     assert [feed.API_SCRAPE_NAME for feed in ops_sum.DEFAULT_FEEDS] == [
+        "ops_sum_frcstd_tran_lim",
         "ops_sum_frcst_peak_area",
         "ops_sum_frcst_peak_rto",
         "ops_sum_prev_period",

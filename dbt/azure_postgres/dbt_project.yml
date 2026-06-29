@@ -234,6 +234,12 @@ models:
             +enabled: false
           index_pjm_ops_sum_frcst_peak_rto:
             +enabled: false
+        ops_sum_frcstd_tran_lim:
+          +materialized: ephemeral
+          table_pjm_ops_sum_frcstd_tran_lim:
+            +enabled: false
+          index_pjm_ops_sum_frcstd_tran_lim:
+            +enabled: false
         ops_sum_prev_period:
           +materialized: ephemeral
           table_pjm_ops_sum_prev_period:

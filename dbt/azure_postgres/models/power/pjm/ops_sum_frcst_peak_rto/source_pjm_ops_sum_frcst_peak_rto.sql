@@ -6,7 +6,7 @@
 
 ---------------------------
 -- PJM Operations Summary projected RTO statistics at peak.
--- Grain: projected peak UTC x generated_at_ept x area.
+-- Grain: projected peak UTC x area.
 ---------------------------
 
 SELECT

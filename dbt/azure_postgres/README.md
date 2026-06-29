@@ -87,6 +87,8 @@ models/power/pjm/rt_unverified_hrl_lmps/
 models/power/pjm/rt_unverified_hrl_lmps/pjm_rt_unverified_hrl_lmps/
 models/power/pjm/load_frcstd_7_day/
 models/power/pjm/load_frcstd_7_day/pjm_load_frcstd_7_day/
+models/power/pjm/ops_sum_frcstd_tran_lim/
+models/power/pjm/ops_sum_frcstd_tran_lim/pjm_ops_sum_frcstd_tran_lim/
 models/power/pjm/ops_sum_frcst_peak_area/
 models/power/pjm/ops_sum_frcst_peak_area/pjm_ops_sum_frcst_peak_area/
 models/power/pjm/ops_sum_frcst_peak_rto/
@@ -208,6 +210,7 @@ dbt compile --profiles-dir . --select path:models/power/pjm/rt_marginal_value/pj
 dbt compile --profiles-dir . --select path:models/power/pjm/rt_short_term_mv_override/pjm_rt_short_term_mv_override
 dbt compile --profiles-dir . --select path:models/power/pjm/rt_unverified_hrl_lmps/pjm_rt_unverified_hrl_lmps
 dbt compile --profiles-dir . --select path:models/power/pjm/load_frcstd_7_day/pjm_load_frcstd_7_day
+dbt compile --profiles-dir . --select path:models/power/pjm/ops_sum_frcstd_tran_lim/pjm_ops_sum_frcstd_tran_lim
 dbt compile --profiles-dir . --select path:models/power/pjm/ops_sum_frcst_peak_area/pjm_ops_sum_frcst_peak_area
 dbt compile --profiles-dir . --select path:models/power/pjm/ops_sum_frcst_peak_rto/pjm_ops_sum_frcst_peak_rto
 dbt compile --profiles-dir . --select path:models/power/pjm/ops_sum_prev_period/pjm_ops_sum_prev_period

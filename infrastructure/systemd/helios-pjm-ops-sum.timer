@@ -2,9 +2,11 @@
 Description=Daily HeliosCTA PJM Operations Summary scrape batch timer
 
 [Timer]
-OnCalendar=*-*-* 08:30:00 America/New_York
+OnCalendar=*-*-* 05:05:00 America/New_York
+OnCalendar=*-*-* 06:05:00 America/New_York
+OnCalendar=*-*-* 07:05:00 America/New_York
+OnCalendar=*-*-* 08:05:00 America/New_York
 Persistent=true
-RandomizedDelaySec=5min
 AccuracySec=1min
 Unit=helios-pjm-ops-sum.service
 

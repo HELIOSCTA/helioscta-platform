@@ -19,6 +19,5 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ops_sum_frcst_peak_area_freshness
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ops_sum_frcst_peak_area_pk_lookup
     ON pjm.ops_sum_frcst_peak_area (
         projected_peak_datetime_utc,
-        generated_at_ept,
         area
     );

@@ -5,16 +5,16 @@
 }}
 
 ---------------------------
--- PJM Operations Summary projected scheduled tie flow.
--- Grain: projected peak UTC x interface.
+-- PJM Operations Summary forecast transfer limits.
+-- Grain: projected peak UTC x transfer limit name.
 ---------------------------
 
 SELECT
     generated_at_ept
-    ,interface
     ,projected_peak_datetime_ept
     ,projected_peak_datetime_utc
-    ,scheduled_tie_flow
-FROM "{{ target.database }}"."pjm"."ops_sum_prjctd_tie_flow"
+    ,transfer_limit_name
+    ,transfer_limit_mw
+FROM "{{ target.database }}"."pjm"."ops_sum_frcstd_tran_lim"
 WHERE
     projected_peak_datetime_ept >= '2011-01-01'::timestamp

@@ -20,6 +20,5 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ops_sum_prev_period_freshness
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_ops_sum_prev_period_pk_lookup
     ON pjm.ops_sum_prev_period (
         datetime_beginning_utc,
-        generated_at_ept,
         area
     );

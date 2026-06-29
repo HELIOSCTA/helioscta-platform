@@ -132,8 +132,8 @@ Current criticality decision:
   PJM LMP price backfills with feed-specific publication lags, logs backfill
   telemetry in `ops.api_fetch_log`, and emits verified RT five-minute
   complete-day readiness events when repaired dates are complete.
-- Dedicated dashboard-context timer: `ops_sum` runs after PJM's morning
-  Operations Summary refresh window.
+- Dedicated dashboard-context timer: `ops_sum` runs at 05:05, 06:05, 07:05,
+  and 08:05 EPT after PJM's morning Operations Summary refresh postings.
 - Support batch: all other currently promoted PJM Data Miner feeds, including
   `rt_fivemin_mnt_lmps`.
 - Promote `rt_fivemin_mnt_lmps` only when a downstream consumer needs

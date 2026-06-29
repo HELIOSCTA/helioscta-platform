@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS pjm.ops_sum_prjctd_tie_flow (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (
         projected_peak_datetime_utc,
-        generated_at_ept,
         interface
     )
 );

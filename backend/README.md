@@ -112,11 +112,15 @@ operators explicitly decide to truncate archive history.
 
 PJM Data Miner Operations Summary helpers run through
 `backend.orchestration.power.pjm.ops_sum` and write
-`ops_sum_frcst_peak_area`, `ops_sum_frcst_peak_rto`, `ops_sum_prev_period`,
-and `ops_sum_prjctd_tie_flow` to the `pjm` schema. They log API telemetry to
-`ops.api_fetch_log` and preserve source `generated_at_ept` vintages in the
-upsert keys. `ops_sum_prev_period` contains sparse peak/valley historical rows
-before 2017-05-31 and complete hourly-by-area rows from 2017-05-31 forward.
+`ops_sum_frcstd_tran_lim`, `ops_sum_frcst_peak_area`,
+`ops_sum_frcst_peak_rto`, `ops_sum_prev_period`, and
+`ops_sum_prjctd_tie_flow` to the `pjm` schema. They log API telemetry to
+`ops.api_fetch_log` and retain `generated_at_ept` as the PJM source freshness
+timestamp. Upsert keys use the projected or operating interval plus the feed
+dimension, so the 05:05, 06:05, 07:05, and 08:05 EPT runs overwrite the same
+current-day rows as PJM refreshes them. `ops_sum_prev_period` contains sparse
+peak/valley historical rows before 2017-05-31 and complete hourly-by-area rows
+from 2017-05-31 forward.
 
 Meteologica xTraders helpers use the existing
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment
