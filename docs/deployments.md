@@ -940,12 +940,14 @@ FROM isone.seven_day_solar_forecast;
 - Workflow: PJM Operations Summary refresh.
 - Runtime module: `backend.orchestration.power.pjm.ops_sum`.
 - Lower-level scrape modules:
+  - `backend.scrapes.power.pjm.ops_sum_frcstd_tran_lim`
   - `backend.scrapes.power.pjm.ops_sum_frcst_peak_area`
   - `backend.scrapes.power.pjm.ops_sum_frcst_peak_rto`
   - `backend.scrapes.power.pjm.ops_sum_prev_period`
   - `backend.scrapes.power.pjm.ops_sum_prjctd_tie_flow`
 - Source system: PJM Data Miner 2 Operations Summary feeds.
 - Destination tables:
+  - `pjm.ops_sum_frcstd_tran_lim`
   - `pjm.ops_sum_frcst_peak_area`
   - `pjm.ops_sum_frcst_peak_rto`
   - `pjm.ops_sum_prev_period`
@@ -963,21 +965,24 @@ FROM isone.seven_day_solar_forecast;
   reinstalled, unit files copied to `/etc/systemd/system/`, and
   `helios-pjm-ops-sum.timer` enabled on `2026-06-29`.
 - Last VM verification: manual service run exited `status=0/SUCCESS` at
-  `2026-06-29 15:00 UTC`; transient historical backfill
-  `helios-pjm-ops-sum-backfill.service` exited `status=0/SUCCESS` at
-  `2026-06-29 15:06 UTC`.
-- Historical backfill coverage: `ops_sum_frcst_peak_area` `56,221` rows,
-  `ops_sum_frcst_peak_rto` `5,421` rows, `ops_sum_prev_period` `1,088,852`
-  rows, and `ops_sum_prjctd_tie_flow` `108,360` rows.
-- Schedule: daily at `08:30 America/New_York` with `Persistent=true`,
-  `RandomizedDelaySec=5min`, and `AccuracySec=1min`.
+  `2026-06-29 15:32 UTC`; production health-check service exited
+  `status=0/SUCCESS` at `2026-06-29 15:35 UTC`.
+- Historical backfill coverage: `ops_sum_frcstd_tran_lim` `27,058` rows,
+  `ops_sum_frcst_peak_area` `56,221` rows, `ops_sum_frcst_peak_rto` `5,421`
+  rows, `ops_sum_prev_period` `1,088,852` rows, and
+  `ops_sum_prjctd_tie_flow` `108,360` rows.
+- Schedule: daily at `05:05`, `06:05`, `07:05`, and
+  `08:05 America/New_York` with `Persistent=true` and `AccuracySec=1min`.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-ops-sum.lock`.
-- Safe rerun story: each feed upserts by source timestamp plus
-  `generated_at_ept` and dimension, preserving PJM morning refresh vintages.
+- Safe rerun story: each feed upserts by projected or operating interval plus
+  its source dimension. `generated_at_ept` is retained as the PJM source
+  freshness timestamp, and later 05:05-08:05 EPT runs overwrite the same
+  current-day rows when PJM refreshes them.
 - Historical shape note: `ops_sum_prev_period` is sparse peak/valley history
   before `2017-05-31`; complete hourly-by-area rows begin `2017-05-31`.
 - Operator SQL:
+  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/`,
   `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/`,
   `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/`,
   `dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/`, and
@@ -985,7 +990,10 @@ FROM isone.seven_day_solar_forecast;
 - Post-run smoke SQL:
 
 ```sql
-SELECT 'ops_sum_frcst_peak_area' AS table_name, COUNT(*) AS rows, MAX(generated_at_ept) AS latest_generated
+SELECT 'ops_sum_frcstd_tran_lim' AS table_name, COUNT(*) AS rows, MAX(generated_at_ept) AS latest_generated
+FROM pjm.ops_sum_frcstd_tran_lim
+UNION ALL
+SELECT 'ops_sum_frcst_peak_area', COUNT(*), MAX(generated_at_ept)
 FROM pjm.ops_sum_frcst_peak_area
 UNION ALL
 SELECT 'ops_sum_frcst_peak_rto', COUNT(*), MAX(generated_at_ept)
