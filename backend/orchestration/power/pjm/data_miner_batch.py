@@ -24,7 +24,6 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "five_min_solar_generation",
     "five_min_tie_flows",
     "frcstd_gen_outages",
-    "hrl_dmd_bids",
     "hrl_load_metered",
     "hrl_load_prelim",
     "load_frcstd_hist",

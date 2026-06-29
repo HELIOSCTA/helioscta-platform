@@ -392,7 +392,9 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, datetime_beginning_ept, area`.
 - Uniqueness key: `datetime_beginning_utc, datetime_beginning_ept, area`.
 - Freshness field: `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.hrl_dmd_bids`.
+- Runtime: `backend.orchestration.power.pjm.hrl_dmd_bids` for the scheduled
+  publication-aware refresh; `backend.scrapes.power.pjm.hrl_dmd_bids` remains
+  the lower-level scrape module.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/hrl_dmd_bids/`.
 - Manual table DDL:

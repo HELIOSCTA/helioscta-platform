@@ -898,10 +898,10 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: 35 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 25 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
-  `load_frcstd_7_day`, `gen_outages_by_type`, and the four Operations Summary
-  feeds were promoted to dedicated timers.
+  `load_frcstd_7_day`, `hrl_dmd_bids`, `gen_outages_by_type`, and the four
+  Operations Summary feeds were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -927,11 +927,73 @@ FROM isone.seven_day_solar_forecast;
   later because verified hourly RT LMPs post after the early support batch.
   `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
   source posts hourly and drives the forecast dashboard.
+  `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
+  needs same-afternoon publication polling after the DA LMP timer starts.
   `helios-pjm-gen-outages-by-type.timer` runs later because the source was
   observed unavailable at the early `04:30 UTC` batch but available during a
   manual `13:55 UTC` VM run.
   `helios-pjm-ops-sum.timer` runs after the source's 05:00-08:00 EPT refresh
   window because these feeds are frontend dashboard context.
+
+## helios-pjm-hrl-dmd-bids
+
+- Status: promoted for VM deployment; unit files and polling orchestration are
+  versioned, pending production timer install and manual verification.
+- Workflow: PJM hourly demand bid refresh.
+- Runtime module: `backend.orchestration.power.pjm.hrl_dmd_bids`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.hrl_dmd_bids`.
+- Source system: PJM Data Miner 2 `hrl_dmd_bids`.
+- Destination table: `pjm.hrl_dmd_bids`.
+- Source grain: `datetime_beginning_utc x datetime_beginning_ept x area`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.service`
+  - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer`
+- Schedule: daily at `17:00 UTC`, one hour after
+  `helios-da-hrl-lmps.timer`, with `Persistent=true`.
+- Polling policy: poll every `120` seconds for up to `4` hours until the
+  target market day has complete rows for `PJM_RTO`, `MID_ATLANTIC_REGION`,
+  and `WESTERN_REGION`.
+- Timer behavior: missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-hrl-dmd-bids.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on
+  `(datetime_beginning_utc, datetime_beginning_ept, area)`.
+- Deployed commit: pending VM deployment.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT area) AS areas,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.hrl_dmd_bids
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'hrl_dmd_bids'
+ORDER BY created_at DESC
+LIMIT 20;
+```
 
 ## helios-pjm-ops-sum
 

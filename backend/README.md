@@ -122,6 +122,14 @@ current-day rows as PJM refreshes them. `ops_sum_prev_period` contains sparse
 peak/valley historical rows before 2017-05-31 and complete hourly-by-area rows
 from 2017-05-31 forward.
 
+PJM hourly demand bids run through
+`backend.orchestration.power.pjm.hrl_dmd_bids` and write
+`pjm.hrl_dmd_bids`. The scheduled path polls PJM Data Miner `hrl_dmd_bids` for
+the next market day every two minutes for up to four hours, starting one hour
+after the DA hourly LMP timer, then upserts by
+`datetime_beginning_utc x datetime_beginning_ept x area` and logs one resolved
+API fetch telemetry row to `ops.api_fetch_log`.
+
 Meteologica xTraders helpers use the existing
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment
 variables. The promoted PJM forecast runtime module is

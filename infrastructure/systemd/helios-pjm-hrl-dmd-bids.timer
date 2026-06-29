@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily HeliosCTA PJM hourly demand bids timer
+
+[Timer]
+OnCalendar=*-*-* 17:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=helios-pjm-hrl-dmd-bids.service
+
+[Install]
+WantedBy=timers.target
