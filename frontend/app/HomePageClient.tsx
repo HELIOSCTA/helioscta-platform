@@ -1,15 +1,24 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
+import PjmActualsRegimeScatter, {
+  type PjmActualsRegimeScatterFreshnessSummary,
+} from "@/components/pjm/PjmActualsRegimeScatter";
 import PjmDaLmps, { type PjmDaLmpsFreshnessSummary } from "@/components/pjm/PjmDaLmps";
-import PjmForecasts, { type PjmForecastsFreshnessSummary } from "@/components/pjm/PjmForecasts";
+import PjmForecasts, {
+  type ForecastType,
+  type PjmForecastsFreshnessSummary,
+} from "@/components/pjm/PjmForecasts";
 import PjmLoadGrowth, {
   type PjmLoadGrowthFreshnessSummary,
 } from "@/components/pjm/PjmLoadGrowth";
 import PjmOutages, { type PjmOutagesFreshnessSummary } from "@/components/pjm/PjmOutages";
+import PjmOpsSummary, {
+  type PjmOpsSummaryFreshnessSummary,
+} from "@/components/pjm/PjmOpsSummary";
 import PjmPriceDurationCurves, {
   type PjmPriceDurationCurvesFreshnessSummary,
 } from "@/components/pjm/PjmPriceDurationCurves";
@@ -41,6 +50,24 @@ const DEFAULT_PJM_PRICE_DURATION_FRESHNESS: PjmPriceDurationCurvesFreshnessSumma
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Duration curves --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_ACTUALS_REGIME_SCATTER_FRESHNESS: PjmActualsRegimeScatterFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Price distributions --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_OPS_SUMMARY_FRESHNESS: PjmOpsSummaryFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Ops Sum --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -94,12 +121,28 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
+  if (showLocalDevFeatures && value === "pjm-net-load-forecast") {
+    return "pjm-forecasts";
+  }
+  if (showLocalDevFeatures && value === "pjm-actuals-regime-scatter") {
+    return "pjm-actuals-regime-scatter";
+  }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
   if (value === "pjm-term-bible") return "pjm-term-bible";
+  if (value === "pjm-ops-summary") return "pjm-ops-summary";
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
   return "pjm-da-lmps";
+}
+
+function parseInitialForecastType(
+  value: string | null,
+  section: string | null,
+  showLocalDevFeatures: boolean,
+): ForecastType {
+  if (showLocalDevFeatures && section === "pjm-net-load-forecast") return "netLoad";
+  return value === "netLoad" ? "netLoad" : "load";
 }
 
 function parseDateParam(value: string | null): string | undefined {
@@ -116,6 +159,9 @@ export default function HomePageClient({
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
+  const [pjmActualsRegimeScatterRefreshToken, setPjmActualsRegimeScatterRefreshToken] =
+    useState(0);
+  const [pjmOpsSummaryRefreshToken, setPjmOpsSummaryRefreshToken] = useState(0);
   const [pjmTermBibleRefreshToken, setPjmTermBibleRefreshToken] = useState(0);
   const [pjmLoadGrowthRefreshToken, setPjmLoadGrowthRefreshToken] = useState(0);
   const [pjmForecastsRefreshToken, setPjmForecastsRefreshToken] = useState(0);
@@ -123,6 +169,9 @@ export default function HomePageClient({
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
+  const [pjmActualsRegimeScatterFreshnessOpen, setPjmActualsRegimeScatterFreshnessOpen] =
+    useState(false);
+  const [pjmOpsSummaryFreshnessOpen, setPjmOpsSummaryFreshnessOpen] = useState(false);
   const [pjmTermBibleFreshnessOpen, setPjmTermBibleFreshnessOpen] = useState(false);
   const [pjmLoadGrowthFreshnessOpen, setPjmLoadGrowthFreshnessOpen] = useState(false);
   const [pjmForecastsFreshnessOpen, setPjmForecastsFreshnessOpen] = useState(false);
@@ -134,6 +183,12 @@ export default function HomePageClient({
     useState<PjmPriceDurationCurvesFreshnessSummary>(
       DEFAULT_PJM_PRICE_DURATION_FRESHNESS,
     );
+  const [pjmActualsRegimeScatterFreshness, setPjmActualsRegimeScatterFreshness] =
+    useState<PjmActualsRegimeScatterFreshnessSummary>(
+      DEFAULT_PJM_ACTUALS_REGIME_SCATTER_FRESHNESS,
+    );
+  const [pjmOpsSummaryFreshness, setPjmOpsSummaryFreshness] =
+    useState<PjmOpsSummaryFreshnessSummary>(DEFAULT_PJM_OPS_SUMMARY_FRESHNESS);
   const [pjmTermBibleFreshness, setPjmTermBibleFreshness] =
     useState<PjmTermBibleFreshnessSummary>(DEFAULT_PJM_TERM_BIBLE_FRESHNESS);
   const [pjmLoadGrowthFreshness, setPjmLoadGrowthFreshness] =
@@ -146,6 +201,20 @@ export default function HomePageClient({
     useState<WeatherDashboardFreshnessSummary>(DEFAULT_PJM_WEATHER_FRESHNESS);
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
+  const initialForecastType = parseInitialForecastType(
+    searchParams.get("forecastType"),
+    searchParams.get("section"),
+    showLocalDevFeatures,
+  );
+
+  useEffect(() => {
+    if (!showLocalDevFeatures || searchParams.get("section") !== "pjm-net-load-forecast") return;
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", "pjm-forecasts");
+    params.set("forecastType", "netLoad");
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }, [router, searchParams, showLocalDevFeatures]);
 
   const replaceRouteState = (section: ActiveSection) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -174,11 +243,31 @@ export default function HomePageClient({
         footer: "Term Bible | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
+    if (activeSection === "pjm-actuals-regime-scatter") {
+      return {
+        title: "Price Distributions",
+        subtitle:
+          "Historical and forward PJM RT price distributions using actuals, forecasts, and analog regimes.",
+        footer:
+          "Price Distributions | Source: PJM actuals, forecasts, RT LMPs, outages, and WSI weather / Azure PostgreSQL",
+      };
+    }
+    if (activeSection === "pjm-ops-summary") {
+      return {
+        title: "Ops Sum",
+        subtitle:
+          "PJM Operations Summary capacity peak, transfer limits, tie flow, and previous-period actuals.",
+        footer:
+          "Ops Sum | Source: PJM Data Miner Operations Summary feeds / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "pjm-forecasts") {
       return {
         title: "Forecasts",
-        subtitle: "PJM seven-day load forecasts by area with hourly profiles and daily summaries.",
-        footer: "Forecasts | Source: PJM Data Miner / Azure PostgreSQL",
+        subtitle:
+          "PJM load and net-load forecasts by source, with outright vintages and compare-day overlays.",
+        footer:
+          "Forecasts | Sources: PJM Data Miner + Meteologica hourly forecasts / Azure PostgreSQL",
       };
     }
     if (activeSection === "pjm-outages") {
@@ -213,7 +302,7 @@ export default function HomePageClient({
   }, [activeSection]);
 
   return (
-    <div className="flex min-h-screen bg-[#0f1117] text-gray-100">
+    <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
       <Sidebar
         activeSection={activeSection}
         onSectionChange={handleSectionChange}
@@ -221,7 +310,7 @@ export default function HomePageClient({
       />
 
       <div className="flex-1 overflow-auto">
-        <main className="px-8 py-8">
+        <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
             <div>
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
@@ -319,6 +408,50 @@ export default function HomePageClient({
               />
             )}
 
+            {activeSection === "pjm-actuals-regime-scatter" && (
+              <FreshnessCard
+                statusLabel={pjmActualsRegimeScatterFreshness.status}
+                statusClass={pjmActualsRegimeScatterFreshness.statusClass}
+                summary={pjmActualsRegimeScatterFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmActualsRegimeScatterFreshness.status,
+                    className: pjmActualsRegimeScatterFreshness.statusClass,
+                  },
+                  { label: "Selection", value: pjmActualsRegimeScatterFreshness.targetDateLabel },
+                  { label: "Window", value: pjmActualsRegimeScatterFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmActualsRegimeScatterFreshness.latestUpdateLabel },
+                ]}
+                open={pjmActualsRegimeScatterFreshnessOpen}
+                onToggle={() => setPjmActualsRegimeScatterFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmActualsRegimeScatterRefreshToken((value) => value + 1)}
+              />
+            )}
+
+            {activeSection === "pjm-ops-summary" && (
+              <FreshnessCard
+                statusLabel={pjmOpsSummaryFreshness.status}
+                statusClass={pjmOpsSummaryFreshness.statusClass}
+                summary={pjmOpsSummaryFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmOpsSummaryFreshness.status,
+                    className: pjmOpsSummaryFreshness.statusClass,
+                  },
+                  { label: "Date", value: pjmOpsSummaryFreshness.targetDateLabel },
+                  { label: "Projected Peak", value: pjmOpsSummaryFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmOpsSummaryFreshness.latestUpdateLabel },
+                ]}
+                open={pjmOpsSummaryFreshnessOpen}
+                onToggle={() => setPjmOpsSummaryFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmOpsSummaryRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {activeSection === "pjm-load-growth" && (
               <FreshnessCard
                 statusLabel={pjmLoadGrowthFreshness.status}
@@ -406,6 +539,18 @@ export default function HomePageClient({
               onFreshnessChange={setPjmTermBibleFreshness}
             />
           )}
+          {activeSection === "pjm-actuals-regime-scatter" && (
+            <PjmActualsRegimeScatter
+              refreshToken={pjmActualsRegimeScatterRefreshToken}
+              onFreshnessChange={setPjmActualsRegimeScatterFreshness}
+            />
+          )}
+          {activeSection === "pjm-ops-summary" && (
+            <PjmOpsSummary
+              refreshToken={pjmOpsSummaryRefreshToken}
+              onFreshnessChange={setPjmOpsSummaryFreshness}
+            />
+          )}
           {activeSection === "pjm-load-growth" && (
             <PjmLoadGrowth
               refreshToken={pjmLoadGrowthRefreshToken}
@@ -414,6 +559,7 @@ export default function HomePageClient({
           )}
           {activeSection === "pjm-forecasts" && (
             <PjmForecasts
+              initialForecastType={initialForecastType}
               refreshToken={pjmForecastsRefreshToken}
               onFreshnessChange={setPjmForecastsFreshness}
             />

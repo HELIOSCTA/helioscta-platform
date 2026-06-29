@@ -6,6 +6,8 @@ export type ActiveSection =
   | "pjm-da-lmps"
   | "pjm-term-bible"
   | "pjm-price-duration-curves"
+  | "pjm-actuals-regime-scatter"
+  | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
   | "pjm-outages"
@@ -39,6 +41,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       navItems: [
         { id: "pjm-da-lmps", label: "LMPs" },
         { id: "pjm-term-bible", label: "Term Bible" },
+        { id: "pjm-ops-summary", label: "Ops Sum" },
         { id: "pjm-outages", label: "Outages" },
         { id: "pjm-forecasts", label: "Forecasts" },
         { id: "pjm-load-growth", label: "Load Growth" },
@@ -52,6 +55,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       label: "DEV",
       navItems: [
         { id: "pjm-price-duration-curves", label: "Duration Curves" },
+        { id: "pjm-actuals-regime-scatter", label: "Price Distributions" },
         { id: "pjm-weather", label: "Weather" },
       ],
     });
@@ -79,7 +83,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="flex w-[280px] shrink-0 flex-col border-r border-gray-800 bg-[#0b0d14]">
+    <aside className="flex w-full shrink-0 flex-col border-b border-gray-800 bg-[#0b0d14] md:w-[280px] md:border-b-0 md:border-r">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-5 pb-4">
         <div>

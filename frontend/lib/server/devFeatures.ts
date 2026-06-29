@@ -19,3 +19,15 @@ export function isDurationCurvesDevEnabled(): boolean {
 export function isWeatherDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
+
+export function isNetLoadForecastDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
+export function isActualsRegimeScatterDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
+export function isOpsSummaryDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}

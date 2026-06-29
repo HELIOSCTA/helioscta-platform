@@ -47,6 +47,8 @@ GET /api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpe
 GET /api/pjm-forecast-explorer
 GET /api/pjm-forecasts?area=RTO_COMBINED
 GET /api/pjm-forecast-differences?area=RTO_COMBINED&date=YYYY-MM-DD&lookbackHours=72
+GET /api/pjm-forecast-date-compare?source=pjm&type=load&area=RTO_COMBINED&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/pjm-forecast-date-compare?source=meteologica&type=load&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
 GET /api/pjm-meteologica-forecast-explorer
 GET /api/pjm-meteologica-forecast-differences?area=RTO&date=YYYY-MM-DD&lookbackHours=72
 GET /api/pjm-outages?view=forecast&region=RTO
@@ -61,6 +63,15 @@ GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,202
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/pjm-weather?region=PJM&hours=24
+GET /api/pjm-net-load-forecast-explorer?source=pjm
+GET /api/pjm-net-load-forecast-explorer?source=meteologica
+GET /api/pjm-net-load-forecast-differences?source=pjm&area=RTO&date=YYYY-MM-DD&lookbackHours=72
+GET /api/pjm-net-load-forecast-differences?source=meteologica&area=WEST&date=YYYY-MM-DD&lookbackHours=72
+GET /api/pjm-net-load-forecast-date-compare?source=pjm&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/pjm-net-load-forecast-date-compare?source=meteologica&area=WEST&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/pjm-actuals-regime-scatter?loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&start=YYYY-MM-DD&end=YYYY-MM-DD
+GET /api/pjm-forecast-price-analogs?loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&seasonStart=05-01&seasonEnd=08-31&lookbackYears=3&includeCurrentYear=1
+GET /api/pjm-ops-summary?date=YYYY-MM-DD
 ```
 
 The `DEV` section and routes are enabled only for local Next.js runs. Vercel
@@ -176,6 +187,104 @@ area/date explorer shape as PJM Data Miner load forecasts. The route
 `GET /api/pjm-meteologica-forecast-differences` accepts `area`, `date`, and
 `lookbackHours` and returns the same snapshot/delta vintage shape used by the
 PJM Data Miner forecast explorer popup.
+
+## PJM Forecasts Source Contract
+
+The Forecasts page exposes three shared filters: `Data Source` (`PJM` or
+`Meteologica`), `Type` (`Load` or `Net Load`), and `View` (`Outright` or
+`Compare Day`). Load forecasts use the existing PJM Data Miner and
+Meteologica explorer routes. `Compare Day` for load uses
+`GET /api/pjm-forecast-date-compare` to return latest-vintage hourly curves for
+two selected forecast dates plus `B - A` deltas.
+
+For `type=netLoad`, `GET /api/pjm-forecast-date-compare` forwards to the
+local-only net-load comparison route and preserves the same request contract.
+
+## Local DEV PJM Net Load Forecast Source Contract
+
+The Forecasts page derives net load from either PJM Data Miner or Meteologica
+forecast rows using `helios_readonly`.
+
+Source systems:
+PJM Data Miner `pjm.load_frcstd_7_day`, `pjm.hourly_solar_power_forecast`,
+and `pjm.hourly_wind_power_forecast`; Meteologica xTraders promoted hourly
+forecast rows in `meteologica.pjm_forecast_hourly`.
+
+Derived formula:
+`net_load_mw = load - solar - wind`.
+
+The net-load outright view displays fixed component rows for `load`, `wind`,
+`solar`, and `net load`, with a statistic selector for `Peak`, `OnPeak`,
+`OffPeak`, and `Flat`. PJM mode remains RTO-only and uses
+`RTO_COMBINED` load, `solar_forecast_mwh`, and `wind_forecast_mwh`.
+Meteologica mode returns regional summaries for available `forecast_area`
+values with complete `load`, `solar`, and `wind` coverage, currently `RTO`,
+`MIDATL`, `SOUTH`, and `WEST`. Each load issue is paired to the latest prior
+non-null solar and wind forecast for the same forecast area and forecast hour.
+Hours are emitted only when load, wind, and solar all have non-null MW values,
+so net load is missing whenever either renewable component is missing. It does
+not create a dbt model, table, or materialized cache.
+
+The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
+`area`, `baseDate`, and `compareDate`. It returns the latest complete hourly
+load, solar, wind, and net-load curves for both selected forecast dates plus
+`B - A` deltas, using the same component-completeness rule as the explorer.
+The dev endpoints are hidden outside local Next.js runs and return `404` on
+Vercel.
+
+## Local DEV PJM Price Distributions Source Contract
+
+The Price Distributions DEV page derives hourly actual net load from promoted PJM
+load and renewable generation tables, joins WSI observed weather and PJM RT LMP
+prices on local EPT hour, and overlays same-day PJM outage rows as an outage
+regime proxy.
+
+Derived formula:
+`net_load_mw = gross_load_mw - wind_mw - solar_mw`.
+
+The route `GET /api/pjm-actuals-regime-scatter` accepts bounded params for
+load area, wind/solar area, station, hub, RT source, price component, date
+range, season, hour/day filters, price/outage bounds, color regime, and max
+points. It samples matched hourly rows after server-side filters and does not
+create a dbt model, table, or materialized cache. The dev endpoint is hidden
+outside local Next.js runs and returns `404` on Vercel.
+
+The Forward Analog Prices tab uses latest PJM net-load forecast fundamentals,
+WSI forecast temperatures, and PJM outage forecasts to build a forecast-conditioned
+historical RT price analog distribution.
+
+## PJM Ops Sum Source Contract
+
+The Ops Sum page reads promoted PJM Operations Summary rows with
+`helios_readonly` from `pjm.ops_sum_frcstd_tran_lim`,
+`pjm.ops_sum_frcst_peak_rto`, `pjm.ops_sum_frcst_peak_area`,
+`pjm.ops_sum_prjctd_tie_flow`, and `pjm.ops_sum_prev_period`.
+
+Source system: PJM Data Miner Operations Summary `ops_sum_frcstd_tran_lim`,
+`ops_sum_frcst_peak_rto`, `ops_sum_frcst_peak_area`,
+`ops_sum_prjctd_tie_flow`, and `ops_sum_prev_period`.
+
+Promoted table grain:
+The forecast peak tables are keyed by `projected_peak_datetime_utc x area`,
+forecast transfer limits by `projected_peak_datetime_utc x transfer_limit_name`,
+projected tie flow by `projected_peak_datetime_utc x interface`, and previous
+period actuals by `datetime_beginning_utc x area`. The route is keyed by a
+selected Ops Summary date and returns collapsible cards for Capacity Peak RTO,
+Forecast Transfer Limits, Projected Scheduled Tie Flow, Capacity Peak Zones,
+and Previous Period Actuals. The default view keeps RTO, transfer limits, and
+tie flow open; Zones and Previous Period Actuals start collapsed because they
+are detail-heavy or use a different actuals window. Metric cells show the
+selected value and seven-day inline trend by default. Forecast peak,
+transfer-limit, and tie-flow cards also expose all-history max/min values
+through the selected date behind a UI toggle. Previous Period Actuals use the
+latest actual operating date on or before the selected date and currently omit
+all-history extrema to keep the route responsive. That Actuals card
+shows `datetime_beginning_ept`, `datetime_beginning_utc`, actual load, and
+dispatch rate only; true forecast error should be built from a joined
+forecast-vs-actual view rather than inferred from
+`ops_sum_prev_period.area_load_forecast`. `generated_at_ept` is exposed as a
+freshness timestamp only; it is not used as a frontend uniqueness key. The dev
+endpoint gating does not apply to Ops Sum.
 
 The default Weather view reads WSI observed and forecast weather from
 `weather.wsi_hourly_observed_temperatures` and
