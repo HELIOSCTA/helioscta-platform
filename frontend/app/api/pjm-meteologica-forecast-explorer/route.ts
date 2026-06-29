@@ -4,13 +4,13 @@ import { query } from "@/lib/server/db";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=120";
+const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=600, stale-if-error=3600";
 const ANCHOR_TOLERANCE_MS = 6 * 3_600_000;
 const DELTA_WINDOWS = [1, 12, 24, 48, 72] as const;
 const ROUTE_CONFIG = {
   route: "/api/pjm-meteologica-forecast-explorer",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "s-maxage=600, stale-while-revalidate=120",
+  cachePolicy: "s-maxage=600, stale-while-revalidate=600, stale-if-error=3600",
   owner: "frontend",
   purpose: "PJM Meteologica load forecast area/date explorer summary",
   p95TargetMs: 1_000,

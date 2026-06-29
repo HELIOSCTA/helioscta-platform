@@ -51,6 +51,7 @@ GET /api/pjm-forecast-date-compare?source=pjm&type=load&area=RTO_COMBINED&baseDa
 GET /api/pjm-forecast-date-compare?source=meteologica&type=load&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
 GET /api/pjm-meteologica-forecast-explorer
 GET /api/pjm-meteologica-forecast-differences?area=RTO&date=YYYY-MM-DD&lookbackHours=72
+GET /api/cache/warm-forecasts
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
@@ -199,6 +200,22 @@ two selected forecast dates plus `B - A` deltas.
 
 For `type=netLoad`, `GET /api/pjm-forecast-date-compare` forwards to the
 net-load comparison route and preserves the same request contract.
+
+The Forecasts client prefetches the PJM and Meteologica load and net-load
+explorer payloads after initial render. Heavy Forecasts explorer and
+compare-day routes use `s-maxage=600`, `stale-while-revalidate=600`, and
+`stale-if-error=3600` so Vercel can keep serving the last good forecast
+snapshot during a transient database timeout.
+
+`GET /api/cache/warm-forecasts` is a protected no-store cache warmer for
+Forecasts. It warms PJM and Meteologica load/net-load explorer routes, reads
+their available forecast dates, then warms the default compare-day URLs used by
+the page (`RTO_COMBINED` for PJM load and `RTO` for Meteologica/load net-load
+views). Local development may call it without a secret. Vercel/production must
+set `CRON_SECRET` for the committed Vercel Cron schedule; the route also accepts
+`HELIOS_CACHE_WARM_SECRET` for external schedulers. Manual calls can authenticate
+with either `Authorization: Bearer <secret>` or `x-cache-warm-secret: <secret>`.
+The Vercel Cron schedule runs every 15 minutes in UTC.
 
 ## PJM Net Load Forecast Source Contract
 

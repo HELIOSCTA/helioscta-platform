@@ -210,6 +210,8 @@ const FORECAST_MODE_TABS: Array<{
   { key: "outright", label: "Outright", scope: "Explorer and vintages" },
   { key: "compareDay", label: "Compare Day", scope: "A/B forecast dates" },
 ];
+const FORECAST_PREFETCH_DELAY_MS = 1_500;
+const FORECAST_PREFETCH_SOURCES: ForecastSourceMode[] = ["pjm", "meteologica"];
 const POPUP_FORECAST_METRIC_COUNT = 3;
 const POPUP_FORECAST_COL_COUNT = forecastPopupColCount(POPUP_FORECAST_METRIC_COUNT);
 const WEST_AREAS = new Set([
@@ -288,6 +290,15 @@ function buildExplorerCacheKey(sourceMode: ForecastSourceMode): string {
   return sourceMode === "meteologica"
     ? "api:pjm-meteologica-forecast-explorer"
     : "api:pjm-forecast-explorer";
+}
+
+function buildNetLoadExplorerApiUrl(sourceMode: ForecastSourceMode): string {
+  const params = new URLSearchParams({ source: sourceMode });
+  return `/api/pjm-net-load-forecast-explorer?${params.toString()}`;
+}
+
+function buildNetLoadExplorerCacheKey(sourceMode: ForecastSourceMode): string {
+  return `api:pjm-net-load-forecast-explorer:${sourceMode}`;
 }
 
 function buildDiffApiUrl({
@@ -637,6 +648,32 @@ export default function PjmForecasts({
     setCompareBaseDate(null);
     setCompareTargetDate(null);
   }, [sourceMode]);
+
+  useEffect(() => {
+    if (refreshToken > 0) return;
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (cancelled) return;
+      const requests = FORECAST_PREFETCH_SOURCES.flatMap((prefetchSource) => [
+        fetchJsonWithCache<unknown>({
+          key: buildExplorerCacheKey(prefetchSource),
+          url: buildExplorerApiUrl(prefetchSource, false),
+          ttlMs: API_CACHE_TTL_MS,
+        }),
+        fetchJsonWithCache<unknown>({
+          key: buildNetLoadExplorerCacheKey(prefetchSource),
+          url: buildNetLoadExplorerApiUrl(prefetchSource),
+          ttlMs: API_CACHE_TTL_MS,
+        }),
+      ]);
+      void Promise.allSettled(requests);
+    }, FORECAST_PREFETCH_DELAY_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [refreshToken]);
 
   useEffect(() => {
     if (!explorerData || forecastType !== "load") return;

@@ -4,11 +4,11 @@ import { query } from "@/lib/server/db";
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=120";
+const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=600, stale-if-error=3600";
 const ROUTE_CONFIG = {
   route: "/api/pjm-forecast-explorer",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "s-maxage=600, stale-while-revalidate=120",
+  cachePolicy: "s-maxage=600, stale-while-revalidate=600, stale-if-error=3600",
   owner: "frontend",
   purpose: "PJM load forecast area/date explorer summary",
   p95TargetMs: 750,
