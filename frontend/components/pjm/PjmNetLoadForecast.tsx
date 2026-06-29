@@ -1,6 +1,15 @@
 "use client";
 
-import { Fragment, type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  startTransition,
+  type CSSProperties,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   Bar,
   BarChart,
@@ -715,14 +724,24 @@ export default function PjmNetLoadForecast({
   const [internalActiveTab, setInternalActiveTab] = useState<NetLoadForecastTab>("outright");
   const sourceMode = controlledSourceMode ?? internalSourceMode;
   const activeTab = controlledActiveTab ?? internalActiveTab;
-  const setSourceMode = (nextSourceMode: ForecastSourceMode) => {
-    if (controlledSourceMode === undefined) setInternalSourceMode(nextSourceMode);
-    onSourceModeChange?.(nextSourceMode);
-  };
-  const setActiveTab = (nextActiveTab: NetLoadForecastTab) => {
-    if (controlledActiveTab === undefined) setInternalActiveTab(nextActiveTab);
-    onActiveTabChange?.(nextActiveTab);
-  };
+  const setSourceMode = useCallback(
+    (nextSourceMode: ForecastSourceMode) => {
+      startTransition(() => {
+        if (controlledSourceMode === undefined) setInternalSourceMode(nextSourceMode);
+        onSourceModeChange?.(nextSourceMode);
+      });
+    },
+    [controlledSourceMode, onSourceModeChange],
+  );
+  const setActiveTab = useCallback(
+    (nextActiveTab: NetLoadForecastTab) => {
+      startTransition(() => {
+        if (controlledActiveTab === undefined) setInternalActiveTab(nextActiveTab);
+        onActiveTabChange?.(nextActiveTab);
+      });
+    },
+    [controlledActiveTab, onActiveTabChange],
+  );
   const [viewMode, setViewMode] = useState<ViewMode>("latest");
   const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
@@ -768,7 +787,6 @@ export default function PjmNetLoadForecast({
   }, [sourceMode]);
 
   useEffect(() => {
-    const controller = new AbortController();
     let active = true;
     setExplorerLoading(true);
     setExplorerError(null);
@@ -777,7 +795,6 @@ export default function PjmNetLoadForecast({
       key: buildExplorerCacheKey(sourceMode),
       url: buildExplorerUrl(sourceMode, refreshToken > 0),
       ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
       cacheMode: refreshToken > 0 ? "no-store" : "default",
       forceRefresh: refreshToken > 0,
     })
@@ -787,7 +804,7 @@ export default function PjmNetLoadForecast({
         onFreshnessChange?.(freshnessFromPayload(payload));
       })
       .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
+        if (!active) return;
         setExplorerError(
           err.message || `Failed to load ${sourceLabel(sourceMode)} net load forecast explorer`,
         );
@@ -805,14 +822,12 @@ export default function PjmNetLoadForecast({
 
     return () => {
       active = false;
-      controller.abort();
     };
   }, [refreshToken, onFreshnessChange, sourceMode]);
 
   useEffect(() => {
     if (!selectedForecastDate) return;
 
-    const controller = new AbortController();
     let active = true;
     setDiffLoading(true);
     setDiffError(null);
@@ -832,7 +847,6 @@ export default function PjmNetLoadForecast({
         refresh: refreshToken > 0,
       }),
       ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
       cacheMode: refreshToken > 0 ? "no-store" : "default",
       forceRefresh: refreshToken > 0,
     })
@@ -842,7 +856,7 @@ export default function PjmNetLoadForecast({
         setHiddenSeries(defaultHiddenLookbackSeries(payload.lookbackRows));
       })
       .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
+        if (!active) return;
         setDiffError(
           err.message ||
             `Failed to load ${sourceLabel(sourceMode)} ${selectedArea} net load forecast vintages`,
@@ -855,7 +869,6 @@ export default function PjmNetLoadForecast({
 
     return () => {
       active = false;
-      controller.abort();
     };
   }, [lookbackHours, refreshToken, selectedArea, selectedForecastDate, sourceMode]);
 
@@ -882,7 +895,6 @@ export default function PjmNetLoadForecast({
       return;
     }
 
-    const controller = new AbortController();
     let active = true;
     setCompareLoading(true);
     setCompareError(null);
@@ -902,7 +914,6 @@ export default function PjmNetLoadForecast({
         refresh: refreshToken > 0,
       }),
       ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
       cacheMode: refreshToken > 0 ? "no-store" : "default",
       forceRefresh: refreshToken > 0,
     })
@@ -911,7 +922,7 @@ export default function PjmNetLoadForecast({
         setCompareData(payload);
       })
       .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
+        if (!active) return;
         setCompareError(
           err.message ||
             `Failed to load ${sourceLabel(sourceMode)} ${compareArea} net load date comparison`,
@@ -924,7 +935,6 @@ export default function PjmNetLoadForecast({
 
     return () => {
       active = false;
-      controller.abort();
     };
   }, [activeTab, compareArea, compareBaseDate, compareTargetDate, refreshToken, sourceMode]);
 
@@ -1038,32 +1048,38 @@ export default function PjmNetLoadForecast({
     [diffData, selectedComponent],
   );
 
-  const toggleSeries = (key: string) => {
-    setHiddenSeries((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
+  const toggleSeries = useCallback((key: string) => {
+    startTransition(() => {
+      setHiddenSeries((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
     });
-  };
+  }, []);
 
-  const toggleDetailWindow = (hours: number) => {
-    setVisibleDetailWindows((prev) => {
-      const next = new Set(prev);
-      if (next.has(hours)) next.delete(hours);
-      else next.add(hours);
-      return next;
+  const toggleDetailWindow = useCallback((hours: number) => {
+    startTransition(() => {
+      setVisibleDetailWindows((prev) => {
+        const next = new Set(prev);
+        if (next.has(hours)) next.delete(hours);
+        else next.add(hours);
+        return next;
+      });
     });
-  };
+  }, []);
 
-  const toggleDetailRowType = (rowType: DetailRowType) => {
-    setVisibleDetailRowTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(rowType) && next.size > 1) next.delete(rowType);
-      else next.add(rowType);
-      return next;
+  const toggleDetailRowType = useCallback((rowType: DetailRowType) => {
+    startTransition(() => {
+      setVisibleDetailRowTypes((prev) => {
+        const next = new Set(prev);
+        if (next.has(rowType) && next.size > 1) next.delete(rowType);
+        else next.add(rowType);
+        return next;
+      });
     });
-  };
+  }, []);
 
   const renderLookbackChart = (heightClass: string) => (
     <div className={heightClass}>
@@ -1414,7 +1430,10 @@ export default function PjmNetLoadForecast({
           <select
             value={compareArea}
             disabled={compareAreaOptions.length <= 1}
-            onChange={(event) => setCompareArea(event.target.value)}
+            onChange={(event) => {
+              const nextArea = event.target.value;
+              startTransition(() => setCompareArea(nextArea));
+            }}
             className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
           >
             {(compareAreaOptions.length ? compareAreaOptions : [compareArea]).map((area) => (
@@ -1431,7 +1450,10 @@ export default function PjmNetLoadForecast({
           <select
             value={compareBaseDate ?? ""}
             disabled={!compareDateOptions.length}
-            onChange={(event) => setCompareBaseDate(event.target.value || null)}
+            onChange={(event) => {
+              const nextDate = event.target.value || null;
+              startTransition(() => setCompareBaseDate(nextDate));
+            }}
             className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
           >
             {!compareDateOptions.length && <option value="">--</option>}
@@ -1449,7 +1471,10 @@ export default function PjmNetLoadForecast({
           <select
             value={compareTargetDate ?? ""}
             disabled={!compareDateOptions.length}
-            onChange={(event) => setCompareTargetDate(event.target.value || null)}
+            onChange={(event) => {
+              const nextDate = event.target.value || null;
+              startTransition(() => setCompareTargetDate(nextDate));
+            }}
             className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
           >
             {!compareDateOptions.length && <option value="">--</option>}
@@ -1467,7 +1492,9 @@ export default function PjmNetLoadForecast({
           <button
             type="button"
             aria-pressed={compareRampingEnabled}
-            onClick={() => setCompareRampingEnabled((enabled) => !enabled)}
+            onClick={() => {
+              startTransition(() => setCompareRampingEnabled((enabled) => !enabled));
+            }}
             className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
               compareRampingEnabled
                 ? "border-sky-500/50 bg-sky-500/10 text-white"
@@ -1558,7 +1585,9 @@ export default function PjmNetLoadForecast({
         action={
           <ForecastHeatmapToggle
             enabled={tableHeatmapEnabled}
-            onToggle={() => setTableHeatmapEnabled((enabled) => !enabled)}
+            onToggle={() => {
+              startTransition(() => setTableHeatmapEnabled((enabled) => !enabled));
+            }}
           />
         }
         bodyClassName="max-h-[72vh] overflow-auto"
@@ -1662,9 +1691,11 @@ export default function PjmNetLoadForecast({
                                 disabled={!cell}
                                 onClick={() => {
                                   if (!cell) return;
-                                  setSelectedArea(cell.area);
-                                  setSelectedForecastDate(date);
-                                  setSelectedComponent(component.key);
+                                  startTransition(() => {
+                                    setSelectedArea(cell.area);
+                                    setSelectedForecastDate(date);
+                                    setSelectedComponent(component.key);
+                                  });
                                 }}
                                 className={`min-h-7 w-full rounded px-1.5 py-1 text-right text-[11px] transition-colors hover:bg-gray-950/50 disabled:cursor-default disabled:hover:bg-transparent ${
                                   isSelected ? "ring-1 ring-sky-300/80" : ""
@@ -1918,7 +1949,9 @@ export default function PjmNetLoadForecast({
         className="fixed inset-0 z-50 bg-black/70 p-1 sm:p-3"
         role="presentation"
         onMouseDown={(event) => {
-          if (event.target === event.currentTarget) setSelectedForecastDate(null);
+          if (event.target === event.currentTarget) {
+            startTransition(() => setSelectedForecastDate(null));
+          }
         }}
       >
         <section
@@ -1943,7 +1976,10 @@ export default function PjmNetLoadForecast({
                 <span className="sr-only">Lookback</span>
                 <select
                   value={lookbackHours}
-                  onChange={(event) => setLookbackHours(Number(event.target.value))}
+                  onChange={(event) => {
+                    const nextHours = Number(event.target.value);
+                    startTransition(() => setLookbackHours(nextHours));
+                  }}
                   className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                 >
                   {LOOKBACK_OPTIONS.map((hours) => (
@@ -1955,7 +1991,9 @@ export default function PjmNetLoadForecast({
               </label>
               <button
                 type="button"
-                onClick={() => setSelectedForecastDate(null)}
+                onClick={() => {
+                  startTransition(() => setSelectedForecastDate(null));
+                }}
                 className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-semibold text-gray-200 hover:bg-gray-800"
               >
                 Close
@@ -1984,9 +2022,13 @@ export default function PjmNetLoadForecast({
                   series={lookbackSeries}
                   hiddenSeries={hiddenSeries}
                   onToggleSeries={toggleSeries}
-                  onShowAll={() => setHiddenSeries(new Set())}
+                  onShowAll={() => {
+                    startTransition(() => setHiddenSeries(new Set()));
+                  }}
                   onHideAll={() =>
-                    setHiddenSeries(new Set(lookbackSeries.map((series) => series.key)))
+                    startTransition(() =>
+                      setHiddenSeries(new Set(lookbackSeries.map((series) => series.key))),
+                    )
                   }
                   focusedChildren={renderLookbackChart("h-[70vh]")}
                 >
@@ -2017,7 +2059,10 @@ export default function PjmNetLoadForecast({
                     type="button"
                     role="tab"
                     aria-selected={sourceMode === tab.key}
-                    onClick={() => setSourceMode(tab.key)}
+                    onClick={() => {
+                      if (sourceMode === tab.key) return;
+                      setSourceMode(tab.key);
+                    }}
                     className={`rounded-md border px-3 py-2 text-left transition-colors ${
                       sourceMode === tab.key
                         ? "border-sky-500/60 bg-sky-500/10 text-white shadow-[inset_0_-2px_0_rgba(56,189,248,0.75)]"
@@ -2045,8 +2090,11 @@ export default function PjmNetLoadForecast({
                     role="tab"
                     aria-selected={activeTab === tab.key}
                     onClick={() => {
+                      if (activeTab === tab.key) return;
                       setActiveTab(tab.key);
-                      if (tab.key === "compareDay") setSelectedForecastDate(null);
+                      if (tab.key === "compareDay") {
+                        startTransition(() => setSelectedForecastDate(null));
+                      }
                     }}
                     className={`rounded-md border px-3 py-2 text-left transition-colors ${
                       activeTab === tab.key
@@ -2087,8 +2135,11 @@ export default function PjmNetLoadForecast({
                       role="radio"
                       aria-checked={viewMode === key}
                       onClick={() => {
-                        setViewMode(key as ViewMode);
-                        if (key === "change") setLookbackHours(selectedWindow.hours);
+                        if (viewMode === key) return;
+                        startTransition(() => {
+                          setViewMode(key as ViewMode);
+                          if (key === "change") setLookbackHours(selectedWindow.hours);
+                        });
                       }}
                       className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
                         viewMode === key
@@ -2113,7 +2164,10 @@ export default function PjmNetLoadForecast({
                       type="button"
                       role="radio"
                       aria-checked={selectedStatistic === statistic.key}
-                      onClick={() => setSelectedStatistic(statistic.key)}
+                      onClick={() => {
+                        if (selectedStatistic === statistic.key) return;
+                        startTransition(() => setSelectedStatistic(statistic.key));
+                      }}
                       className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
                         selectedStatistic === statistic.key
                           ? "border-sky-500/50 bg-sky-500/10 text-white"
@@ -2138,9 +2192,12 @@ export default function PjmNetLoadForecast({
                       role="radio"
                       aria-checked={changeWindow === window.key}
                       onClick={() => {
-                        setViewMode("change");
-                        setChangeWindow(window.key);
-                        setLookbackHours(changeWindowHours(window.key));
+                        if (viewMode === "change" && changeWindow === window.key) return;
+                        startTransition(() => {
+                          setViewMode("change");
+                          setChangeWindow(window.key);
+                          setLookbackHours(changeWindowHours(window.key));
+                        });
                       }}
                       className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
                         changeWindow === window.key

@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -1880,7 +1880,7 @@ export default function PjmForecasts({
     );
   };
 
-  const handleNetLoadFreshnessChange = (freshness: PjmNetLoadForecastFreshnessSummary) => {
+  const handleNetLoadFreshnessChange = useCallback((freshness: PjmNetLoadForecastFreshnessSummary) => {
     onFreshnessChange?.({
       status: freshness.status,
       statusClass: freshness.statusClass,
@@ -1889,7 +1889,7 @@ export default function PjmForecasts({
       latestDateLabel: freshness.latestDateLabel,
       latestUpdateLabel: freshness.latestUpdateLabel,
     });
-  };
+  }, [onFreshnessChange]);
 
   return (
     <div className="space-y-4">
@@ -1911,7 +1911,10 @@ export default function PjmForecasts({
                   role="tab"
                   aria-selected={sourceMode === tab.key}
                   title={tab.scope}
-                  onClick={() => setSourceMode(tab.key)}
+                  onClick={() => {
+                    if (sourceMode === tab.key) return;
+                    startTransition(() => setSourceMode(tab.key));
+                  }}
                   className={forecastSegmentButtonClass(sourceMode === tab.key)}
                 >
                   <span className="block truncate">{tab.label}</span>
@@ -1937,8 +1940,11 @@ export default function PjmForecasts({
                   aria-selected={forecastType === tab.key}
                   title={tab.scope}
                   onClick={() => {
-                    setForecastType(tab.key);
-                    setSelectedExplorerCell(null);
+                    if (forecastType === tab.key) return;
+                    startTransition(() => {
+                      setForecastType(tab.key);
+                      setSelectedExplorerCell(null);
+                    });
                   }}
                   className={forecastSegmentButtonClass(forecastType === tab.key)}
                 >
@@ -1965,8 +1971,11 @@ export default function PjmForecasts({
                   aria-selected={forecastMode === tab.key}
                   title={tab.scope}
                   onClick={() => {
-                    setForecastMode(tab.key);
-                    if (tab.key === "compareDay") setSelectedExplorerCell(null);
+                    if (forecastMode === tab.key) return;
+                    startTransition(() => {
+                      setForecastMode(tab.key);
+                      if (tab.key === "compareDay") setSelectedExplorerCell(null);
+                    });
                   }}
                   className={forecastSegmentButtonClass(forecastMode === tab.key)}
                 >
