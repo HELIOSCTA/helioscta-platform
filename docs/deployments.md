@@ -927,8 +927,8 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-ops-sum
 
-- Status: promoted for VM deployment; operator SQL must be applied before
-  enabling the timer.
+- Status: deployed; timer enabled, manual VM scrape succeeded, and historical
+  backfill completed.
 - Workflow: PJM Operations Summary refresh.
 - Runtime module: `backend.orchestration.power.pjm.ops_sum`.
 - Lower-level scrape modules:
@@ -951,6 +951,16 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-pjm-ops-sum.service`.
+- VM deployment: fast-forwarded on `/opt/helioscta-platform`, dependencies
+  reinstalled, unit files copied to `/etc/systemd/system/`, and
+  `helios-pjm-ops-sum.timer` enabled on `2026-06-29`.
+- Last VM verification: manual service run exited `status=0/SUCCESS` at
+  `2026-06-29 15:00 UTC`; transient historical backfill
+  `helios-pjm-ops-sum-backfill.service` exited `status=0/SUCCESS` at
+  `2026-06-29 15:06 UTC`.
+- Historical backfill coverage: `ops_sum_frcst_peak_area` `56,221` rows,
+  `ops_sum_frcst_peak_rto` `5,421` rows, `ops_sum_prev_period` `1,088,852`
+  rows, and `ops_sum_prjctd_tie_flow` `108,360` rows.
 - Schedule: daily at `08:30 America/New_York` with `Persistent=true`,
   `RandomizedDelaySec=5min`, and `AccuracySec=1min`.
 - Overlap protection: service uses `/usr/bin/flock` with
