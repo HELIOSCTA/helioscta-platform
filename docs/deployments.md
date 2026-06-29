@@ -937,8 +937,8 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-hrl-dmd-bids
 
-- Status: promoted for VM deployment; unit files and polling orchestration are
-  versioned, pending production timer install and manual verification.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual VM smoke
+  succeeded.
 - Workflow: PJM hourly demand bid refresh.
 - Runtime module: `backend.orchestration.power.pjm.hrl_dmd_bids`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.hrl_dmd_bids`.
@@ -960,7 +960,14 @@ FROM isone.seven_day_solar_forecast;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Safe rerun story: upsert on
   `(datetime_beginning_utc, datetime_beginning_ept, area)`.
-- Deployed commit: pending VM deployment.
+- Deployed commit: `9ca22e9` (`Schedule PJM hourly demand bids polling`).
+- Production timer: `helios-pjm-hrl-dmd-bids.timer` enabled and active/waiting;
+  next scheduled run observed as `2026-06-30 17:00:00 UTC`.
+- Manual VM verification on `2026-06-29 19:15 UTC`: service completed
+  successfully for target market date `2026-06-30`, journal reported `72` rows
+  upserted into `pjm.hrl_dmd_bids`, table freshness query returned `72` rows
+  across `3` areas for `2026-06-30`, and `ops.api_fetch_log.id = 101044`
+  recorded `status = success`, `rows_returned = 72`, `poll_count = 1`.
 
 Verification SQL for table freshness:
 
