@@ -96,7 +96,7 @@ export function compareDeltaCellStyle(
   const ratio = Math.min(Math.abs(value) / bound, 1);
   const alpha = 0.08 + ratio * 0.3;
   const [r, g, b] =
-    value > 0 ? [248, 113, 113] : value < 0 ? [52, 211, 153] : [148, 163, 184];
+    value > 0 ? [52, 211, 153] : value < 0 ? [248, 113, 113] : [148, 163, 184];
   return {
     backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
     color: "#f8fafc",

@@ -1374,9 +1374,9 @@ export default function PjmNetLoadForecast({
                       const signedClass =
                         series.isDelta && typeof value === "number"
                           ? value > 0
-                            ? "text-rose-200"
+                            ? "text-emerald-200"
                             : value < 0
-                              ? "text-emerald-200"
+                              ? "text-rose-200"
                               : "text-gray-400"
                           : "text-gray-300";
                       const cellStyle = series.isDelta
