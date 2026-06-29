@@ -20,6 +20,7 @@ type RtLmpSource = "verified" | "unverified";
 type LmpComponent = "total" | "energy" | "congestion" | "loss";
 type TermPeriod = "onpeak" | "offpeak" | "flat";
 type TermBibleMode = "single" | "spread";
+type DailyEditMap = Record<string, number>;
 
 interface MonthlyPoint {
   year: number;
@@ -213,9 +214,19 @@ function toNumber(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function toAverageNumber(value: number | string | null | undefined): number | null {
+  const parsed = toNumber(value);
+  return parsed === null || parsed === 0 ? null : parsed;
+}
+
 function fmtValue(value: number | string | null | undefined): string {
   const parsed = toNumber(value);
   return parsed === null ? "--" : parsed.toFixed(2);
+}
+
+function fmtEditValue(value: number | string | null | undefined): string {
+  const parsed = toNumber(value);
+  return parsed === null ? "" : parsed.toFixed(2);
 }
 
 function fmtTooltipValue(value: unknown): string {
@@ -233,6 +244,47 @@ function avg(values: Array<number | null>): number | null {
   return nums.reduce((total, value) => total + value, 0) / nums.length;
 }
 
+function csvCell(value: string | number | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const text = String(value);
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function safeFileToken(value: string): string {
+  const cleaned = value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return cleaned || "table";
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+function avgDailyValue(rows: DailyValue[]): number | null {
+  const valuedRows = rows
+    .map((row) => ({ value: toAverageNumber(row.value), hourlyCount: row.hourlyCount }))
+    .filter((row): row is { value: number; hourlyCount: number } => row.value !== null);
+  if (valuedRows.length === 0) return null;
+
+  const weightedRows = valuedRows.filter((row) => row.hourlyCount > 0);
+  const hourlyCount = weightedRows.reduce((total, row) => total + row.hourlyCount, 0);
+  if (hourlyCount > 0) {
+    return weightedRows.reduce((total, row) => total + row.value * row.hourlyCount, 0) / hourlyCount;
+  }
+
+  return avg(valuedRows.map((row) => row.value));
+}
+
 function monthLabel(month: number): string {
   return MONTHS.find((item) => item.number === month)?.label ?? String(month);
 }
@@ -245,10 +297,21 @@ function dailyCellKey(year: number, mmDd: string): string {
   return `${year}:${mmDd}`;
 }
 
+function hasDailyEdit(edits: DailyEditMap, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(edits, key);
+}
+
 function parseDailyCellKey(key: string): { year: number; mmDd: string } | null {
   const [yearValue, mmDd] = key.split(":");
   const year = Number(yearValue);
   return Number.isInteger(year) && mmDd ? { year, mmDd } : null;
+}
+
+function parseDailyEditDraft(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? roundPrice(parsed) : null;
 }
 
 function percentile(values: number[], percent: number): number | null {
@@ -386,7 +449,7 @@ function buildDailySelectionStats(
     .map((cell) => byDay.get(cell.mmDd)?.get(cell.year) ?? null)
     .filter((point): point is DailyValue => Boolean(point));
   const values = selectedPoints
-    .map((point) => toNumber(point.value))
+    .map((point) => toAverageNumber(point.value))
     .filter((value): value is number => value !== null);
   const sortedRows = [...rowSet].sort();
   const rowLabel =
@@ -411,15 +474,126 @@ function buildDailySelectionStats(
 function buildDailyHeatValues(rows: DailyValue[]): Map<number, number[]> {
   const byYear = new Map<number, number[]>();
   rows.forEach((row) => {
-    const value = toNumber(row.value);
+    const value = toAverageNumber(row.value);
     if (value === null) return;
     byYear.set(row.year, [...(byYear.get(row.year) ?? []), value]);
   });
   return byYear;
 }
 
+function buildDailyTableCsv(data: PjmTermBiblePayload): string {
+  const { years, byDay } = buildDailyMaps(data.dailyValues);
+  const rows = [...byDay.keys()].sort();
+  const header = ["Date", ...years.map(String)];
+  const csvRows = [header];
+
+  rows.forEach((mmDd) => {
+    csvRows.push([
+      mmDd,
+      ...years.map((year) => {
+        const value = toNumber(byDay.get(mmDd)?.get(year)?.value);
+        return value === null ? "" : value.toFixed(2);
+      }),
+    ]);
+  });
+
+  csvRows.push([
+    "Avg",
+    ...years.map((year) => {
+      const value = avgDailyValue(
+        rows
+          .map((mmDd) => byDay.get(mmDd)?.get(year) ?? null)
+          .filter((point): point is DailyValue => Boolean(point)),
+      );
+      return value === null ? "" : value.toFixed(2);
+    }),
+  ]);
+
+  return csvRows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+}
+
+function dailyTableCsvFilename(data: PjmTermBiblePayload): string {
+  return [
+    "term-bible",
+    monthLabel(data.detailMonth),
+    data.startYear,
+    data.endYear,
+    data.product,
+    data.rtSource,
+    data.period,
+    safeFileToken(data.pnodeName),
+  ]
+    .map(String)
+    .map(safeFileToken)
+    .filter(Boolean)
+    .join("-");
+}
+
 function roundPrice(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function applyDailyEdits(data: PjmTermBiblePayload, dailyEdits: DailyEditMap): PjmTermBiblePayload {
+  const editEntries = Object.entries(dailyEdits)
+    .map(([key, value]) => ({ key, value, cell: parseDailyCellKey(key) }))
+    .filter(
+      (entry): entry is { key: string; value: number; cell: { year: number; mmDd: string } } =>
+        Boolean(entry.cell) && Number.isFinite(entry.value),
+    );
+  if (editEntries.length === 0) return data;
+
+  const dailyByKey = new Map(
+    data.dailyValues.map((row) => [dailyCellKey(row.year, row.mmDd), row]),
+  );
+
+  editEntries.forEach(({ key, value, cell }) => {
+    const existing = dailyByKey.get(key);
+    dailyByKey.set(key, {
+      date: existing?.date ?? `${cell.year}-${cell.mmDd}`,
+      mmDd: cell.mmDd,
+      year: cell.year,
+      value: roundPrice(value),
+      isWeekend: existing?.isWeekend ?? false,
+      isNercHoliday: existing?.isNercHoliday ?? false,
+      excludesPjmOnpeakSettle: existing?.excludesPjmOnpeakSettle ?? false,
+      hourlyCount: existing && existing.hourlyCount > 0 ? existing.hourlyCount : 1,
+    });
+  });
+
+  const dailyValues = [...dailyByKey.values()].sort((a, b) => {
+    const daySort = a.mmDd.localeCompare(b.mmDd);
+    return daySort === 0 ? a.year - b.year : daySort;
+  });
+  const editedYears = new Set(editEntries.map((entry) => entry.cell.year));
+  const monthlyByKey = new Map(
+    data.monthly.map((row) => [monthlyKey(row.year, row.month), row]),
+  );
+
+  editedYears.forEach((year) => {
+    const rowsForYear = dailyValues.filter((row) => row.year === year);
+    const value = avgDailyValue(rowsForYear);
+    const key = monthlyKey(year, data.detailMonth);
+    const existing = monthlyByKey.get(key);
+    monthlyByKey.set(key, {
+      year,
+      month: data.detailMonth,
+      value: value === null ? existing?.value ?? null : roundPrice(value),
+      pricedDays: rowsForYear.filter((row) => toNumber(row.value) !== null).length,
+    });
+  });
+
+  const monthly = [...monthlyByKey.values()].sort((a, b) => {
+    const yearSort = a.year - b.year;
+    return yearSort === 0 ? a.month - b.month : yearSort;
+  });
+
+  return {
+    ...data,
+    dailyValues,
+    monthly,
+    monthlyStats: buildMonthlyStatsFromPoints(monthly),
+    yearlyStats: buildYearlyStatsFromPoints(monthly),
+  };
 }
 
 function maxIsoStamp(values: Array<string | null>): string | null {
@@ -656,37 +830,83 @@ function HeaderCell({ children, className = "" }: { children: React.ReactNode; c
 function ValueCell({
   value,
   selected = false,
+  edited = false,
+  editing = false,
+  editValue = "",
   ariaLabel,
   onClick,
+  onDoubleClick,
   onKeyDown,
+  onEditValueChange,
+  onEditCommit,
+  onEditCancel,
   style,
   className = "",
 }: {
   value: number | string | null | undefined;
   selected?: boolean;
+  edited?: boolean;
+  editing?: boolean;
+  editValue?: string;
   ariaLabel?: string;
   onClick?: (event: React.MouseEvent<HTMLTableCellElement>) => void;
+  onDoubleClick?: (event: React.MouseEvent<HTMLTableCellElement>) => void;
   onKeyDown?: (event: React.KeyboardEvent<HTMLTableCellElement>) => void;
+  onEditValueChange?: (value: string) => void;
+  onEditCommit?: (value: string) => void;
+  onEditCancel?: () => void;
   style?: React.CSSProperties;
   className?: string;
 }) {
   const numeric = toNumber(value);
   return (
     <td
-      role={onClick ? "button" : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      aria-pressed={onClick ? selected : undefined}
+      role={onClick && !editing ? "button" : undefined}
+      tabIndex={onClick && !editing ? 0 : undefined}
+      aria-pressed={onClick && !editing ? selected : undefined}
       aria-label={ariaLabel}
-      onClick={onClick}
-      onKeyDown={onKeyDown}
+      onClick={editing ? undefined : onClick}
+      onDoubleClick={onDoubleClick}
+      onKeyDown={editing ? undefined : onKeyDown}
       className={`px-3 py-2 text-right tabular-nums ${
         numeric === null ? "text-gray-700" : "text-gray-100"
       } ${
         selected ? "bg-sky-500/20 text-sky-100 outline outline-1 -outline-offset-1 outline-sky-400/60" : ""
-      } ${onClick ? "cursor-pointer hover:bg-sky-500/10" : ""} ${className}`}
+      } ${edited ? "font-semibold text-amber-100 shadow-[inset_0_-1px_0_rgba(251,191,36,0.55)]" : ""} ${
+        onClick ? "cursor-pointer hover:bg-sky-500/10" : ""
+      } ${editing ? "bg-gray-950/90 p-1" : ""} ${className}`}
       style={!selected ? style : undefined}
     >
-      {fmtValue(value)}
+      {editing ? (
+        <input
+          autoFocus
+          inputMode="decimal"
+          value={editValue}
+          onChange={(event) => onEditValueChange?.(event.target.value)}
+          onClick={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onFocus={(event) => event.currentTarget.select()}
+          onBlur={(event) => {
+            if (event.currentTarget.dataset.cancelled === "true") return;
+            onEditCommit?.(event.currentTarget.value);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+            if (event.key === "Escape") {
+              event.preventDefault();
+              event.currentTarget.dataset.cancelled = "true";
+              onEditCancel?.();
+            }
+          }}
+          className="h-7 w-full min-w-[5.5rem] rounded border border-sky-500/50 bg-gray-950 px-2 text-right text-xs font-semibold text-gray-100 outline-none"
+          aria-label={ariaLabel ? `Edit ${ariaLabel}` : "Edit value"}
+        />
+      ) : (
+        fmtValue(value)
+      )}
     </td>
   );
 }
@@ -804,21 +1024,53 @@ function DailyValuesTable({
   heatmapEnabled,
   selectedCells,
   lastSelectedCell,
+  dailyEdits,
+  editingCell,
+  editingDraft,
   action,
   onSelectedCellsChange,
   onLastSelectedCellChange,
+  onStartEdit,
+  onEditDraftChange,
+  onEditCommit,
+  onEditCancel,
 }: {
   data: PjmTermBiblePayload;
   heatmapEnabled: boolean;
   selectedCells: Set<string>;
   lastSelectedCell: string | null;
+  dailyEdits: DailyEditMap;
+  editingCell: string | null;
+  editingDraft: string;
   action?: React.ReactNode;
   onSelectedCellsChange: (next: Set<string>) => void;
   onLastSelectedCellChange: (next: string | null) => void;
+  onStartEdit: (year: number, mmDd: string, value: number | string | null | undefined) => void;
+  onEditDraftChange: (value: string) => void;
+  onEditCommit: (value: string) => void;
+  onEditCancel: () => void;
 }) {
   const { years, byDay } = useMemo(() => buildDailyMaps(data.dailyValues), [data.dailyValues]);
   const rows = useMemo(() => [...byDay.keys()].sort(), [byDay]);
   const dailyHeatValuesByYear = useMemo(() => buildDailyHeatValues(data.dailyValues), [data.dailyValues]);
+  const yearAverages = useMemo(
+    () =>
+      new Map(
+        years.map((year) => [
+          year,
+          avgDailyValue(
+            rows
+              .map((mmDd) => byDay.get(mmDd)?.get(year) ?? null)
+              .filter((point): point is DailyValue => Boolean(point)),
+          ),
+        ]),
+      ),
+    [byDay, rows, years],
+  );
+  const yearAverageHeatValues = useMemo(
+    () => [...yearAverages.values()].filter((value): value is number => value !== null),
+    [yearAverages],
+  );
 
   const toggleCell = (year: number, mmDd: string, shiftKey: boolean) => {
     const key = dailyCellKey(year, mmDd);
@@ -871,22 +1123,39 @@ function DailyValuesTable({
                 {mmDd}
               </td>
               {years.map((year) => {
+                const key = dailyCellKey(year, mmDd);
                 const point = byDay.get(mmDd)?.get(year);
-                const value = toNumber(point?.value);
-                const selected = selectedCells.has(dailyCellKey(year, mmDd));
+                const value = toAverageNumber(point?.value);
+                const selected = selectedCells.has(key);
                 return (
                   <ValueCell
                     key={year}
                     value={point?.value}
                     selected={selected}
+                    edited={hasDailyEdit(dailyEdits, key)}
+                    editing={editingCell === key}
+                    editValue={editingCell === key ? editingDraft : ""}
                     ariaLabel={`${year} ${mmDd}`}
                     onClick={(event) => toggleCell(year, mmDd, event.shiftKey)}
+                    onDoubleClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      onStartEdit(year, mmDd, point?.value);
+                    }}
                     onKeyDown={(event) => {
+                      if (event.key === "F2") {
+                        event.preventDefault();
+                        onStartEdit(year, mmDd, point?.value);
+                        return;
+                      }
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         toggleCell(year, mmDd, event.shiftKey);
                       }
                     }}
+                    onEditValueChange={onEditDraftChange}
+                    onEditCommit={onEditCommit}
+                    onEditCancel={onEditCancel}
                     style={
                       heatmapEnabled
                         ? heatStyleFromValues(value, dailyHeatValuesByYear.get(year) ?? [])
@@ -897,6 +1166,21 @@ function DailyValuesTable({
               })}
             </tr>
           ))}
+          <tr className="bg-gray-950/50 font-semibold hover:bg-gray-900/60">
+            <td className="sticky left-0 z-10 bg-gray-950 px-3 py-2 text-gray-200">Avg</td>
+            {years.map((year) => {
+              const value = yearAverages.get(year) ?? null;
+              return (
+                <ValueCell
+                  key={year}
+                  value={value}
+                  style={
+                    heatmapEnabled ? heatStyleFromValues(value, yearAverageHeatValues) : undefined
+                  }
+                />
+              );
+            })}
+          </tr>
         </tbody>
       </table>
     </DataTableShell>
@@ -1052,6 +1336,9 @@ export default function PjmTermBible({
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [selectedDailyCells, setSelectedDailyCells] = useState<Set<string>>(() => new Set());
   const [lastSelectedDailyCell, setLastSelectedDailyCell] = useState<string | null>(null);
+  const [dailyEdits, setDailyEdits] = useState<DailyEditMap>({});
+  const [editingDailyCell, setEditingDailyCell] = useState<string | null>(null);
+  const [editingDailyDraft, setEditingDailyDraft] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1100,6 +1387,9 @@ export default function PjmTermBible({
         setData(payload);
         setSelectedDailyCells(new Set());
         setLastSelectedDailyCell(null);
+        setDailyEdits({});
+        setEditingDailyCell(null);
+        setEditingDailyDraft("");
       })
       .catch((err) => {
         if (!active) return;
@@ -1178,10 +1468,54 @@ export default function PjmTermBible({
     if (freshnessSummary) onFreshnessChange?.(freshnessSummary);
   }, [freshnessSummary, onFreshnessChange]);
 
-  const dailySelectionStats = useMemo(
-    () => (data ? buildDailySelectionStats(data, selectedDailyCells) : null),
-    [data, selectedDailyCells],
+  const editedData = useMemo(
+    () => {
+      if (!data) return null;
+      const previewEdits = { ...dailyEdits };
+      if (editingDailyCell) {
+        const parsed = parseDailyEditDraft(editingDailyDraft);
+        if (parsed === null) delete previewEdits[editingDailyCell];
+        else previewEdits[editingDailyCell] = parsed;
+      }
+      return applyDailyEdits(data, previewEdits);
+    },
+    [dailyEdits, data, editingDailyCell, editingDailyDraft],
   );
+
+  const dailySelectionStats = useMemo(
+    () => (editedData ? buildDailySelectionStats(editedData, selectedDailyCells) : null),
+    [editedData, selectedDailyCells],
+  );
+
+  const editedCellCount = Object.keys(dailyEdits).length;
+
+  const startDailyEdit = (
+    year: number,
+    mmDd: string,
+    value: number | string | null | undefined,
+  ) => {
+    const key = dailyCellKey(year, mmDd);
+    setEditingDailyCell(key);
+    setEditingDailyDraft(hasDailyEdit(dailyEdits, key) ? fmtEditValue(dailyEdits[key]) : fmtEditValue(value));
+  };
+
+  const commitDailyEdit = (draft: string) => {
+    if (!editingDailyCell) return;
+    const parsed = parseDailyEditDraft(draft);
+    setDailyEdits((current) => {
+      const next = { ...current };
+      if (parsed === null) delete next[editingDailyCell];
+      else next[editingDailyCell] = parsed;
+      return next;
+    });
+    setEditingDailyCell(null);
+    setEditingDailyDraft("");
+  };
+
+  const cancelDailyEdit = () => {
+    setEditingDailyCell(null);
+    setEditingDailyDraft("");
+  };
 
   const renderTableHeatmapAction = () => (
     <TableHeatmapToggle
@@ -1192,10 +1526,37 @@ export default function PjmTermBible({
 
   const renderDailyTableAction = () => (
     <div className="flex flex-wrap items-center justify-end gap-2">
+      <button
+        type="button"
+        onClick={() => {
+          if (!editedData) return;
+          downloadTextFile(
+            `${dailyTableCsvFilename(editedData)}.csv`,
+            buildDailyTableCsv(editedData),
+            "text/csv;charset=utf-8",
+          );
+        }}
+        disabled={!editedData || editedData.dailyValues.length === 0}
+        className="rounded-md border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-200 transition-colors hover:border-sky-400/60 hover:bg-sky-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        CSV
+      </button>
       <TableHeatmapToggle
         enabled={tableHeatmapEnabled}
         onToggle={() => setTableHeatmapEnabled((enabled) => !enabled)}
       />
+      <button
+        type="button"
+        onClick={() => {
+          setDailyEdits({});
+          setEditingDailyCell(null);
+          setEditingDailyDraft("");
+        }}
+        disabled={editedCellCount === 0}
+        className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-1.5 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-700 hover:text-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Reset edits
+      </button>
       <button
         type="button"
         onClick={() => {
@@ -1393,27 +1754,34 @@ export default function PjmTermBible({
         </div>
       )}
 
-      {data && (
+      {editedData && (
         <>
           <TermSummaryTable
-            data={data}
+            data={editedData}
             heatmapEnabled={tableHeatmapEnabled}
             action={renderTableHeatmapAction()}
           />
 
-          {data.dailyValues.length > 0 ? (
+          {editedData.dailyValues.length > 0 ? (
             <div className="grid items-start gap-4 2xl:grid-cols-[minmax(520px,0.9fr)_minmax(620px,1.1fr)]">
               <DailyValuesTable
-                data={data}
+                data={editedData}
                 heatmapEnabled={tableHeatmapEnabled}
                 selectedCells={selectedDailyCells}
                 lastSelectedCell={lastSelectedDailyCell}
+                dailyEdits={dailyEdits}
+                editingCell={editingDailyCell}
+                editingDraft={editingDailyDraft}
                 action={renderDailyTableAction()}
                 onSelectedCellsChange={setSelectedDailyCells}
                 onLastSelectedCellChange={setLastSelectedDailyCell}
+                onStartEdit={startDailyEdit}
+                onEditDraftChange={setEditingDailyDraft}
+                onEditCommit={commitDailyEdit}
+                onEditCancel={cancelDailyEdit}
               />
               <PlotCard
-                title={`${monthLabel(data.detailMonth)} Daily ${valueUnitLabel(data)}`}
+                title={`${monthLabel(editedData.detailMonth)} Daily ${valueUnitLabel(editedData)}`}
                 subtitle={termLabel}
                 series={plotSeries}
                 hiddenSeries={hiddenSeries}
@@ -1429,19 +1797,19 @@ export default function PjmTermBible({
                 onHideAll={() => setHiddenSeries(new Set(plotSeries.map((series) => series.key)))}
                 focusedChildren={
                   <DailyChart
-                    data={data}
+                    data={editedData}
                     hiddenSeries={hiddenSeries}
-                    valueLabel={valueUnitLabel(data)}
+                    valueLabel={valueUnitLabel(editedData)}
                     focused
                   />
                 }
               >
-                <DailyChart data={data} hiddenSeries={hiddenSeries} valueLabel={valueUnitLabel(data)} />
+                <DailyChart data={editedData} hiddenSeries={hiddenSeries} valueLabel={valueUnitLabel(editedData)} />
               </PlotCard>
             </div>
           ) : (
             <div className="rounded-lg border border-gray-800 bg-[#12141d] p-4 text-sm text-gray-400">
-              No daily values are available for {monthLabel(data.detailMonth)} in this selection.
+              No daily values are available for {monthLabel(editedData.detailMonth)} in this selection.
             </div>
           )}
           <DailySelectionPopover
