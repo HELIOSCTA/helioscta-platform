@@ -25,6 +25,8 @@ import {
   FORECAST_POPUP_TABLE_CLASS,
   ForecastHeatmapToggle,
   ForecastPopupColGroup,
+  compareDeltaCellStyle,
+  compareLevelCellStyle,
   forecastPopupColCount,
   forecastPopupHourDividerClass,
   forecastPopupMetricBorderClass,
@@ -1172,6 +1174,19 @@ export default function PjmForecasts({
 
   const renderLoadCompareTable = () => {
     const valueFormatter = compareRampingEnabled ? fmtSignedMw : fmtMw;
+    const loadCompareValueStats = (valueKey: string) => {
+      const values = loadCompareRows
+        .map((row) => row[valueKey])
+        .filter((value): value is number => typeof value === "number");
+      const absBound = values.length
+        ? Math.max(...values.map((value) => Math.abs(value)))
+        : 0;
+      return {
+        min: values.length ? Math.min(...values) : 0,
+        max: values.length ? Math.max(...values) : 0,
+        absBound,
+      };
+    };
     const seriesRows = [
       {
         key: "base",
@@ -1180,6 +1195,7 @@ export default function PjmForecasts({
         formatter: valueFormatter,
         swatch: "#60a5fa",
         isDelta: false,
+        tone: "base" as const,
       },
       {
         key: "compare",
@@ -1188,6 +1204,7 @@ export default function PjmForecasts({
         formatter: valueFormatter,
         swatch: "#fb923c",
         isDelta: false,
+        tone: "compare" as const,
       },
       {
         key: "delta",
@@ -1196,8 +1213,12 @@ export default function PjmForecasts({
         formatter: fmtSignedMw,
         swatch: "#94a3b8",
         isDelta: true,
+        tone: "base" as const,
       },
-    ] as const;
+    ].map((series) => ({
+      ...series,
+      ...loadCompareValueStats(series.valueKey),
+    }));
 
     return (
       <div className="rounded-md border border-gray-800 bg-gray-950/30">
@@ -1208,10 +1229,16 @@ export default function PjmForecasts({
           </p>
         </div>
         <div className="max-h-[48vh] overflow-auto">
-          <table className="w-max table-auto border-separate border-spacing-0 text-[11px]">
+          <table className="w-full min-w-[1520px] table-fixed border-separate border-spacing-0 text-[11px]">
+            <colgroup>
+              <col className="w-[128px]" />
+              {Array.from({ length: 24 }, (_, hour) => (
+                <col key={hour} className="w-[58px]" />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-gray-950 text-gray-500">
               <tr>
-                <th className="sticky left-0 z-30 min-w-28 border-r border-gray-700 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                <th className="sticky left-0 z-30 border-r border-gray-700 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                   Series
                 </th>
                 {Array.from({ length: 24 }, (_, hour) => (
@@ -1251,12 +1278,16 @@ export default function PjmForecasts({
                             ? "text-emerald-200"
                             : "text-gray-400"
                         : "text-gray-300";
+                    const cellStyle = series.isDelta
+                      ? compareDeltaCellStyle(value, series.absBound)
+                      : compareLevelCellStyle(value, series.min, series.max, series.tone);
                     return (
                       <td
                         key={hour}
                         className={`border-t px-2 py-1.5 text-right tabular-nums ${signedClass} ${
                           seriesIndex === 0 ? "border-gray-600" : "border-gray-800"
                         } ${forecastPopupHourDividerClass(hour)}`}
+                        style={cellStyle}
                       >
                         {series.formatter(value)}
                       </td>

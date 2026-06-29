@@ -71,6 +71,38 @@ export function deltaCellStyle(value: number | null, bound: number): CSSProperti
   };
 }
 
+export function compareLevelCellStyle(
+  value: number | null,
+  min: number,
+  max: number,
+  tone: "base" | "compare",
+): CSSProperties | undefined {
+  if (value === null || max === min) return undefined;
+  const ratio = Math.min(Math.max((value - min) / (max - min), 0), 1);
+  const alpha = 0.08 + ratio * 0.22;
+  const [r, g, b] = tone === "base" ? [96, 165, 250] : [251, 146, 60];
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    boxShadow: `inset 0 -1px 0 rgba(${r}, ${g}, ${b}, ${(alpha + 0.1).toFixed(2)})`,
+    color: "#f8fafc",
+  };
+}
+
+export function compareDeltaCellStyle(
+  value: number | null,
+  bound: number,
+): CSSProperties | undefined {
+  if (value === null || bound <= 0) return undefined;
+  const ratio = Math.min(Math.abs(value) / bound, 1);
+  const alpha = 0.08 + ratio * 0.3;
+  const [r, g, b] =
+    value > 0 ? [248, 113, 113] : value < 0 ? [52, 211, 153] : [148, 163, 184];
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    color: "#f8fafc",
+  };
+}
+
 export const FORECAST_EXPLORER_TABLE_CLASS =
   "w-max table-auto border-collapse bg-[#0d1119] text-[11px] text-gray-200";
 export const FORECAST_EXPLORER_ROW_HEADER_COL_CLASS = "w-[150px]";

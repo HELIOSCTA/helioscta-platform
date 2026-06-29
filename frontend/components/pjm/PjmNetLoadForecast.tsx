@@ -24,6 +24,8 @@ import {
   FORECAST_POPUP_TABLE_CLASS,
   ForecastHeatmapToggle,
   ForecastPopupColGroup,
+  compareDeltaCellStyle,
+  compareLevelCellStyle,
   deltaCellStyle,
   forecastPopupColCount,
   forecastPopupHourDividerClass,
@@ -1249,6 +1251,19 @@ export default function PjmNetLoadForecast({
     const deltaKey = compareRampingEnabled ? "rampDelta" : "delta";
     const formatBaseValue = compareRampingEnabled ? fmtSignedMw : fmtMw;
     const valueUnit = compareRampingEnabled ? "MW/hr" : "MW";
+    const compareValueStats = (rows: Array<Record<string, number | null>>, valueKey: string) => {
+      const values = rows
+        .map((row) => row[valueKey])
+        .filter((value): value is number => typeof value === "number");
+      const absBound = values.length
+        ? Math.max(...values.map((value) => Math.abs(value)))
+        : 0;
+      return {
+        min: values.length ? Math.min(...values) : 0,
+        max: values.length ? Math.max(...values) : 0,
+        absBound,
+      };
+    };
 
     return (
       <div className="mt-3 rounded-md border border-gray-800 bg-gray-950/30">
@@ -1259,13 +1274,20 @@ export default function PjmNetLoadForecast({
           </p>
         </div>
         <div className="max-h-[52vh] overflow-auto">
-          <table className="w-max table-auto border-separate border-spacing-0 text-[11px]">
+          <table className="w-full min-w-[1600px] table-fixed border-separate border-spacing-0 text-[11px]">
+            <colgroup>
+              <col className="w-[96px]" />
+              <col className="w-[116px]" />
+              {Array.from({ length: 24 }, (_, hour) => (
+                <col key={hour} className="w-[58px]" />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-20 bg-gray-950 text-gray-500">
               <tr>
-                <th className="sticky left-0 z-30 min-w-24 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                <th className="sticky left-0 z-30 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                   Component
                 </th>
-                <th className="sticky left-24 z-30 min-w-28 border-r border-gray-700 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                <th className="sticky left-24 z-30 border-r border-gray-700 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                   Series
                 </th>
                 {Array.from({ length: 24 }, (_, hour) => (
@@ -1291,6 +1313,7 @@ export default function PjmNetLoadForecast({
                     valueKey: baseKey,
                     isDelta: false,
                     swatch: COMPARE_BASE_COLOR,
+                    tone: "base" as const,
                   },
                   {
                     key: "compare",
@@ -1299,6 +1322,7 @@ export default function PjmNetLoadForecast({
                     valueKey: compareKey,
                     isDelta: false,
                     swatch: COMPARE_TARGET_COLOR,
+                    tone: "compare" as const,
                   },
                   {
                     key: "delta",
@@ -1307,8 +1331,12 @@ export default function PjmNetLoadForecast({
                     valueKey: deltaKey,
                     isDelta: true,
                     swatch: "#94a3b8",
+                    tone: "base" as const,
                   },
-                ] as const;
+                ].map((series) => ({
+                  ...series,
+                  ...compareValueStats(rows, series.valueKey),
+                }));
 
                 return seriesRows.map((series, seriesIndex) => (
                   <tr
@@ -1351,12 +1379,16 @@ export default function PjmNetLoadForecast({
                               ? "text-emerald-200"
                               : "text-gray-400"
                           : "text-gray-300";
+                      const cellStyle = series.isDelta
+                        ? compareDeltaCellStyle(value, series.absBound)
+                        : compareLevelCellStyle(value, series.min, series.max, series.tone);
                       return (
                         <td
                           key={hour}
                           className={`border-t px-2 py-1.5 text-right tabular-nums ${signedClass} ${
                             seriesIndex === 0 ? "border-gray-600" : "border-gray-800"
                           } ${forecastPopupHourDividerClass(hour)}`}
+                          style={cellStyle}
                         >
                           {series.formatter(value)}
                         </td>
