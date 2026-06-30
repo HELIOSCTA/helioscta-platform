@@ -898,7 +898,7 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 27 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `load_frcstd_7_day`, `hrl_dmd_bids`, `gen_outages_by_type`, and the four
   Operations Summary feeds were promoted to dedicated timers.
@@ -910,6 +910,8 @@ FROM isone.seven_day_solar_forecast;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Initial deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
 - Latest `gen_by_fuel` runtime commit: `88ed50a21270baf9da839fbe7afb17456bb3e2bb`.
+- Latest `rt_and_self_ecomax` runtime commit:
+  `e1ba0b8e9fd64a3b3bad456921c6f07e7dc03ab0`.
 - Deployed by: Aidan Keaveny via Codex.
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
@@ -930,6 +932,19 @@ FROM isone.seven_day_solar_forecast;
   `backend.scrapes.power.pjm.gen_by_fuel` exited `status=0/SUCCESS` at
   `2026-06-30 14:12 UTC`. The `helios-pjm-data-miner-batch.timer` remained
   enabled with next run observed at `2026-07-01 04:31:14 UTC`.
+- Runtime update: `rt_and_self_ecomax` was promoted into the shared batch on
+  `2026-06-30`. Production table and index operator SQL were applied, and an
+  initial VM scrape populated `pjm.rt_and_self_ecomax` with `48` rows for
+  `2026-06-27 00:00` through `2026-06-28 23:00` EPT. The source returned no
+  rows yet for the `2026-06-29` and `2026-06-30` EPT windows during the
+  `2026-06-30 14:51 UTC` smoke run.
+- VM verification: `/opt/helioscta-platform` fast-forwarded to `e1ba0b8` on
+  `2026-06-30`; a transient systemd run of
+  `backend.scrapes.power.pjm.rt_and_self_ecomax` exited `status=0/SUCCESS` at
+  `2026-06-30 14:51 UTC`. Read-only verification found `48` table rows, zero
+  duplicate `datetime_beginning_utc` keys, and `4` successful
+  `ops.api_fetch_log` rows for run ID
+  `8bd9992a-8c62-48bb-8ea4-f8cfd9df8a66`.
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-da-hrl-lmps.timer` and
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
