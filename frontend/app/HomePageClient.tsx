@@ -12,6 +12,7 @@ import PjmForecasts, {
   type ForecastType,
   type PjmForecastsFreshnessSummary,
 } from "@/components/pjm/PjmForecasts";
+import PjmHistoricalSettlements from "@/components/pjm/PjmHistoricalSettlements";
 import PjmLoadGrowth, {
   type PjmLoadGrowthFreshnessSummary,
 } from "@/components/pjm/PjmLoadGrowth";
@@ -118,6 +119,9 @@ function parseInitialSection(
   value: string | null,
   showLocalDevFeatures: boolean,
 ): ActiveSection {
+  if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
+    return "pjm-historical-settlements";
+  }
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
@@ -131,7 +135,6 @@ function parseInitialSection(
   ) {
     return "pjm-price-distributions";
   }
-  if (value === "pjm-term-bible") return "pjm-term-bible";
   if (value === "pjm-ops-summary") return "pjm-ops-summary";
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
@@ -239,6 +242,13 @@ export default function HomePageClient({
         footer: "Price Analytics | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
+    if (activeSection === "pjm-historical-settlements") {
+      return {
+        title: "Historical Settlements",
+        subtitle: "Actual hourly power settlements by on-peak, off-peak, and hour ending.",
+        footer: "Historical Settlements | Source: PJM hourly LMPs / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "pjm-term-bible") {
       return {
         title: "Term Bible",
@@ -304,6 +314,8 @@ export default function HomePageClient({
     };
   }, [activeSection, showLocalDevFeatures]);
 
+  const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
+
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
       <Sidebar
@@ -312,15 +324,26 @@ export default function HomePageClient({
         showLocalDevFeatures={showLocalDevFeatures}
       />
 
-      <div className="flex-1 overflow-auto">
-        <main className="px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <div className="min-w-0 flex-1 overflow-auto">
+        <main className={`w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${isHistoricalSettlements ? "mx-auto max-w-full md:max-w-7xl" : ""}`}>
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
-            <div>
+            <div className="min-w-0 max-w-full">
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
-                HeliosCTA
+                {isHistoricalSettlements ? "Helios CTA | Power Markets" : "HeliosCTA"}
               </p>
               <h1 className="text-xl font-bold text-gray-100 sm:text-3xl">{meta.title}</h1>
-              <p className="mt-2 text-sm text-gray-500">{meta.subtitle}</p>
+              <p
+                className="mt-2 max-w-full whitespace-normal break-words text-sm text-gray-500 sm:max-w-3xl"
+              >
+                {isHistoricalSettlements ? (
+                  <>
+                    <span className="md:hidden">Actual hourly power settlements.</span>
+                    <span className="hidden md:inline">{meta.subtitle}</span>
+                  </>
+                ) : (
+                  meta.subtitle
+                )}
+              </p>
             </div>
 
             {activeSection === "pjm-da-lmps" && (
@@ -534,6 +557,11 @@ export default function HomePageClient({
             <PjmPriceDurationCurves
               refreshToken={pjmPriceDurationRefreshToken}
               onFreshnessChange={setPjmPriceDurationFreshness}
+            />
+          )}
+          {activeSection === "pjm-historical-settlements" && (
+            <PjmHistoricalSettlements
+              initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
             />
           )}
           {activeSection === "pjm-term-bible" && (

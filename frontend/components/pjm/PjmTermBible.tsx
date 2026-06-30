@@ -11,15 +11,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type LmpProduct = "da" | "rt";
-type RtLmpSource = "verified" | "unverified";
-type LmpComponent = "total" | "energy" | "congestion" | "loss";
-type TermPeriod = "onpeak" | "offpeak" | "flat";
-type TermBibleMode = "single" | "spread";
+export type LmpProduct = "da" | "rt";
+export type RtLmpSource = "verified" | "unverified";
+export type LmpComponent = "total" | "energy" | "congestion" | "loss";
+export type TermPeriod = "5x16" | "7x16" | "7x8" | "wrap" | "7x24";
+export type TermBibleMode = "single" | "spread";
 type DailyEditMap = Record<string, number>;
 
 interface MonthlyPoint {
@@ -105,7 +104,6 @@ interface DailySelectionStats {
 }
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_LOOKBACK_YEARS = 5;
 const DEFAULT_VISIBLE_CHART_YEARS = 2;
 const HUBS = [
   "WESTERN HUB",
@@ -159,7 +157,20 @@ const MARKET_OPTIONS = [
   { value: "da", label: "DA" },
 ] as const;
 
-type MarketOption = (typeof MARKET_OPTIONS)[number]["value"];
+export type MarketOption = (typeof MARKET_OPTIONS)[number]["value"];
+
+export interface PjmTermBibleExternalFilters {
+  mode: TermBibleMode;
+  month: number;
+  startYear: number;
+  endYear: number;
+  hub: string;
+  spreadFromHub: string;
+  spreadToHub: string;
+  market: MarketOption;
+  period: TermPeriod;
+  component?: LmpComponent;
+}
 
 const LMP_COMPONENTS: Array<{ key: LmpComponent; label: string; color: string }> = [
   { key: "total", label: "Total", color: "#e5e7eb" },
@@ -176,15 +187,19 @@ const LMP_COMPONENT_LABELS: Record<LmpComponent, string> = {
 };
 
 const PERIOD_LABELS: Record<TermPeriod, string> = {
-  onpeak: "OnPeak",
-  offpeak: "OffPeak",
-  flat: "Flat",
+  "5x16": "5x16",
+  "7x16": "7x16",
+  "7x8": "7x8",
+  wrap: "Wrap",
+  "7x24": "7x24",
 };
 
 const TERM_PERIOD_OPTIONS: Array<{ value: TermPeriod; label: string }> = [
-  { value: "onpeak", label: PERIOD_LABELS.onpeak },
-  { value: "offpeak", label: PERIOD_LABELS.offpeak },
-  { value: "flat", label: PERIOD_LABELS.flat },
+  { value: "5x16", label: "5x16 - Business-day HE8-23" },
+  { value: "7x16", label: "7x16 - All days HE8-23" },
+  { value: "7x8", label: "7x8 - All days HE1-7, HE24" },
+  { value: "wrap", label: "Wrap - 7x8 plus weekend HE8-23" },
+  { value: "7x24", label: "7x24 - All hours" },
 ];
 
 const YEAR_COLORS = [
@@ -206,6 +221,18 @@ function todayYear(): number {
 
 function currentMonth(): number {
   return new Date().getMonth() + 1;
+}
+
+function normalizeHub(value: string): HubName {
+  return HUBS.find((hub) => hub === value) ?? "WESTERN HUB";
+}
+
+function productFromMarket(market: MarketOption | undefined): LmpProduct {
+  return market === "da" ? "da" : "rt";
+}
+
+function rtSourceFromMarket(market: MarketOption | undefined): RtLmpSource {
+  return market === "rt-unverified" ? "unverified" : "verified";
 }
 
 function toNumber(value: number | string | null | undefined): number | null {
@@ -481,7 +508,10 @@ function buildDailyHeatValues(rows: DailyValue[]): Map<number, number[]> {
   return byYear;
 }
 
-function buildDailyTableCsv(data: PjmTermBiblePayload): string {
+function buildDailyTableCsv(
+  data: PjmTermBiblePayload,
+  { includeAverageRow = true }: { includeAverageRow?: boolean } = {},
+): string {
   const { years, byDay } = buildDailyMaps(data.dailyValues);
   const rows = [...byDay.keys()].sort();
   const header = ["Date", ...years.map(String)];
@@ -497,17 +527,19 @@ function buildDailyTableCsv(data: PjmTermBiblePayload): string {
     ]);
   });
 
-  csvRows.push([
-    "Avg",
-    ...years.map((year) => {
-      const value = avgDailyValue(
-        rows
-          .map((mmDd) => byDay.get(mmDd)?.get(year) ?? null)
-          .filter((point): point is DailyValue => Boolean(point)),
-      );
-      return value === null ? "" : value.toFixed(2);
-    }),
-  ]);
+  if (includeAverageRow) {
+    csvRows.push([
+      "Avg",
+      ...years.map((year) => {
+        const value = avgDailyValue(
+          rows
+            .map((mmDd) => byDay.get(mmDd)?.get(year) ?? null)
+            .filter((point): point is DailyValue => Boolean(point)),
+        );
+        return value === null ? "" : value.toFixed(2);
+      }),
+    ]);
+  }
 
   return csvRows.map((row) => row.map(csvCell).join(",")).join("\r\n");
 }
@@ -817,10 +849,35 @@ function TableHeatmapToggle({
   );
 }
 
+function TermTableSection({
+  title,
+  subtitle,
+  action,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  action?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-gray-800 bg-[#10151d] shadow-xl shadow-black/20">
+      <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-[13px] font-semibold uppercase tracking-[0.24em] text-gray-100">{title}</h2>
+          {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        {action && <div className="flex shrink-0 items-center justify-end gap-2">{action}</div>}
+      </div>
+      <div className="overflow-x-auto">{children}</div>
+    </section>
+  );
+}
+
 function HeaderCell({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
     <th
-      className={`border-b border-gray-800 bg-gray-950 px-3 py-2 text-right text-[10px] font-bold uppercase tracking-wider text-gray-500 ${className}`}
+      className={`border border-gray-800 bg-[#0a0f16] px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500 ${className}`}
     >
       {children}
     </th>
@@ -868,7 +925,7 @@ function ValueCell({
       onClick={editing ? undefined : onClick}
       onDoubleClick={onDoubleClick}
       onKeyDown={editing ? undefined : onKeyDown}
-      className={`px-3 py-2 text-right tabular-nums ${
+      className={`border border-gray-900 px-3 py-2 text-right tabular-nums ${
         numeric === null ? "text-gray-700" : "text-gray-100"
       } ${
         selected ? "bg-sky-500/20 text-sky-100 outline outline-1 -outline-offset-1 outline-sky-400/60" : ""
@@ -915,10 +972,12 @@ function TermSummaryTable({
   data,
   heatmapEnabled,
   action,
+  includeSummaryStats = true,
 }: {
   data: PjmTermBiblePayload;
   heatmapEnabled: boolean;
   action?: React.ReactNode;
+  includeSummaryStats?: boolean;
 }) {
   const monthlyByYear = useMemo(() => buildMonthlyMap(data.monthly), [data.monthly]);
   const years = useMemo(() => [...monthlyByYear.keys()].sort((a, b) => a - b), [monthlyByYear]);
@@ -941,31 +1000,34 @@ function TermSummaryTable({
   );
 
   return (
-    <DataTableShell
+    <TermTableSection
       title={data.spread ? "Monthly Hub Spread" : "Monthly Term Bible"}
       subtitle={`${data.pnodeName} | ${PRODUCT_LABELS[data.product]} ${PERIOD_LABELS[data.period]} | ${LMP_COMPONENT_LABELS[data.component]}`}
       action={action}
-      bodyClassName="bg-[#0d1119]"
     >
-      <table className="w-full min-w-[1120px] border-collapse text-xs text-gray-200">
+      <table className="w-full min-w-[1120px] border-collapse bg-[#0d1118] text-sm text-gray-100">
         <thead>
           <tr>
             <HeaderCell className="sticky left-0 z-20 text-left">Year</HeaderCell>
             {MONTHS.map((month) => (
               <HeaderCell key={month.number}>{month.label}</HeaderCell>
             ))}
-            <HeaderCell>Avg</HeaderCell>
-            <HeaderCell>Min</HeaderCell>
-            <HeaderCell>Max</HeaderCell>
+            {includeSummaryStats && (
+              <>
+                <HeaderCell>Avg</HeaderCell>
+                <HeaderCell>Min</HeaderCell>
+                <HeaderCell>Max</HeaderCell>
+              </>
+            )}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-800">
+        <tbody>
           {years.map((year) => {
             const monthMap = monthlyByYear.get(year);
             const yearly = yearlyStatsByYear.get(year);
             return (
               <tr key={year} className="hover:bg-gray-900/50">
-                <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-semibold text-gray-200">
+                <td className="sticky left-0 z-10 border border-gray-900 bg-[#0d1118] px-3 py-2 font-semibold text-gray-100">
                   {year}
                 </td>
                 {MONTHS.map((month) => {
@@ -981,47 +1043,53 @@ function TermSummaryTable({
                     />
                   );
                 })}
-                <ValueCell value={yearly?.mean} className="border-l border-gray-800 font-semibold" />
-                <ValueCell value={yearly?.min} />
-                <ValueCell value={yearly?.max} />
+                {includeSummaryStats && (
+                  <>
+                    <ValueCell value={yearly?.mean} className="font-semibold" />
+                    <ValueCell value={yearly?.min} />
+                    <ValueCell value={yearly?.max} />
+                  </>
+                )}
               </tr>
             );
           })}
-          {(["Mean", "Min", "Max"] as const).map((stat) => {
-            const monthMap = statsByName.get(stat);
-            return (
-              <tr key={stat} className="bg-gray-950/50 font-semibold hover:bg-gray-900/60">
-                <td className="sticky left-0 z-10 bg-gray-950 px-3 py-2 text-gray-200">{stat}</td>
-                {MONTHS.map((month) => {
-                  const point = monthMap?.get(month.number);
-                  const value = toNumber(point?.value);
-                  return (
-                    <ValueCell
-                      key={month.number}
-                      value={point?.value}
-                      style={
-                        heatmapEnabled && stat === "Mean"
-                          ? heatStyleFromValues(value, monthlyStatsHeatValues)
-                          : undefined
-                      }
-                    />
-                  );
-                })}
-                <td colSpan={3} className="border-l border-gray-800 px-3 py-2 text-right text-gray-700">
-                  --
-                </td>
-              </tr>
-            );
-          })}
+          {includeSummaryStats &&
+            (["Mean", "Min", "Max"] as const).map((stat) => {
+              const monthMap = statsByName.get(stat);
+              return (
+                <tr key={stat} className="bg-gray-950/50 font-semibold hover:bg-gray-900/60">
+                  <td className="sticky left-0 z-10 border border-gray-900 bg-[#0a0f16] px-3 py-2 text-gray-100">{stat}</td>
+                  {MONTHS.map((month) => {
+                    const point = monthMap?.get(month.number);
+                    const value = toNumber(point?.value);
+                    return (
+                      <ValueCell
+                        key={month.number}
+                        value={point?.value}
+                        style={
+                          heatmapEnabled && stat === "Mean"
+                            ? heatStyleFromValues(value, monthlyStatsHeatValues)
+                            : undefined
+                        }
+                      />
+                    );
+                  })}
+                  <td colSpan={3} className="border border-gray-900 px-3 py-2 text-right text-gray-700">
+                    --
+                  </td>
+                </tr>
+              );
+            })}
         </tbody>
       </table>
-    </DataTableShell>
+    </TermTableSection>
   );
 }
 
 function DailyValuesTable({
   data,
   heatmapEnabled,
+  includeAverageRow = true,
   selectedCells,
   lastSelectedCell,
   dailyEdits,
@@ -1037,6 +1105,7 @@ function DailyValuesTable({
 }: {
   data: PjmTermBiblePayload;
   heatmapEnabled: boolean;
+  includeAverageRow?: boolean;
   selectedCells: Set<string>;
   lastSelectedCell: string | null;
   dailyEdits: DailyEditMap;
@@ -1101,13 +1170,12 @@ function DailyValuesTable({
   };
 
   return (
-    <DataTableShell
+    <TermTableSection
       title={`${monthLabel(data.detailMonth)} Daily ${valueUnitLabel(data)}`}
       subtitle={`${PERIOD_LABELS[data.period]} ${LMP_COMPONENT_LABELS[data.component]} | ${data.metadata.holidayAdjustment}`}
       action={action}
-      bodyClassName="bg-[#0d1119]"
     >
-      <table className="w-full min-w-[620px] border-collapse text-xs text-gray-200">
+      <table className="w-full min-w-[620px] border-collapse bg-[#0d1118] text-sm text-gray-100">
         <thead>
           <tr>
             <HeaderCell className="sticky left-0 z-20 text-left">Date</HeaderCell>
@@ -1116,10 +1184,10 @@ function DailyValuesTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-800">
+        <tbody>
           {rows.map((mmDd) => (
             <tr key={mmDd} className="hover:bg-gray-900/50">
-              <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-semibold text-gray-300">
+              <td className="sticky left-0 z-10 border border-gray-900 bg-[#0d1118] px-3 py-2 font-semibold text-gray-100">
                 {mmDd}
               </td>
               {years.map((year) => {
@@ -1166,24 +1234,26 @@ function DailyValuesTable({
               })}
             </tr>
           ))}
-          <tr className="bg-gray-950/50 font-semibold hover:bg-gray-900/60">
-            <td className="sticky left-0 z-10 bg-gray-950 px-3 py-2 text-gray-200">Avg</td>
-            {years.map((year) => {
-              const value = yearAverages.get(year) ?? null;
-              return (
-                <ValueCell
-                  key={year}
-                  value={value}
-                  style={
-                    heatmapEnabled ? heatStyleFromValues(value, yearAverageHeatValues) : undefined
-                  }
-                />
-              );
-            })}
-          </tr>
+          {includeAverageRow && (
+            <tr className="bg-gray-950/50 font-semibold hover:bg-gray-900/60">
+              <td className="sticky left-0 z-10 border border-gray-900 bg-[#0a0f16] px-3 py-2 text-gray-100">Avg</td>
+              {years.map((year) => {
+                const value = yearAverages.get(year) ?? null;
+                return (
+                  <ValueCell
+                    key={year}
+                    value={value}
+                    style={
+                      heatmapEnabled ? heatStyleFromValues(value, yearAverageHeatValues) : undefined
+                    }
+                  />
+                );
+              })}
+            </tr>
+          )}
         </tbody>
       </table>
-    </DataTableShell>
+    </TermTableSection>
   );
 }
 
@@ -1314,21 +1384,31 @@ function DailyChart({
 export default function PjmTermBible({
   refreshToken = 0,
   onFreshnessChange,
+  tableOnly = false,
+  hideControls = false,
+  externalFilters,
 }: {
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmTermBibleFreshnessSummary) => void;
+  tableOnly?: boolean;
+  hideControls?: boolean;
+  externalFilters?: PjmTermBibleExternalFilters;
 }) {
-  const [mode, setMode] = useState<TermBibleMode>("single");
-  const [month, setMonth] = useState(currentMonth());
-  const [startYear, setStartYear] = useState(todayYear() - DEFAULT_LOOKBACK_YEARS + 1);
-  const [endYear, setEndYear] = useState(todayYear());
-  const [hub, setHub] = useState<HubName>("WESTERN HUB");
-  const [spreadFromHub, setSpreadFromHub] = useState<HubName>("WESTERN HUB");
-  const [spreadToHub, setSpreadToHub] = useState<HubName>("EASTERN HUB");
-  const [product, setProduct] = useState<LmpProduct>("rt");
-  const [rtSource, setRtSource] = useState<RtLmpSource>("verified");
-  const [period, setPeriod] = useState<TermPeriod>("onpeak");
-  const [component, setComponent] = useState<LmpComponent>("total");
+  const [mode, setMode] = useState<TermBibleMode>(externalFilters?.mode ?? "single");
+  const [month, setMonth] = useState(externalFilters?.month ?? currentMonth());
+  const [startYear, setStartYear] = useState(externalFilters?.startYear ?? 2020);
+  const [endYear, setEndYear] = useState(externalFilters?.endYear ?? todayYear());
+  const [hub, setHub] = useState<HubName>(normalizeHub(externalFilters?.hub ?? "WESTERN HUB"));
+  const [spreadFromHub, setSpreadFromHub] = useState<HubName>(
+    normalizeHub(externalFilters?.spreadFromHub ?? "WESTERN HUB"),
+  );
+  const [spreadToHub, setSpreadToHub] = useState<HubName>(
+    normalizeHub(externalFilters?.spreadToHub ?? "EASTERN HUB"),
+  );
+  const [product, setProduct] = useState<LmpProduct>(productFromMarket(externalFilters?.market));
+  const [rtSource, setRtSource] = useState<RtLmpSource>(rtSourceFromMarket(externalFilters?.market));
+  const [period, setPeriod] = useState<TermPeriod>(externalFilters?.period ?? "5x16");
+  const [component, setComponent] = useState<LmpComponent>(externalFilters?.component ?? "total");
   const [data, setData] = useState<PjmTermBiblePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1339,6 +1419,21 @@ export default function PjmTermBible({
   const [dailyEdits, setDailyEdits] = useState<DailyEditMap>({});
   const [editingDailyCell, setEditingDailyCell] = useState<string | null>(null);
   const [editingDailyDraft, setEditingDailyDraft] = useState("");
+
+  useEffect(() => {
+    if (!externalFilters) return;
+    setMode(externalFilters.mode);
+    setMonth(externalFilters.month);
+    setStartYear(externalFilters.startYear);
+    setEndYear(externalFilters.endYear);
+    setHub(normalizeHub(externalFilters.hub));
+    setSpreadFromHub(normalizeHub(externalFilters.spreadFromHub));
+    setSpreadToHub(normalizeHub(externalFilters.spreadToHub));
+    setProduct(productFromMarket(externalFilters.market));
+    setRtSource(rtSourceFromMarket(externalFilters.market));
+    setPeriod(externalFilters.period);
+    setComponent(externalFilters.component ?? "total");
+  }, [externalFilters]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1532,7 +1627,7 @@ export default function PjmTermBible({
           if (!editedData) return;
           downloadTextFile(
             `${dailyTableCsvFilename(editedData)}.csv`,
-            buildDailyTableCsv(editedData),
+            buildDailyTableCsv(editedData, { includeAverageRow: !tableOnly }),
             "text/csv;charset=utf-8",
           );
         }}
@@ -1587,6 +1682,7 @@ export default function PjmTermBible({
 
   return (
     <div className="space-y-4">
+      {!hideControls && (
       <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
         <div className="flex flex-wrap items-end gap-3">
           <SelectField
@@ -1705,9 +1801,9 @@ export default function PjmTermBible({
           <SelectField
             label="Strip"
             value={period}
-            valueText={PERIOD_LABELS[period]}
-            minCh={10}
-            maxCh={12}
+            valueText={TERM_PERIOD_OPTIONS.find((item) => item.value === period)?.label ?? PERIOD_LABELS[period]}
+            minCh={18}
+            maxCh={34}
             onChange={(value) => setPeriod(value as TermPeriod)}
           >
             {TERM_PERIOD_OPTIONS.map((item) => (
@@ -1742,6 +1838,7 @@ export default function PjmTermBible({
           )}
         </div>
       </section>
+      )}
 
       {loading && !data && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -1759,14 +1856,16 @@ export default function PjmTermBible({
           <TermSummaryTable
             data={editedData}
             heatmapEnabled={tableHeatmapEnabled}
+            includeSummaryStats={!tableOnly}
             action={renderTableHeatmapAction()}
           />
 
           {editedData.dailyValues.length > 0 ? (
-            <div className="grid items-start gap-4 2xl:grid-cols-[minmax(520px,0.9fr)_minmax(620px,1.1fr)]">
+            <div className={tableOnly ? "space-y-4" : "grid items-start gap-4 2xl:grid-cols-[minmax(520px,0.9fr)_minmax(620px,1.1fr)]"}>
               <DailyValuesTable
                 data={editedData}
                 heatmapEnabled={tableHeatmapEnabled}
+                includeAverageRow={!tableOnly}
                 selectedCells={selectedDailyCells}
                 lastSelectedCell={lastSelectedDailyCell}
                 dailyEdits={dailyEdits}
@@ -1780,32 +1879,34 @@ export default function PjmTermBible({
                 onEditCommit={commitDailyEdit}
                 onEditCancel={cancelDailyEdit}
               />
-              <PlotCard
-                title={`${monthLabel(editedData.detailMonth)} Daily ${valueUnitLabel(editedData)}`}
-                subtitle={termLabel}
-                series={plotSeries}
-                hiddenSeries={hiddenSeries}
-                onToggleSeries={(key) =>
-                  setHiddenSeries((current) => {
-                    const next = new Set(current);
-                    if (next.has(key)) next.delete(key);
-                    else next.add(key);
-                    return next;
-                  })
-                }
-                onShowAll={() => setHiddenSeries(new Set())}
-                onHideAll={() => setHiddenSeries(new Set(plotSeries.map((series) => series.key)))}
-                focusedChildren={
-                  <DailyChart
-                    data={editedData}
-                    hiddenSeries={hiddenSeries}
-                    valueLabel={valueUnitLabel(editedData)}
-                    focused
-                  />
-                }
-              >
-                <DailyChart data={editedData} hiddenSeries={hiddenSeries} valueLabel={valueUnitLabel(editedData)} />
-              </PlotCard>
+              {!tableOnly && (
+                <PlotCard
+                  title={`${monthLabel(editedData.detailMonth)} Daily ${valueUnitLabel(editedData)}`}
+                  subtitle={termLabel}
+                  series={plotSeries}
+                  hiddenSeries={hiddenSeries}
+                  onToggleSeries={(key) =>
+                    setHiddenSeries((current) => {
+                      const next = new Set(current);
+                      if (next.has(key)) next.delete(key);
+                      else next.add(key);
+                      return next;
+                    })
+                  }
+                  onShowAll={() => setHiddenSeries(new Set())}
+                  onHideAll={() => setHiddenSeries(new Set(plotSeries.map((series) => series.key)))}
+                  focusedChildren={
+                    <DailyChart
+                      data={editedData}
+                      hiddenSeries={hiddenSeries}
+                      valueLabel={valueUnitLabel(editedData)}
+                      focused
+                    />
+                  }
+                >
+                  <DailyChart data={editedData} hiddenSeries={hiddenSeries} valueLabel={valueUnitLabel(editedData)} />
+                </PlotCard>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border border-gray-800 bg-[#12141d] p-4 text-sm text-gray-400">

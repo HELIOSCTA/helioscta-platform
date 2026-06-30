@@ -43,7 +43,8 @@ GET /api/ops/readiness
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
-GET /api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpeak&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7
+GET /api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=5x16&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7
+GET /api/pjm-historical-settlements?view=single&location=WESTERN%20HUB&market=RT_VERIFIED&period=all&month=6&startYear=2020&endYear=2026&component=total
 GET /api/pjm-forecast-explorer
 GET /api/pjm-forecasts?area=RTO_COMBINED
 GET /api/pjm-forecast-differences?area=RTO_COMBINED&date=YYYY-MM-DD&lookbackHours=72
@@ -100,12 +101,14 @@ Unverified RT is keyed by `datetime_beginning_utc x pnode_name x type`.
 
 The route `GET /api/pjm-term-bible` accepts bounded params: `product=rt|da`,
 `rtSource=verified|unverified`, `hub`, `component=total|energy|congestion|loss`,
-`period=onpeak|offpeak|flat`, `month`, `startYear`, and `endYear`. The response
+`period=5x16|7x16|7x8|wrap|7x24`, `month`, `startYear`, and `endYear`. The response
 returns monthly values, monthly mean/min/max, yearly stats, and daily values for
-the selected detail month. `onpeak` is Monday-Friday HE8-23, `offpeak` is
-weekday HE1-7/HE24 plus weekend flat daily values, and no NERC holiday calendar
-is applied in this v1 production view. Hub spreads in the UI are derived
-client-side from two route payloads as `To Hub - From Hub`.
+the selected detail month. `5x16` is business-day HE8-23, `7x16` is all days
+HE8-23, `7x8` is all days HE1-7/HE24, `wrap` is 7x8 plus weekend HE8-23, and
+`7x24` is all hours. Legacy aliases `onpeak`, `offpeak`, and `flat` map to
+`5x16`, `wrap`, and `7x24`. No NERC holiday calendar is applied in this v1
+production view. Hub spreads in the UI are derived client-side from two route
+payloads as `To Hub - From Hub`.
 
 ## Local DEV PJM Price Duration Curves Source Contract
 
@@ -126,6 +129,40 @@ The route `GET /api/pjm-price-duration-curves` accepts bounded params:
 Each selected year's hourly prices are sorted descending. The x-axis is
 exceedance share, not chronological time. `weekday_onpeak` is Monday-Friday
 HE8-23 and does not exclude holidays in v1.
+
+## PJM Historical Settlements Source Contract
+
+The Historical Settlements view reads historical hourly PJM LMPs with
+`helios_readonly` from `pjm.da_hrl_lmps`, `pjm.rt_hrl_lmps`, and
+`pjm.rt_unverified_hrl_lmps`.
+
+Source system: PJM Data Miner 2 hourly LMP feeds.
+
+Promoted table grain:
+DA and verified RT are keyed by
+`datetime_beginning_utc x pnode_id x pnode_name x row_is_current x version_nbr`.
+Unverified RT is keyed by `datetime_beginning_utc x pnode_name x type`.
+
+The route `GET /api/pjm-historical-settlements` accepts bounded params:
+`view=single|spread`, `location`, `fromLocation`, `toLocation`,
+`market=RT_VERIFIED|RT_UNVERIFIED|DA|DART`, `period=all|5x16|7x16|7x8|wrap|7x24`,
+`month`, `startYear`, `endYear`, `component`, and `scarcityLimit`. It returns
+the selected strip average, HE1-HE24 hourly averages, and ranked scarcity hours
+with total, energy, congestion, and loss components. `RT` is accepted as a
+backward-compatible alias for `RT_VERIFIED`. Unverified RT energy is derived as
+total minus congestion minus loss. `DART` is derived as DA minus verified RT on
+matching `datetime_beginning_utc x pnode_name`. Spread view is computed as
+`toLocation - fromLocation` on matched hourly timestamps. The strip definitions
+match Term Bible: `5x16` business-day HE8-23, `7x16` all days HE8-23, `7x8` all
+days HE1-7/HE24, `wrap` 7x8 plus weekend HE8-23, and `7x24` all hours.
+Historical-only `all` returns all settlement strip rows and uses all hours for
+the hourly breakdown and scarcity table. No NERC holiday calendar is applied in
+this view.
+
+The Historical Settlements page also hosts Term Bible as a second tab. The
+embedded Term Bible view reuses `GET /api/pjm-term-bible`, renders tables only,
+and suppresses the daily plot. Legacy links with `?section=pjm-term-bible` open
+the Historical Settlements page on the Term Bible tab.
 
 ## PJM Daily Load Growth Source Contract
 

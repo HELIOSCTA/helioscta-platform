@@ -38,7 +38,7 @@ type HubName = (typeof REPORT_HUBS)[number];
 type LmpProduct = "da" | "rt";
 type RtLmpSource = "verified" | "unverified";
 type LmpComponent = "total" | "energy" | "congestion" | "loss";
-type TermPeriod = "onpeak" | "offpeak" | "flat";
+type TermPeriod = "5x16" | "7x16" | "7x8" | "wrap" | "7x24";
 type SourceTable = "pjm.da_hrl_lmps" | "pjm.rt_hrl_lmps" | "pjm.rt_unverified_hrl_lmps";
 
 interface PayloadRow {
@@ -85,8 +85,12 @@ function parseComponent(value: string | null): LmpComponent {
 }
 
 function parsePeriod(value: string | null): TermPeriod {
-  if (value === "offpeak" || value === "flat") return value;
-  return "onpeak";
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "7x16" || normalized === "sevenbysixteen") return "7x16";
+  if (normalized === "7x8" || normalized === "sevenbyeight") return "7x8";
+  if (normalized === "wrap" || normalized === "offpeak" || normalized === "off-peak") return "wrap";
+  if (normalized === "7x24" || normalized === "flat" || normalized === "sevenbytwentyfour") return "7x24";
+  return "5x16";
 }
 
 function parseMonth(value: string | null): number {
@@ -197,8 +201,10 @@ function sourceHourlySql(
 }
 
 function periodDefinition(period: TermPeriod): string {
-  if (period === "onpeak") return "Weekday HE8-23; no holiday adjustment";
-  if (period === "offpeak") return "Weekday HE1-7/HE24 plus weekend flat daily value; no holiday adjustment";
+  if (period === "5x16") return "Business-day HE8-23; no holiday adjustment";
+  if (period === "7x16") return "All days HE8-23; no holiday adjustment";
+  if (period === "7x8") return "All days HE1-7 and HE24; no holiday adjustment";
+  if (period === "wrap") return "7x8 plus weekend HE8-23; no holiday adjustment";
   return "Flat daily average across all available hours";
 }
 
@@ -223,11 +229,18 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         AVG(source_hourly.value) AS flat_value,
         AVG(source_hourly.value) FILTER (
           WHERE EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 BETWEEN 8 AND 23
-        ) AS raw_onpeak_value,
+        ) AS raw_7x16_value,
+        COUNT(source_hourly.value) FILTER (
+          WHERE EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 BETWEEN 8 AND 23
+        ) AS raw_7x16_hour_count,
         AVG(source_hourly.value) FILTER (
           WHERE EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 < 8
              OR EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 > 23
-        ) AS raw_offpeak_value,
+        ) AS raw_7x8_value,
+        COUNT(source_hourly.value) FILTER (
+          WHERE EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 < 8
+             OR EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 > 23
+        ) AS raw_7x8_hour_count,
         COUNT(source_hourly.value) AS hourly_count,
         MAX(source_hourly.as_of) AS as_of
       FROM source_hourly
@@ -240,11 +253,19 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         daily.month,
         daily.mm_dd,
         daily.is_weekend,
-        daily.hourly_count,
+        CASE params.period
+          WHEN '5x16' THEN CASE WHEN NOT daily.is_weekend THEN daily.raw_7x16_hour_count ELSE 0 END
+          WHEN '7x16' THEN daily.raw_7x16_hour_count
+          WHEN '7x8' THEN daily.raw_7x8_hour_count
+          WHEN 'wrap' THEN CASE WHEN daily.is_weekend THEN daily.hourly_count ELSE daily.raw_7x8_hour_count END
+          ELSE daily.hourly_count
+        END AS hourly_count,
         daily.as_of,
         CASE params.period
-          WHEN 'onpeak' THEN CASE WHEN NOT daily.is_weekend THEN daily.raw_onpeak_value END
-          WHEN 'offpeak' THEN CASE WHEN daily.is_weekend THEN daily.flat_value ELSE daily.raw_offpeak_value END
+          WHEN '5x16' THEN CASE WHEN NOT daily.is_weekend THEN daily.raw_7x16_value END
+          WHEN '7x16' THEN daily.raw_7x16_value
+          WHEN '7x8' THEN daily.raw_7x8_value
+          WHEN 'wrap' THEN CASE WHEN daily.is_weekend THEN daily.flat_value ELSE daily.raw_7x8_value END
           ELSE daily.flat_value
         END AS term_value
       FROM daily
