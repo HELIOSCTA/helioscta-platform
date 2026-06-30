@@ -951,9 +951,10 @@ FROM isone.seven_day_solar_forecast;
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
   workflows emit data-readiness events. `helios-pjm-rt-hrl-lmps.timer` runs
   later because verified hourly RT LMPs post after the early support batch.
-  `helios-pjm-rt-unverified-hrl-lmps.timer` runs hourly because unverified RT
-  hourly prices update throughout the operating day and the source retains only
-  30 days.
+  `helios-pjm-hourly-bucket.timer` runs hourly because unverified RT hourly
+  prices update throughout the operating day and the source retains only 30
+  days; this bucket is the extension point for other PJM feeds with the same
+  cadence and safe rerun shape.
   `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
   source posts hourly and drives the forecast dashboard.
   `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
@@ -964,36 +965,33 @@ FROM isone.seven_day_solar_forecast;
   `helios-pjm-ops-sum.timer` runs after the source's 05:00-08:00 EPT refresh
   window because these feeds are frontend dashboard context.
 
-## helios-pjm-rt-unverified-hrl-lmps
+## helios-pjm-hourly-bucket
 
-- Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual VM
-  smoke run succeeded on `2026-06-30 16:53 UTC`.
-- Runtime commit: `19a2c1a` (later deployment-register commits are
-  documentation-only).
-- Workflow: PJM unverified hourly Real-Time LMP refresh.
+- Status: promoted for VM switch from
+  `helios-pjm-rt-unverified-hrl-lmps.timer`.
+- Workflow: PJM hourly scrape bucket.
 - Runtime module:
-  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`.
-- Lower-level scrape module:
-  `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
-- Source system: PJM Data Miner 2 `rt_unverified_hrl_lmps`.
-- Destination table: `pjm.rt_unverified_hrl_lmps`.
-- Source grain:
-  `datetime_beginning_utc x pnode_name x type`.
+  `backend.orchestration.power.pjm.hourly_bucket`.
+- Initial bucket member:
+  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, which calls lower
+  level scrape module `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
+- Initial source system: PJM Data Miner 2 `rt_unverified_hrl_lmps`.
+- Initial destination table: `pjm.rt_unverified_hrl_lmps`.
+- Initial source grain: `datetime_beginning_utc x pnode_name x type`.
 - API telemetry: `ops.api_fetch_log`.
 - Unit files:
-  - `infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.service`
-  - `infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.timer`
+  - `infrastructure/systemd/helios-pjm-hourly-bucket.service`
+  - `infrastructure/systemd/helios-pjm-hourly-bucket.timer`
 - Schedule: hourly at minute `15` UTC with `Persistent=false` and
   `RandomizedDelaySec=2min`.
-- VM smoke result: service upserted `1,476` rows across the 2026-06-29 and
-  2026-06-30 market dates; latest `ops.api_fetch_log` rows were `success`
-  with `run_mode=scheduled_hourly` and scheduler
+- Retired units:
+  `helios-pjm-rt-unverified-hrl-lmps.service` and
   `helios-pjm-rt-unverified-hrl-lmps.timer`.
 - Timer behavior: missed hourly starts do not replay after VM downtime; the
-  orchestration pulls a rolling recent window and the nightly price repair
-  covers recent posted market dates.
+  bucket should contain only feeds that pull a rolling recent window or current
+  snapshot. The nightly price repair covers recent posted LMP market dates.
 - Overlap protection: service uses `/usr/bin/flock` with
-  `/tmp/helios-pjm-rt-unverified-hrl-lmps.lock`.
+  `/tmp/helios-pjm-hourly-bucket.lock`.
 - Safe rerun story: upsert on
   `(datetime_beginning_utc, pnode_name, type)`.
 

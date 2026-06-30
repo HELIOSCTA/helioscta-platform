@@ -524,8 +524,9 @@ Feed selection and promotion priority are documented in
   hub, zone, and interface filters with no duplicate uniqueness keys.
 - Runtime: `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
 - Scheduled orchestration:
-  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, hourly at minute
-  `15` UTC through `helios-pjm-rt-unverified-hrl-lmps.timer`.
+  `backend.orchestration.power.pjm.hourly_bucket`, hourly at minute `15` UTC
+  through `helios-pjm-hourly-bucket.timer`; the bucket currently calls
+  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`.
 - Runtime observability: `ops.api_fetch_log`.
 - Repair path: `backend.orchestration.power.pjm.hourly_price_backfill_7_day`
   reruns recent unverified hourly RT LMP market dates nightly.

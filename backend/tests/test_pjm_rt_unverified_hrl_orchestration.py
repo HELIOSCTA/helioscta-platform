@@ -33,8 +33,8 @@ def test_rt_unverified_orchestration_adds_scheduler_metadata(monkeypatch):
     assert captured["database"] == "stage_db"
     assert captured["metadata"] == {
         "run_mode": "scheduled_hourly",
-        "scheduler": "helios-pjm-rt-unverified-hrl-lmps.timer",
-        "schedule_reason": "hourly_pjm_unverified_rt_hourly_lmp_refresh",
+        "scheduler": "helios-pjm-hourly-bucket.timer",
+        "schedule_reason": "hourly_pjm_bucket_refresh",
         "trigger": "test",
     }
 

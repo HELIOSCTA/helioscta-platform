@@ -22,8 +22,8 @@ DEFAULT_LOOKBACK_DAYS = 1
 DEFAULT_LOOKAHEAD_DAYS = 0
 DEFAULT_DELTA = relativedelta(days=1)
 DEFAULT_METADATA = {
-    "scheduler": "helios-pjm-rt-unverified-hrl-lmps.timer",
-    "schedule_reason": "hourly_pjm_unverified_rt_hourly_lmp_refresh",
+    "scheduler": "helios-pjm-hourly-bucket.timer",
+    "schedule_reason": "hourly_pjm_bucket_refresh",
 }
 
 

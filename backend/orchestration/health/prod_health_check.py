@@ -24,7 +24,7 @@ CRITICAL_SERVICES: tuple[str, ...] = (
 )
 SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-data-miner-batch.service",
-    "helios-pjm-rt-unverified-hrl-lmps.service",
+    "helios-pjm-hourly-bucket.service",
     "helios-pjm-hrl-dmd-bids.service",
     "helios-pjm-gen-outages-by-type.service",
     "helios-pjm-ops-sum.service",
@@ -39,7 +39,7 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-rt-fivemin-hrl-lmps.timer",
     "helios-prod-health-check.timer",
     "helios-pjm-data-miner-batch.timer",
-    "helios-pjm-rt-unverified-hrl-lmps.timer",
+    "helios-pjm-hourly-bucket.timer",
     "helios-pjm-hrl-dmd-bids.timer",
     "helios-pjm-gen-outages-by-type.timer",
     "helios-pjm-ops-sum.timer",

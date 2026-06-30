@@ -130,8 +130,9 @@ after the DA hourly LMP timer, then upserts by
 `datetime_beginning_utc x datetime_beginning_ept x area` and logs one resolved
 API fetch telemetry row to `ops.api_fetch_log`.
 
-PJM unverified hourly real-time LMPs run through
-`backend.orchestration.power.pjm.rt_unverified_hrl_lmps` and write
+PJM unverified hourly real-time LMPs run through the hourly bucket at
+`backend.orchestration.power.pjm.hourly_bucket`, which currently includes
+`backend.orchestration.power.pjm.rt_unverified_hrl_lmps` and writes
 `pjm.rt_unverified_hrl_lmps`. The scheduled path refreshes the hub, zone, and
 interface scope hourly, logs PJM API telemetry to `ops.api_fetch_log`, and
 uses the same primary-key upsert as the nightly price repair workflow. This

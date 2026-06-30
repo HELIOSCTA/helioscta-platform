@@ -1,12 +1,12 @@
 [Unit]
-Description=Hourly HeliosCTA PJM unverified RT hourly LMP refresh timer
+Description=Hourly HeliosCTA PJM scrape bucket timer
 
 [Timer]
 OnCalendar=*-*-* *:15:00 UTC
 Persistent=false
 RandomizedDelaySec=2min
 AccuracySec=1min
-Unit=helios-pjm-rt-unverified-hrl-lmps.service
+Unit=helios-pjm-hourly-bucket.service
 
 [Install]
 WantedBy=timers.target

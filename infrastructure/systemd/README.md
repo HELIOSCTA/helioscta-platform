@@ -147,24 +147,26 @@ market date, and verified RT hourly and verified RT five-minute through two
 market dates back. The service uses `flock` with
 `/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
 
-## PJM Unverified Hourly RT LMPs
+## PJM Hourly Bucket
 
-The short-retention PJM unverified hourly RT LMP feed has its own hourly timer:
+PJM scrapes that need a simple hourly cadence share one bucket timer:
 
 ```text
-helios-pjm-rt-unverified-hrl-lmps.service
-helios-pjm-rt-unverified-hrl-lmps.timer
+helios-pjm-hourly-bucket.service
+helios-pjm-hourly-bucket.timer
 ```
 
-It runs `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, upserts
-current hub, zone, and interface rows into `pjm.rt_unverified_hrl_lmps`, and
-writes API telemetry to `ops.api_fetch_log`. The timer runs hourly at minute
-`15` UTC with `Persistent=false` and `RandomizedDelaySec=2min`; the workflow
-pulls a rolling recent window so missed hourly starts do not need replay on VM
-boot. The nightly `helios-pjm-hourly-price-backfill-7-day.timer` remains the
-repair path for recent posted market dates.
+It runs `backend.orchestration.power.pjm.hourly_bucket`. The initial bucket
+member is `rt_unverified_hrl_lmps`, which upserts current hub, zone, and
+interface rows into `pjm.rt_unverified_hrl_lmps` and writes API telemetry to
+`ops.api_fetch_log`. The timer runs hourly at minute `15` UTC with
+`Persistent=false` and `RandomizedDelaySec=2min`; bucket members should pull a
+rolling recent window or current snapshot so missed hourly starts do not need
+replay on VM boot. The nightly
+`helios-pjm-hourly-price-backfill-7-day.timer` remains the repair path for
+recent posted LMP market dates.
 
-The service uses `flock` with `/tmp/helios-pjm-rt-unverified-hrl-lmps.lock`.
+The service uses `flock` with `/tmp/helios-pjm-hourly-bucket.lock`.
 
 ## PJM Generation Outages By Type
 
@@ -601,8 +603,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmp
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.service /etc/systemd/system/
@@ -651,7 +653,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now helios-da-hrl-lmps.timer
 sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
-sudo systemctl enable --now helios-pjm-rt-unverified-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-hourly-bucket.timer
 sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
@@ -686,7 +688,7 @@ Run the workflow once on demand:
 sudo systemctl start helios-da-hrl-lmps.service
 sudo systemctl start helios-rt-fivemin-hrl-lmps.service
 sudo systemctl start helios-pjm-rt-hrl-lmps.service
-sudo systemctl start helios-pjm-rt-unverified-hrl-lmps.service
+sudo systemctl start helios-pjm-hourly-bucket.service
 sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
 sudo systemctl start helios-pjm-hrl-dmd-bids.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
@@ -789,12 +791,12 @@ systemctl status helios-pjm-rt-hrl-lmps.timer
 journalctl -u helios-pjm-rt-hrl-lmps.service -n 200 --no-pager
 ```
 
-For the PJM unverified hourly RT LMP refresh:
+For the PJM hourly bucket:
 
 ```bash
-systemctl status helios-pjm-rt-unverified-hrl-lmps.service
-systemctl status helios-pjm-rt-unverified-hrl-lmps.timer
-journalctl -u helios-pjm-rt-unverified-hrl-lmps.service -n 200 --no-pager
+systemctl status helios-pjm-hourly-bucket.service
+systemctl status helios-pjm-hourly-bucket.timer
+journalctl -u helios-pjm-hourly-bucket.service -n 200 --no-pager
 ```
 
 For the PJM hourly price seven-day backfill repair:

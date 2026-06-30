@@ -118,7 +118,7 @@ on downstream value, feed update cadence, and database cost.
 | `rt_fivemin_hrl_lmps` | Scheduled daily with readiness event | Priority verified five-minute RT price feed for hub, zone, and interface prices. |
 | `load_frcstd_7_day` | Scheduled hourly with API telemetry | Hourly PJM load forecast snapshots drive the forecast dashboard and vintage comparisons. |
 | `rt_hrl_lmps` | Scheduled daily after PJM's publish window with API telemetry | Verified hourly RT hub prices drive frontend term/history views and post later than the early support batch. |
-| `rt_unverified_hrl_lmps` | Dedicated hourly timer with API telemetry and nightly repair | Short-retention unverified hourly prices update throughout the operating day; the hourly timer keeps the hot table fresh while the repair window reruns recent posted market dates. |
+| `rt_unverified_hrl_lmps` | PJM hourly bucket with API telemetry and nightly repair | Short-retention unverified hourly prices update throughout the operating day; the hourly bucket keeps the hot table fresh while the repair window reruns recent posted market dates. |
 | `unverified_five_min_lmps` | Scheduled daily in the PJM Data Miner batch | High-frequency feed is constrained to daily refresh until a stronger live-ops use case is selected. |
 | `rt_fivemin_mnt_lmps` | Scheduled daily in the PJM Data Miner batch | Settlement-verified feed is refreshed daily. |
 
@@ -128,9 +128,11 @@ Current criticality decision:
   `ercot-dam-stlmnt-pnt-prices`, and `ercot-settlement-point-prices`.
 - Dedicated support price timer: `rt_hrl_lmps`, because the verified hourly RT
   feed posts after the early PJM Data Miner support batch.
-- Dedicated unverified price timer: `rt_unverified_hrl_lmps` runs hourly after
-  the source's typical top-of-hour refresh and stays out of the daily support
-  batch so dashboard-facing RT prices do not wait for the next overnight job.
+- PJM hourly bucket: `rt_unverified_hrl_lmps` runs hourly after the source's
+  typical top-of-hour refresh and stays out of the daily support batch so
+  dashboard-facing RT prices do not wait for the next overnight job. Add other
+  PJM feeds to this bucket only when they share the same simple hourly cadence
+  and safe rerun behavior.
 - Nightly repair timer: `hourly_price_backfill_7_day` reruns recent promoted
   PJM LMP price backfills with feed-specific publication lags, logs backfill
   telemetry in `ops.api_fetch_log`, and emits verified RT five-minute

@@ -1,5 +1,5 @@
 [Unit]
-Description=HeliosCTA PJM unverified hourly RT LMP refresh
+Description=HeliosCTA PJM hourly scrape bucket
 Wants=network-online.target
 After=network-online.target
 
@@ -9,11 +9,11 @@ User=helios
 Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
-ExecStart=/usr/bin/flock -n /tmp/helios-pjm-rt-unverified-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.rt_unverified_hrl_lmps
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-hourly-bucket.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.hourly_bucket
 TimeoutStartSec=30min
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=helios-pjm-rt-unverified-hrl-lmps
+SyslogIdentifier=helios-pjm-hourly-bucket
 
 [Install]
 WantedBy=multi-user.target
