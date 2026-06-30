@@ -968,8 +968,8 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual VM
   smoke run succeeded on `2026-06-30 16:53 UTC`.
-- Deployed commit: `cf791010e5d2e6c216291616aa169890c8e37101`
-  (runtime introduced in commit `19a2c1a`).
+- Runtime commit: `19a2c1a` (later deployment-register commits are
+  documentation-only).
 - Workflow: PJM unverified hourly Real-Time LMP refresh.
 - Runtime module:
   `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`.
