@@ -40,7 +40,7 @@ A backend workflow is production-ready when it has:
 | Area | Current State | Notes |
 | --- | --- | --- |
 | VM runtime | In place | `helioscta-prod-vm-01` runs committed code from `/opt/helioscta-platform`. |
-| DA LMP schedule | In place | `helios-pjm-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
+| DA LMP schedule | In place | `helios-pjm-da-hrl-lmps.timer` runs daily at `15:30 UTC`, polls every minute for up to 5 hours, and uses a 5-hour systemd timeout. |
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |

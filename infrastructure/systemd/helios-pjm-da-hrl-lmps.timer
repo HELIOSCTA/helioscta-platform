@@ -2,7 +2,7 @@
 Description=Daily HeliosCTA PJM Day-Ahead Hourly LMP orchestration timer
 
 [Timer]
-OnCalendar=*-*-* 16:00:00 UTC
+OnCalendar=*-*-* 15:30:00 UTC
 Persistent=true
 AccuracySec=1min
 Unit=helios-pjm-da-hrl-lmps.service

@@ -57,8 +57,10 @@ terminal/file logging, and DA LMP data readiness event emission.
 The service uses `flock` with `/tmp/helios-pjm-da-hrl-lmps.lock`.
 
 The live production VM currently has `helios-pjm-da-hrl-lmps.timer` enabled on
-`helioscta-prod-vm-01` at `16:00 UTC` with `Persistent=true`. The deployment
-register records the exact deployed commit and verification state.
+`helioscta-prod-vm-01` at `15:30 UTC` with `Persistent=true`. The scheduled
+orchestrator polls every minute for up to five hours, and the service has a
+five-hour systemd timeout. The deployment register records the exact deployed
+commit and verification state.
 
 ## PJM Data Miner Batch
 
@@ -89,7 +91,7 @@ It runs `backend.orchestration.power.pjm.hrl_dmd_bids`, which polls the PJM
 Data Miner `hrl_dmd_bids` feed for the next market day, waits until the three
 expected demand-bid areas are complete, upserts `pjm.hrl_dmd_bids`, and writes
 one resolved API fetch telemetry row to `ops.api_fetch_log` with poll count and
-elapsed seconds. The timer runs daily at `17:00 UTC`, one hour after
+elapsed seconds. The timer runs daily at `17:00 UTC`, 90 minutes after
 `helios-pjm-da-hrl-lmps.timer`, with a four-hour polling ceiling and two-minute
 poll interval. The service uses `flock` with
 `/tmp/helios-pjm-hrl-dmd-bids.lock`.

@@ -51,7 +51,8 @@ boundary, or log path changes.
 - Environment file: `/etc/helioscta/backend.env`.
 - File log path: `/var/log/helioscta`.
 - Journal logs: `journalctl -u helios-pjm-da-hrl-lmps.service`.
-- Schedule: daily at `16:00 UTC`.
+- Schedule: daily at `15:30 UTC` (`11:30 America/New_York` during daylight
+  saving time), polling every `60` seconds for up to `5` hours.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-da-hrl-lmps.lock`.
@@ -61,7 +62,7 @@ boundary, or log path changes.
 - Deployed by: Aidan Keaveny via Codex.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
-- Next scheduled run observed: `2026-06-13 16:00:00 UTC`.
+- First scheduled run observed: `2026-06-13 16:00:00 UTC`.
 
 Verification SQL for API telemetry:
 
@@ -1051,7 +1052,7 @@ LIMIT 20;
 - Unit files:
   - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.service`
   - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer`
-- Schedule: daily at `17:00 UTC`, one hour after
+- Schedule: daily at `17:00 UTC`, 90 minutes after
   `helios-pjm-da-hrl-lmps.timer`, with `Persistent=true`.
 - Polling policy: poll every `120` seconds for up to `4` hours until the
   target market day has complete rows for `PJM_RTO`, `MID_ATLANTIC_REGION`,

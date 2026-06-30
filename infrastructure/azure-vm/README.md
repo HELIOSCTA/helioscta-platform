@@ -27,7 +27,9 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Live deployed commit: verify on the VM with
   `sudo -u helios -H git -C /opt/helioscta-platform rev-parse HEAD`.
 - Timers:
-  - `helios-pjm-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
+  - `helios-pjm-da-hrl-lmps.timer`, daily at `15:30 UTC`
+    (`11:30 America/New_York` during daylight saving time),
+    `Persistent=true`, `AccuracySec=1min`.
   - `helios-pjm-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,

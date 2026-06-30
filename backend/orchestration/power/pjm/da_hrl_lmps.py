@@ -43,7 +43,8 @@ LOCAL_MARKET_TIMEZONE = "America/New_York"
 logger = logging.getLogger(__name__)
 
 
-POLL_CEILING_SECONDS = 3 * 60 * 60  # 3 hours
+POLL_CEILING_SECONDS = 5 * 60 * 60
+POLL_WAIT_SECONDS = 60
 
 
 def _build_request(
@@ -74,7 +75,7 @@ def _build_request(
     return base_url, params
 
 
-@api_poll_policy(max_seconds=POLL_CEILING_SECONDS, wait_seconds=1)
+@api_poll_policy(max_seconds=POLL_CEILING_SECONDS, wait_seconds=POLL_WAIT_SECONDS)
 def _wait_for_data(url: str, params: dict[str, str | int]) -> requests.Response:
     """Poll the PJM API until a non-empty response is returned.
 
@@ -85,9 +86,9 @@ def _wait_for_data(url: str, params: dict[str, str | int]) -> requests.Response:
     why we poll on `DataNotYetAvailable` rather than on a status code.
     Don't add Retry-After handling here unless PJM's behavior changes.
 
-    Aggressive 1s polling is intentional: DA latency to user-visible data
-    readiness matters, the API is not rate-limited, and the 3h ceiling caps
-    total request volume per cron tick.
+    Minute polling keeps DA latency low without generating per-second request
+    volume, and the 5h ceiling covers late postings while bounding each timer
+    run.
     """
     response = requests.get(url, params=params, timeout=60)
     try:
@@ -116,7 +117,7 @@ def _wait_for_data_logged(
 ) -> requests.Response:
     """Run the polling fetch and write one resolved ops.api_fetch_log row.
 
-    ``_wait_for_data`` polls PJM every second (up to 3h) and the request URL
+    ``_wait_for_data`` polls PJM every minute (up to 5h) and the request URL
     carries the subscription key, so per-poll logging would both flood the
     table and risk leaking the key. Instead this logs a single row for the
     resolved outcome — success when the body finally arrives, failure on the
@@ -429,6 +430,11 @@ def main(
     run_logger.header(API_SCRAPE_NAME)
     run_logger.info(f"Run ID: {run_id}")
     run_logger.info(f"Run mode: {run_mode}")
+    run_logger.info(
+        "Polling window: "
+        f"{POLL_CEILING_SECONDS // 3600}h ceiling, "
+        f"{POLL_WAIT_SECONDS}s interval"
+    )
     fetch_metadata = {"run_mode": run_mode, **(metadata or {})}
     try:
 
