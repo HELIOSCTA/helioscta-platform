@@ -6,7 +6,7 @@ export type ActiveSection =
   | "pjm-da-lmps"
   | "pjm-term-bible"
   | "pjm-price-duration-curves"
-  | "pjm-actuals-regime-scatter"
+  | "pjm-price-distributions"
   | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
@@ -45,7 +45,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "pjm-outages", label: "Outages" },
         { id: "pjm-forecasts", label: "Forecasts" },
         { id: "pjm-load-growth", label: "Load Growth" },
-        { id: "pjm-actuals-regime-scatter", label: "Price Distributions", group: "Load Growth" },
+        { id: "pjm-price-distributions", label: "Price Distributions", group: "Load Growth" },
       ],
     },
   ];

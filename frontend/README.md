@@ -251,10 +251,18 @@ load, solar, wind, and net-load curves for both selected forecast dates plus
 ## PJM Price Distributions Source Contract
 
 The Price Distributions page appears under Load Growth in the production POWER
-navigation. It derives hourly actual net load from promoted PJM
-load and renewable generation tables, joins WSI observed weather and PJM RT LMP
-prices on local EPT hour, and overlays same-day PJM outage rows as an outage
-regime proxy.
+navigation at `/?section=pjm-price-distributions`. The previous
+`/?section=pjm-actuals-regime-scatter` section id is accepted as a
+backward-compatible alias and maps to Price Distributions.
+
+The production view uses the simplified forward analog workflow. It uses
+either PJM Data Miner (`source=pjm`) or Meteologica (`source=meteologica`) RTO
+load, wind, and solar forecasts with WSI forecast temperatures to build a
+forecast-conditioned historical RT price distribution. Net load is always
+derived as `load - solar - wind`, and the v1 analog score uses normalized
+temperature and net-load similarity only. The analog pool defaults to 40 rows
+per target HE, clamps to 20-100 rows per HE, and the frontend shows
+selected-hour median/max distance as the similarity quality check.
 
 Derived formula:
 `net_load_mw = gross_load_mw - wind_mw - solar_mw`.
@@ -266,23 +274,19 @@ points. It samples matched hourly rows after server-side filters and does not
 create a dbt model, table, or materialized cache. The historical scatter
 endpoint remains hidden outside local Next.js runs and returns `404` on Vercel.
 
-The production view uses the Forward Analog Prices flow. It uses either PJM Data
-Miner (`source=pjm`) or
-Meteologica (`source=meteologica`) RTO load, wind, and solar forecasts with WSI
-forecast temperatures to build a forecast-conditioned historical RT price analog
-distribution. Net load is always derived as `load - solar - wind`, and the v1
-analog score uses normalized temperature and net-load similarity only. Outage
-joins are retained in the API payload for future diagnostics but are not part of
-the simplified visible workflow or default analog ranking. The analog pool
-defaults to 40 rows per target HE, clamps to 20-100 rows per HE, and the
-frontend shows selected-hour median/max distance as the similarity quality
-check.
+Outage joins are retained in the API payload for future diagnostics but are not
+part of the simplified visible workflow or default analog ranking.
 
 `GET /api/pjm-forecast-price-analogs` uses `helios_readonly`, bounded inputs,
 Next/Vercel Data Cache with a 10-minute revalidate window, process-local
 in-flight request dedupe, and Vercel CDN cache headers. The cache makes warmed
 and repeated configs fast, but a cold uncached config can still take longer
 because it rebuilds the historical analog pool from source tables on demand.
+The diagnostic headers `X-Helios-Response-Cache` and `X-Helios-Cache-Layer`
+distinguish process-memory hits, process in-flight dedupe, forced refreshes,
+and the shared-cache-or-origin path. They do not distinguish a Next/Vercel Data
+Cache hit from an origin SQL rebuild after the request has entered the cached
+loader.
 
 `GET /api/cache/warm-price-distributions` is a protected no-store warmer for
 Price Distributions. It warms complete forecast date lookups for PJM and

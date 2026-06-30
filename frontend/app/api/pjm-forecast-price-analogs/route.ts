@@ -31,6 +31,8 @@ type RtSource = "verified" | "unverified";
 type PriceComponent = "total" | "energy" | "congestion" | "loss";
 type DayType = "all" | "weekdays" | "weekends";
 type ForecastSourceMode = "pjm" | "meteologica";
+type ForecastAnalogCacheState = "memory-fresh" | "memory-deduped" | "shared-or-origin" | "origin-refresh";
+type ForecastAnalogCacheLayer = "process-memory" | "process-in-flight" | "next-data-cache-or-origin" | "origin-refresh";
 
 interface ForecastAnalogRow {
   payload: ForecastAnalogSql | string | null;
@@ -267,10 +269,12 @@ function responseHeaders(cacheControl = CACHE_HEADER): Record<string, string> {
 
 function withResponseCacheHeader(
   result: ObservedRouteResult,
-  state: "miss" | "fresh" | "deduped",
+  state: ForecastAnalogCacheState,
+  layer: ForecastAnalogCacheLayer,
 ): ObservedRouteResult {
   const headers = new Headers(result.headers);
   headers.set("X-Helios-Response-Cache", state);
+  headers.set("X-Helios-Cache-Layer", layer);
   return { ...result, headers };
 }
 
@@ -1766,14 +1770,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     const cached = responseCache().get(cacheKey);
     if (cached) {
       if (cached.expiresAt > Date.now()) {
-        return withResponseCacheHeader(cached.result, "fresh");
+        return withResponseCacheHeader(cached.result, "memory-fresh", "process-memory");
       }
       responseCache().delete(cacheKey);
     }
 
     const inFlight = inFlightCache().get(cacheKey);
     if (inFlight) {
-      return withResponseCacheHeader(await inFlight, "deduped");
+      return withResponseCacheHeader(await inFlight, "memory-deduped", "process-in-flight");
     }
   }
 
@@ -1789,9 +1793,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     const result = await resultPromise;
     if (!forceRefresh && isCacheableResponse(result)) {
       storeResponseCacheEntry(cacheKey, result);
-      return withResponseCacheHeader(result, "miss");
+      return withResponseCacheHeader(result, "shared-or-origin", "next-data-cache-or-origin");
     }
-    return result;
+    return forceRefresh
+      ? withResponseCacheHeader(result, "origin-refresh", "origin-refresh")
+      : withResponseCacheHeader(result, "shared-or-origin", "next-data-cache-or-origin");
   } finally {
     if (!forceRefresh) {
       inFlightCache().delete(cacheKey);

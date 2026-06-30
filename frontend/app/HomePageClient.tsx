@@ -4,9 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
-import PjmActualsRegimeScatter, {
-  type PjmActualsRegimeScatterFreshnessSummary,
-} from "@/components/pjm/PjmActualsRegimeScatter";
+import PjmPriceDistributions, {
+  type PjmPriceDistributionsFreshnessSummary,
+} from "@/components/pjm/PjmPriceDistributions";
 import PjmDaLmps, { type PjmDaLmpsFreshnessSummary } from "@/components/pjm/PjmDaLmps";
 import PjmForecasts, {
   type ForecastType,
@@ -55,7 +55,7 @@ const DEFAULT_PJM_PRICE_DURATION_FRESHNESS: PjmPriceDurationCurvesFreshnessSumma
   latestUpdateLabel: "--",
 };
 
-const DEFAULT_PJM_ACTUALS_REGIME_SCATTER_FRESHNESS: PjmActualsRegimeScatterFreshnessSummary = {
+const DEFAULT_PJM_PRICE_DISTRIBUTIONS_FRESHNESS: PjmPriceDistributionsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Price distributions --",
@@ -125,7 +125,9 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
-  if (value === "pjm-actuals-regime-scatter") return "pjm-actuals-regime-scatter";
+  if (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter") {
+    return "pjm-price-distributions";
+  }
   if (value === "pjm-term-bible") return "pjm-term-bible";
   if (value === "pjm-ops-summary") return "pjm-ops-summary";
   if (value === "pjm-load-growth") return "pjm-load-growth";
@@ -157,7 +159,7 @@ export default function HomePageClient({
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
-  const [pjmActualsRegimeScatterRefreshToken, setPjmActualsRegimeScatterRefreshToken] =
+  const [pjmPriceDistributionsRefreshToken, setPjmPriceDistributionsRefreshToken] =
     useState(0);
   const [pjmOpsSummaryRefreshToken, setPjmOpsSummaryRefreshToken] = useState(0);
   const [pjmTermBibleRefreshToken, setPjmTermBibleRefreshToken] = useState(0);
@@ -167,7 +169,7 @@ export default function HomePageClient({
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
-  const [pjmActualsRegimeScatterFreshnessOpen, setPjmActualsRegimeScatterFreshnessOpen] =
+  const [pjmPriceDistributionsFreshnessOpen, setPjmPriceDistributionsFreshnessOpen] =
     useState(false);
   const [pjmOpsSummaryFreshnessOpen, setPjmOpsSummaryFreshnessOpen] = useState(false);
   const [pjmTermBibleFreshnessOpen, setPjmTermBibleFreshnessOpen] = useState(false);
@@ -181,9 +183,9 @@ export default function HomePageClient({
     useState<PjmPriceDurationCurvesFreshnessSummary>(
       DEFAULT_PJM_PRICE_DURATION_FRESHNESS,
     );
-  const [pjmActualsRegimeScatterFreshness, setPjmActualsRegimeScatterFreshness] =
-    useState<PjmActualsRegimeScatterFreshnessSummary>(
-      DEFAULT_PJM_ACTUALS_REGIME_SCATTER_FRESHNESS,
+  const [pjmPriceDistributionsFreshness, setPjmPriceDistributionsFreshness] =
+    useState<PjmPriceDistributionsFreshnessSummary>(
+      DEFAULT_PJM_PRICE_DISTRIBUTIONS_FRESHNESS,
     );
   const [pjmOpsSummaryFreshness, setPjmOpsSummaryFreshness] =
     useState<PjmOpsSummaryFreshnessSummary>(DEFAULT_PJM_OPS_SUMMARY_FRESHNESS);
@@ -241,13 +243,13 @@ export default function HomePageClient({
         footer: "Term Bible | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
-    if (activeSection === "pjm-actuals-regime-scatter") {
+    if (activeSection === "pjm-price-distributions") {
       return {
         title: "Price Distributions",
         subtitle:
-          "Historical and forward PJM RT price distributions using actuals, forecasts, and analog regimes.",
+          "Forecast-conditioned PJM RT price distributions using load, wind, solar, temperature, and historical prices.",
         footer:
-          "Price Distributions | Source: PJM actuals, forecasts, RT LMPs, outages, and WSI weather / Azure PostgreSQL",
+          "Price Distributions | Source: PJM forecasts, actual load/generation, RT LMPs, and WSI weather / Azure PostgreSQL",
       };
     }
     if (activeSection === "pjm-ops-summary") {
@@ -406,25 +408,25 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "pjm-actuals-regime-scatter" && (
+            {activeSection === "pjm-price-distributions" && (
               <FreshnessCard
-                statusLabel={pjmActualsRegimeScatterFreshness.status}
-                statusClass={pjmActualsRegimeScatterFreshness.statusClass}
-                summary={pjmActualsRegimeScatterFreshness.summary}
+                statusLabel={pjmPriceDistributionsFreshness.status}
+                statusClass={pjmPriceDistributionsFreshness.statusClass}
+                summary={pjmPriceDistributionsFreshness.summary}
                 items={[
                   {
                     label: "Freshness Status",
-                    value: pjmActualsRegimeScatterFreshness.status,
-                    className: pjmActualsRegimeScatterFreshness.statusClass,
+                    value: pjmPriceDistributionsFreshness.status,
+                    className: pjmPriceDistributionsFreshness.statusClass,
                   },
-                  { label: "Selection", value: pjmActualsRegimeScatterFreshness.targetDateLabel },
-                  { label: "Window", value: pjmActualsRegimeScatterFreshness.latestDateLabel },
-                  { label: "Source Update", value: pjmActualsRegimeScatterFreshness.latestUpdateLabel },
+                  { label: "Selection", value: pjmPriceDistributionsFreshness.targetDateLabel },
+                  { label: "Window", value: pjmPriceDistributionsFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmPriceDistributionsFreshness.latestUpdateLabel },
                 ]}
-                open={pjmActualsRegimeScatterFreshnessOpen}
-                onToggle={() => setPjmActualsRegimeScatterFreshnessOpen((open) => !open)}
+                open={pjmPriceDistributionsFreshnessOpen}
+                onToggle={() => setPjmPriceDistributionsFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
-                onAction={() => setPjmActualsRegimeScatterRefreshToken((value) => value + 1)}
+                onAction={() => setPjmPriceDistributionsRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -537,10 +539,10 @@ export default function HomePageClient({
               onFreshnessChange={setPjmTermBibleFreshness}
             />
           )}
-          {activeSection === "pjm-actuals-regime-scatter" && (
-            <PjmActualsRegimeScatter
-              refreshToken={pjmActualsRegimeScatterRefreshToken}
-              onFreshnessChange={setPjmActualsRegimeScatterFreshness}
+          {activeSection === "pjm-price-distributions" && (
+            <PjmPriceDistributions
+              refreshToken={pjmPriceDistributionsRefreshToken}
+              onFreshnessChange={setPjmPriceDistributionsFreshness}
             />
           )}
           {activeSection === "pjm-ops-summary" && (
