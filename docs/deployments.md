@@ -908,7 +908,8 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
+- Initial deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
+- Latest `gen_by_fuel` runtime commit: `88ed50a21270baf9da839fbe7afb17456bb3e2bb`.
 - Deployed by: Aidan Keaveny via Codex.
 - Deployed at: `2026-06-13 02:17 UTC`.
 - Verification: VM fast-forward pull succeeded, dependencies reinstalled, and
@@ -924,6 +925,11 @@ FROM isone.seven_day_solar_forecast;
   `2026-06-30`. Production table and index operator SQL were applied, and an
   initial scrape populated `pjm.gen_by_fuel` with `570` rows across `10` fuel
   types through `2026-06-30 18:00 UTC`.
+- VM verification: `/opt/helioscta-platform` fast-forwarded to `88ed50a` on
+  `2026-06-30`; a transient systemd run of
+  `backend.scrapes.power.pjm.gen_by_fuel` exited `status=0/SUCCESS` at
+  `2026-06-30 14:12 UTC`. The `helios-pjm-data-miner-batch.timer` remained
+  enabled with next run observed at `2026-07-01 04:31:14 UTC`.
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-da-hrl-lmps.timer` and
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
