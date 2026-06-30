@@ -45,6 +45,7 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-pjm-da-transconstraints.timer",
     "helios-pjm-gen-outages-by-type.timer",
     "helios-pjm-ops-sum.timer",
+    "helios-pjm-meteologica-forecast-hourly.timer",
     "helios-ercot-dam-stlmnt-pnt-prices.timer",
     "helios-ercot-settlement-point-prices.timer",
     "helios-ercot-load-batch.timer",

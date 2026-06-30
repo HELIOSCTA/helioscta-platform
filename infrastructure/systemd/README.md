@@ -245,16 +245,19 @@ helios-pjm-meteologica-forecast-hourly.timer
 
 It runs `backend.orchestration.power.pjm.meteologica_forecast_hourly`, upserts
 load, solar, and wind hourly forecasts for `RTO`, `MIDATL`, `SOUTH`, and
-`WEST` into `meteologica.pjm_forecast_hourly`, writes Meteologica API telemetry
-to `ops.api_fetch_log`, and emits forecast freshness events to
+`WEST` into `meteologica.pjm_forecast_hourly`, then runs the Western Hub DA
+price deterministic and ECMWF ENS forecast refresh into the two DA price
+source tables under the `meteologica` schema. Both legs write Meteologica API
+telemetry to `ops.api_fetch_log` and emit forecast freshness events to
 `ops.data_availability_events`. The timer runs every 30 minutes at `:20` and
 `:50` UTC with `Persistent=false` and `RandomizedDelaySec=2min`. The service
 uses `flock` with `/tmp/helios-pjm-meteologica-forecast-hourly.lock`.
-Successful runs purge forecast issues older than 90 days from the hot table.
+Successful runs purge forecast issues older than 90 days from the hot tables.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the
-Meteologica schema/table/index operator SQL has been applied.
+Meteologica schema/table/index operator SQL has been applied for both the
+PJM forecast table and the DA price source tables.
 
 After those prerequisites are complete:
 

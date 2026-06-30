@@ -4,10 +4,13 @@ import { useState } from "react";
 
 export type ActiveSection =
   | "pjm-da-lmps"
+  | "pjm-da-model"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
+  | "nav-positions"
   | "pjm-price-duration-curves"
   | "pjm-price-distributions"
+  | "pjm-generation"
   | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
@@ -55,6 +58,9 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       key: "dev",
       label: "DEV",
       navItems: [
+        { id: "pjm-da-model", label: "DA Model" },
+        { id: "nav-positions", label: "Positions" },
+        { id: "pjm-generation", label: "Generation" },
         { id: "pjm-price-distributions", label: "Price Distributions" },
         { id: "pjm-price-duration-curves", label: "Duration Curves" },
         { id: "pjm-weather", label: "Weather" },

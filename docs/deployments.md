@@ -1423,17 +1423,29 @@ FROM pjm.hourly_wind_power_forecast;
 - Deployed commit: `4329a189d38443b623bf17cafbf1dc8e2cef1321`.
 - Deployment verification: manual systemd service run succeeded on
   2026-06-18 at 17:06 UTC, upserting 4,116 rows and emitting API telemetry plus
-  a forecast freshness event. Timer enabled with next scheduled run visible in
-  `systemctl list-timers`.
-- Workflow: PJM Meteologica hourly forecast refresh.
+  a forecast freshness event. On 2026-06-30 at 17:13 UTC, the same service was
+  updated and manually verified to run both the 12 load/solar/wind forecast
+  content IDs and the DA price content IDs `4397` and `4400`; all Meteologica
+  API fetch telemetry rows were successful. On 2026-06-30 at 17:37 UTC, the
+  DA price leg was updated to enforce the 14-day forward horizon; the service
+  purged 11 deterministic out-of-horizon rows and left zero out-of-horizon rows
+  in both DA price source tables. Timer enabled with next scheduled run visible
+  in `systemctl list-timers`.
+- Workflow: PJM Meteologica forecast refresh, including hourly load/solar/wind
+  forecasts and Western Hub DA price forecasts.
 - Runtime module: `backend.orchestration.power.pjm.meteologica_forecast_hourly`.
-- Lower-level scrape module:
-  `backend.scrapes.power.pjm.meteologica_forecast_hourly`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.pjm.meteologica_forecast_hourly`
+  - `backend.scrapes.power.pjm.meteologica_da_price_forecast`
 - Source system: Meteologica xTraders Markets API `contents/{content_id}/data`.
-- Destination table: `meteologica.pjm_forecast_hourly`.
+- Destination tables:
+  - `meteologica.pjm_forecast_hourly`
+  - `meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly`
+  - `meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`
 - Source grain: `content_id x update_id x forecast_period_start`.
 - Metrics and areas: load, solar, and wind for `RTO`, `MIDATL`, `SOUTH`, and
-  `WEST`; hydro is excluded from v1.
+  `WEST`; hydro is excluded from v1. DA price content IDs are `4397`
+  deterministic Western Hub DA price and `4400` ECMWF ENS Western Hub DA price.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Unit files:
@@ -1453,11 +1465,14 @@ FROM pjm.hourly_wind_power_forecast;
   `dbt/azure_postgres/models/setup/schemas.sql`,
   `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/table_meteologica_pjm_forecast_hourly.sql`,
   and
-  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/index_meteologica_pjm_forecast_hourly.sql`.
+  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/index_meteologica_pjm_forecast_hourly.sql`,
+  plus the DA price table and index SQL under
+  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/`.
 - Safe rerun story: upsert on
   `(content_id, update_id, forecast_period_start)`.
-- Retention: 90 days by `issue_date` in the hot table; the runtime purges
-  older rows after successful upserts.
+- Retention: 90 days by `issue_date` in the hot tables; the runtime purges
+  older rows after successful upserts. DA price rows are also limited to 14
+  days forward from each source issue timestamp in the source timezone.
 
 Verification SQL for table freshness:
 
@@ -1490,6 +1505,101 @@ SELECT
     created_at
 FROM ops.api_fetch_log
 WHERE pipeline_name = 'pjm_meteologica_forecast_hourly'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+## helios-pjm-meteologica-da-price-forecast
+
+- Status: retired as a standalone timer on 2026-06-30 at 17:13 UTC; the DA
+  price refresh is now run by `helios-pjm-meteologica-forecast-hourly.timer`
+  with the other Meteologica forecasts.
+- Deployed base commit: `f6b5b24`; runtime files were installed as a focused
+  working-tree overlay because the local workspace had unrelated dirty changes.
+- Deployment verification: production source-table DDL and indexes were applied
+  on 2026-06-30. A local orchestration run at 16:53 UTC upserted 347
+  deterministic rows and 138 ECMWF ENS rows. The VM systemd service run at
+  16:55 UTC exited `status=0/SUCCESS`, upserted the same two source tables,
+  wrote Meteologica API telemetry, and observed the existing forecast
+  freshness event for the current issue.
+- Workflow: PJM Meteologica Western Hub DA price forecast refresh.
+- Runtime module:
+  `backend.orchestration.power.pjm.meteologica_da_price_forecast`.
+- Lower-level scrape module:
+  `backend.scrapes.power.pjm.meteologica_da_price_forecast`.
+- Source system: Meteologica xTraders Markets API `contents/{content_id}/data`.
+- Destination tables:
+  - `meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly`
+  - `meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`
+- Source grain: `content_id x update_id x forecast_period_start`.
+- Content IDs: `4397` deterministic Western Hub DA price and `4400` ECMWF ENS
+  Western Hub DA price.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Schedule: no standalone schedule; called from
+  `backend.orchestration.power.pjm.meteologica_forecast_hourly` on the
+  `helios-pjm-meteologica-forecast-hourly.timer` cadence.
+- Timer behavior: inherited from the Meteologica forecast timer
+  (`Persistent=false`).
+- Overlap protection: inherited from `/usr/bin/flock` with
+  `/tmp/helios-pjm-meteologica-forecast-hourly.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
+  `/etc/helioscta/backend.env`.
+- Operator SQL required before first run:
+  `dbt/azure_postgres/models/setup/schemas.sql`,
+  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/table_meteologica_pjm_western_hub_da_power_price_forecast_hourly.sql`,
+  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/table_meteologica_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly.sql`,
+  and
+  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/index_meteologica_pjm_da_price_forecast.sql`.
+- Safe rerun story: upsert on
+  `(content_id, update_id, forecast_period_start)` in each source table.
+- Retention: 90 days by `issue_date` in both hot tables; the runtime purges
+  older rows after successful upserts.
+- Forecast horizon: 14 days forward from each source issue timestamp in the
+  source timezone; out-of-horizon rows are filtered on ingest and purged after
+  successful upserts.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    'deterministic' AS feed,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT update_id) AS update_count,
+    MAX(issue_date) AS latest_issue_date,
+    MIN(forecast_period_start) AS min_forecast_period_start,
+    MAX(forecast_period_start) AS max_forecast_period_start,
+    MAX(updated_at) AS latest_updated_at
+FROM meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly
+UNION ALL
+SELECT
+    'ecmwf_ens' AS feed,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT update_id) AS update_count,
+    MAX(issue_date) AS latest_issue_date,
+    MIN(forecast_period_start) AS min_forecast_period_start,
+    MAX(forecast_period_start) AS max_forecast_period_start,
+    MAX(updated_at) AS latest_updated_at
+FROM meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    content_id,
+    feed_name,
+    target_table,
+    status,
+    http_status,
+    rows_returned,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'pjm_meteologica_da_price_forecast'
 ORDER BY created_at DESC
 LIMIT 20;
 ```

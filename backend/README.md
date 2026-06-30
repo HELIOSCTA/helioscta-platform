@@ -25,6 +25,15 @@ ERCOT_API_KEY=
 WSI_TRADER_USERNAME=
 WSI_TRADER_NAME=
 WSI_TRADER_PASSWORD=
+
+XTRADERS_API_USERNAME_ISO=
+XTRADERS_API_PASSWORD_ISO=
+
+NAV_SFTP_HOST=
+NAV_SFTP_USER=
+NAV_SFTP_PASSWORD=
+NAV_SFTP_PORT=22
+NAV_SFTP_REMOTE_DIR=/
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -152,15 +161,28 @@ Meteologica xTraders helpers use the existing
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment
 variables. The promoted PJM forecast runtime module is
 `backend.scrapes.power.pjm.meteologica_forecast_hourly`, with orchestration at
-`backend.orchestration.power.pjm.meteologica_forecast_hourly`. It writes
-load, solar, and wind hourly forecasts for PJM `RTO`, `MIDATL`, `SOUTH`, and
-`WEST` into `meteologica.pjm_forecast_hourly`, logs Meteologica API telemetry
-to `ops.api_fetch_log`, and emits a forecast freshness event to
+`backend.orchestration.power.pjm.meteologica_forecast_hourly`. The scheduled
+orchestration writes load, solar, and wind hourly forecasts for PJM `RTO`,
+`MIDATL`, `SOUTH`, and `WEST` into `meteologica.pjm_forecast_hourly`, then
+runs the PJM Meteologica DA price refresh. Both legs log Meteologica API
+telemetry to `ops.api_fetch_log` and emit forecast freshness events to
 `ops.data_availability_events`. The source grain is
 `content_id x update_id x forecast_period_start`; safe reruns upsert by that
-key. Scheduled runs retain 90 days of forecast issue history in the hot table
-and purge older rows after successful upserts. Hydro is excluded from v1
-because no PJM hydro forecast content ID is promoted.
+key. Scheduled runs retain 90 days of forecast issue history in the hot tables,
+keep DA price rows to a 14-day forward horizon from each source issue, and
+purge older rows after successful upserts. Hydro is excluded from v1 because
+no PJM hydro forecast content ID is promoted.
+
+The PJM Meteologica DA price runtime module is
+`backend.scrapes.power.pjm.meteologica_da_price_forecast`, with orchestration
+at `backend.orchestration.power.pjm.meteologica_da_price_forecast` for manual
+repair runs and for composition by the scheduled Meteologica forecast
+orchestration. It writes Western Hub deterministic DA price forecasts and
+ECMWF ENS DA price forecasts directly to
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly` and
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`,
+using the same source grain. Incoming and existing DA price rows are limited to
+14 days forward from the source issue timestamp in the source timezone.
 
 ICE Python settlement helpers are local Windows-only. They live under
 `backend.scrapes.ice_python` and `backend.orchestration.ice_python`, write
@@ -174,6 +196,13 @@ The local Windows Task Scheduler coordinator runs the ICE scheduler in
 timeouts, prevents overlapping manual/scheduled pulls with a local lock file,
 persists per-window state with explicit success/failure/timeout statuses, and
 writes durable job telemetry to `ops.api_fetch_log`.
+
+NAV position helpers are local SFTP workflows. They live under
+`backend.scrapes.nav` and `backend.orchestration.nav`, write normalized NAV
+position valuation snapshots to `nav.positions`, and use the existing
+`NAV_SFTP_*` environment variables. The v1 activation path is a manual local
+run with `python -m backend.orchestration.nav.positions`; do not add NAV
+systemd units unless the workflow is explicitly promoted to the Linux VM.
 
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
@@ -231,6 +260,13 @@ Install the proprietary ICE Python wheel from the licensed ICE XL installation
 outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
 install the local Windows Task Scheduler coordinator from
 `infrastructure/windows-task-scheduler/`.
+
+For local NAV SFTP runs only:
+
+```powershell
+python -m pip install -r backend\requirements-local-sftp.txt -e backend
+python -m backend.orchestration.nav.positions
+```
 
 ## Manual PJM Backfills
 

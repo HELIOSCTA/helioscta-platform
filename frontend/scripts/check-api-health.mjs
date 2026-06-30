@@ -16,6 +16,12 @@ const endpoints = [
     targetMs: 750,
   },
   {
+    name: "PJM DA model",
+    path: "/api/pjm-da-model",
+    targetMs: 1_000,
+    devOnly: true,
+  },
+  {
     name: "PJM RT LMPs",
     path: "/api/pjm-rt-lmps?source=unverified",
     targetMs: 1_000,

@@ -1,4 +1,4 @@
 # Local verification dependencies.
 
--r requirements.txt
+-r requirements-local-sftp.txt
 pytest==8.3.4

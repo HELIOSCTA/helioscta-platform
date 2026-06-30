@@ -334,6 +334,34 @@ cd dbt/azure_postgres
 dbt compile --profiles-dir . --select path:models/ice_python/settlements/ice_python_settlements path:models/ice_python/settlement_contract_dates/ice_python_settlement_contract_dates
 ```
 
+## NAV Local SFTP Layout
+
+NAV position valuation reports are local SFTP pulls. The Linux VM may have the
+files in its checkout, but the active v1 runtime is a manual local run through
+`backend.orchestration.nav.positions`, not systemd.
+
+```text
+models/nav/positions/
+models/nav/positions/nav_positions/
+```
+
+`table_nav_positions.sql` and `index_nav_positions.sql` are disabled operator
+SQL. The enabled models are read-only query shaping over `nav.positions`.
+
+Source contract:
+NAV SFTP `Position Valuation Detail Report` workbooks, table grain
+`fund_code x nav_date x sftp_upload_timestamp x source_file_name x
+source_file_row_number`, primary key on that grain, freshness field
+`updated_at`. Safe reruns upsert by primary key while preserving separate NAV
+uploads for the same NAV date.
+
+Compile the NAV query-shaping model with:
+
+```bash
+cd dbt/azure_postgres
+dbt compile --profiles-dir . --select path:models/nav/positions/nav_positions
+```
+
 ## Meteologica PJM Forecast Layout
 
 Meteologica PJM hourly forecast validation and query shaping uses:
@@ -343,6 +371,7 @@ models/power/meteologica/pjm_forecast_hourly/
 models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_latest_curves/
 models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_da_cutoff_curves/
 models/power/meteologica/pjm_forecast_hourly/meteologica_pjm_forecast_vintage_changes/
+models/power/meteologica/pjm_da_price_forecast/
 ```
 
 `table_meteologica_pjm_forecast_hourly.sql` and
@@ -357,6 +386,18 @@ Meteologica xTraders `contents/{content_id}/data`, table grain
 and `WEST`. Backend runtime retention keeps 90 days of forecast issue history
 in `meteologica.pjm_forecast_hourly`; older rows are purged after successful
 upserts.
+
+The DA Model page uses the direct source tables defined by disabled operator
+SQL under `models/power/meteologica/pjm_da_price_forecast/`:
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly` and
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`.
+The source contract is Meteologica xTraders `contents/{content_id}/data`,
+content IDs `4397` and `4400`, table grain
+`content_id x update_id x forecast_period_start`, and freshness field
+`issue_date`. The backend runtime keeps only 14 days forward from each source
+issue timestamp in the source timezone and 90 days of issue history. These are
+source tables only; no dbt table or materialized cache is created for the DA
+Model page.
 
 Compile the Meteologica query-shaping models with:
 
@@ -438,6 +479,7 @@ models/power/isone/external_interface_metered_data/table_isone_external_interfac
 models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql
 models/ice_python/settlements/table_ice_python_settlements.sql
 models/ice_python/settlement_contract_dates/table_ice_python_settlement_contract_dates.sql
+models/nav/positions/table_nav_positions.sql
 models/power/pjm/<feed_short_name>/table_*.sql
 models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql
@@ -464,6 +506,7 @@ models/power/isone/external_interface_metered_data/index_isone_external_interfac
 models/power/miso/real_time_total_load/index_miso_real_time_total_load.sql
 models/ice_python/settlements/index_ice_python_settlements.sql
 models/ice_python/settlement_contract_dates/index_ice_python_settlement_contract_dates.sql
+models/nav/positions/index_nav_positions.sql
 models/power/pjm/<feed_short_name>/index_*.sql
 models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql
 models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql

@@ -49,6 +49,15 @@ models:
           +enabled: false
         index_ice_python_settlement_contract_dates:
           +enabled: false
+    nav:
+      +schema: nav
+      +materialized: ephemeral
+      positions:
+        +materialized: ephemeral
+        table_nav_positions:
+          +enabled: false
+        index_nav_positions:
+          +enabled: false
     power:
       +schema: power
       +materialized: ephemeral
@@ -440,6 +449,14 @@ models:
           table_meteologica_pjm_forecast_hourly:
             +enabled: false
           index_meteologica_pjm_forecast_hourly:
+            +enabled: false
+        pjm_da_price_forecast:
+          +materialized: ephemeral
+          table_meteologica_pjm_western_hub_da_power_price_forecast_hourly:
+            +enabled: false
+          table_meteologica_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly:
+            +enabled: false
+          index_meteologica_pjm_da_price_forecast:
             +enabled: false
     weather:
       +schema: weather

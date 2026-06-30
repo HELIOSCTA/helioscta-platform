@@ -155,4 +155,4 @@ NAV_SFTP_HOST = os.getenv("NAV_SFTP_HOST")
 NAV_SFTP_USER = os.getenv("NAV_SFTP_USER")
 NAV_SFTP_PASSWORD = os.getenv("NAV_SFTP_PASSWORD")
 NAV_SFTP_PORT = int(os.getenv("NAV_SFTP_PORT")) if os.getenv("NAV_SFTP_PORT") else None
-NAV_SFTP_REMOTE_DIR = r'/'
+NAV_SFTP_REMOTE_DIR = os.getenv("NAV_SFTP_REMOTE_DIR") or r'/'

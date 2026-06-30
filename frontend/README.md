@@ -61,7 +61,10 @@ GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays
 Local development also exposes a clearly separated `DEV` sidebar section:
 
 ```text
+GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
+GET /api/dev/nav-positions?fund=all&rawLimit=200
+GET /api/pjm-generation?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/pjm-weather?region=PJM&hours=24
@@ -164,6 +167,48 @@ embedded Term Bible view reuses `GET /api/pjm-term-bible`, renders tables only,
 and suppresses the daily plot. Legacy links with `?section=pjm-term-bible` open
 the Historical Settlements page on the Term Bible tab.
 
+## Local DEV Positions Source Contract
+
+The Positions DEV view reads NAV position valuation snapshots with
+`helios_readonly` from `nav.positions`. It is local-only and appears in the
+local `DEV` sidebar section at `/?section=nav-positions`; Vercel builds hide
+the page and return `404` from `GET /api/dev/nav-positions`.
+
+Source system: NAV SFTP Position Valuation Detail Report XLSX files.
+
+Promoted table grain:
+`fund_code x nav_date x sftp_upload_timestamp x source_file_name x source_file_row_number`.
+
+The route `GET /api/dev/nav-positions` accepts bounded params:
+`date=YYYY-MM-DD`, `fund`, `accountGroup`, `product`, and `rawLimit`.
+Without `date`, it selects the latest NAV date and latest upload per fund. The
+response returns a product summary aggregated by fund, account group, product,
+type, month, client/source symbols, call/put, and strike, plus capped raw rows
+for source-column inspection. The page also exposes a local rules tab for the
+TypeScript contract/product-code rules and lookup table. It does not mutate
+data or create a frontend cache table.
+
+## Local DEV PJM Generation Source Contract
+
+The Generation DEV view reads PJM generation and capacity feeds with
+`helios_readonly` from `pjm.gen_by_fuel`, `pjm.day_gen_capacity`, and
+`pjm.rt_and_self_ecomax`.
+
+Source system: PJM Data Miner 2 generation feeds.
+
+Promoted table grain:
+`pjm.gen_by_fuel` is keyed by `datetime_beginning_utc x fuel_type`.
+`pjm.day_gen_capacity` is keyed by `bid_datetime_beginning_utc`.
+`pjm.rt_and_self_ecomax` is keyed by `datetime_beginning_utc`.
+
+The route `GET /api/pjm-generation` accepts optional `date=YYYY-MM-DD`.
+Without `date`, it selects the latest operating day where all three feeds have
+at least 23 hourly timestamps, allowing DST-short days. The response returns
+hourly fuel mix, capacity economic max, emergency max, committed capacity,
+scheduled-generation economic max fields, fuel summary rows, and source-window
+freshness. Historical depth is limited by `pjm.rt_and_self_ecomax` until that
+feed is backfilled.
+
 ## PJM Daily Load Growth Source Contract
 
 The Load Growth section is a daily weather-normalized YoY explorer. It reads
@@ -226,6 +271,40 @@ area/date explorer shape as PJM Data Miner load forecasts. The route
 `GET /api/pjm-meteologica-forecast-differences` accepts `area`, `date`, and
 `lookbackHours` and returns the same snapshot/delta vintage shape used by the
 PJM Data Miner forecast explorer popup.
+
+## Local DEV PJM DA Model Source Contract
+
+The DA Model page reads Meteologica Western Hub DA price forecasts and matching
+PJM actual DA LMPs directly from source tables with `helios_readonly`:
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly` and
+`meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`,
+plus `pjm.da_hrl_lmps`.
+
+Source system:
+Meteologica xTraders Western Hub DA price deterministic and ECMWF ENS feeds.
+
+Source table grain:
+`content_id x update_id x forecast_period_start`. For a selected delivery
+date, the API selects the latest `issue_date` available in each source table
+for that date at or before the optional cutoff.
+Actual DA values are pulled from `pjm.da_hrl_lmps` where
+`row_is_current = true`, `pnode_name = 'WESTERN HUB'`, and
+`datetime_beginning_ept::date` equals the selected target date.
+
+The DA Model page appears in the local `DEV` sidebar section at
+`/?section=pjm-da-model`; Vercel builds hide the page and return `404` from
+`GET /api/pjm-da-model`.
+
+The route `GET /api/pjm-da-model` accepts optional `date=YYYY-MM-DD` and
+`cutoff=YYYY-MM-DDTHH:MM`. The cutoff is interpreted as a UTC issue timestamp
+and restricts each source to `issue_date <= cutoff`. Without a date it selects
+the first available future delivery date under the cutoff, or the first
+available future delivery date when no cutoff is supplied. The response returns
+available delivery dates, the applied cutoff, deterministic and ensemble issue
+timestamps, PJM actual update timestamp, HE1-HE24 series (`Actual DA`, `Det`,
+`ENS Avg`, `ENS Bottom`, `ENS Top`), derived width/IQR rows, and
+OnPeak/OffPeak/Flat block values. `OnPeak` is HE8-23, and `OffPeak` is HE1-7
+plus HE24.
 
 ## PJM Forecasts Source Contract
 

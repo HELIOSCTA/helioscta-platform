@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from backend.orchestration.power.pjm import meteologica_da_price_forecast as da_price_forecast
 from backend.scrapes.power.pjm import meteologica_forecast_hourly as scrape
 from backend.utils.data_availability import emit_data_availability_event
 
@@ -26,8 +27,9 @@ def main(
     run_mode: str = "scheduled",
     retention_days: int = scrape.DEFAULT_RETENTION_DAYS,
     metadata: dict[str, Any] | None = None,
+    include_da_price: bool = True,
 ) -> pd.DataFrame | None:
-    """Run the PJM Meteologica forecast refresh and emit a freshness event."""
+    """Run PJM Meteologica forecast refreshes and emit freshness events."""
     df = scrape.main(
         database=database,
         run_mode=run_mode,
@@ -36,11 +38,18 @@ def main(
     )
     if df is None or df.empty:
         logger.info("No PJM Meteologica rows available for freshness emission.")
-        return df
+    else:
+        event = _emit_freshness_event(df=df, database=database)
+        status = "created" if event.get("created") else "already existed"
+        logger.info("Data availability event %s %s.", event["event_key"], status)
 
-    event = _emit_freshness_event(df=df, database=database)
-    status = "created" if event.get("created") else "already existed"
-    logger.info("Data availability event %s %s.", event["event_key"], status)
+    if include_da_price:
+        da_price_forecast.main(
+            database=database,
+            run_mode=run_mode,
+            retention_days=retention_days,
+            metadata={**(metadata or {}), "triggered_by": API_SCRAPE_NAME},
+        )
     return df
 
 
