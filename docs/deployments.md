@@ -812,7 +812,8 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-rt-hrl-lmps
 
-- Status: deployed; timer enabled and manual VM run succeeded.
+- Status: deployed; timer enabled and manual VM run succeeded most recently on
+  `2026-06-30 17:20 UTC`.
 - Workflow: PJM verified hourly Real-Time LMP post-publish refresh.
 - Runtime module: `backend.orchestration.power.pjm.rt_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
@@ -830,6 +831,10 @@ FROM isone.seven_day_solar_forecast;
 - Schedule: daily at `18:00 UTC` with `RandomizedDelaySec=5min`, after PJM's
   documented daily verified hourly RT posting window between `11 a.m.` and
   `12 p.m.` EPT.
+- Latest VM verification: service exited `status=0/SUCCESS`, upserted `2,016`
+  rows across recent posted market dates, and wrote `ops.api_fetch_log` rows
+  with `run_mode=scheduled_post_publish` and scheduler
+  `helios-pjm-rt-hrl-lmps.timer`.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-rt-hrl-lmps.lock`.
@@ -966,8 +971,9 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-hourly-bucket
 
-- Status: promoted for VM switch from
-  `helios-pjm-rt-unverified-hrl-lmps.timer`.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled, old
+  `helios-pjm-rt-unverified-hrl-lmps.timer` disabled, and manual VM smoke run
+  succeeded on `2026-06-30 17:20 UTC`.
 - Workflow: PJM hourly scrape bucket.
 - Runtime module:
   `backend.orchestration.power.pjm.hourly_bucket`.
@@ -983,6 +989,10 @@ FROM isone.seven_day_solar_forecast;
   - `infrastructure/systemd/helios-pjm-hourly-bucket.timer`
 - Schedule: hourly at minute `15` UTC with `Persistent=false` and
   `RandomizedDelaySec=2min`.
+- Latest VM verification: bucket service exited `status=0/SUCCESS`; latest
+  `rt_unverified_hrl_lmps` telemetry rows use scheduler
+  `helios-pjm-hourly-bucket.timer` with `bucket=pjm_hourly_bucket` and
+  `bucket_feed=rt_unverified_hrl_lmps`.
 - Retired units:
   `helios-pjm-rt-unverified-hrl-lmps.service` and
   `helios-pjm-rt-unverified-hrl-lmps.timer`.
