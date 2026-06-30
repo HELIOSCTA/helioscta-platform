@@ -904,11 +904,11 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 25 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `rt_unverified_hrl_lmps`, `load_frcstd_7_day`, `hrl_dmd_bids`,
-  `gen_outages_by_type`, and the four Operations Summary feeds were promoted
-  to dedicated timers.
+  `da_transconstraints`, `gen_outages_by_type`, and the four Operations
+  Summary feeds were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -1100,6 +1100,65 @@ SELECT
     created_at
 FROM ops.api_fetch_log
 WHERE pipeline_name = 'hrl_dmd_bids'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+## helios-pjm-da-transconstraints
+
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled.
+- Workflow: PJM day-ahead transmission constraints refresh.
+- Runtime module: `backend.orchestration.power.pjm.da_transconstraints`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.da_transconstraints`.
+- Source system: PJM Data Miner 2 `da_transconstraints`.
+- Destination table: `pjm.da_transconstraints`.
+- Source grain:
+  `datetime_beginning_utc x day_ahead_congestion_event x monitored_facility x contingency_facility`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-da-transconstraints.service`
+  - `infrastructure/systemd/helios-pjm-da-transconstraints.timer`
+- Schedule: daily at `17:00 UTC`, matching
+  `helios-pjm-hrl-dmd-bids.timer`, with `Persistent=true`.
+- Polling policy: poll every `120` seconds for up to `4` hours until the
+  target market day returns normalized constraint rows with no duplicate
+  primary keys.
+- Timer behavior: missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-da-transconstraints.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on
+  `(datetime_beginning_utc, day_ahead_congestion_event, monitored_facility, contingency_facility)`.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT day_ahead_congestion_event) AS congestion_events,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.da_transconstraints
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'da_transconstraints'
 ORDER BY created_at DESC
 LIMIT 20;
 ```

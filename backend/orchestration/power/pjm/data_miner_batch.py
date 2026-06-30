@@ -18,7 +18,6 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "ancillary_services",
     "da_interface_flows_and_limits",
     "da_marginal_value",
-    "da_transconstraints",
     "day_gen_capacity",
     "dispatched_reserves",
     "five_min_solar_generation",

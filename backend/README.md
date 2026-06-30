@@ -130,6 +130,14 @@ after the DA hourly LMP timer, then upserts by
 `datetime_beginning_utc x datetime_beginning_ept x area` and logs one resolved
 API fetch telemetry row to `ops.api_fetch_log`.
 
+PJM day-ahead transmission constraints run through
+`backend.orchestration.power.pjm.da_transconstraints` and write
+`pjm.da_transconstraints`. The scheduled path uses the same daily start and
+polling policy as hourly demand bids, then upserts by
+`datetime_beginning_utc x day_ahead_congestion_event x monitored_facility x
+contingency_facility` and logs one resolved API fetch telemetry row to
+`ops.api_fetch_log`.
+
 PJM unverified hourly real-time LMPs run through the hourly bucket at
 `backend.orchestration.power.pjm.hourly_bucket`, which currently includes
 `backend.orchestration.power.pjm.rt_unverified_hrl_lmps` and writes

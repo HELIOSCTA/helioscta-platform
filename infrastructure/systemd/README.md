@@ -70,7 +70,7 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 26
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 25
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
@@ -93,6 +93,24 @@ elapsed seconds. The timer runs daily at `17:00 UTC`, one hour after
 `helios-pjm-da-hrl-lmps.timer`, with a four-hour polling ceiling and two-minute
 poll interval. The service uses `flock` with
 `/tmp/helios-pjm-hrl-dmd-bids.lock`.
+
+## PJM Day-Ahead Transmission Constraints
+
+PJM day-ahead transmission constraints have their own publication-aware timer:
+
+```text
+helios-pjm-da-transconstraints.service
+helios-pjm-da-transconstraints.timer
+```
+
+It runs `backend.orchestration.power.pjm.da_transconstraints`, which polls the
+PJM Data Miner `da_transconstraints` feed for the next market day, waits until
+the target market day returns normalized constraint rows, upserts
+`pjm.da_transconstraints`, and writes one resolved API fetch telemetry row to
+`ops.api_fetch_log` with poll count and elapsed seconds. The timer runs daily
+at `17:00 UTC`, matching `helios-pjm-hrl-dmd-bids.timer`, with a four-hour
+polling ceiling and two-minute poll interval. The service uses `flock` with
+`/tmp/helios-pjm-da-transconstraints.lock`.
 
 ## PJM Operations Summary
 
@@ -609,6 +627,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-b
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
@@ -656,6 +676,7 @@ sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-hourly-bucket.timer
 sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
+sudo systemctl enable --now helios-pjm-da-transconstraints.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
@@ -691,6 +712,7 @@ sudo systemctl start helios-pjm-rt-hrl-lmps.service
 sudo systemctl start helios-pjm-hourly-bucket.service
 sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
 sudo systemctl start helios-pjm-hrl-dmd-bids.service
+sudo systemctl start helios-pjm-da-transconstraints.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-pjm-ops-sum.service
@@ -741,6 +763,14 @@ For the PJM hourly demand bid refresh:
 systemctl status helios-pjm-hrl-dmd-bids.service
 systemctl status helios-pjm-hrl-dmd-bids.timer
 journalctl -u helios-pjm-hrl-dmd-bids.service -n 200 --no-pager
+```
+
+For the PJM day-ahead transmission constraints refresh:
+
+```bash
+systemctl status helios-pjm-da-transconstraints.service
+systemctl status helios-pjm-da-transconstraints.timer
+journalctl -u helios-pjm-da-transconstraints.service -n 200 --no-pager
 ```
 
 For the PJM Operations Summary refresh:

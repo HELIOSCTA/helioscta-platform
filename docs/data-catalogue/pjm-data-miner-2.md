@@ -306,7 +306,10 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, day_ahead_congestion_event, monitored_facility, contingency_facility`.
 - Uniqueness key: `datetime_beginning_utc, day_ahead_congestion_event, monitored_facility, contingency_facility`.
 - Freshness field: `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.da_transconstraints`.
+- Runtime: `backend.orchestration.power.pjm.da_transconstraints` for the
+  scheduled publication-aware refresh; `backend.scrapes.power.pjm.da_transconstraints`
+  remains the lower-level scrape module.
+- VM timer: `helios-pjm-da-transconstraints.timer`.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/da_transconstraints/`.
 - Manual table DDL:

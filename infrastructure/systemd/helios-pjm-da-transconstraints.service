@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA PJM day-ahead transmission constraints orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-da-transconstraints.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.da_transconstraints
+TimeoutStartSec=5h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-da-transconstraints
+
+[Install]
+WantedBy=multi-user.target

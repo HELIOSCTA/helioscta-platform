@@ -43,10 +43,11 @@ A backend workflow is production-ready when it has:
 | DA LMP schedule | In place | `helios-pjm-da-hrl-lmps.timer` runs daily at `16:00 UTC`. |
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
+| DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 26 support scrapes daily at `04:30 UTC`; `helios-pjm-gen-outages-by-type.timer` refreshes outage forecasts at `13:45`, `14:15`, and `15:15 UTC`. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 25 support scrapes daily at `04:30 UTC`; `helios-pjm-da-transconstraints.timer` and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
 | PJM price repair | In place | `helios-pjm-hourly-price-backfill-7-day.timer` reruns seven-day DA, verified RT hourly, verified RT five-minute HRL, and unverified RT hourly LMP backfills nightly at `02:00 America/New_York`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |

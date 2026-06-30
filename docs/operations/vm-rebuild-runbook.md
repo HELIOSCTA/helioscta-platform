@@ -99,6 +99,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-data-miner-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-data-miner-batch.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.service /etc/systemd/system/
@@ -109,6 +111,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now helios-pjm-da-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-data-miner-batch.timer
+sudo systemctl enable --now helios-pjm-da-transconstraints.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-prod-health-check.timer

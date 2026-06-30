@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily HeliosCTA PJM day-ahead transmission constraints timer
+
+[Timer]
+OnCalendar=*-*-* 17:00:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=helios-pjm-da-transconstraints.service
+
+[Install]
+WantedBy=timers.target
