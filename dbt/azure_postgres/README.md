@@ -303,8 +303,8 @@ dbt compile --profiles-dir . --select path:models/power/miso/real_time_total_loa
 
 ICE Python settlement feeds are local Windows-only because they require a
 licensed ICE XL / ICE Python runtime. The Linux VM may have the files in its
-checkout, but the active runtime is the local Windows service under
-`infrastructure/windows-service/`, not systemd.
+checkout, but the active runtime is the local Windows Task Scheduler
+coordinator under `infrastructure/windows-task-scheduler/`, not systemd.
 
 ```text
 models/ice_python/settlements/

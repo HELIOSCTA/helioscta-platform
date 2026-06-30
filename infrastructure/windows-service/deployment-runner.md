@@ -1,5 +1,9 @@
 # ICE Python Windows Deployment Runner
 
+This GitHub-runner/NSSM deployment path is retained for rollback/reference
+only. The preferred local ICE activation path is now the Task Scheduler
+coordinator under `infrastructure/windows-task-scheduler/`.
+
 This is the unattended deployment path for the local-only ICE Python Windows
 service. It uses a GitHub Actions self-hosted Windows runner as the production
 deployment agent. The runner owns Windows service control; Codex or an operator

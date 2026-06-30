@@ -4,8 +4,8 @@ Store Linux production service and timer definitions here. This directory is
 the Linux VM deploy manifest for scheduled backend workflows.
 
 Local Windows ICE Python jobs are intentionally excluded from this directory.
-They are activated through `infrastructure/windows-service/` and must not
-receive Linux `.service` or `.timer` files.
+They are activated through `infrastructure/windows-task-scheduler/` and must
+not receive Linux `.service` or `.timer` files.
 
 Each promoted scheduled script should have:
 

@@ -1,7 +1,11 @@
 # Windows Service Runtime
 
-This folder is the local-only activation surface for ICE Python workflows.
-It is separate from the Linux VM deploy manifest in `infrastructure/systemd/`.
+This NSSM service path is retained for rollback/reference only. The preferred
+local ICE activation path is now the Task Scheduler coordinator under
+`infrastructure/windows-task-scheduler/`.
+
+This folder is separate from the Linux VM deploy manifest in
+`infrastructure/systemd/`.
 
 ICE Python is local-only because it requires a licensed Windows ICE XL / ICE
 Python runtime. The files may exist in a VM checkout after `git pull`, but they

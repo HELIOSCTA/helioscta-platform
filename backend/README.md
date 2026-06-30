@@ -148,11 +148,12 @@ ICE Python settlement helpers are local Windows-only. They live under
 `backend.scrapes.ice_python` and `backend.orchestration.ice_python`, write
 non-option settlement marks to `ice_python.settlements` and contract-date
 snapshots to `ice_python.settlement_contract_dates`, and require a licensed ICE
-XL / ICE Python install on the Windows service host. Do not install ICE
+XL / ICE Python install on the Windows scheduler host. Do not install ICE
 dependencies from `backend/requirements-local-windows.txt` on the Linux VM,
 and do not add ICE systemd units under `infrastructure/systemd`.
-The local Windows service runs due ICE jobs in child Python processes with a
-hard timeout, prevents overlapping manual/service pulls with a local lock file,
+The local Windows Task Scheduler coordinator runs the ICE scheduler in
+`run_once` mode, launches due jobs in child Python processes with hard
+timeouts, prevents overlapping manual/scheduled pulls with a local lock file,
 persists per-window state with explicit success/failure/timeout statuses, and
 writes durable job telemetry to `ops.api_fetch_log`.
 
@@ -210,7 +211,8 @@ python -m pip install -r backend\requirements-local-windows.txt -e backend
 
 Install the proprietary ICE Python wheel from the licensed ICE XL installation
 outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
-install the local Windows service from `infrastructure/windows-service/`.
+install the local Windows Task Scheduler coordinator from
+`infrastructure/windows-task-scheduler/`.
 
 ## Manual PJM Backfills
 

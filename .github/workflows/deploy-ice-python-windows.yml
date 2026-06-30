@@ -1,4 +1,4 @@
-name: Deploy ICE Python Windows Service
+name: Deploy ICE Python Windows Task Scheduler
 
 on:
   workflow_dispatch:
@@ -19,8 +19,12 @@ on:
         description: Default hard timeout for scheduled ICE child jobs.
         required: true
         default: "2700"
+      task_user:
+        description: Windows user that owns the scheduled task.
+        required: true
+        default: "AzureAD\\AidanKeaveny"
       run_import_smoke:
-        description: Verify icepython and service imports before restart.
+        description: Verify icepython and scheduler imports before task update.
         required: true
         type: boolean
         default: true
@@ -34,7 +38,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Deploy ICE Python service
+    name: Deploy ICE Python task
     timeout-minutes: 45
     runs-on:
       - self-hosted
@@ -50,7 +54,7 @@ jobs:
       - name: Check out deploy scripts
         uses: actions/checkout@v5
 
-      - name: Deploy service
+      - name: Deploy Task Scheduler coordinator
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -60,12 +64,15 @@ jobs:
           $deployArgs = @{
             RepoRoot = "${{ inputs.repo_root }}"
             PythonExe = "${{ inputs.python_exe }}"
+            TaskUser = "${{ inputs.task_user }}"
             GitBranch = "${{ inputs.git_branch }}"
             JobTimeoutSeconds = $jobTimeoutSeconds
+            PullLatest = $true
+            InstallDependencies = $true
           }
 
           if ($runImportSmoke) {
             $deployArgs.RunImportSmoke = $true
           }
 
-          .\infrastructure\windows-service\deploy_ice_python_service.ps1 @deployArgs
+          .\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 @deployArgs
