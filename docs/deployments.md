@@ -966,7 +966,10 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-rt-unverified-hrl-lmps
 
-- Status: promoted for VM install.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual VM
+  smoke run succeeded on `2026-06-30 16:53 UTC`.
+- Deployed commit: `f6b5b243bfd600307b0f2cd6ad14250def6bcd22`
+  (contains runtime commit `19a2c1a`).
 - Workflow: PJM unverified hourly Real-Time LMP refresh.
 - Runtime module:
   `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`.
@@ -982,6 +985,10 @@ FROM isone.seven_day_solar_forecast;
   - `infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.timer`
 - Schedule: hourly at minute `15` UTC with `Persistent=false` and
   `RandomizedDelaySec=2min`.
+- VM smoke result: service upserted `1,476` rows across the 2026-06-29 and
+  2026-06-30 market dates; latest `ops.api_fetch_log` rows were `success`
+  with `run_mode=scheduled_hourly` and scheduler
+  `helios-pjm-rt-unverified-hrl-lmps.timer`.
 - Timer behavior: missed hourly starts do not replay after VM downtime; the
   orchestration pulls a rolling recent window and the nightly price repair
   covers recent posted market dates.
