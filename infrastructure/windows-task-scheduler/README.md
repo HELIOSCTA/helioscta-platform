@@ -33,8 +33,17 @@ and recreate the hung-process behavior this promoted path avoids.
 On the licensed Windows ICE host:
 
 ```powershell
-cd C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod
+cd C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -m pip install -r backend\requirements-local-windows.txt -e backend
+```
+
+Recommended local runtime layout:
+
+```text
+C:\Users\AidanKeaveny\helioscta-prod\
+  helioscta-platform\
+  state\
+  logs\
 ```
 
 Install the proprietary ICE Python wheel outside this repo, then verify:
@@ -53,8 +62,10 @@ Run from the production clone in PowerShell:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
   -PullLatest `
   -InstallDependencies `
   -RunImportSmoke
@@ -79,8 +90,10 @@ Run one coordinator tick directly:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\run_ice_python_once.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod `
-  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
 ```
 
 Start the scheduled task manually:
@@ -102,11 +115,11 @@ Get-ScheduledTaskInfo `
   -TaskPath "\HeliosCTA\ICE Python\" `
   -TaskName "HeliosCTA ICE Python Coordinator"
 
-Get-Content C:\ProgramData\HeliosCTA\logs\ice-python-task-scheduler.log -Tail 100
+Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
 ```
 
 Per-pull application logs still live under
-`C:\ProgramData\HeliosCTA\logs`. Successful per-pull logs are deleted by
+`C:\Users\AidanKeaveny\helioscta-prod\logs`. Successful per-pull logs are deleted by
 default; failed per-pull logs are retained.
 
 ## Verify Data
