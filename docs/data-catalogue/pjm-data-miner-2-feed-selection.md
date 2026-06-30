@@ -86,6 +86,7 @@ analysis, load/weather-normalization work, and outage/transmission context.
 | hourly_wind_power_forecast | Hourly Wind Power Forecast | Generation | Every 10 minutes | 30 days | Hourly wind forecast curve |
 | hourly_solar_power_forecast | Hourly Solar Power Forecast | Generation | Hourly | 30 days | Hourly solar forecast curve |
 | day_gen_capacity | Daily Generation Capacity | Generation | Daily | Indefinitely | Available capacity context |
+| rt_and_self_ecomax | Scheduled Generation | Generation | Daily | Indefinitely | Scheduled and self-scheduled economic max context |
 | frcstd_gen_outages | Forecasted Generation Outages | Generation | Daily | Indefinitely | Forward outage risk |
 | gen_outages_by_type | Generation Outage for Seven Days by Type | Generation | Daily | Indefinitely | Near-term outage mix |
 | da_transconstraints | Day-Ahead Transmission Constraints | Constraints | Daily | Indefinitely | DA congestion drivers |
@@ -167,13 +168,14 @@ Promote the next feeds in this order:
 13. `wind_gen`
 14. `solar_gen`
 15. `day_gen_capacity`
-16. `frcstd_gen_outages`
-17. `gen_outages_by_type`
-18. `da_transconstraints`
-19. `da_marginal_value`
-20. `rt_marginal_value`
-21. `da_interface_flows_and_limits`
-22. `rt_scheduled_interchange`
+16. `rt_and_self_ecomax`
+17. `frcstd_gen_outages`
+18. `gen_outages_by_type`
+19. `da_transconstraints`
+20. `da_marginal_value`
+21. `rt_marginal_value`
+22. `da_interface_flows_and_limits`
+23. `rt_scheduled_interchange`
 
 After those are stable, promote Tier 2 based on the first downstream consumer:
 ancillary/reserve analytics, constraint diagnostics, virtual bidding analytics,

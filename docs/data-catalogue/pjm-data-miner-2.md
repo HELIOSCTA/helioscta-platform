@@ -42,6 +42,7 @@ Feed selection and promotion priority are documented in
 | dispatched_reserves | Dispatched Reserves | Ancillary Services | datetime_beginning_ept window | pjm.dispatched_reserves |
 | five_min_solar_generation | Five Minute Solar Generation | Generation | datetime_beginning_ept window | pjm.five_min_solar_generation |
 | gen_by_fuel | Generation by Fuel Type | Generation | datetime_beginning_ept window | pjm.gen_by_fuel |
+| rt_and_self_ecomax | Scheduled Generation | Generation | datetime_beginning_ept window | pjm.rt_and_self_ecomax |
 | load_frcstd_hist | Historical Load Forecasts | Load Forecast | forecast_hour_beginning_ept window | pjm.load_frcstd_hist |
 | hrl_load_metered | Hourly Load: Metered | Load | datetime_beginning_ept window | pjm.hrl_load_metered |
 | hrl_load_prelim | Hourly Load: Preliminary | Load | datetime_beginning_ept window | pjm.hrl_load_prelim |
@@ -85,6 +86,7 @@ Feed selection and promotion priority are documented in
 | Queued | inst_load | Instantaneous Load | five_min_instantaneous_load | five_min_instantaneous_load_v1_2025_oct_15 | Every 5 minutes | 30 days | datetime_beginning_utc, datetime_beginning_ept, area |
 | Promoted | five_min_solar_generation | Five Minute Solar Generation | none | none | Every 5 minutes | 30 days | datetime_beginning_utc |
 | Promoted | gen_by_fuel | Generation by Fuel Type | none | none | Hourly | Indefinitely | datetime_beginning_utc, fuel_type |
+| Promoted | rt_and_self_ecomax | Scheduled Generation | none | none | Daily | Indefinitely | datetime_beginning_utc |
 | Promoted | load_frcstd_hist | Historical Load Forecasts | none | none | Daily | Indefinitely | evaluated_at_utc, evaluated_at_ept, forecast_hour_beginning_utc, forecast_hour_beginning_ept, forecast_area |
 | Promoted | hrl_load_metered | Hourly Load: Metered | none | none | Daily | Indefinitely | datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified |
 | Promoted | hrl_load_prelim | Hourly Load: Preliminary | none | none | Daily | Indefinitely | datetime_beginning_utc, load_area |
@@ -360,6 +362,19 @@ Feed selection and promotion priority are documented in
   `dbt/azure_postgres/models/power/pjm/gen_by_fuel/`.
 - Manual table DDL:
   `dbt/azure_postgres/models/power/pjm/gen_by_fuel/table_pjm_gen_by_fuel.sql`.
+
+### rt_and_self_ecomax
+
+- Source system: PJM Data Miner 2 `rt_and_self_ecomax`.
+- Destination: `pjm.rt_and_self_ecomax`.
+- Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc`.
+- Uniqueness key: `datetime_beginning_utc`.
+- Freshness field: `datetime_beginning_ept`.
+- Runtime: `backend.scrapes.power.pjm.rt_and_self_ecomax`.
+- dbt folder:
+  `dbt/azure_postgres/models/power/pjm/rt_and_self_ecomax/`.
+- Manual table DDL:
+  `dbt/azure_postgres/models/power/pjm/rt_and_self_ecomax/table_pjm_rt_and_self_ecomax.sql`.
 
 ### load_frcstd_hist
 

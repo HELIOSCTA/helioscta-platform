@@ -156,6 +156,12 @@ models:
             +enabled: false
           index_pjm_gen_by_fuel:
             +enabled: false
+        rt_and_self_ecomax:
+          +materialized: ephemeral
+          table_pjm_rt_and_self_ecomax:
+            +enabled: false
+          index_pjm_rt_and_self_ecomax:
+            +enabled: false
         load_frcstd_hist:
           +materialized: ephemeral
           table_pjm_load_frcstd_hist:

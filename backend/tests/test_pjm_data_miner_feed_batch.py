@@ -31,6 +31,7 @@ BATCH_FEEDS = [
     "hrl_load_prelim",
     "hrl_dmd_bids",
     "frcstd_gen_outages",
+    "rt_and_self_ecomax",
     "rt_dispatch_reserves",
     "reserve_market_results",
     "rt_default_mv_override",
@@ -73,6 +74,7 @@ def test_forecast_feed_configs_have_90_day_hot_retention():
     assert FEED_CONFIGS["load_frcstd_hist"].hot_retention_days is None
     assert FEED_CONFIGS["frcstd_gen_outages"].hot_retention_days is None
     assert FEED_CONFIGS["gen_by_fuel"].hot_retention_days is None
+    assert FEED_CONFIGS["rt_and_self_ecomax"].hot_retention_days is None
     assert FEED_CONFIGS["gen_outages_by_type"].hot_retention_days is None
 
     expected = {
@@ -235,6 +237,39 @@ def test_gen_by_fuel_normalization_coerces_fuel_mix_rows():
     assert coal["fuel_percentage_of_total"] == 0.209
     assert bool(coal["is_renewable"]) is False
     assert bool(hydro["is_renewable"]) is True
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_ept"])
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
+
+
+def test_rt_and_self_ecomax_normalization_keeps_confidential_rows():
+    config = FEED_CONFIGS["rt_and_self_ecomax"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "datetime_beginning_utc": "6/29/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/29/2026 12:00:00 AM",
+                    "rt_ecomax": "",
+                    "conf_disclaimer": " Confidentiality Rules Prohibit Display ",
+                    "self_ecomax": "57035.5",
+                },
+                {
+                    "datetime_beginning_utc": "6/29/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/29/2026 12:00:00 AM",
+                    "rt_ecomax": "1200.5",
+                    "conf_disclaimer": "",
+                    "self_ecomax": "57036.5",
+                },
+            ]
+        ),
+        config,
+    )
+
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert row["rt_ecomax"] == 1200.5
+    assert row["self_ecomax"] == 57036.5
+    assert row["conf_disclaimer"] == ""
     assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_ept"])
     assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
 

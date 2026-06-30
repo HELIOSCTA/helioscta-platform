@@ -30,6 +30,7 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "load_frcstd_hist",
     "pnode",
     "reserve_market_results",
+    "rt_and_self_ecomax",
     "rt_default_mv_override",
     "rt_dispatch_reserves",
     "rt_fivemin_mnt_lmps",

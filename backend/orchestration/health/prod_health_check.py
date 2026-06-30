@@ -96,6 +96,7 @@ PJM_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
     SupportFeed("ops_sum_prjctd_tie_flow", "pjm", "ops_sum_prjctd_tie_flow"),
     SupportFeed("pnode", "pjm", "pnode"),
     SupportFeed("reserve_market_results", "pjm", "reserve_market_results"),
+    SupportFeed("rt_and_self_ecomax", "pjm", "rt_and_self_ecomax"),
     SupportFeed("rt_default_mv_override", "pjm", "rt_default_mv_override"),
     SupportFeed("rt_dispatch_reserves", "pjm", "rt_dispatch_reserves"),
     SupportFeed("rt_fivemin_mnt_lmps", "pjm", "rt_fivemin_mnt_lmps"),
