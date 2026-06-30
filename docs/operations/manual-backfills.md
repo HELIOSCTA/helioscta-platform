@@ -88,7 +88,7 @@ from backend.backfills.power.pjm.da_hrl_lmps import main
 print(main(start_date="2026-06-10", end_date="2026-06-10", dry_run=True))
 PY
 
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+sudo systemd-run --unit=helios-pjm-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
 rm -f /tmp/helios_da_backfill.py
 ```
 
@@ -101,7 +101,7 @@ from backend.backfills.power.pjm.da_hrl_lmps import main
 print(main(start_date="2026-06-01", end_date="2026-06-07"))
 PY
 
-sudo systemd-run --unit=helios-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
+sudo systemd-run --unit=helios-pjm-da-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_da_backfill.py
 rm -f /tmp/helios_da_backfill.py
 ```
 

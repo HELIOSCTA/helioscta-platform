@@ -32,8 +32,8 @@ Use these from the production VM:
 
 ```bash
 journalctl --disk-usage
-journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
-journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
+journalctl -u helios-pjm-da-hrl-lmps.service -n 100 --no-pager
+journalctl -u helios-pjm-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 journalctl -u helios-pjm-data-miner-batch.service -n 200 --no-pager
 journalctl -u helios-pjm-ops-sum.service -n 200 --no-pager
 journalctl -u helios-prod-health-check.service -n 120 --no-pager

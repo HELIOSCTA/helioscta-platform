@@ -6,7 +6,7 @@ OnCalendar=*-*-* 09:30:00 UTC
 Persistent=true
 RandomizedDelaySec=5min
 AccuracySec=1min
-Unit=helios-rt-fivemin-hrl-lmps.service
+Unit=helios-pjm-rt-fivemin-hrl-lmps.service
 
 [Install]
 WantedBy=timers.target

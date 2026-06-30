@@ -20,7 +20,7 @@ Set the service environment from a root-owned env file, for example:
 ```ini
 EnvironmentFile=/etc/helioscta/backend.env
 WorkingDirectory=/opt/helioscta-platform
-ExecStart=/usr/bin/flock -n /tmp/helios-da-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.da_hrl_lmps
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-da-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.da_hrl_lmps
 ```
 
 Use `HELIOS_LOG_DIR=/var/log/helioscta` in that env file if file logs should
@@ -47,16 +47,16 @@ kept under `/var/log/helioscta` for operator review.
 The first production timer is:
 
 ```text
-helios-da-hrl-lmps.service
-helios-da-hrl-lmps.timer
+helios-pjm-da-hrl-lmps.service
+helios-pjm-da-hrl-lmps.timer
 ```
 
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
 terminal/file logging, and DA LMP data readiness event emission.
-The service uses `flock` with `/tmp/helios-da-hrl-lmps.lock`.
+The service uses `flock` with `/tmp/helios-pjm-da-hrl-lmps.lock`.
 
-The live production VM currently has `helios-da-hrl-lmps.timer` enabled on
+The live production VM currently has `helios-pjm-da-hrl-lmps.timer` enabled on
 `helioscta-prod-vm-01` at `16:00 UTC` with `Persistent=true`. The deployment
 register records the exact deployed commit and verification state.
 
@@ -90,7 +90,7 @@ Data Miner `hrl_dmd_bids` feed for the next market day, waits until the three
 expected demand-bid areas are complete, upserts `pjm.hrl_dmd_bids`, and writes
 one resolved API fetch telemetry row to `ops.api_fetch_log` with poll count and
 elapsed seconds. The timer runs daily at `17:00 UTC`, one hour after
-`helios-da-hrl-lmps.timer`, with a four-hour polling ceiling and two-minute
+`helios-pjm-da-hrl-lmps.timer`, with a four-hour polling ceiling and two-minute
 poll interval. The service uses `flock` with
 `/tmp/helios-pjm-hrl-dmd-bids.lock`.
 
@@ -251,14 +251,14 @@ sudo systemctl enable --now helios-pjm-meteologica-forecast-hourly.timer
 The priority verified five-minute RT price workflow has its own timer:
 
 ```text
-helios-rt-fivemin-hrl-lmps.service
-helios-rt-fivemin-hrl-lmps.timer
+helios-pjm-rt-fivemin-hrl-lmps.service
+helios-pjm-rt-fivemin-hrl-lmps.timer
 ```
 
 It runs `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`, which reuses the
 lower-level scrape, upserts `pjm.rt_fivemin_hrl_lmps`, and emits complete-day
 readiness events for hub, zone, and interface pricing nodes. The service uses
-`flock` with `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
+`flock` with `/tmp/helios-pjm-rt-fivemin-hrl-lmps.lock`.
 
 ## Production Health Digest
 
@@ -597,10 +597,10 @@ helios-<workflow>.timer
 From the `azureuser` shell on the VM:
 
 ```bash
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.service /etc/systemd/system/
@@ -650,8 +650,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-external-int
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo cp /opt/helioscta-platform/infrastructure/systemd/journald-helioscta.conf /etc/systemd/journald.conf.d/helioscta.conf
 sudo systemctl daemon-reload
-sudo systemctl enable --now helios-da-hrl-lmps.timer
-sudo systemctl enable --now helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-da-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-hourly-bucket.timer
 sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
@@ -685,8 +685,8 @@ itself should not have sudo.
 Run the workflow once on demand:
 
 ```bash
-sudo systemctl start helios-da-hrl-lmps.service
-sudo systemctl start helios-rt-fivemin-hrl-lmps.service
+sudo systemctl start helios-pjm-da-hrl-lmps.service
+sudo systemctl start helios-pjm-rt-fivemin-hrl-lmps.service
 sudo systemctl start helios-pjm-rt-hrl-lmps.service
 sudo systemctl start helios-pjm-hourly-bucket.service
 sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
@@ -721,9 +721,9 @@ systemctl list-timers
 For the first job:
 
 ```bash
-systemctl status helios-da-hrl-lmps.service
-systemctl status helios-da-hrl-lmps.timer
-journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
+systemctl status helios-pjm-da-hrl-lmps.service
+systemctl status helios-pjm-da-hrl-lmps.timer
+journalctl -u helios-pjm-da-hrl-lmps.service -n 100 --no-pager
 systemctl list-timers 'helios-*'
 ```
 
@@ -778,9 +778,9 @@ journalctl -u helios-pjm-meteologica-forecast-hourly.service -n 200 --no-pager
 For the RT verified five-minute HRL LMP workflow:
 
 ```bash
-systemctl status helios-rt-fivemin-hrl-lmps.service
-systemctl status helios-rt-fivemin-hrl-lmps.timer
-journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
+systemctl status helios-pjm-rt-fivemin-hrl-lmps.service
+systemctl status helios-pjm-rt-fivemin-hrl-lmps.timer
+journalctl -u helios-pjm-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 ```
 
 For the PJM verified hourly RT LMP publication poller:

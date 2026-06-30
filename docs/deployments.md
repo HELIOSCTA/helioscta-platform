@@ -28,7 +28,7 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
-## helios-da-hrl-lmps
+## helios-pjm-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
 - Workflow: PJM Day-Ahead Hourly LMP orchestration.
@@ -39,8 +39,8 @@ boundary, or log path changes.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
 - Unit files:
-  - `infrastructure/systemd/helios-da-hrl-lmps.service`
-  - `infrastructure/systemd/helios-da-hrl-lmps.timer`
+  - `infrastructure/systemd/helios-pjm-da-hrl-lmps.service`
+  - `infrastructure/systemd/helios-pjm-da-hrl-lmps.timer`
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
 - Public SSH endpoint: `azureuser@20.59.106.155`.
@@ -50,11 +50,11 @@ boundary, or log path changes.
 - Operator SSH user: `azureuser`.
 - Environment file: `/etc/helioscta/backend.env`.
 - File log path: `/var/log/helioscta`.
-- Journal logs: `journalctl -u helios-da-hrl-lmps.service`.
+- Journal logs: `journalctl -u helios-pjm-da-hrl-lmps.service`.
 - Schedule: daily at `16:00 UTC`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
-  `/tmp/helios-da-hrl-lmps.lock`.
+  `/tmp/helios-pjm-da-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-12 20:13:05 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.
@@ -203,7 +203,7 @@ Operational notes:
 
 - Run the service manually only during the PJM publish window unless waiting
   through the polling ceiling is intentional.
-- Use `journalctl -u helios-da-hrl-lmps.service` for process status and
+- Use `journalctl -u helios-pjm-da-hrl-lmps.service` for process status and
   `/var/log/helioscta` for retained failure logs.
 - `/opt/helioscta-platform` is owned for the `helios` service user. From the
   `azureuser` shell, run repo commands as
@@ -953,8 +953,8 @@ FROM isone.seven_day_solar_forecast;
   `ops.api_fetch_log` rows for run ID
   `8bd9992a-8c62-48bb-8ea4-f8cfd9df8a66`.
 - Scheduling posture: the batch keeps the non-priority support scrape tables
-  fresh daily. `helios-da-hrl-lmps.timer` and
-  `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
+  fresh daily. `helios-pjm-da-hrl-lmps.timer` and
+  `helios-pjm-rt-fivemin-hrl-lmps.timer` remain separate because those price
   workflows emit data-readiness events. `helios-pjm-rt-hrl-lmps.timer` runs
   later because verified hourly RT LMPs post after the early support batch.
   `helios-pjm-hourly-bucket.timer` runs hourly because unverified RT hourly
@@ -1052,7 +1052,7 @@ LIMIT 20;
   - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.service`
   - `infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer`
 - Schedule: daily at `17:00 UTC`, one hour after
-  `helios-da-hrl-lmps.timer`, with `Persistent=true`.
+  `helios-pjm-da-hrl-lmps.timer`, with `Persistent=true`.
 - Polling policy: poll every `120` seconds for up to `4` hours until the
   target market day has complete rows for `PJM_RTO`, `MID_ATLANTIC_REGION`,
   and `WESTERN_REGION`.
@@ -1434,7 +1434,7 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
-## helios-rt-fivemin-hrl-lmps
+## helios-pjm-rt-fivemin-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
 - Workflow: PJM verified five-minute Real-Time HRL LMP orchestration.
@@ -1445,18 +1445,18 @@ LIMIT 20;
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
 - Unit files:
-  - `infrastructure/systemd/helios-rt-fivemin-hrl-lmps.service`
-  - `infrastructure/systemd/helios-rt-fivemin-hrl-lmps.timer`
+  - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.service`
+  - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer`
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - File log path: `/var/log/helioscta`.
-- Journal logs: `journalctl -u helios-rt-fivemin-hrl-lmps.service`.
+- Journal logs: `journalctl -u helios-pjm-rt-fivemin-hrl-lmps.service`.
 - Schedule: daily at `09:30 UTC` with `RandomizedDelaySec=5min`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
-  `/tmp/helios-rt-fivemin-hrl-lmps.lock`.
+  `/tmp/helios-pjm-rt-fivemin-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - First enabled at: `2026-06-13 02:48:32 UTC`.
 - Deployed commit: `5d4b10b0933a1b4df087cdb811b7e9e335433c3c`.

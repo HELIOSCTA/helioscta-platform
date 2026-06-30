@@ -138,7 +138,7 @@ Feed selection and promotion priority are documented in
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.da_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.da_hrl_lmps`.
-- VM timer: `helios-da-hrl-lmps.timer`.
+- VM timer: `helios-pjm-da-hrl-lmps.timer`.
 - Runtime observability: `ops.api_fetch_log`.
 - Data availability output: `ops.data_availability_events` with event keys in
   the shape `pjm_da_hrl_lmps:data_ready:<YYYY-MM-DD>:hub`.
@@ -205,7 +205,7 @@ Feed selection and promotion priority are documented in
 - Scheduled orchestration:
   `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_fivemin_hrl_lmps`.
-- VM timer: `helios-rt-fivemin-hrl-lmps.timer`.
+- VM timer: `helios-pjm-rt-fivemin-hrl-lmps.timer`.
 - Runtime observability: `ops.api_fetch_log`.
 - Data availability output: `ops.data_availability_events` with event keys in
   the shape

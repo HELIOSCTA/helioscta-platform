@@ -9,11 +9,11 @@ User=helios
 Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
-ExecStart=/usr/bin/flock -n /tmp/helios-rt-fivemin-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.rt_fivemin_hrl_lmps
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-rt-fivemin-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.rt_fivemin_hrl_lmps
 TimeoutStartSec=4h
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=helios-rt-fivemin-hrl-lmps
+SyslogIdentifier=helios-pjm-rt-fivemin-hrl-lmps
 
 [Install]
 WantedBy=multi-user.target

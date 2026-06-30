@@ -27,8 +27,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
 - Live deployed commit: verify on the VM with
   `sudo -u helios -H git -C /opt/helioscta-platform rev-parse HEAD`.
 - Timers:
-  - `helios-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
-  - `helios-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
+  - `helios-pjm-da-hrl-lmps.timer`, daily at `16:00 UTC`, `Persistent=true`.
+  - `helios-pjm-rt-fivemin-hrl-lmps.timer`, daily at `09:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
@@ -75,8 +75,8 @@ Git immediately.
 
 As of the deployed commit above, the promoted PJM Data Miner scrape modules are
 available on the VM and their database tables/indexes have been applied in
-`helios_prod`. `helios-da-hrl-lmps.timer` and
-`helios-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
+`helios_prod`. `helios-pjm-da-hrl-lmps.timer` and
+`helios-pjm-rt-fivemin-hrl-lmps.timer` cover the priority price workflows with
 data-readiness events. `helios-pjm-load-frcstd-7-day.timer` refreshes the PJM
 seven-day load forecast hourly. `helios-pjm-gen-outages-by-type.timer` refreshes
 the PJM outage dashboard source 5, 30, and 60 minutes after the 06:00 EPT
@@ -213,10 +213,10 @@ Install the service unit and run the full workflow manually only during the PJM
 publish window unless you intend to wait through the polling ceiling:
 
 ```bash
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-hrl-lmps.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl start helios-da-hrl-lmps.service
-sudo systemctl status helios-da-hrl-lmps.service
+sudo systemctl start helios-pjm-da-hrl-lmps.service
+sudo systemctl status helios-pjm-da-hrl-lmps.service
 ```
 
 This uses the same `EnvironmentFile` path that the timer will use, without
@@ -227,32 +227,32 @@ copying secrets into shell history or process arguments.
 The first unit files live under `infrastructure/systemd/`:
 
 ```text
-helios-da-hrl-lmps.service
-helios-da-hrl-lmps.timer
+helios-pjm-da-hrl-lmps.service
+helios-pjm-da-hrl-lmps.timer
 ```
 
 Install and start the timer:
 
 ```bash
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-da-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-hrl-lmps.timer /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now helios-da-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-da-hrl-lmps.timer
 ```
 
 Run once on demand:
 
 ```bash
-sudo systemctl start helios-da-hrl-lmps.service
+sudo systemctl start helios-pjm-da-hrl-lmps.service
 ```
 
 ## Verify Runtime
 
 ```bash
 systemctl list-timers 'helios-*'
-systemctl status helios-da-hrl-lmps.timer
-systemctl status helios-da-hrl-lmps.service
-journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager
+systemctl status helios-pjm-da-hrl-lmps.timer
+systemctl status helios-pjm-da-hrl-lmps.service
+journalctl -u helios-pjm-da-hrl-lmps.service -n 100 --no-pager
 ```
 
 Verify API telemetry with `helios_readonly` or another read-only inspection
@@ -293,7 +293,7 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-Use `journalctl -u helios-da-hrl-lmps.service -n 100 --no-pager` for process
+Use `journalctl -u helios-pjm-da-hrl-lmps.service -n 100 --no-pager` for process
 status and `/var/log/helioscta` for retained scrape log files.
 
 Run the read-only production health digest for morning operator review:
@@ -321,8 +321,8 @@ sudo -u helios -H git -C /opt/helioscta-platform status --short
 sudo -u helios -H /opt/helioscta-platform/.venv/bin/pip install \
   -r /opt/helioscta-platform/backend/requirements.txt \
   -e /opt/helioscta-platform/backend
-sudo systemctl restart helios-da-hrl-lmps.timer
-sudo systemctl restart helios-rt-fivemin-hrl-lmps.timer
+sudo systemctl restart helios-pjm-da-hrl-lmps.timer
+sudo systemctl restart helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl restart helios-pjm-data-miner-batch.timer
 sudo systemctl restart helios-pjm-hourly-bucket.timer
 sudo systemctl restart helios-pjm-hourly-price-backfill-7-day.timer

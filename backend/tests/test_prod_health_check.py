@@ -66,8 +66,8 @@ def test_health_evaluation_passes_for_fresh_critical_readiness():
         support_api_summary=_support_api_summary(),
         support_table_summary=_support_table_summary(),
         service_statuses=[
-            _service("helios-da-hrl-lmps.service", "success"),
-            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "success"),
         ],
         generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
     )
@@ -118,8 +118,8 @@ def test_health_evaluation_fails_for_stale_rt_readiness_and_duplicates():
         support_api_summary=[],
         support_table_summary=[],
         service_statuses=[
-            _service("helios-da-hrl-lmps.service", "success"),
-            _service("helios-rt-fivemin-hrl-lmps.service", "exit-code", "1"),
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "exit-code", "1"),
         ],
         generated_at=datetime(2026, 6, 13, tzinfo=timezone.utc),
     )
@@ -193,8 +193,8 @@ def test_health_evaluation_ignores_recovered_low_rate_api_failures():
         support_api_summary=_support_api_summary(),
         support_table_summary=_support_table_summary(),
         service_statuses=[
-            _service("helios-da-hrl-lmps.service", "success"),
-            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "success"),
             _service("helios-pjm-data-miner-batch.service", "success"),
         ],
         generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
@@ -262,8 +262,8 @@ def test_health_evaluation_warns_for_support_batch_gaps_only():
             }
         ],
         service_statuses=[
-            _service("helios-da-hrl-lmps.service", "success"),
-            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "success"),
             _service("helios-pjm-data-miner-batch.service", "exit-code", "1"),
         ],
         generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
@@ -320,8 +320,8 @@ def test_health_evaluation_warns_for_unmanaged_helios_timers():
         support_api_summary=_support_api_summary(),
         support_table_summary=_support_table_summary(),
         service_statuses=[
-            _service("helios-da-hrl-lmps.service", "success"),
-            _service("helios-rt-fivemin-hrl-lmps.service", "success"),
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "success"),
         ],
         generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
         timers=[
@@ -329,7 +329,7 @@ def test_health_evaluation_warns_for_unmanaged_helios_timers():
             (
                 "Sat 2026-06-13 16:00:00 UTC 1h left "
                 "Fri 2026-06-12 16:00:00 UTC 23h ago "
-                "helios-da-hrl-lmps.timer helios-da-hrl-lmps.service"
+                "helios-pjm-da-hrl-lmps.timer helios-pjm-da-hrl-lmps.service"
             ),
             (
                 "Sat 2026-06-13 12:30:00 UTC 1h left "
@@ -346,7 +346,7 @@ def test_health_evaluation_warns_for_unmanaged_helios_timers():
 
     warnings = [issue for issue in issues if issue.severity == "WARN"]
     assert any(issue.subject == "helios-pjm-forecast-hourly.timer" for issue in warnings)
-    assert not any(issue.subject == "helios-da-hrl-lmps.timer" for issue in warnings)
+    assert not any(issue.subject == "helios-pjm-da-hrl-lmps.timer" for issue in warnings)
     assert not any(issue.subject == "helios-pjm-ops-sum.timer" for issue in warnings)
 
 
@@ -354,7 +354,7 @@ def test_unmanaged_helios_timers_parses_timer_lines():
     assert prod_health_check._unmanaged_helios_timers(
         [
             "NEXT LEFT LAST PASSED UNIT ACTIVATES",
-            "n/a n/a n/a n/a helios-da-hrl-lmps.timer helios-da-hrl-lmps.service",
+            "n/a n/a n/a n/a helios-pjm-da-hrl-lmps.timer helios-pjm-da-hrl-lmps.service",
             "n/a n/a n/a n/a helios-old-feed.timer helios-old-feed.service",
         ]
     ) == ["helios-old-feed.timer"]
