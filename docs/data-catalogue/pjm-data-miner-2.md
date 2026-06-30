@@ -523,6 +523,12 @@ Feed selection and promotion priority are documented in
 - Verification note: live PJM sample on 2026-06-12 returned 29,110 rows across
   hub, zone, and interface filters with no duplicate uniqueness keys.
 - Runtime: `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
+- Scheduled orchestration:
+  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, hourly at minute
+  `15` UTC through `helios-pjm-rt-unverified-hrl-lmps.timer`.
+- Runtime observability: `ops.api_fetch_log`.
+- Repair path: `backend.orchestration.power.pjm.hourly_price_backfill_7_day`
+  reruns recent unverified hourly RT LMP market dates nightly.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/rt_unverified_hrl_lmps/`.
 - Manual table DDL:

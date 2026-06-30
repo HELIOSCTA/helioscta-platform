@@ -36,7 +36,6 @@ DEFAULT_FEEDS: tuple[str, ...] = (
     "rt_fivemin_mnt_lmps",
     "rt_marginal_value",
     "rt_short_term_mv_override",
-    "rt_unverified_hrl_lmps",
     "solar_gen",
     "unverified_five_min_lmps",
     "wind_gen",

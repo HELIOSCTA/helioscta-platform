@@ -47,7 +47,9 @@ orchestration path and emit the same weather freshness event as scheduled runs.
   source posts later in the day.
 - Verified RT five-minute HRL LMPs through two market dates back, using the
   same hub, zone, and interface scope as the dedicated workflow.
-- Unverified RT hourly LMPs through the prior market date.
+- Unverified RT hourly LMPs through the prior market date. The dedicated
+  hourly timer is the freshness path; this repair remains the recent-window
+  gap-catcher for a short-retention source.
 
 This scheduled repair writes to the same canonical `pjm` tables and uses the
 same `ops.api_fetch_log.metadata` backfill fields as manual runs. The verified

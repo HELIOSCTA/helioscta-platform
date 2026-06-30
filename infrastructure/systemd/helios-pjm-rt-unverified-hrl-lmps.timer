@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly HeliosCTA PJM unverified RT hourly LMP refresh timer
+
+[Timer]
+OnCalendar=*-*-* *:15:00 UTC
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-pjm-rt-unverified-hrl-lmps.service
+
+[Install]
+WantedBy=timers.target

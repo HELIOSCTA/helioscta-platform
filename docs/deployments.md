@@ -898,10 +898,11 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 27 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
-  `load_frcstd_7_day`, `hrl_dmd_bids`, `gen_outages_by_type`, and the four
-  Operations Summary feeds were promoted to dedicated timers.
+  `rt_unverified_hrl_lmps`, `load_frcstd_7_day`, `hrl_dmd_bids`,
+  `gen_outages_by_type`, and the four Operations Summary feeds were promoted
+  to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -950,6 +951,9 @@ FROM isone.seven_day_solar_forecast;
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price
   workflows emit data-readiness events. `helios-pjm-rt-hrl-lmps.timer` runs
   later because verified hourly RT LMPs post after the early support batch.
+  `helios-pjm-rt-unverified-hrl-lmps.timer` runs hourly because unverified RT
+  hourly prices update throughout the operating day and the source retains only
+  30 days.
   `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
   source posts hourly and drives the forecast dashboard.
   `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
@@ -959,6 +963,63 @@ FROM isone.seven_day_solar_forecast;
   manual `13:55 UTC` VM run.
   `helios-pjm-ops-sum.timer` runs after the source's 05:00-08:00 EPT refresh
   window because these feeds are frontend dashboard context.
+
+## helios-pjm-rt-unverified-hrl-lmps
+
+- Status: promoted for VM install.
+- Workflow: PJM unverified hourly Real-Time LMP refresh.
+- Runtime module:
+  `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`.
+- Lower-level scrape module:
+  `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
+- Source system: PJM Data Miner 2 `rt_unverified_hrl_lmps`.
+- Destination table: `pjm.rt_unverified_hrl_lmps`.
+- Source grain:
+  `datetime_beginning_utc x pnode_name x type`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.service`
+  - `infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.timer`
+- Schedule: hourly at minute `15` UTC with `Persistent=false` and
+  `RandomizedDelaySec=2min`.
+- Timer behavior: missed hourly starts do not replay after VM downtime; the
+  orchestration pulls a rolling recent window and the nightly price repair
+  covers recent posted market dates.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-rt-unverified-hrl-lmps.lock`.
+- Safe rerun story: upsert on
+  `(datetime_beginning_utc, pnode_name, type)`.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT pnode_name) AS nodes,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.rt_unverified_hrl_lmps
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'rt_unverified_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 20;
+```
 
 ## helios-pjm-hrl-dmd-bids
 
