@@ -156,7 +156,8 @@ Feed selection and promotion priority are documented in
   `row_is_current`, `version_nbr`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.rt_hrl_lmps`,
-  running daily after PJM's verified hourly RT posting window.
+  starting on business days at 11:30 a.m. EPT and polling every 5 minutes for
+  up to 5 hours until PJM's verified hourly RT posting is available.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
 - dbt folder: `dbt/azure_postgres/models/power/pjm/rt_hrl_lmps/`.
 - Manual table DDL:

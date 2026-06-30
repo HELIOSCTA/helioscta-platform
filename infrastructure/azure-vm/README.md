@@ -32,6 +32,9 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
+  - `helios-pjm-rt-hrl-lmps.timer`, business days at
+    `11:30 America/New_York`, `Persistent=true`,
+    `RandomizedDelaySec=5min`.
   - `helios-pjm-hourly-bucket.timer`, hourly at minute `15` UTC,
     `Persistent=false`, `RandomizedDelaySec=2min`.
   - `helios-pjm-hourly-price-backfill-7-day.timer`, daily at

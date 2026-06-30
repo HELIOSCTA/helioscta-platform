@@ -783,7 +783,7 @@ systemctl status helios-rt-fivemin-hrl-lmps.timer
 journalctl -u helios-rt-fivemin-hrl-lmps.service -n 200 --no-pager
 ```
 
-For the PJM verified hourly RT LMP post-publish refresh:
+For the PJM verified hourly RT LMP publication poller:
 
 ```bash
 systemctl status helios-pjm-rt-hrl-lmps.service

@@ -1,5 +1,5 @@
 [Unit]
-Description=HeliosCTA PJM verified hourly RT LMP post-publish refresh
+Description=HeliosCTA PJM verified hourly RT LMP publication polling
 Wants=network-online.target
 After=network-online.target
 
@@ -10,7 +10,7 @@ Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
 ExecStart=/usr/bin/flock -n /tmp/helios-pjm-rt-hrl-lmps.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.pjm.rt_hrl_lmps
-TimeoutStartSec=45min
+TimeoutStartSec=5h15min
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=helios-pjm-rt-hrl-lmps

@@ -814,7 +814,7 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; timer enabled and manual VM run succeeded most recently on
   `2026-06-30 17:20 UTC`.
-- Workflow: PJM verified hourly Real-Time LMP post-publish refresh.
+- Workflow: PJM verified hourly Real-Time LMP publication polling.
 - Runtime module: `backend.orchestration.power.pjm.rt_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
 - Source system: PJM Data Miner 2 `rt_hrl_lmps`.
@@ -828,9 +828,11 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-pjm-rt-hrl-lmps.service`.
-- Schedule: daily at `18:00 UTC` with `RandomizedDelaySec=5min`, after PJM's
-  documented daily verified hourly RT posting window between `11 a.m.` and
-  `12 p.m.` EPT.
+- Schedule: business days at `11:30 America/New_York` with
+  `RandomizedDelaySec=5min`, inside PJM's documented verified hourly RT
+  posting window between `11 a.m.` and `12 p.m.` EPT.
+- Polling policy: poll every `300` seconds for up to `5` hours until the
+  target market date returns a complete hub hourly shape.
 - Latest VM verification: service exited `status=0/SUCCESS`, upserted `2,016`
   rows across recent posted market dates, and wrote `ops.api_fetch_log` rows
   with `run_mode=scheduled_post_publish` and scheduler

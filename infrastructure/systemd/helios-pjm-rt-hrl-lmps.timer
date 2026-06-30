@@ -1,8 +1,8 @@
 [Unit]
-Description=Daily HeliosCTA PJM verified hourly RT LMP post-publish refresh timer
+Description=Business-day HeliosCTA PJM verified hourly RT LMP polling timer
 
 [Timer]
-OnCalendar=*-*-* 18:00:00 UTC
+OnCalendar=Mon..Fri *-*-* 11:30:00 America/New_York
 Persistent=true
 RandomizedDelaySec=5min
 AccuracySec=1min

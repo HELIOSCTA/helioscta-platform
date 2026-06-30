@@ -83,6 +83,7 @@ def _pull(
     run_id: str | None = None,
     database: str | None = None,
     metadata: dict | None = None,
+    log_fetch: bool = True,
 ) -> pd.DataFrame:
     """Pull PJM real-time verified hourly hub LMPs."""
     df = client.fetch_csv(
@@ -95,7 +96,7 @@ def _pull(
         run_id=run_id,
         target_table=TARGET_TABLE_FQN,
         database=database,
-        log_fetch=True,
+        log_fetch=log_fetch,
         timeout=PJM_REQUEST_TIMEOUT_SECONDS,
         metadata=metadata,
     )
