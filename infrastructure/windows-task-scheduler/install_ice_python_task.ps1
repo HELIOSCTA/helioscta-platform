@@ -373,8 +373,7 @@ $settings = New-ScheduledTaskSettingsSet `
 
 $principal = New-ScheduledTaskPrincipal `
     -UserId $TaskUser `
-    -LogonType Interactive `
-    -RunLevel Highest
+    -LogonType Interactive
 
 $task = New-ScheduledTask `
     -Action $action `
@@ -387,8 +386,12 @@ Register-ScheduledTask `
     -TaskName $TaskName `
     -TaskPath $TaskPath `
     -InputObject $task `
-    -Force | Out-Null
+    -Force `
+    -ErrorAction Stop | Out-Null
 
-Get-ScheduledTask -TaskName $TaskName -TaskPath $TaskPath | Format-List TaskName,TaskPath,State
+Get-ScheduledTask `
+    -TaskName $TaskName `
+    -TaskPath $TaskPath `
+    -ErrorAction Stop | Format-List TaskName,TaskPath,State
 Write-Host "Installed or updated Task Scheduler coordinator: $TaskPath$TaskName"
 Write-Host "Coordinator log: $(Join-Path $LogDir 'ice-python-task-scheduler.log')"
