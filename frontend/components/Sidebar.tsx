@@ -45,6 +45,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "pjm-outages", label: "Outages" },
         { id: "pjm-forecasts", label: "Forecasts" },
         { id: "pjm-load-growth", label: "Load Growth" },
+        { id: "pjm-actuals-regime-scatter", label: "Price Distributions", group: "Load Growth" },
       ],
     },
   ];
@@ -55,7 +56,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       label: "DEV",
       navItems: [
         { id: "pjm-price-duration-curves", label: "Duration Curves" },
-        { id: "pjm-actuals-regime-scatter", label: "Price Distributions" },
         { id: "pjm-weather", label: "Weather" },
       ],
     });

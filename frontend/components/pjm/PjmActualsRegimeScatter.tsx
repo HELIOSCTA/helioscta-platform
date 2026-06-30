@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   ReactNode,
   WheelEvent as ReactWheelEvent,
@@ -19,6 +20,7 @@ type ScatterMetric = "temp" | "load" | "price";
 type ScatterProjection = "temp_load" | "temp_price" | "load_price";
 type ActualsScatterTab = "historical_scatter" | "forecast_analog_distribution";
 type DateMode = "exact" | "seasonal";
+type ForecastSourceMode = "pjm" | "meteologica";
 
 interface AvailableArea {
   area: string;
@@ -157,6 +159,18 @@ interface ScatterConfig {
   outagesEnabled: boolean;
 }
 
+interface ForwardAnalogConfig {
+  forecastSource: ForecastSourceMode;
+  forecastDate: string;
+  hourStart: number;
+  hourEnd: number;
+  seasonStart: string;
+  seasonEnd: string;
+  lookbackYears: number;
+  includeCurrentYear: boolean;
+  analogsPerHour: number;
+}
+
 interface Range {
   min: number;
   max: number;
@@ -257,9 +271,17 @@ interface ForecastAnalogPoint {
   actualYear: number;
   rtPrice: number | null;
   tempF: number | null;
+  grossLoadMw: number | null;
+  windMw: number | null;
+  solarMw: number | null;
   netLoadMw: number | null;
   totalOutagesMw: number | null;
   distance: number | null;
+}
+
+interface ForecastAnalogYearCount {
+  year: number;
+  rowCount: number;
 }
 
 interface ForecastAnalogPayload {
@@ -267,6 +289,9 @@ interface ForecastAnalogPayload {
   source: string;
   formula: string;
   selected: {
+    forecastSource?: ForecastSourceMode;
+    forecastSourceLabel?: string;
+    sourceArea?: string;
     forecastDate?: string;
     hourStart?: number;
     hourEnd?: number;
@@ -292,6 +317,10 @@ interface ForecastAnalogPayload {
     priorYearMedian: number | null;
     medianShift: number | null;
   } | null;
+  yearCounts: {
+    historicalPool: ForecastAnalogYearCount[];
+    analogPool: ForecastAnalogYearCount[];
+  };
   analogPoints: ForecastAnalogPoint[];
   summary: {
     forecastHourCount: number;
@@ -299,6 +328,13 @@ interface ForecastAnalogPayload {
     analogCount: number;
     asOf: string | null;
   };
+}
+
+interface ForecastAnalogDateOptionsPayload {
+  iso: "pjm";
+  source: string;
+  selected?: ForecastAnalogPayload["selected"];
+  availableForecastDates: string[];
 }
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -328,13 +364,6 @@ const COMPONENTS: Array<{ key: PriceComponent; label: string }> = [
   { key: "congestion", label: "Congestion" },
   { key: "loss", label: "Loss" },
 ];
-const SEASONS: Array<{ key: SeasonFilter; label: string }> = [
-  { key: "all", label: "All" },
-  { key: "winter", label: "Winter" },
-  { key: "spring", label: "Spring" },
-  { key: "summer", label: "Summer" },
-  { key: "fall", label: "Fall" },
-];
 const HOUR_FILTERS: Array<{ key: HourFilter; label: string }> = [
   { key: "weekday_onpeak", label: "Weekday HE8-23" },
   { key: "all_he8_23", label: "All HE8-23" },
@@ -345,6 +374,10 @@ const DAY_TYPES: Array<{ key: DayType; label: string }> = [
   { key: "all", label: "All Days" },
   { key: "weekdays", label: "Weekdays" },
   { key: "weekends", label: "Weekends" },
+];
+const FORECAST_SOURCES: Array<{ key: ForecastSourceMode; label: string; description: string }> = [
+  { key: "pjm", label: "PJM", description: "PJM Data Miner RTO net load" },
+  { key: "meteologica", label: "METEO", description: "Meteologica RTO load, wind, solar" },
 ];
 const REGIME_COLORS: Array<{ key: RegimeColor; label: string }> = [
   { key: "season", label: "Season" },
@@ -362,10 +395,6 @@ const SCATTER_PROJECTIONS: Array<{
   { key: "temp_load", label: "Temp x Load", xMetric: "temp", yMetric: "load" },
   { key: "temp_price", label: "Temp x Price", xMetric: "temp", yMetric: "price" },
   { key: "load_price", label: "Load x Price", xMetric: "load", yMetric: "price" },
-];
-const ACTUALS_SCATTER_TABS: Array<{ key: ActualsScatterTab; label: string }> = [
-  { key: "historical_scatter", label: "Historical Scatter" },
-  { key: "forecast_analog_distribution", label: "Forward Analog Prices" },
 ];
 const FIELD_LABEL_CLASS = "mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500";
 const FIELD_CONTROL_CLASS =
@@ -423,7 +452,7 @@ function defaultScatterConfig(): ScatterConfig {
     maxPrice: "",
     minOutages: "",
     maxOutages: "",
-    outagesEnabled: true,
+    outagesEnabled: false,
   };
 }
 
@@ -450,6 +479,11 @@ function fmtMw(value: number | null | undefined): string {
   return `${Math.round(value).toLocaleString()} MW`;
 }
 
+function fmtCompactMw(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${Math.round(value / 1000).toLocaleString()}k`;
+}
+
 function fmtPrice(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}`;
@@ -459,6 +493,116 @@ function fmtPct(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   const digits = value > 0 && value < 0.1 ? 1 : 0;
   return `${(value * 100).toFixed(digits)}%`;
+}
+
+function percentile(sortedValues: number[], percentileValue: number): number | null {
+  if (!sortedValues.length) return null;
+  const bounded = Math.min(Math.max(percentileValue, 0), 1);
+  const position = (sortedValues.length - 1) * bounded;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sortedValues[lower];
+  const weight = position - lower;
+  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+}
+
+function emptyPriceStats(): PriceDistributionStats {
+  return {
+    count: 0,
+    minPrice: null,
+    p05: null,
+    p25: null,
+    median: null,
+    p75: null,
+    p95: null,
+    maxPrice: null,
+    meanPrice: null,
+    stdDev: null,
+    skewness: null,
+  };
+}
+
+function priceDistributionFromAnalogPoints(points: ForecastAnalogPoint[]): {
+  stats: PriceDistributionStats;
+  tails: PriceDistributionPayload["tails"];
+  histogram: PriceHistogramBin[];
+} {
+  const prices = points
+    .map((point) => point.rtPrice)
+    .filter((price): price is number => price !== null && Number.isFinite(price))
+    .sort((a, b) => a - b);
+
+  if (!prices.length) {
+    return {
+      stats: emptyPriceStats(),
+      tails: { belowZero: null, above100: null, above250: null, above500: null },
+      histogram: [],
+    };
+  }
+
+  const count = prices.length;
+  const minPrice = prices[0];
+  const maxPrice = prices[count - 1];
+  const meanPrice = prices.reduce((sum, price) => sum + price, 0) / count;
+  const variance = prices.reduce((sum, price) => sum + (price - meanPrice) ** 2, 0) / count;
+  const stdDev = Math.sqrt(variance);
+  const skewness =
+    stdDev > 0
+      ? prices.reduce((sum, price) => sum + ((price - meanPrice) / stdDev) ** 3, 0) / count
+      : null;
+  const binCount = minPrice === maxPrice ? 1 : Math.min(12, Math.max(4, Math.ceil(Math.sqrt(count) * 2)));
+  const binSize = minPrice === maxPrice ? 1 : (maxPrice - minPrice) / binCount;
+  const binCounts = Array.from({ length: binCount }, () => 0);
+
+  prices.forEach((price) => {
+    const rawIndex = minPrice === maxPrice ? 0 : Math.floor((price - minPrice) / binSize);
+    const index = Math.min(Math.max(rawIndex, 0), binCount - 1);
+    binCounts[index] += 1;
+  });
+
+  return {
+    stats: {
+      count,
+      minPrice,
+      p05: percentile(prices, 0.05),
+      p25: percentile(prices, 0.25),
+      median: percentile(prices, 0.5),
+      p75: percentile(prices, 0.75),
+      p95: percentile(prices, 0.95),
+      maxPrice,
+      meanPrice,
+      stdDev,
+      skewness,
+    },
+    tails: {
+      belowZero: prices.filter((price) => price < 0).length / count,
+      above100: prices.filter((price) => price > 100).length / count,
+      above250: prices.filter((price) => price > 250).length / count,
+      above500: prices.filter((price) => price > 500).length / count,
+    },
+    histogram: binCounts.map((binCountValue, index) => ({
+      binIndex: index,
+      binStart: minPrice === maxPrice ? minPrice : minPrice + binSize * index,
+      binEnd: minPrice === maxPrice ? maxPrice : minPrice + binSize * (index + 1),
+      count: binCountValue,
+      pct: binCountValue / count,
+    })),
+  };
+}
+
+function distanceStatsFromAnalogPoints(points: ForecastAnalogPoint[]): {
+  medianDistance: number | null;
+  maxDistance: number | null;
+} {
+  const distances = points
+    .map((point) => point.distance)
+    .filter((distance): distance is number => distance !== null && Number.isFinite(distance))
+    .sort((left, right) => left - right);
+
+  return {
+    medianDistance: percentile(distances, 0.5),
+    maxDistance: distances.length ? distances[distances.length - 1] : null,
+  };
 }
 
 function metricLabel(metric: ScatterMetric): string {
@@ -524,6 +668,24 @@ function freshnessFromPayload(
     summary: `${payload.summary.returnedCount.toLocaleString()} plotted | ${payload.summary.matchedCount.toLocaleString()} matched`,
     targetDateLabel: `${payload.selected.loadArea} | ${payload.selected.hub}`,
     latestDateLabel: `${fmtDate(payload.summary.minEpt)} to ${fmtDate(payload.summary.maxEpt)}`,
+    latestUpdateLabel: fmtDateTime(payload.summary.asOf),
+  };
+}
+
+function freshnessFromForecastAnalogPayload(
+  payload: ForecastAnalogPayload | null,
+  config: ScatterConfig,
+  componentLabel: string,
+): PjmActualsRegimeScatterFreshnessSummary {
+  if (!payload) return DEFAULT_FRESHNESS;
+  return {
+    status: payload.summary.asOf ? "Current" : "No Data",
+    statusClass: payload.summary.asOf
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+      : "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
+    summary: `${payload.summary.forecastHourCount.toLocaleString()} forecast hours | ${payload.summary.analogCount.toLocaleString()} analog rows`,
+    targetDateLabel: `${payload.selected.forecastSourceLabel ?? "Forecast"} RTO | ${config.hub}`,
+    latestDateLabel: `${payload.selected.forecastDate ?? "latest"} | ${componentLabel}`,
     latestUpdateLabel: fmtDateTime(payload.summary.asOf),
   };
 }
@@ -693,6 +855,7 @@ function cacheKey({
 
 function buildForecastAnalogUrl({
   config,
+  forecastSource,
   forecastDate,
   hourStart,
   hourEnd,
@@ -701,8 +864,10 @@ function buildForecastAnalogUrl({
   lookbackYears,
   includeCurrentYear,
   analogsPerHour,
+  datesOnly = false,
 }: {
   config: ScatterConfig;
+  forecastSource: ForecastSourceMode;
   forecastDate: string;
   hourStart: number;
   hourEnd: number;
@@ -711,8 +876,10 @@ function buildForecastAnalogUrl({
   lookbackYears: number;
   includeCurrentYear: boolean;
   analogsPerHour: number;
+  datesOnly?: boolean;
 }): string {
   const params = new URLSearchParams({
+    source: forecastSource,
     loadArea: config.loadArea,
     generationArea: config.generationArea,
     stationId: config.stationId,
@@ -730,6 +897,7 @@ function buildForecastAnalogUrl({
     analogsPerHour: String(analogsPerHour),
   });
   if (forecastDate) params.set("forecastDate", forecastDate);
+  if (datesOnly) params.set("datesOnly", "1");
   const minPriceParam = maybeNumber(config.minPrice);
   const maxPriceParam = maybeNumber(config.maxPrice);
   const minOutagesParam = config.outagesEnabled ? maybeNumber(config.minOutages) : null;
@@ -743,6 +911,7 @@ function buildForecastAnalogUrl({
 
 function forecastAnalogCacheKey({
   config,
+  forecastSource,
   forecastDate,
   hourStart,
   hourEnd,
@@ -753,6 +922,7 @@ function forecastAnalogCacheKey({
   analogsPerHour,
 }: {
   config: ScatterConfig;
+  forecastSource: ForecastSourceMode;
   forecastDate: string;
   hourStart: number;
   hourEnd: number;
@@ -764,6 +934,7 @@ function forecastAnalogCacheKey({
 }): string {
   return [
     "api:pjm-forecast-price-analogs",
+    forecastSource,
     config.loadArea,
     config.generationArea,
     config.stationId,
@@ -785,6 +956,35 @@ function forecastAnalogCacheKey({
     config.outagesEnabled ? config.maxOutages : "",
     analogsPerHour,
   ].join(":");
+}
+
+function forecastAnalogDatesCacheKey({
+  config,
+  forecastSource,
+  hourStart,
+  hourEnd,
+}: {
+  config: ScatterConfig;
+  forecastSource: ForecastSourceMode;
+  hourStart: number;
+  hourEnd: number;
+}): string {
+  return [
+    "api:pjm-forecast-price-analogs:dates",
+    forecastSource,
+    config.stationId,
+    config.region,
+    hourStart,
+    hourEnd,
+  ].join(":");
+}
+
+function forecastDateOptionsErrorMessage(error: Error): string {
+  if (/failed to fetch|networkerror|load failed/i.test(error.message)) {
+    return "Could not reach the complete-date lookup. Retry after the dev server finishes reloading.";
+  }
+  if (error.message.trim()) return error.message;
+  return "Could not load complete forecast dates.";
 }
 
 function StatTile({
@@ -1255,13 +1455,12 @@ function Scatter2DCanvas({
       const xValue = metricValue(point, xMetric) ?? 0;
       const yValue = metricValue(point, yMetric) ?? 0;
       const p = project(xValue, yValue);
-      const outage = Math.max(point.totalOutagesMw ?? 0, 0);
-      const radius = 2.5 + Math.min(Math.sqrt(outage) / 95, 3);
+      const radius = 3;
       return {
         point,
         x: p.x,
         y: p.y,
-        depth: outage,
+        depth: 0,
         radius,
         color: pointColor(point, colors),
       };
@@ -1522,17 +1721,13 @@ function Scatter2DCanvas({
                   <span className="text-right text-gray-200">{fmtMw(inspectedPoint.point.windMw)}</span>
                   <span className="text-gray-500">Solar</span>
                   <span className="text-right text-gray-200">{fmtMw(inspectedPoint.point.solarMw)}</span>
-                  <span className="text-gray-500">Outages</span>
-                  <span className="text-right text-gray-200">{fmtMw(inspectedPoint.point.totalOutagesMw)}</span>
-                  <span className="text-gray-500">Regime</span>
-                  <span className="truncate text-right text-gray-200">{inspectedPoint.point.colorRegime}</span>
                 </div>
               </>
             ) : (
               <p className="text-xs text-gray-500">No point selected.</p>
             )}
           </div>
-          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Regimes</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Color Groups</p>
           <div className="space-y-1.5">
             {regimes.map((regime) => (
               <div key={regime} className="flex items-center justify-between gap-3 text-xs">
@@ -1549,7 +1744,7 @@ function Scatter2DCanvas({
                 </span>
               </div>
             ))}
-            {!regimes.length && <p className="text-xs text-gray-500">No regimes.</p>}
+            {!regimes.length && <p className="text-xs text-gray-500">No color groups.</p>}
           </div>
         </div>
       </div>
@@ -1557,13 +1752,547 @@ function Scatter2DCanvas({
   );
 }
 
+function paddedRange(values: number[], paddingRatio = 0.08): Range {
+  const range = bounds(values);
+  const padding = (range.max - range.min) * paddingRatio;
+  return { min: range.min - padding, max: range.max + padding };
+}
+
+function fmtAxisMw(value: number): string {
+  return `${Math.round(value / 1000).toLocaleString()}k`;
+}
+
+function targetHourKey(datetimeEpt: string | null | undefined, hourEnding: number | null | undefined): string {
+  return `${datetimeEpt ?? "unknown"}|${hourEnding ?? 0}`;
+}
+
+function forecastHourKey(hour: ForecastAnalogHour): string {
+  return targetHourKey(hour.forecastDatetimeEpt, hour.hourEnding);
+}
+
+function analogPointTargetKey(point: ForecastAnalogPoint): string {
+  return targetHourKey(point.targetDatetimeEpt, point.targetHourEnding);
+}
+
+function analogPointKey(point: ForecastAnalogPoint, index: number): string {
+  return `${point.targetDatetimeEpt ?? "target"}|${point.datetimeBeginningEpt ?? "analog"}|${point.distance ?? index}`;
+}
+
+function hourlyDistributionKey(hour: ForecastAnalogHourlyDistribution): string {
+  return targetHourKey(hour.forecastDatetimeEpt, hour.hourEnding);
+}
+
+interface LoadTempHoverState {
+  kind: "forecast" | "analog";
+  x: number;
+  y: number;
+  forecastHour?: ForecastAnalogHour;
+  analogPoint?: ForecastAnalogPoint;
+  distribution?: ForecastAnalogHourlyDistribution | null;
+}
+
+function ForecastLoadTempPlot({
+  forecastHours,
+  analogPoints,
+  hourlyDistributions,
+  selectedTargetKey,
+  onSelectTarget,
+}: {
+  forecastHours: ForecastAnalogHour[];
+  analogPoints: ForecastAnalogPoint[];
+  hourlyDistributions: ForecastAnalogHourlyDistribution[];
+  selectedTargetKey: string | null;
+  onSelectTarget: (targetKey: string) => void;
+}) {
+  const [hover, setHover] = useState<LoadTempHoverState | null>(null);
+  const forecastPoints = forecastHours.filter(
+    (hour) => hour.tempF !== null && hour.netLoadMw !== null,
+  );
+  const analogCandidates = analogPoints.filter((point) => point.tempF !== null && point.netLoadMw !== null);
+  const selectedAnalogRows = selectedTargetKey
+    ? analogCandidates.filter((point) => analogPointTargetKey(point) === selectedTargetKey)
+    : [];
+  const contextAnalogRows = analogCandidates
+    .filter((point) => !selectedTargetKey || analogPointTargetKey(point) !== selectedTargetKey)
+    .slice(0, 420);
+  const contextAnalogKeys = new Set(contextAnalogRows.map((point, index) => analogPointKey(point, index)));
+  const analogRows = [
+    ...contextAnalogRows,
+    ...selectedAnalogRows.filter((point, index) => !contextAnalogKeys.has(analogPointKey(point, index))),
+  ];
+  const allTemps = [
+    ...forecastPoints.map((hour) => hour.tempF ?? 0),
+    ...analogRows.map((point) => point.tempF ?? 0),
+  ];
+  const allLoads = [
+    ...forecastPoints.map((hour) => hour.netLoadMw ?? 0),
+    ...analogRows.map((point) => point.netLoadMw ?? 0),
+  ];
+  const xRange = paddedRange(allTemps);
+  const yRange = paddedRange(allLoads);
+  const width = 980;
+  const height = 440;
+  const left = 72;
+  const right = width - 34;
+  const top = 34;
+  const bottom = height - 62;
+  const plotWidth = right - left;
+  const plotHeight = bottom - top;
+  const ticks = [0, 1, 2, 3, 4];
+  const x = (value: number) => left + ((value - xRange.min) / (xRange.max - xRange.min)) * plotWidth;
+  const y = (value: number) => bottom - ((value - yRange.min) / (yRange.max - yRange.min)) * plotHeight;
+  const forecastPolyline = forecastPoints
+    .map((hour) => `${x(hour.tempF ?? 0).toFixed(1)},${y(hour.netLoadMw ?? 0).toFixed(1)}`)
+    .join(" ");
+  const distributionByTarget = new Map(
+    hourlyDistributions.map((hour) => [hourlyDistributionKey(hour), hour]),
+  );
+  const selectedDistribution = selectedTargetKey ? distributionByTarget.get(selectedTargetKey) ?? null : null;
+  const selectedForecastHour =
+    forecastPoints.find((hour) => forecastHourKey(hour) === selectedTargetKey) ?? forecastPoints[0] ?? null;
+  const updateHoverPosition = (
+    event: ReactMouseEvent<SVGCircleElement>,
+    state: Omit<LoadTempHoverState, "x" | "y">,
+  ) => {
+    const svg = event.currentTarget.ownerSVGElement;
+    const rect = svg?.getBoundingClientRect();
+    const xPos = rect ? event.clientX - rect.left + 14 : 20;
+    const yPos = rect ? event.clientY - rect.top + 14 : 20;
+    setHover({
+      ...state,
+      x: Math.min(Math.max(xPos, 12), 720),
+      y: Math.min(Math.max(yPos, 12), 318),
+    });
+  };
+
+  return (
+    <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Load vs Temp</p>
+          <p className="mt-1 text-xs text-gray-500">
+            Forecast hours against the nearest historical analog pool
+          </p>
+        </div>
+        <div className="flex items-center gap-3 text-xs text-gray-400">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-sky-300" />
+            Forecast
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-slate-500/70" />
+            Context
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm bg-amber-500" />
+            Selected Pool
+          </span>
+        </div>
+      </div>
+      {!forecastPoints.length ? (
+        <div className="flex h-[320px] items-center justify-center rounded-md border border-gray-800 bg-[#0d1119] text-sm text-gray-500">
+          No forecast load-temperature points are available.
+        </div>
+      ) : (
+        <div className="relative">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="h-[440px] w-full rounded-md border border-gray-800 bg-[#0d1119]"
+          role="img"
+          aria-label="Forecast and historical analog load versus temperature scatter plot"
+        >
+          <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="#101623" />
+          {ticks.map((tick) => {
+            const ratio = tick / 4;
+            const gridX = left + ratio * plotWidth;
+            const gridY = bottom - ratio * plotHeight;
+            const temp = xRange.min + (xRange.max - xRange.min) * ratio;
+            const load = yRange.min + (yRange.max - yRange.min) * ratio;
+            return (
+              <g key={tick}>
+                <line x1={gridX} y1={top} x2={gridX} y2={bottom} stroke="rgba(148, 163, 184, 0.14)" />
+                <line x1={left} y1={gridY} x2={right} y2={gridY} stroke="rgba(148, 163, 184, 0.14)" />
+                <text x={gridX} y={bottom + 22} textAnchor="middle" fill="#64748b" fontSize="11">
+                  {fmtNumber(temp, 0)} F
+                </text>
+                <text x={left - 10} y={gridY + 4} textAnchor="end" fill="#64748b" fontSize="11">
+                  {fmtAxisMw(load)}
+                </text>
+              </g>
+            );
+          })}
+          <rect x={left} y={top} width={plotWidth} height={plotHeight} fill="none" stroke="rgba(148, 163, 184, 0.28)" />
+          {analogRows.map((point, index) => (
+            (() => {
+              const targetKey = analogPointTargetKey(point);
+              const selected = targetKey === selectedTargetKey;
+              return (
+            <circle
+              key={analogPointKey(point, index)}
+              cx={x(point.tempF ?? 0)}
+              cy={y(point.netLoadMw ?? 0)}
+              r={selected ? 4.5 : 3}
+              fill={selected ? "#f59e0b" : "#64748b"}
+              opacity={selected || !selectedTargetKey ? 0.64 : 0.2}
+              stroke={selected ? "#fbbf24" : "transparent"}
+              strokeWidth={selected ? 1 : 0}
+              className="cursor-pointer"
+              onMouseEnter={(event) => {
+                updateHoverPosition(event, {
+                  kind: "analog",
+                  analogPoint: point,
+                  distribution: distributionByTarget.get(targetKey) ?? null,
+                });
+              }}
+              onMouseMove={(event) =>
+                updateHoverPosition(event, {
+                  kind: "analog",
+                  analogPoint: point,
+                  distribution: distributionByTarget.get(targetKey) ?? null,
+                })
+              }
+              onMouseLeave={() => setHover(null)}
+              onClick={() => onSelectTarget(targetKey)}
+            />
+              );
+            })()
+          ))}
+          {forecastPolyline && (
+            <polyline
+              points={forecastPolyline}
+              fill="none"
+              stroke="#38bdf8"
+              strokeWidth="2"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              opacity="0.78"
+            />
+          )}
+          {forecastPoints.map((hour) => {
+            const targetKey = forecastHourKey(hour);
+            const selected = targetKey === selectedTargetKey;
+            return (
+            <g key={`${hour.forecastDatetimeEpt}-${hour.hourEnding}`}>
+              <circle
+                cx={x(hour.tempF ?? 0)}
+                cy={y(hour.netLoadMw ?? 0)}
+                r={selected ? 7 : 5}
+                fill={selected ? "#f59e0b" : "#38bdf8"}
+                stroke="#0f172a"
+                strokeWidth="1.5"
+                className="cursor-pointer"
+                onMouseEnter={(event) => {
+                  updateHoverPosition(event, {
+                    kind: "forecast",
+                    forecastHour: hour,
+                    distribution: distributionByTarget.get(targetKey) ?? null,
+                  });
+                }}
+                onMouseMove={(event) =>
+                  updateHoverPosition(event, {
+                    kind: "forecast",
+                    forecastHour: hour,
+                    distribution: distributionByTarget.get(targetKey) ?? null,
+                  })
+                }
+                onMouseLeave={() => setHover(null)}
+                onClick={() => onSelectTarget(targetKey)}
+              />
+              <text
+                x={x(hour.tempF ?? 0) + 8}
+                y={y(hour.netLoadMw ?? 0) - 8}
+                fill={selected ? "#fbbf24" : "#7dd3fc"}
+                fontSize="10"
+                opacity={selected ? 1 : 0.72}
+              >
+                HE{hour.hourEnding}
+              </text>
+            </g>
+            );
+          })}
+          <text x={(left + right) / 2} y={height - 16} textAnchor="middle" fill="#94a3b8" fontSize="12">
+            Temperature F
+          </text>
+          <text
+            x={18}
+            y={(top + bottom) / 2}
+            textAnchor="middle"
+            fill="#94a3b8"
+            fontSize="12"
+            transform={`rotate(-90 18 ${(top + bottom) / 2})`}
+          >
+            Net Load MW
+          </text>
+        </svg>
+        {hover && (
+          <div
+            className="pointer-events-none absolute z-10 w-72 rounded-md border border-gray-700 bg-gray-950/95 p-3 text-xs shadow-2xl shadow-black/40"
+            style={{ left: hover.x, top: hover.y }}
+          >
+            {hover.kind === "forecast" && hover.forecastHour ? (
+              <>
+                <p className="font-semibold text-gray-100">
+                  Forecast HE{hover.forecastHour.hourEnding} | {fmtDateTime(hover.forecastHour.forecastDatetimeEpt)}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+                  <dt className="text-gray-500">Temp</dt>
+                  <dd className="text-right text-gray-200">{fmtNumber(hover.forecastHour.tempF, 1)} F</dd>
+                  <dt className="text-gray-500">Net Load</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.forecastHour.netLoadMw)}</dd>
+                  <dt className="text-gray-500">Load</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.forecastHour.loadMw)}</dd>
+                  <dt className="text-gray-500">Wind</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.forecastHour.windMw)}</dd>
+                  <dt className="text-gray-500">Solar</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.forecastHour.solarMw)}</dd>
+                  <dt className="text-gray-500">Issue</dt>
+                  <dd className="text-right text-gray-200">{fmtDateTime(hover.forecastHour.evaluatedAtEpt)}</dd>
+                  <dt className="text-gray-500">Median RT</dt>
+                  <dd className="text-right text-gray-200">{fmtPrice(hover.distribution?.median)}</dd>
+                  <dt className="text-gray-500">P95 RT</dt>
+                  <dd className="text-right text-gray-200">{fmtPrice(hover.distribution?.p95)}</dd>
+                </dl>
+              </>
+            ) : hover.analogPoint ? (
+              <>
+                <p className="font-semibold text-gray-100">
+                  Analog HE{hover.analogPoint.hourEnding} | {fmtDateTime(hover.analogPoint.datetimeBeginningEpt)}
+                </p>
+                <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+                  <dt className="text-gray-500">RT Price</dt>
+                  <dd className="text-right text-gray-200">{fmtPrice(hover.analogPoint.rtPrice)}</dd>
+                  <dt className="text-gray-500">Temp</dt>
+                  <dd className="text-right text-gray-200">{fmtNumber(hover.analogPoint.tempF, 1)} F</dd>
+                  <dt className="text-gray-500">Load</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.analogPoint.grossLoadMw)}</dd>
+                  <dt className="text-gray-500">Wind</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.analogPoint.windMw)}</dd>
+                  <dt className="text-gray-500">Solar</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.analogPoint.solarMw)}</dd>
+                  <dt className="text-gray-500">Net Load</dt>
+                  <dd className="text-right text-gray-200">{fmtMw(hover.analogPoint.netLoadMw)}</dd>
+                  <dt className="text-gray-500">Target HE</dt>
+                  <dd className="text-right text-gray-200">HE{hover.analogPoint.targetHourEnding}</dd>
+                  <dt className="text-gray-500">Year</dt>
+                  <dd className="text-right text-gray-200">{hover.analogPoint.actualYear}</dd>
+                  <dt className="text-gray-500">Distance</dt>
+                  <dd className="text-right text-gray-200">{fmtNumber(hover.analogPoint.distance, 3)}</dd>
+                  <dt className="text-gray-500">Target Median</dt>
+                  <dd className="text-right text-gray-200">{fmtPrice(hover.distribution?.median)}</dd>
+                  <dt className="text-gray-500">Target P95</dt>
+                  <dd className="text-right text-gray-200">{fmtPrice(hover.distribution?.p95)}</dd>
+                </dl>
+              </>
+            ) : null}
+          </div>
+        )}
+        </div>
+      )}
+      {selectedForecastHour && (
+        <div className="mt-3 grid gap-3 rounded-md border border-gray-800 bg-[#0d1119] p-3 text-xs xl:grid-cols-[1fr_1fr]">
+          <div>
+            <p className="font-semibold text-gray-100">
+              Selected HE{selectedForecastHour.hourEnding} | {fmtDateTime(selectedForecastHour.forecastDatetimeEpt)}
+            </p>
+            <p className="mt-1 tabular-nums text-gray-500">
+              {fmtNumber(selectedForecastHour.tempF, 1)} F | {fmtMw(selectedForecastHour.netLoadMw)}
+            </p>
+          </div>
+          <dl className="grid grid-cols-4 gap-2 tabular-nums">
+            <div>
+              <dt className="text-gray-500">Analogs</dt>
+              <dd className="mt-1 font-semibold text-gray-200">{selectedDistribution?.analogCount.toLocaleString() ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">P25</dt>
+              <dd className="mt-1 font-semibold text-gray-200">{fmtPrice(selectedDistribution?.p25)}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">Median</dt>
+              <dd className="mt-1 font-semibold text-gray-200">{fmtPrice(selectedDistribution?.median)}</dd>
+            </div>
+            <div>
+              <dt className="text-gray-500">P95</dt>
+              <dd className="mt-1 font-semibold text-gray-200">{fmtPrice(selectedDistribution?.p95)}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AnalogPoolHeatmap({
+  forecastHours,
+  analogPoints,
+  selectedTargetKey,
+  onSelectTarget,
+}: {
+  forecastHours: ForecastAnalogHour[];
+  analogPoints: ForecastAnalogPoint[];
+  selectedTargetKey: string | null;
+  onSelectTarget: (targetKey: string) => void;
+}) {
+  const columns = forecastHours
+    .slice()
+    .sort((left, right) => left.hourEnding - right.hourEnding || fmtDateTime(left.forecastDatetimeEpt).localeCompare(fmtDateTime(right.forecastDatetimeEpt)));
+  const validDistances = analogPoints
+    .map((point) => point.distance)
+    .filter((distance): distance is number => distance !== null && Number.isFinite(distance));
+  const distanceRange = bounds(validDistances);
+  const cellByDateAndTarget = new Map<string, ForecastAnalogPoint>();
+
+  analogPoints.forEach((point) => {
+    const date = fmtDate(point.datetimeBeginningEpt);
+    const targetKey = analogPointTargetKey(point);
+    const key = `${date}|${targetKey}`;
+    const current = cellByDateAndTarget.get(key);
+    if (!current || (point.distance ?? Number.POSITIVE_INFINITY) < (current.distance ?? Number.POSITIVE_INFINITY)) {
+      cellByDateAndTarget.set(key, point);
+    }
+  });
+
+  const rows = Array.from(
+    analogPoints.reduce((dates, point) => {
+      dates.add(fmtDate(point.datetimeBeginningEpt));
+      return dates;
+    }, new Set<string>()),
+  )
+    .map((date) => {
+      const cells = columns
+        .map((hour) => cellByDateAndTarget.get(`${date}|${forecastHourKey(hour)}`) ?? null)
+        .filter((point): point is ForecastAnalogPoint => point !== null);
+      const avgDistance =
+        cells.length > 0
+          ? cells.reduce((sum, point) => sum + (point.distance ?? 0), 0) / cells.length
+          : Number.POSITIVE_INFINITY;
+      return { date, cells, avgDistance };
+    })
+    .sort((left, right) => left.avgDistance - right.avgDistance || left.date.localeCompare(right.date));
+
+  const similarityForPoint = (point: ForecastAnalogPoint): number => {
+    if (point.distance === null || !Number.isFinite(point.distance)) return 0;
+    if (distanceRange.max === distanceRange.min) return 1;
+    return 1 - (point.distance - distanceRange.min) / (distanceRange.max - distanceRange.min);
+  };
+
+  return (
+    <DataTableShell
+      title="Analog Similarity Heatmap"
+      subtitle="Rows are historical analog dates; columns are target HEs. Darker cells are closer load-temperature matches."
+      bodyClassName="max-h-[520px] overflow-auto"
+    >
+      <table
+        className="w-full border-collapse bg-[#0d1119] text-[11px] text-gray-200"
+        style={{ minWidth: `${Math.max(760, 190 + columns.length * 118)}px` }}
+      >
+        <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
+          <tr>
+            <th className="sticky left-0 z-20 w-28 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+              Date
+            </th>
+            <th className="w-20 px-2 py-2 text-right font-semibold uppercase tracking-wide">Avg Dist</th>
+            {columns.map((hour) => {
+              const targetKey = forecastHourKey(hour);
+              const selected = targetKey === selectedTargetKey;
+              return (
+                <th
+                  key={targetKey}
+                  className={`px-1.5 py-2 text-center font-semibold uppercase tracking-wide ${
+                    selected ? "bg-amber-500/10 text-amber-100" : ""
+                  }`}
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSelectTarget(targetKey)}
+                    className="w-full rounded-sm px-1 py-1 text-center hover:bg-gray-800"
+                  >
+                    <span className="block">HE{hour.hourEnding}</span>
+                    <span className="mt-0.5 block text-[10px] font-normal normal-case tracking-normal text-gray-500">
+                      {fmtNumber(hour.tempF, 0)} F | {fmtCompactMw(hour.netLoadMw)}
+                    </span>
+                  </button>
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-900">
+          {rows.map((row) => (
+            <tr key={row.date} className="hover:bg-gray-900/40">
+              <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 text-left font-semibold text-gray-200">
+                {row.date}
+              </td>
+              <td className="px-2 py-2 text-right tabular-nums text-gray-500">
+                {Number.isFinite(row.avgDistance) ? fmtNumber(row.avgDistance, 3) : "-"}
+              </td>
+              {columns.map((hour) => {
+                const targetKey = forecastHourKey(hour);
+                const point = cellByDateAndTarget.get(`${row.date}|${targetKey}`);
+                const selected = targetKey === selectedTargetKey;
+                if (!point) {
+                  return (
+                    <td key={`${row.date}|${targetKey}`} className="border-l border-gray-900 px-1.5 py-1.5 text-center text-gray-700">
+                      -
+                    </td>
+                  );
+                }
+                const similarity = similarityForPoint(point);
+                const backgroundColor = selected
+                  ? `rgba(245, 158, 11, ${0.14 + similarity * 0.44})`
+                  : `rgba(16, 185, 129, ${0.08 + similarity * 0.48})`;
+                return (
+                  <td
+                    key={`${row.date}|${targetKey}`}
+                    className={`border-l px-1.5 py-1.5 ${
+                      selected ? "border-amber-400/40" : "border-gray-900"
+                    }`}
+                    style={{ backgroundColor }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onSelectTarget(targetKey)}
+                      className="block w-full rounded-sm px-1 py-1 text-left transition-colors hover:bg-black/20"
+                      title={`${fmtDateTime(point.datetimeBeginningEpt)} HE${point.hourEnding} | Price ${fmtPrice(point.rtPrice)} | Load ${fmtMw(point.grossLoadMw)} | Net Load ${fmtMw(point.netLoadMw)} | Distance ${fmtNumber(point.distance, 3)}`}
+                    >
+                      <span className="block text-sm font-semibold tabular-nums text-gray-50">
+                        {fmtPrice(point.rtPrice)}
+                      </span>
+                      <span className="mt-1 grid grid-cols-2 gap-x-1 tabular-nums text-[10px] leading-4 text-gray-200/90">
+                        <span>L {fmtCompactMw(point.grossLoadMw)}</span>
+                        <span>NL {fmtCompactMw(point.netLoadMw)}</span>
+                        <span>T {fmtNumber(point.tempF, 0)} F</span>
+                        <span>D {fmtNumber(point.distance, 2)}</span>
+                      </span>
+                    </button>
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+          {!rows.length && (
+            <tr>
+              <td colSpan={columns.length + 2} className="px-3 py-6 text-center text-sm text-gray-500">
+                No analog rows are available for the selected forecast window.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </DataTableShell>
+  );
+}
+
 function ForecastAnalogDistributionPanel({
   config,
   componentLabel,
+  onFreshnessChange,
 }: {
   config: ScatterConfig;
   componentLabel: string;
+  onFreshnessChange?: (freshness: PjmActualsRegimeScatterFreshnessSummary) => void;
 }) {
+  const [forecastSource, setForecastSource] = useState<ForecastSourceMode>("pjm");
   const [forecastDate, setForecastDate] = useState("");
   const [hourStart, setHourStart] = useState(8);
   const [hourEnd, setHourEnd] = useState(23);
@@ -1571,19 +2300,197 @@ function ForecastAnalogDistributionPanel({
   const [seasonEnd, setSeasonEnd] = useState(config.seasonEnd);
   const [lookbackYears, setLookbackYears] = useState(config.lookbackYears);
   const [includeCurrentYear, setIncludeCurrentYear] = useState(true);
-  const [analogsPerHour, setAnalogsPerHour] = useState(20);
+  const [analogsPerHour, setAnalogsPerHour] = useState(40);
+  const [forwardSettingsOpen, setForwardSettingsOpen] = useState(false);
+  const [forwardDraft, setForwardDraft] = useState<ForwardAnalogConfig>({
+    forecastSource: "pjm",
+    forecastDate: "",
+    hourStart: 8,
+    hourEnd: 23,
+    seasonStart: config.seasonStart,
+    seasonEnd: config.seasonEnd,
+    lookbackYears: config.lookbackYears,
+    includeCurrentYear: true,
+    analogsPerHour: 40,
+  });
+  const [selectedTargetKey, setSelectedTargetKey] = useState<string | null>(null);
   const [data, setData] = useState<ForecastAnalogPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [forecastDateOptionsByKey, setForecastDateOptionsByKey] = useState<Record<string, string[]>>({});
+  const [forecastDateOptionsLoadingKey, setForecastDateOptionsLoadingKey] = useState<string | null>(null);
+  const [forecastDateOptionsError, setForecastDateOptionsError] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const [forecastDateOptionsRefreshToken, setForecastDateOptionsRefreshToken] = useState(0);
+
+  const currentForwardConfig: ForwardAnalogConfig = {
+    forecastSource,
+    forecastDate,
+    hourStart,
+    hourEnd,
+    seasonStart,
+    seasonEnd,
+    lookbackYears,
+    includeCurrentYear,
+    analogsPerHour,
+  };
+  const normalizedForwardDraft: ForwardAnalogConfig = useMemo(
+    () => ({
+      ...forwardDraft,
+      hourStart: Math.min(Math.max(Math.trunc(forwardDraft.hourStart), 1), 24),
+      hourEnd: Math.min(Math.max(Math.trunc(forwardDraft.hourEnd), 1), 24),
+      lookbackYears: Math.min(Math.max(Math.trunc(forwardDraft.lookbackYears), 1), 5),
+      analogsPerHour: Math.min(Math.max(Math.trunc(forwardDraft.analogsPerHour), 20), 100),
+    }),
+    [forwardDraft],
+  );
+  const draftDateOptionsRequest = useMemo(
+    () => ({
+      config,
+      forecastSource: normalizedForwardDraft.forecastSource,
+      forecastDate: "",
+      hourStart: normalizedForwardDraft.hourStart,
+      hourEnd: normalizedForwardDraft.hourEnd,
+      seasonStart: normalizedForwardDraft.seasonStart,
+      seasonEnd: normalizedForwardDraft.seasonEnd,
+      lookbackYears: normalizedForwardDraft.lookbackYears,
+      includeCurrentYear: normalizedForwardDraft.includeCurrentYear,
+      analogsPerHour: normalizedForwardDraft.analogsPerHour,
+    }),
+    [config, normalizedForwardDraft],
+  );
+  const draftDateOptionsKey = forecastAnalogDatesCacheKey(draftDateOptionsRequest);
+  const cachedDraftAvailableForecastDates = forecastDateOptionsByKey[draftDateOptionsKey];
+  const hasAppliedDraftDateOptions =
+    normalizedForwardDraft.forecastSource === forecastSource && data?.availableForecastDates !== undefined;
+  const draftAvailableForecastDates =
+    cachedDraftAvailableForecastDates ?? (hasAppliedDraftDateOptions ? data?.availableForecastDates ?? [] : []);
+  const draftDateOptionsLoaded = cachedDraftAvailableForecastDates !== undefined || hasAppliedDraftDateOptions;
+  const draftDateOptionsLoading =
+    forecastDateOptionsLoadingKey === draftDateOptionsKey && cachedDraftAvailableForecastDates === undefined;
+  const draftDateOptionsErrorMessage =
+    forecastDateOptionsError?.key === draftDateOptionsKey ? forecastDateOptionsError.message : null;
+
+  const updateForwardDraft = <Key extends keyof ForwardAnalogConfig>(
+    key: Key,
+    value: ForwardAnalogConfig[Key],
+  ) => {
+    setForwardDraft((current) => ({ ...current, [key]: value }));
+  };
+
+  const openForwardSettings = () => {
+    setForwardDraft(currentForwardConfig);
+    setForecastDateOptionsError(null);
+    setForwardSettingsOpen(true);
+  };
+
+  const closeForwardSettings = () => {
+    setForwardDraft(currentForwardConfig);
+    setForwardSettingsOpen(false);
+  };
+
+  const applyForwardSettings = () => {
+    const next: ForwardAnalogConfig = {
+      ...forwardDraft,
+      hourStart: Math.min(Math.max(Math.trunc(forwardDraft.hourStart), 1), 24),
+      hourEnd: Math.min(Math.max(Math.trunc(forwardDraft.hourEnd), 1), 24),
+      lookbackYears: Math.min(Math.max(Math.trunc(forwardDraft.lookbackYears), 1), 5),
+      analogsPerHour: Math.min(Math.max(Math.trunc(forwardDraft.analogsPerHour), 20), 100),
+    };
+    setForecastSource(next.forecastSource);
+    setForecastDate(next.forecastDate);
+    setHourStart(next.hourStart);
+    setHourEnd(next.hourEnd);
+    setSeasonStart(next.seasonStart);
+    setSeasonEnd(next.seasonEnd);
+    setLookbackYears(next.lookbackYears);
+    setIncludeCurrentYear(next.includeCurrentYear);
+    setAnalogsPerHour(next.analogsPerHour);
+    setForwardSettingsOpen(false);
+  };
+
+  const retryForecastDateOptions = () => {
+    setForecastDateOptionsError(null);
+    setForecastDateOptionsByKey((current) => {
+      if (current[draftDateOptionsKey] === undefined) return current;
+      const next = { ...current };
+      delete next[draftDateOptionsKey];
+      return next;
+    });
+    setForecastDateOptionsRefreshToken((current) => current + 1);
+  };
+
+  useEffect(() => {
+    if (!data?.availableForecastDates) return;
+    const appliedDateOptionsKey = forecastAnalogDatesCacheKey({ config, forecastSource, hourStart, hourEnd });
+    setForecastDateOptionsByKey((current) => ({
+      ...current,
+      [appliedDateOptionsKey]: data.availableForecastDates,
+    }));
+  }, [config, data?.availableForecastDates, forecastSource, hourEnd, hourStart]);
+
+  useEffect(() => {
+    if (!forwardSettingsOpen || forecastDateOptionsByKey[draftDateOptionsKey] !== undefined) return;
+
+    const controller = new AbortController();
+    let active = true;
+    setForecastDateOptionsLoadingKey(draftDateOptionsKey);
+    setForecastDateOptionsError(null);
+
+    fetchJsonWithCache<ForecastAnalogDateOptionsPayload>({
+      key: draftDateOptionsKey,
+      url: buildForecastAnalogUrl({ ...draftDateOptionsRequest, datesOnly: true }),
+      ttlMs: API_CACHE_TTL_MS,
+      cacheMode: "no-store",
+      forceRefresh: forecastDateOptionsRefreshToken > 0,
+      signal: controller.signal,
+    })
+      .then((payload) => {
+        if (!active) return;
+        const dates = payload.availableForecastDates ?? [];
+        setForecastDateOptionsError(null);
+        setForecastDateOptionsByKey((current) => ({ ...current, [draftDateOptionsKey]: dates }));
+        setForwardDraft((current) => {
+          if (current.forecastSource !== draftDateOptionsRequest.forecastSource) return current;
+          if (!current.forecastDate || dates.includes(current.forecastDate)) return current;
+          return { ...current, forecastDate: "" };
+        });
+      })
+      .catch((err: Error) => {
+        if (!active || err.name === "AbortError") return;
+        setForecastDateOptionsError({
+          key: draftDateOptionsKey,
+          message: forecastDateOptionsErrorMessage(err),
+        });
+      })
+      .finally(() => {
+        if (active) setForecastDateOptionsLoadingKey(null);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    draftDateOptionsKey,
+    draftDateOptionsRequest,
+    forecastDateOptionsByKey,
+    forecastDateOptionsRefreshToken,
+    forwardSettingsOpen,
+  ]);
 
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
     setLoading(true);
     setError(null);
+    setData(null);
 
     const request = {
       config,
+      forecastSource,
       forecastDate,
       hourStart,
       hourEnd,
@@ -1603,11 +2510,18 @@ function ForecastAnalogDistributionPanel({
       .then((payload) => {
         if (!active) return;
         setData(payload);
+        onFreshnessChange?.(freshnessFromForecastAnalogPayload(payload, config, componentLabel));
       })
       .catch((err: Error) => {
         if (!active || err.name === "AbortError") return;
         setError(err.message || "Failed to load forecast analog distribution");
         setData(null);
+        onFreshnessChange?.({
+          ...DEFAULT_FRESHNESS,
+          status: "Error",
+          statusClass: "border-red-500/40 bg-red-500/10 text-red-200",
+          summary: "Forward analog price query failed",
+        });
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -1620,19 +2534,55 @@ function ForecastAnalogDistributionPanel({
   }, [
     analogsPerHour,
     config,
+    componentLabel,
+    forecastSource,
     forecastDate,
     hourEnd,
     hourStart,
     includeCurrentYear,
     lookbackYears,
+    onFreshnessChange,
     seasonEnd,
     seasonStart,
   ]);
 
   const selectedForecastDate = data?.selected.forecastDate ?? forecastDate;
-  const stats = data?.priceDistribution.stats;
-  const tails = data?.priceDistribution.tails;
-  const yearShift = data?.yearShift;
+  const hourlyDistributionByTarget = new Map(
+    (data?.hourlyDistributions ?? []).map((hour) => [hourlyDistributionKey(hour), hour]),
+  );
+  const selectedForecastHour =
+    data?.forecastHours.find((hour) => forecastHourKey(hour) === selectedTargetKey) ??
+    data?.forecastHours[0] ??
+    null;
+  const effectiveSelectedTargetKey = selectedForecastHour ? forecastHourKey(selectedForecastHour) : selectedTargetKey;
+  const selectedHourlyDistribution =
+    effectiveSelectedTargetKey ? hourlyDistributionByTarget.get(effectiveSelectedTargetKey) ?? null : null;
+  const selectedAnalogPoints = (data?.analogPoints ?? [])
+    .filter((point) => analogPointTargetKey(point) === effectiveSelectedTargetKey)
+    .sort((left, right) => (left.distance ?? Number.POSITIVE_INFINITY) - (right.distance ?? Number.POSITIVE_INFINITY));
+  const selectedPriceDistribution = priceDistributionFromAnalogPoints(selectedAnalogPoints);
+  const selectedStats = selectedPriceDistribution.stats;
+  const selectedDistanceStats = distanceStatsFromAnalogPoints(selectedAnalogPoints);
+  const yearCounts = data?.yearCounts ?? { historicalPool: [], analogPool: [] };
+  const forwardChips = [
+    `${data?.selected.forecastSourceLabel ?? FORECAST_SOURCES.find((source) => source.key === forecastSource)?.label} RTO`,
+    selectedForecastDate || "Latest forecast",
+    `HE${hourStart}-${hourEnd}`,
+    `${seasonStart} to ${seasonEnd}`,
+    `${lookbackYears}Y lookback${includeCurrentYear ? " + current" : ""}`,
+    `${analogsPerHour} analogs / HE`,
+  ];
+
+  useEffect(() => {
+    if (!data?.forecastHours.length) {
+      setSelectedTargetKey(null);
+      return;
+    }
+    setSelectedTargetKey((current) => {
+      if (current && data.forecastHours.some((hour) => forecastHourKey(hour) === current)) return current;
+      return forecastHourKey(data.forecastHours[0]);
+    });
+  }, [data]);
 
   return (
     <section className="rounded-lg border border-gray-800 bg-[#12141d] shadow-xl shadow-black/20">
@@ -1646,98 +2596,245 @@ function ForecastAnalogDistributionPanel({
             </p>
           </div>
           <div className="rounded-md border border-gray-800 bg-gray-950/50 px-3 py-2 text-xs text-gray-400">
-            {config.rtSource} RT | {config.loadArea} load | {config.generationArea} renewables
+            {data?.selected.forecastSourceLabel ?? FORECAST_SOURCES.find((source) => source.key === forecastSource)?.label} RTO forecast |{" "}
+            {config.rtSource} RT | {config.hub}
           </div>
         </div>
       </div>
 
       <div className="space-y-4 p-4">
-        <div className="grid gap-3 xl:grid-cols-[1fr_96px_96px_96px_110px_130px_130px] xl:items-end">
-          <ConfigField label="Forecast date">
-            <select
-              value={selectedForecastDate ?? ""}
-              onChange={(event) => setForecastDate(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
+        <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-gray-100">Forward Analog View</p>
+              <p className="mt-1 text-xs text-gray-500">
+                {data
+                  ? `${data.summary.forecastHourCount.toLocaleString()} forecast hours | ${data.summary.analogCount.toLocaleString()} analog rows`
+                  : "Configure forecast source, target hours, and analog pool."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={openForwardSettings}
+              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-200 transition-colors hover:bg-gray-700 hover:text-white"
             >
-              {(data?.availableForecastDates ?? []).map((date) => (
-                <option key={date} value={date}>
-                  {date}
-                </option>
-              ))}
-              {!data?.availableForecastDates.length && <option value="">Latest available</option>}
-            </select>
-          </ConfigField>
-          <ConfigField label="HE start">
-            <input
-              type="number"
-              min={1}
-              max={24}
-              value={hourStart}
-              onChange={(event) => setHourStart(Number(event.target.value))}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
-          <ConfigField label="HE end">
-            <input
-              type="number"
-              min={1}
-              max={24}
-              value={hourEnd}
-              onChange={(event) => setHourEnd(Number(event.target.value))}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
-          <ConfigField label="Years">
-            <input
-              type="number"
-              min={1}
-              max={5}
-              value={lookbackYears}
-              onChange={(event) => setLookbackYears(Number(event.target.value))}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
-          <ConfigField label="Analogs / HE">
-            <input
-              type="number"
-              min={5}
-              max={60}
-              value={analogsPerHour}
-              onChange={(event) => setAnalogsPerHour(Number(event.target.value))}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
-          <ConfigField label="MM-DD start">
-            <input
-              inputMode="numeric"
-              value={seasonStart}
-              onChange={(event) => setSeasonStart(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
-          <ConfigField label="MM-DD end">
-            <input
-              inputMode="numeric"
-              value={seasonEnd}
-              onChange={(event) => setSeasonEnd(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
-            />
-          </ConfigField>
+              Edit View
+            </button>
+          </div>
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
+            {forwardChips.map((label) => (
+              <span
+                key={label}
+                className="rounded-md border border-gray-800 bg-[#0d1119] px-2.5 py-1 text-xs font-semibold text-gray-300"
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
 
-        <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-950/40 p-3">
-          <div>
-            <p className="text-sm font-semibold text-gray-100">Include Current Year In Analog Pool</p>
-            <p className="mt-1 text-xs text-gray-500">
-              Keeps this year visible so shifts versus prior years can show up in the distribution.
-            </p>
+        {forwardSettingsOpen && (
+          <div
+            className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Edit forward analog prices view"
+            onMouseDown={closeForwardSettings}
+          >
+            <div
+              className="w-full max-w-5xl rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl"
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+                <h2 className="text-sm font-semibold text-gray-100">Edit Forward Analog Prices View</h2>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closeForwardSettings}
+                    className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-gray-700 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyForwardSettings}
+                    className="rounded-md border border-gray-200 bg-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-950 hover:bg-white"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </div>
+              <div className="max-h-[calc(100vh-116px)] space-y-4 overflow-y-auto p-4">
+                <ConfigSection
+                  step="1"
+                  title="Forecast"
+                  summary={`${FORECAST_SOURCES.find((source) => source.key === forwardDraft.forecastSource)?.label ?? forwardDraft.forecastSource} RTO | ${forwardDraft.forecastDate || "Latest available"} | HE${forwardDraft.hourStart}-${forwardDraft.hourEnd}`}
+                >
+                  <div className="grid gap-3 xl:grid-cols-[160px_1fr_120px_120px]">
+                    <ConfigField label="Source">
+                      <select
+                        value={forwardDraft.forecastSource}
+                        onChange={(event) =>
+                          setForwardDraft((current) => ({
+                            ...current,
+                            forecastSource: event.target.value as ForecastSourceMode,
+                            forecastDate: "",
+                          }))
+                        }
+                        className={FIELD_CONTROL_CLASS}
+                      >
+                        {FORECAST_SOURCES.map((source) => (
+                          <option key={source.key} value={source.key}>
+                            {source.label}
+                          </option>
+                        ))}
+                      </select>
+                    </ConfigField>
+                    <ConfigField label="Forecast date">
+                      <div>
+                        <select
+                          value={forwardDraft.forecastDate}
+                          onChange={(event) => updateForwardDraft("forecastDate", event.target.value)}
+                          className={FIELD_CONTROL_CLASS}
+                        >
+                          <option value="">Latest complete date</option>
+                          {draftAvailableForecastDates.map((date) => (
+                            <option key={date} value={date}>
+                              {date}
+                            </option>
+                          ))}
+                          {draftDateOptionsLoading && <option disabled>Loading complete dates...</option>}
+                          {draftDateOptionsErrorMessage && !draftAvailableForecastDates.length && (
+                            <option disabled>Date list unavailable</option>
+                          )}
+                          {!draftDateOptionsLoading &&
+                            !draftDateOptionsErrorMessage &&
+                            draftDateOptionsLoaded &&
+                            !draftAvailableForecastDates.length && (
+                            <option disabled>No complete dates for these HEs</option>
+                          )}
+                        </select>
+                        <p className="mt-1 text-[11px] leading-4 text-gray-500">
+                          Dates require complete load, wind, solar, and WSI temp rows for every selected HE.
+                        </p>
+                        {draftDateOptionsErrorMessage && (
+                          <div className="mt-1 flex items-center gap-2">
+                            <p className="text-[11px] leading-4 text-red-300">{draftDateOptionsErrorMessage}</p>
+                            <button
+                              type="button"
+                              onClick={retryForecastDateOptions}
+                              className="rounded border border-red-400/40 px-2 py-0.5 text-[11px] font-semibold text-red-100 hover:bg-red-500/10"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </ConfigField>
+                    <ConfigField label="HE start">
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={forwardDraft.hourStart}
+                        onChange={(event) => updateForwardDraft("hourStart", Number(event.target.value))}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                    </ConfigField>
+                    <ConfigField label="HE end">
+                      <input
+                        type="number"
+                        min={1}
+                        max={24}
+                        value={forwardDraft.hourEnd}
+                        onChange={(event) => updateForwardDraft("hourEnd", Number(event.target.value))}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                    </ConfigField>
+                  </div>
+                </ConfigSection>
+
+                <ConfigSection
+                  step="2"
+                  title="Analog Window"
+                  summary={`${forwardDraft.seasonStart} to ${forwardDraft.seasonEnd} | ${forwardDraft.lookbackYears}Y${forwardDraft.includeCurrentYear ? " + current" : ""}`}
+                >
+                  <div className="grid gap-3 xl:grid-cols-[1fr_1fr_1fr_1.4fr] xl:items-end">
+                    <ConfigField label="MM-DD start">
+                      <input
+                        inputMode="numeric"
+                        value={forwardDraft.seasonStart}
+                        onChange={(event) => updateForwardDraft("seasonStart", event.target.value)}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                    </ConfigField>
+                    <ConfigField label="MM-DD end">
+                      <input
+                        inputMode="numeric"
+                        value={forwardDraft.seasonEnd}
+                        onChange={(event) => updateForwardDraft("seasonEnd", event.target.value)}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                    </ConfigField>
+                    <ConfigField label="Lookback years">
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        value={forwardDraft.lookbackYears}
+                        onChange={(event) => updateForwardDraft("lookbackYears", Number(event.target.value))}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                    </ConfigField>
+                    <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-100">Include Current Year</p>
+                          <p className="mt-1 text-xs text-gray-500">
+                            {forwardDraft.includeCurrentYear ? "Current partial year included" : "Historical years only"}
+                          </p>
+                        </div>
+                        <SourceSwitch
+                          enabled={forwardDraft.includeCurrentYear}
+                          onChange={(enabled) => updateForwardDraft("includeCurrentYear", enabled)}
+                          label="Include current year in forecast analog distribution"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </ConfigSection>
+
+                <ConfigSection
+                  step="3"
+                  title="Output"
+                  summary={`${forwardDraft.analogsPerHour} analogs per target hour`}
+                >
+                  <div className="grid gap-3 xl:grid-cols-[220px_1fr]">
+                    <ConfigField label="Analogs / HE">
+                      <input
+                        type="number"
+                        min={20}
+                        max={100}
+                        value={forwardDraft.analogsPerHour}
+                        onChange={(event) => updateForwardDraft("analogsPerHour", Number(event.target.value))}
+                        className={FIELD_CONTROL_CLASS}
+                      />
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        40 is the default; 20 minimum; use 80-100 for tail checks.
+                      </p>
+                    </ConfigField>
+                    <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Price Output</p>
+                      <p className="mt-2 text-sm font-semibold text-gray-200">
+                        {config.hub} | {componentLabel} | {config.rtSource} RT
+                      </p>
+                    </div>
+                  </div>
+                </ConfigSection>
+              </div>
+            </div>
           </div>
-          <SourceSwitch
-            enabled={includeCurrentYear}
-            onChange={setIncludeCurrentYear}
-            label="Include current year in forecast analog distribution"
-          />
-        </div>
+        )}
 
         {error && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -1752,39 +2849,184 @@ function ForecastAnalogDistributionPanel({
 
         {data && !loading && (
           <>
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-              <StatTile
-                label="Forecast Hours"
-                value={data.summary.forecastHourCount.toLocaleString()}
-                sub={`${data.selected.forecastDate ?? "-"} HE${data.selected.hourStart}-${data.selected.hourEnd}`}
-              />
-              <StatTile
-                label="Historical Pool"
-                value={data.summary.historicalPoolCount.toLocaleString()}
-                sub={`${seasonStart} to ${seasonEnd}`}
-              />
-              <StatTile label="Analog Hours" value={data.summary.analogCount.toLocaleString()} />
-              <StatTile label="Median RT" value={fmtPrice(stats?.median)} />
-              <StatTile label="P95 RT" value={fmtPrice(stats?.p95)} />
-              <StatTile
-                label={`${yearShift?.currentYear ?? new Date().getFullYear()} Shift`}
-                value={fmtPrice(yearShift?.medianShift)}
-                sub={`${yearShift?.currentYearCount ?? 0} current-year analogs`}
-              />
+            <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-3">
+              <div className="grid gap-3 xl:grid-cols-[1fr_320px]">
+                <div className="min-w-0">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Forecast Hour</p>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {data.summary.forecastHourCount.toLocaleString()} target hours | {data.summary.analogCount.toLocaleString()} analog rows
+                      </p>
+                    </div>
+                    <div className="text-right text-xs tabular-nums text-gray-500">
+                      <p>{data.selected.forecastDate ?? "-"}</p>
+                      <p className="mt-1">{seasonStart} to {seasonEnd}</p>
+                    </div>
+                  </div>
+                  <div className="flex overflow-x-auto rounded-md border border-gray-800 bg-[#0d1119] p-1">
+                    {data.forecastHours.map((hour) => {
+                      const targetKey = forecastHourKey(hour);
+                      const selected = targetKey === effectiveSelectedTargetKey;
+                      const distribution = hourlyDistributionByTarget.get(targetKey);
+                      return (
+                        <button
+                          key={targetKey}
+                          type="button"
+                          onClick={() => setSelectedTargetKey(targetKey)}
+                          className={`min-w-[112px] border-r border-gray-800 px-3 py-2 text-left text-xs transition-colors last:border-r-0 ${
+                            selected
+                              ? "rounded-sm bg-amber-500/20 text-amber-100 shadow-inner shadow-amber-500/10"
+                              : "text-gray-400 hover:bg-gray-900 hover:text-gray-100"
+                          }`}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">HE{hour.hourEnding}</span>
+                            <span className={selected ? "text-amber-200" : "text-gray-600"}>
+                              {fmtNumber(hour.tempF, 0)} F
+                            </span>
+                          </span>
+                          <span className="mt-1 block tabular-nums text-gray-500">
+                            {fmtCompactMw(hour.netLoadMw)} NL | {fmtPrice(distribution?.median)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="grid gap-2 rounded-md border border-gray-800 bg-[#0d1119] p-3 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-gray-100">
+                        {selectedForecastHour ? `HE${selectedForecastHour.hourEnding}` : "No HE"}
+                      </p>
+                      <p className="mt-1 tabular-nums text-gray-500">
+                        {fmtDateTime(selectedForecastHour?.forecastDatetimeEpt)}
+                      </p>
+                    </div>
+                    <div className="text-right tabular-nums">
+                      <p className="font-semibold text-gray-100">
+                        {fmtPrice(selectedHourlyDistribution?.median ?? selectedStats.median)}
+                      </p>
+                      <p className="mt-1 text-gray-500">Median RT</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 tabular-nums">
+                    <div>
+                      <p className="text-gray-500">Net Load</p>
+                      <p className="mt-1 font-semibold text-gray-200">{fmtCompactMw(selectedForecastHour?.netLoadMw)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Analogs</p>
+                      <p className="mt-1 font-semibold text-gray-200">{selectedAnalogPoints.length.toLocaleString()}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">P95</p>
+                      <p className="mt-1 font-semibold text-gray-200">
+                        {fmtPrice(selectedHourlyDistribution?.p95 ?? selectedStats.p95)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 rounded-md border border-gray-800 bg-gray-950/40 p-2 tabular-nums">
+                    <div>
+                      <p className="text-gray-500">Median Dist</p>
+                      <p className="mt-1 font-semibold text-gray-200">
+                        {fmtNumber(selectedDistanceStats.medianDistance, 3)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500">Max Dist</p>
+                      <p className="mt-1 font-semibold text-gray-200">
+                        {fmtNumber(selectedDistanceStats.maxDistance, 3)}
+                      </p>
+                    </div>
+                  </div>
+                  {yearCounts.historicalPool.length === 1 && (
+                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-amber-100">
+                      Only {yearCounts.historicalPool[0].year} complete historical rows
+                    </div>
+                  )}
+                  <div className="flex flex-wrap gap-1.5 text-[10px] tabular-nums text-gray-500">
+                    {yearCounts.historicalPool.map((item) => (
+                      <span key={`historical-${item.year}`} className="rounded-sm bg-gray-900 px-1.5 py-0.5">
+                        {item.year}: {item.rowCount.toLocaleString()}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1.18fr)_430px]">
+              <ForecastLoadTempPlot
+                forecastHours={data.forecastHours}
+                analogPoints={data.analogPoints}
+                hourlyDistributions={data.hourlyDistributions}
+                selectedTargetKey={effectiveSelectedTargetKey}
+                onSelectTarget={setSelectedTargetKey}
+              />
+
               <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    Forecast-Conditioned RT Price Histogram
+                    Selected Hour Price Distribution
                   </p>
                   <p className="text-xs tabular-nums text-gray-500">
-                    {fmtPrice(stats?.minPrice)} to {fmtPrice(stats?.maxPrice)}
+                    {fmtPrice(selectedStats.minPrice)} to {fmtPrice(selectedStats.maxPrice)}
                   </p>
                 </div>
+                {selectedForecastHour && (
+                  <div className="mb-3 rounded-md border border-gray-800 bg-[#0d1119] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold text-gray-100">
+                          Selected HE{selectedForecastHour.hourEnding} Price Slice
+                        </p>
+                        <p className="mt-1 text-xs tabular-nums text-gray-500">
+                          {fmtDateTime(selectedForecastHour.forecastDatetimeEpt)} |{" "}
+                          {(selectedHourlyDistribution?.analogCount ?? selectedAnalogPoints.length).toLocaleString()} analogs
+                        </p>
+                      </div>
+                      <div className="text-right text-xs tabular-nums">
+                        <p className="font-semibold text-gray-100">
+                          {fmtPrice(selectedHourlyDistribution?.median ?? selectedStats.median)}
+                        </p>
+                        <p className="mt-1 text-gray-500">
+                          P95 {fmtPrice(selectedHourlyDistribution?.p95 ?? selectedStats.p95)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-4 gap-2 text-xs tabular-nums">
+                      <div>
+                        <p className="text-gray-500">P25</p>
+                        <p className="mt-1 font-semibold text-gray-200">
+                          {fmtPrice(selectedHourlyDistribution?.p25 ?? selectedStats.p25)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">Median</p>
+                        <p className="mt-1 font-semibold text-gray-200">
+                          {fmtPrice(selectedHourlyDistribution?.median ?? selectedStats.median)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">P75</p>
+                        <p className="mt-1 font-semibold text-gray-200">
+                          {fmtPrice(selectedHourlyDistribution?.p75 ?? selectedStats.p75)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">P95</p>
+                        <p className="mt-1 font-semibold text-gray-200">
+                          {fmtPrice(selectedHourlyDistribution?.p95 ?? selectedStats.p95)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 <div className="space-y-1.5">
-                  {data.priceDistribution.histogram.map((bin) => (
+                  {selectedPriceDistribution.histogram.map((bin) => (
                     <div key={bin.binIndex} className="grid grid-cols-[112px_1fr_54px] items-center gap-2 text-xs">
                       <span className="truncate text-gray-500">
                         {fmtPrice(bin.binStart)} to {fmtPrice(bin.binEnd)}
@@ -1798,151 +3040,39 @@ function ForecastAnalogDistributionPanel({
                       <span className="text-right tabular-nums text-gray-400">{bin.count.toLocaleString()}</span>
                     </div>
                   ))}
+                  {!selectedPriceDistribution.histogram.length && (
+                    <div className="rounded-md border border-gray-800 bg-[#0d1119] p-4 text-sm text-gray-500">
+                      No selected-hour analog prices are available.
+                    </div>
+                  )}
                 </div>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-                <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Tail Risk</p>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Below $0</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPct(tails?.belowZero)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Above $100</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPct(tails?.above100)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Above $250</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPct(tails?.above250)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Above $500</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPct(tails?.above500)}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Year Shift</p>
-                  <dl className="mt-3 space-y-2 text-sm">
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Current Median</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPrice(yearShift?.currentYearMedian)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Prior Median</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPrice(yearShift?.priorYearMedian)}</dd>
-                    </div>
-                    <div className="flex justify-between gap-3">
-                      <dt className="text-gray-500">Median Shift</dt>
-                      <dd className="font-semibold text-gray-200">{fmtPrice(yearShift?.medianShift)}</dd>
-                    </div>
-                  </dl>
+                <div className="mt-4 grid grid-cols-4 gap-2 text-xs tabular-nums">
+                  <div className="rounded-md border border-gray-800 bg-[#0d1119] p-2">
+                    <p className="text-gray-500">Mean</p>
+                    <p className="mt-1 font-semibold text-gray-200">{fmtPrice(selectedStats.meanPrice)}</p>
+                  </div>
+                  <div className="rounded-md border border-gray-800 bg-[#0d1119] p-2">
+                    <p className="text-gray-500">Std Dev</p>
+                    <p className="mt-1 font-semibold text-gray-200">{fmtPrice(selectedStats.stdDev)}</p>
+                  </div>
+                  <div className="rounded-md border border-gray-800 bg-[#0d1119] p-2">
+                    <p className="text-gray-500">Above $100</p>
+                    <p className="mt-1 font-semibold text-gray-200">{fmtPct(selectedPriceDistribution.tails.above100)}</p>
+                  </div>
+                  <div className="rounded-md border border-gray-800 bg-[#0d1119] p-2">
+                    <p className="text-gray-500">Below $0</p>
+                    <p className="mt-1 font-semibold text-gray-200">{fmtPct(selectedPriceDistribution.tails.belowZero)}</p>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <DataTableShell
-              title="Forecast Fundamentals"
-              subtitle={`${data.forecastHours.length.toLocaleString()} target hours from latest forecast issue`}
-              bodyClassName="max-h-[360px] overflow-y-auto"
-            >
-              <table className="w-full min-w-[840px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                  <tr>
-                    {["Hour", "HE", "Net Load", "Temp", "Outages", "Load", "Wind", "Solar", "Issue"].map((label) => (
-                      <th key={label} className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {data.forecastHours.map((hour) => (
-                    <tr key={`${hour.forecastDatetimeEpt}-${hour.hourEnding}`} className="hover:bg-gray-900/60">
-                      <td className="px-3 py-2 text-left font-medium text-gray-300">{fmtDateTime(hour.forecastDatetimeEpt)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{hour.hourEnding}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(hour.netLoadMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(hour.tempF, 1)} F</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(hour.totalOutagesMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(hour.loadMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(hour.windMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(hour.solarMw)}</td>
-                      <td className="px-3 py-2 text-right text-gray-500">{fmtDateTime(hour.evaluatedAtEpt)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTableShell>
-
-            <DataTableShell
-              title="Hourly Price Quantiles"
-              subtitle="Analog distribution by target delivery hour"
-              bodyClassName="max-h-[360px] overflow-y-auto"
-            >
-              <table className="w-full min-w-[720px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                  <tr>
-                    {["Target Hour", "HE", "Analogs", "P25", "Median", "P75", "P95"].map((label) => (
-                      <th key={label} className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {data.hourlyDistributions.map((hour) => (
-                    <tr key={`${hour.forecastDatetimeEpt}-${hour.hourEnding}`} className="hover:bg-gray-900/60">
-                      <td className="px-3 py-2 text-left font-medium text-gray-300">{fmtDateTime(hour.forecastDatetimeEpt)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{hour.hourEnding}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{hour.analogCount.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(hour.p25)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(hour.median)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(hour.p75)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(hour.p95)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTableShell>
-
-            <DataTableShell
-              title="Nearest Historical Analogs"
-              subtitle={`${data.analogPoints.length.toLocaleString()} closest rows shown from ${data.summary.analogCount.toLocaleString()} analog rows`}
-              bodyClassName="max-h-[420px] overflow-y-auto"
-              collapsible
-            >
-              <table className="w-full min-w-[960px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
-                <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
-                  <tr>
-                    {["Target", "Analog Hour", "Year", "RT Price", "Temp", "Net Load", "Outages", "Distance"].map((label) => (
-                      <th key={label} className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left">
-                        {label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {data.analogPoints.map((point) => (
-                    <tr
-                      key={`${point.targetDatetimeEpt}-${point.datetimeBeginningEpt}-${point.distance}`}
-                      className="hover:bg-gray-900/60"
-                    >
-                      <td className="px-3 py-2 text-left font-medium text-gray-300">{fmtDateTime(point.targetDatetimeEpt)}</td>
-                      <td className="px-3 py-2 text-right text-gray-300">{fmtDateTime(point.datetimeBeginningEpt)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{point.actualYear}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(point.rtPrice)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(point.tempF, 1)} F</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.netLoadMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.totalOutagesMw)}</td>
-                      <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(point.distance, 3)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </DataTableShell>
+            <AnalogPoolHeatmap
+              forecastHours={data.forecastHours}
+              analogPoints={data.analogPoints}
+              selectedTargetKey={effectiveSelectedTargetKey}
+              onSelectTarget={setSelectedTargetKey}
+            />
           </>
         )}
       </div>
@@ -1964,7 +3094,7 @@ export default function PjmActualsRegimeScatter({
   const [error, setError] = useState<string | null>(null);
   const [sampleRowsOpen, setSampleRowsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<ActualsScatterTab>("historical_scatter");
+  const [activeTab] = useState<ActualsScatterTab>("forecast_analog_distribution");
   const {
     loadArea,
     generationArea,
@@ -1980,15 +3110,9 @@ export default function PjmActualsRegimeScatter({
     seasonEnd,
     lookbackYears,
     includeCurrentYear,
-    season,
     hourFilter,
     dayType,
     regimeColor,
-    minPrice,
-    maxPrice,
-    minOutages,
-    maxOutages,
-    outagesEnabled,
   } = appliedConfig;
 
   const updateDraftConfig = <Key extends keyof ScatterConfig>(
@@ -2036,16 +3160,6 @@ export default function PjmActualsRegimeScatter({
     }));
   };
 
-  const setDraftOutagesEnabled = (enabled: boolean) => {
-    setDraftConfig((current) => ({
-      ...current,
-      outagesEnabled: enabled,
-      minOutages: enabled ? current.minOutages : "",
-      maxOutages: enabled ? current.maxOutages : "",
-      regimeColor: !enabled && current.regimeColor === "outage" ? "season" : current.regimeColor,
-    }));
-  };
-
   const applyDraftDatePreset = (preset: "last_30" | "last_90" | "last_365" | "ytd") => {
     setDraftConfig((current) => {
       const end = current.endDate || defaultEndDate();
@@ -2061,6 +3175,18 @@ export default function PjmActualsRegimeScatter({
   };
 
   useEffect(() => {
+    if (activeTab !== "historical_scatter") {
+      setLoading(false);
+      setError(null);
+      setData(null);
+      onFreshnessChange?.({
+        ...DEFAULT_FRESHNESS,
+        summary: "Forward analog prices",
+        targetDateLabel: `${hub} | ${rtSource} ${component}`,
+      });
+      return;
+    }
+
     const controller = new AbortController();
     let active = true;
     setLoading(true);
@@ -2099,7 +3225,7 @@ export default function PjmActualsRegimeScatter({
       active = false;
       controller.abort();
     };
-  }, [appliedConfig, onFreshnessChange, refreshToken]);
+  }, [activeTab, appliedConfig, component, hub, onFreshnessChange, refreshToken, rtSource]);
 
   const loadAreas = data?.availableLoadAreas.length
     ? data.availableLoadAreas
@@ -2129,13 +3255,10 @@ export default function PjmActualsRegimeScatter({
   const componentLabel = COMPONENTS.find((item) => item.key === component)?.label ?? component;
   const draftComponentLabel =
     COMPONENTS.find((item) => item.key === draftConfig.component)?.label ?? draftConfig.component;
-  const draftSeasonLabel = SEASONS.find((item) => item.key === draftConfig.season)?.label ?? draftConfig.season;
   const draftHourFilterLabel =
     HOUR_FILTERS.find((item) => item.key === draftConfig.hourFilter)?.label ?? draftConfig.hourFilter;
   const draftDayTypeLabel = DAY_TYPES.find((item) => item.key === draftConfig.dayType)?.label ?? draftConfig.dayType;
-  const draftRegimeColors = draftConfig.outagesEnabled
-    ? REGIME_COLORS
-    : REGIME_COLORS.filter((item) => item.key !== "outage");
+  const draftRegimeColors = REGIME_COLORS.filter((item) => item.key !== "outage");
   const draftRegimeColor =
     draftRegimeColors.find((item) => item.key === draftConfig.regimeColor)?.key ?? "season";
   const draftRegimeColorLabel =
@@ -2150,7 +3273,6 @@ export default function PjmActualsRegimeScatter({
           draftConfig.includeCurrentYear ? " + current" : ""
         }`
       : `${draftConfig.startDate || "-"} to ${draftConfig.endDate || "-"}`;
-  const seasonLabel = SEASONS.find((item) => item.key === season)?.label ?? season;
   const hourFilterLabel = HOUR_FILTERS.find((item) => item.key === hourFilter)?.label ?? hourFilter;
   const dayTypeLabel = DAY_TYPES.find((item) => item.key === dayType)?.label ?? dayType;
   const regimeColorLabel = REGIME_COLORS.find((item) => item.key === regimeColor)?.label ?? regimeColor;
@@ -2161,39 +3283,13 @@ export default function PjmActualsRegimeScatter({
     hub,
     `${rtSource} ${componentLabel}`,
     appliedDateLabel,
-    seasonLabel,
     hourFilterLabel,
     dayTypeLabel,
     `Color ${regimeColorLabel}`,
-    minPrice.trim() ? `Min ${fmtPrice(Number(minPrice))}` : null,
-    maxPrice.trim() ? `Max ${fmtPrice(Number(maxPrice))}` : null,
-    outagesEnabled ? "Outages enabled" : "Outages disabled",
-    outagesEnabled && minOutages.trim() ? `Outages >= ${Number(minOutages).toLocaleString()}` : null,
-    outagesEnabled && maxOutages.trim() ? `Outages <= ${Number(maxOutages).toLocaleString()}` : null,
   ].filter((label): label is string => Boolean(label));
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2 rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
-        {ACTUALS_SCATTER_TABS.map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => {
-              setActiveTab(tab.key);
-              setSettingsOpen(false);
-            }}
-            className={`rounded-md px-3 py-2 text-sm font-semibold transition-colors ${
-              activeTab === tab.key
-                ? "bg-gray-200 text-gray-950"
-                : "bg-gray-900 text-gray-400 hover:bg-gray-800 hover:text-gray-100"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
       {activeTab === "historical_scatter" ? (
         <>
       <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
@@ -2384,9 +3480,9 @@ export default function PjmActualsRegimeScatter({
               <ConfigSection
                 step="2"
                 title="Data Sources"
-                summary="Required sources are locked on; outages can be used as an optional regime filter."
+                summary="Load, wind, solar, weather, and RT price actuals"
               >
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
                   <DataSourceCard
                     title="Load Actuals"
                     description="Hourly gross load"
@@ -2395,14 +3491,21 @@ export default function PjmActualsRegimeScatter({
                     meta={draftConfig.loadArea}
                   />
                   <DataSourceCard
-                    title="Wind + Solar Actuals"
-                    description="Hourly renewable output"
+                    title="Wind Actuals"
+                    description="Hourly wind output"
                     enabled
                     required
                     meta={draftConfig.generationArea}
                   />
                   <DataSourceCard
-                    title="Weather Actuals"
+                    title="Solar Actuals"
+                    description="Hourly solar output"
+                    enabled
+                    required
+                    meta={draftConfig.generationArea}
+                  />
+                  <DataSourceCard
+                    title="Temp Actuals"
                     description="Hourly observed temperature"
                     enabled
                     required
@@ -2414,13 +3517,6 @@ export default function PjmActualsRegimeScatter({
                     enabled
                     required
                     meta={`${draftConfig.hub} | ${draftConfig.rtSource}`}
-                  />
-                  <DataSourceCard
-                    title="Outages"
-                    description="Daily outage regime proxy"
-                    enabled={draftConfig.outagesEnabled}
-                    meta={draftConfig.outagesEnabled ? "Regime filter available" : "Excluded from filters"}
-                    onToggle={setDraftOutagesEnabled}
                   />
                 </div>
               </ConfigSection>
@@ -2513,23 +3609,10 @@ export default function PjmActualsRegimeScatter({
 
               <ConfigSection
                 step="4"
-                title="Regime Filters"
-                summary={`${draftSeasonLabel}, ${draftHourFilterLabel}, ${draftDayTypeLabel}, color ${draftRegimeColorLabel}`}
+                title="View Filters"
+                summary={`${draftHourFilterLabel}, ${draftDayTypeLabel}, color ${draftRegimeColorLabel}`}
               >
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <ConfigField label="Season">
-                    <select
-                      value={draftConfig.season}
-                      onChange={(event) => updateDraftConfig("season", event.target.value as SeasonFilter)}
-                      className={FIELD_CONTROL_CLASS}
-                    >
-                      {SEASONS.map((item) => (
-                        <option key={item.key} value={item.key}>
-                          {item.label}
-                        </option>
-                      ))}
-                    </select>
-                  </ConfigField>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <ConfigField label="Hours">
                     <select
                       value={draftConfig.hourFilter}
@@ -2569,42 +3652,6 @@ export default function PjmActualsRegimeScatter({
                       ))}
                     </select>
                   </ConfigField>
-                  <ConfigField label="Min price">
-                    <input
-                      inputMode="decimal"
-                      value={draftConfig.minPrice}
-                      onChange={(event) => updateDraftConfig("minPrice", event.target.value)}
-                      className={FIELD_CONTROL_CLASS}
-                    />
-                  </ConfigField>
-                  <ConfigField label="Max price">
-                    <input
-                      inputMode="decimal"
-                      value={draftConfig.maxPrice}
-                      onChange={(event) => updateDraftConfig("maxPrice", event.target.value)}
-                      className={FIELD_CONTROL_CLASS}
-                    />
-                  </ConfigField>
-                  {draftConfig.outagesEnabled && (
-                    <>
-                      <ConfigField label="Min outages">
-                        <input
-                          inputMode="decimal"
-                          value={draftConfig.minOutages}
-                          onChange={(event) => updateDraftConfig("minOutages", event.target.value)}
-                          className={FIELD_CONTROL_CLASS}
-                        />
-                      </ConfigField>
-                      <ConfigField label="Max outages">
-                        <input
-                          inputMode="decimal"
-                          value={draftConfig.maxOutages}
-                          onChange={(event) => updateDraftConfig("maxOutages", event.target.value)}
-                          className={FIELD_CONTROL_CLASS}
-                        />
-                      </ConfigField>
-                    </>
-                  )}
                 </div>
               </ConfigSection>
 
@@ -2641,12 +3688,6 @@ export default function PjmActualsRegimeScatter({
                         <dt className="text-gray-500">Exact distribution</dt>
                         <dd className="mt-1 font-semibold text-gray-200">
                           {data ? data.priceDistribution.stats.count.toLocaleString() : "-"} hours
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-gray-500">Outages</dt>
-                        <dd className="mt-1 font-semibold text-gray-200">
-                          {draftConfig.outagesEnabled ? "Enabled" : "Disabled"}
                         </dd>
                       </div>
                     </dl>
@@ -2722,8 +3763,6 @@ export default function PjmActualsRegimeScatter({
                     "Gross Load",
                     "Wind",
                     "Solar",
-                    "Outages",
-                    "Regime",
                     "Source",
                   ].map((label) => (
                     <th
@@ -2748,8 +3787,6 @@ export default function PjmActualsRegimeScatter({
                     <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.grossLoadMw)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.windMw)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.solarMw)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{fmtMw(point.totalOutagesMw)}</td>
-                    <td className="px-3 py-2 text-right">{point.colorRegime}</td>
                     <td className="px-3 py-2 text-right text-gray-500">{point.loadSource}</td>
                   </tr>
                 ))}
@@ -2760,7 +3797,11 @@ export default function PjmActualsRegimeScatter({
       )}
         </>
       ) : (
-        <ForecastAnalogDistributionPanel config={appliedConfig} componentLabel={componentLabel} />
+        <ForecastAnalogDistributionPanel
+          config={appliedConfig}
+          componentLabel={componentLabel}
+          onFreshnessChange={onFreshnessChange}
+        />
       )}
     </div>
   );

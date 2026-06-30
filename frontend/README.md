@@ -52,9 +52,11 @@ GET /api/pjm-forecast-date-compare?source=meteologica&type=load&area=RTO&baseDat
 GET /api/pjm-meteologica-forecast-explorer
 GET /api/pjm-meteologica-forecast-differences?area=RTO&date=YYYY-MM-DD&lookbackHours=72
 GET /api/cache/warm-forecasts
+GET /api/cache/warm-price-distributions
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
+GET /api/pjm-forecast-price-analogs?source=pjm&loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&seasonStart=05-01&seasonEnd=08-31&lookbackYears=3&includeCurrentYear=1
 ```
 
 Local development also exposes a clearly separated `DEV` sidebar section:
@@ -71,7 +73,6 @@ GET /api/pjm-net-load-forecast-differences?source=meteologica&area=WEST&date=YYY
 GET /api/pjm-net-load-forecast-date-compare?source=pjm&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
 GET /api/pjm-net-load-forecast-date-compare?source=meteologica&area=WEST&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
 GET /api/pjm-actuals-regime-scatter?loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&start=YYYY-MM-DD&end=YYYY-MM-DD
-GET /api/pjm-forecast-price-analogs?loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&seasonStart=05-01&seasonEnd=08-31&lookbackYears=3&includeCurrentYear=1
 GET /api/pjm-ops-summary?date=YYYY-MM-DD
 ```
 
@@ -247,9 +248,10 @@ The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
 load, solar, wind, and net-load curves for both selected forecast dates plus
 `B - A` deltas, using the same component-completeness rule as the explorer.
 
-## Local DEV PJM Price Distributions Source Contract
+## PJM Price Distributions Source Contract
 
-The Price Distributions DEV page derives hourly actual net load from promoted PJM
+The Price Distributions page appears under Load Growth in the production POWER
+navigation. It derives hourly actual net load from promoted PJM
 load and renewable generation tables, joins WSI observed weather and PJM RT LMP
 prices on local EPT hour, and overlays same-day PJM outage rows as an outage
 regime proxy.
@@ -261,12 +263,34 @@ The route `GET /api/pjm-actuals-regime-scatter` accepts bounded params for
 load area, wind/solar area, station, hub, RT source, price component, date
 range, season, hour/day filters, price/outage bounds, color regime, and max
 points. It samples matched hourly rows after server-side filters and does not
-create a dbt model, table, or materialized cache. The dev endpoint is hidden
-outside local Next.js runs and returns `404` on Vercel.
+create a dbt model, table, or materialized cache. The historical scatter
+endpoint remains hidden outside local Next.js runs and returns `404` on Vercel.
 
-The Forward Analog Prices tab uses latest PJM net-load forecast fundamentals,
-WSI forecast temperatures, and PJM outage forecasts to build a forecast-conditioned
-historical RT price analog distribution.
+The production view uses the Forward Analog Prices flow. It uses either PJM Data
+Miner (`source=pjm`) or
+Meteologica (`source=meteologica`) RTO load, wind, and solar forecasts with WSI
+forecast temperatures to build a forecast-conditioned historical RT price analog
+distribution. Net load is always derived as `load - solar - wind`, and the v1
+analog score uses normalized temperature and net-load similarity only. Outage
+joins are retained in the API payload for future diagnostics but are not part of
+the simplified visible workflow or default analog ranking. The analog pool
+defaults to 40 rows per target HE, clamps to 20-100 rows per HE, and the
+frontend shows selected-hour median/max distance as the similarity quality
+check.
+
+`GET /api/pjm-forecast-price-analogs` uses `helios_readonly`, bounded inputs,
+Next/Vercel Data Cache with a 10-minute revalidate window, process-local
+in-flight request dedupe, and Vercel CDN cache headers. The cache makes warmed
+and repeated configs fast, but a cold uncached config can still take longer
+because it rebuilds the historical analog pool from source tables on demand.
+
+`GET /api/cache/warm-price-distributions` is a protected no-store warmer for
+Price Distributions. It warms complete forecast date lookups for PJM and
+Meteologica every run, then alternates one full default analog payload between
+PJM and Meteologica to stay inside the 30-second Vercel function window. Local
+development may call it with `?run=1`; Vercel/production uses `CRON_SECRET` or
+`HELIOS_CACHE_WARM_SECRET` like the Forecasts warmer. The committed Vercel Cron
+schedule runs every 15 minutes in UTC.
 
 ## PJM Ops Sum Source Contract
 

@@ -1,34 +1,74 @@
-import { observedJsonRoute } from "@/lib/server/apiObservability";
+import { unstable_cache } from "next/cache";
+
+import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isActualsRegimeScatterDevEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const CACHE_HEADER = "public, s-maxage=300, stale-while-revalidate=60";
+const CACHE_HEADER = "public, s-maxage=600, stale-while-revalidate=300";
 const DEFAULT_LOAD_AREA = "RTO";
 const DEFAULT_GENERATION_AREA = "RTO";
 const DEFAULT_STATION_ID = "PJM";
 const DEFAULT_REGION = "PJM";
 const DEFAULT_HUB = "WESTERN HUB";
-const DEFAULT_ANALOGS_PER_HOUR = 20;
+const DEFAULT_ANALOGS_PER_HOUR = 40;
+const RESPONSE_CACHE_TTL_MS = 10 * 60 * 1000;
+const RESPONSE_CACHE_MAX_ENTRIES = 80;
+const DATA_CACHE_REVALIDATE_SECONDS = 10 * 60;
 const ROUTE_CONFIG = {
   route: "/api/pjm-forecast-price-analogs",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "s-maxage=300, stale-while-revalidate=60",
+  cachePolicy: "vercel-data-cache=600, s-maxage=600, stale-while-revalidate=300",
   owner: "frontend",
-  purpose: "Local-dev forecast-conditioned PJM RT price analog distribution",
+  purpose: "Forecast-conditioned PJM RT price analog distribution",
   p95TargetMs: 3_000,
   freshnessSource:
-    "pjm.load_frcstd_7_day, pjm.hourly_solar_power_forecast, pjm.hourly_wind_power_forecast, weather.wsi_hourly_forecasts, pjm.gen_outages_by_type, PJM RT LMP actuals",
+    "pjm.load_frcstd_7_day, pjm.hourly_solar_power_forecast, pjm.hourly_wind_power_forecast, meteologica.pjm_forecast_hourly, weather.wsi_hourly_forecasts, PJM RT LMP actuals",
 } as const;
 
 type RtSource = "verified" | "unverified";
 type PriceComponent = "total" | "energy" | "congestion" | "loss";
 type DayType = "all" | "weekdays" | "weekends";
+type ForecastSourceMode = "pjm" | "meteologica";
 
 interface ForecastAnalogRow {
   payload: ForecastAnalogSql | string | null;
+}
+
+interface ForecastAnalogRequestInput {
+  region: string;
+  loadArea: string;
+  generationArea: string;
+  stationId: string;
+  hub: string;
+  rtSource: RtSource;
+  component: PriceComponent;
+  forecastSource: ForecastSourceMode;
+  forecastDate: string | null;
+  hourStart: number;
+  hourEnd: number;
+  seasonStart: string;
+  seasonEnd: string;
+  lookbackYears: number;
+  includeCurrentYear: boolean;
+  dayType: DayType;
+  minPrice: number | null;
+  maxPrice: number | null;
+  minOutages: number | null;
+  maxOutages: number | null;
+  analogsPerHour: number;
+  datesOnly: boolean;
+}
+
+interface ResponseCacheEntry {
+  expiresAt: number;
+  result: ObservedRouteResult;
+}
+
+declare global {
+  var __pjmForecastPriceAnalogResponseCache: Map<string, ResponseCacheEntry> | undefined;
+  var __pjmForecastPriceAnalogInFlight: Map<string, Promise<ObservedRouteResult>> | undefined;
 }
 
 interface ForecastAnalogSql {
@@ -38,6 +78,8 @@ interface ForecastAnalogSql {
   price_distribution?: PriceDistributionSql | null;
   hourly_distributions?: HourlyDistributionSql[] | null;
   year_shift?: YearShiftSql | null;
+  year_counts?: YearCountsSql | null;
+  historical_rows?: HistoricalRowSql[] | null;
   analog_points?: AnalogPointSql[] | null;
   summary?: Record<string, unknown> | null;
 }
@@ -108,6 +150,30 @@ interface YearShiftSql {
   median_shift: number | string | null;
 }
 
+interface YearCountSql {
+  actual_year: number | string;
+  row_count: number | string;
+}
+
+interface YearCountsSql {
+  historical_pool?: YearCountSql[] | null;
+  analog_pool?: YearCountSql[] | null;
+}
+
+interface HistoricalRowSql {
+  datetime_beginning_ept: string | null;
+  hour_ending: number | string | null;
+  actual_year: number | string | null;
+  rt_price: number | string | null;
+  temp_f: number | string | null;
+  gross_load_mw: number | string | null;
+  wind_mw: number | string | null;
+  solar_mw: number | string | null;
+  net_load_mw: number | string | null;
+  total_outages_mw: number | string | null;
+  row_as_of: string | null;
+}
+
 interface AnalogPointSql {
   target_datetime_ept: string | null;
   target_hour_ending: number | string | null;
@@ -116,6 +182,9 @@ interface AnalogPointSql {
   actual_year: number | string | null;
   rt_price: number | string | null;
   temp_f: number | string | null;
+  gross_load_mw: number | string | null;
+  wind_mw: number | string | null;
+  solar_mw: number | string | null;
   net_load_mw: number | string | null;
   total_outages_mw: number | string | null;
   distance: number | string | null;
@@ -165,13 +234,63 @@ function parseLookbackYears(value: string | null): number {
 function parseAnalogsPerHour(value: string | null): number {
   const parsed = Number.parseInt(value ?? "", 10);
   if (!Number.isFinite(parsed)) return DEFAULT_ANALOGS_PER_HOUR;
-  return Math.min(Math.max(parsed, 5), 60);
+  return Math.min(Math.max(parsed, 20), 100);
 }
 
 function parseBoolean(value: string | null, fallback = true): boolean {
   if (value === "1" || value === "true") return true;
   if (value === "0" || value === "false") return false;
   return fallback;
+}
+
+function responseCache(): Map<string, ResponseCacheEntry> {
+  global.__pjmForecastPriceAnalogResponseCache ??= new Map<string, ResponseCacheEntry>();
+  return global.__pjmForecastPriceAnalogResponseCache;
+}
+
+function inFlightCache(): Map<string, Promise<ObservedRouteResult>> {
+  global.__pjmForecastPriceAnalogInFlight ??= new Map<string, Promise<ObservedRouteResult>>();
+  return global.__pjmForecastPriceAnalogInFlight;
+}
+
+function responseCacheKey(parts: Array<boolean | number | string | null | undefined>): string {
+  return parts.map((part) => (part === null || part === undefined ? "" : String(part))).join("|");
+}
+
+function responseHeaders(cacheControl = CACHE_HEADER): Record<string, string> {
+  return {
+    "Cache-Control": cacheControl,
+    "CDN-Cache-Control": cacheControl,
+    "Vercel-CDN-Cache-Control": cacheControl,
+  };
+}
+
+function withResponseCacheHeader(
+  result: ObservedRouteResult,
+  state: "miss" | "fresh" | "deduped",
+): ObservedRouteResult {
+  const headers = new Headers(result.headers);
+  headers.set("X-Helios-Response-Cache", state);
+  return { ...result, headers };
+}
+
+function isCacheableResponse(result: ObservedRouteResult): boolean {
+  const status = result.status ?? 200;
+  return status >= 200 && status < 300;
+}
+
+function storeResponseCacheEntry(key: string, result: ObservedRouteResult): void {
+  const cache = responseCache();
+  cache.set(key, {
+    expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS,
+    result,
+  });
+
+  while (cache.size > RESPONSE_CACHE_MAX_ENTRIES) {
+    const oldestKey = cache.keys().next().value;
+    if (!oldestKey) break;
+    cache.delete(oldestKey);
+  }
 }
 
 function parseRtSource(value: string | null): RtSource {
@@ -186,6 +305,11 @@ function parsePriceComponent(value: string | null): PriceComponent {
 function parseDayType(value: string | null): DayType {
   if (value === "weekdays" || value === "weekends") return value;
   return "all";
+}
+
+function parseForecastSource(value: string | null): ForecastSourceMode {
+  const normalized = value?.trim().toLowerCase();
+  return normalized === "meteologica" || normalized === "meteo" ? "meteologica" : "pjm";
 }
 
 function parseBoundedNumber(value: string | null): number | null {
@@ -229,6 +353,29 @@ function priceExpression(rtSource: RtSource, component: PriceComponent): string 
   return "total_lmp_rt";
 }
 
+function historicalHourPredicate(timestampExpression: string): string {
+  return `
+        and extract(hour from ${timestampExpression})::int + 1 between p.hour_start and p.hour_end
+        and (
+          p.day_type = 'all'
+          or (p.day_type = 'weekdays' and extract(isodow from ${timestampExpression})::int between 1 and 5)
+          or (p.day_type = 'weekends' and extract(isodow from ${timestampExpression})::int in (6, 7))
+        )
+        and (
+          (
+            p.season_start_mmdd <= p.season_end_mmdd
+            and to_char(${timestampExpression}, 'MM-DD') between p.season_start_mmdd and p.season_end_mmdd
+          )
+          or (
+            p.season_start_mmdd > p.season_end_mmdd
+            and (
+              to_char(${timestampExpression}, 'MM-DD') >= p.season_start_mmdd
+              or to_char(${timestampExpression}, 'MM-DD') <= p.season_end_mmdd
+            )
+          )
+        )`;
+}
+
 function priceSourceSql(rtSource: RtSource, component: PriceComponent): string {
   const expr = priceExpression(rtSource, component);
   if (rtSource === "unverified") {
@@ -239,9 +386,11 @@ function priceSourceSql(rtSource: RtSource, component: PriceComponent): string {
         ${expr}::float8 as rt_price,
         updated_at
       from pjm.rt_unverified_hrl_lmps
-      where pnode_name = (select hub from params)
+      cross join params p
+      where pnode_name = p.hub
         and datetime_beginning_ept >= (select history_start from history_bounds)
         and datetime_beginning_ept < (select history_end_exclusive from history_bounds)
+        ${historicalHourPredicate("datetime_beginning_ept")}
     `;
   }
   return `
@@ -251,66 +400,376 @@ function priceSourceSql(rtSource: RtSource, component: PriceComponent): string {
       ${expr}::float8 as rt_price,
       updated_at
     from pjm.rt_hrl_lmps
-    where pnode_name = (select hub from params)
+    cross join params p
+    where pnode_name = p.hub
       and row_is_current = true
       and datetime_beginning_ept >= (select history_start from history_bounds)
       and datetime_beginning_ept < (select history_end_exclusive from history_bounds)
+      ${historicalHourPredicate("datetime_beginning_ept")}
   `;
 }
 
-function mapStats(row: PriceDistributionSqlStats | null | undefined) {
-  return {
-    count: toInt(row?.count),
-    minPrice: toNumber(row?.min_price),
-    p05: toNumber(row?.p05),
-    p25: toNumber(row?.p25),
-    median: toNumber(row?.median),
-    p75: toNumber(row?.p75),
-    p95: toNumber(row?.p95),
-    maxPrice: toNumber(row?.max_price),
-    meanPrice: toNumber(row?.mean_price),
-    stdDev: toNumber(row?.std_dev),
-    skewness: toNumber(row?.skewness),
-  };
+function forecastSourceLabel(forecastSource: ForecastSourceMode): string {
+  return forecastSource === "meteologica" ? "METEO" : "PJM";
 }
 
-function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): string {
-  const priceSql = priceSourceSql(rtSource, component);
-  return `
-    with params as (
+function forecastFundamentalsSql(forecastSource: ForecastSourceMode): string {
+  if (forecastSource === "meteologica") {
+    return `
+    forecast_date_candidates as (
+      select load.forecast_period_start::date as forecast_date
+      from meteologica.pjm_forecast_hourly load
+      cross join params p
+      where load.region = 'PJM'
+        and load.forecast_area = 'RTO'
+        and load.metric = 'load'
+        and load.forecast_period_start::date >= current_date
+        and load.forecast_period_start is not null
+        and load.issue_date is not null
+        and load.forecast_mw is not null
+        and extract(hour from load.forecast_period_start)::int + 1 between p.hour_start and p.hour_end
+      group by load.forecast_period_start::date
+    ),
+    available_latest_load_issue as (
       select
-        $1::text as load_area,
-        $2::text as generation_area,
-        $3::text as station_id,
-        $4::text as region,
-        $5::text as hub,
-        $6::date as requested_forecast_date,
-        least($7::int, $8::int) as hour_start,
-        greatest($7::int, $8::int) as hour_end,
-        $9::text as season_start_mmdd,
-        $10::text as season_end_mmdd,
-        $11::int as lookback_years,
-        $12::boolean as include_current_year,
-        $13::text as day_type,
-        $14::float8 as min_price,
-        $15::float8 as max_price,
-        $16::float8 as min_outages,
-        $17::float8 as max_outages,
-        $18::int as analogs_per_hour
+        c.forecast_date,
+        max(load.issue_date) as evaluated_at_utc
+      from forecast_date_candidates c
+      join meteologica.pjm_forecast_hourly load
+        on load.forecast_period_start::date = c.forecast_date
+      cross join params p
+      where load.region = 'PJM'
+        and load.forecast_area = 'RTO'
+        and load.metric = 'load'
+        and load.issue_date is not null
+        and load.forecast_period_start is not null
+        and load.forecast_mw is not null
+        and extract(hour from load.forecast_period_start)::int + 1 between p.hour_start and p.hour_end
+      group by c.forecast_date
+    ),
+    available_load_rows as (
+      select
+        load.forecast_period_start::date as forecast_date,
+        load.forecast_period_start as forecast_datetime_beginning_ept,
+        load.issue_date as evaluated_at_utc,
+        extract(hour from load.forecast_period_start)::int + 1 as hour_ending,
+        load.forecast_mw::float8 as load_mw,
+        load.updated_at as load_updated_at
+      from meteologica.pjm_forecast_hourly load
+      join available_latest_load_issue issue
+        on load.forecast_period_start::date = issue.forecast_date
+       and load.issue_date = issue.evaluated_at_utc
+      cross join params p
+      where load.region = 'PJM'
+        and load.forecast_area = 'RTO'
+        and load.metric = 'load'
+        and extract(hour from load.forecast_period_start)::int + 1 between p.hour_start and p.hour_end
+        and load.forecast_mw is not null
+    ),
+    available_net_load_rows as (
+      select
+        l.forecast_date,
+        l.forecast_datetime_beginning_ept,
+        l.evaluated_at_utc,
+        l.hour_ending,
+        l.load_mw,
+        solar.solar_mw,
+        wind.wind_mw
+      from available_load_rows l
+      join lateral (
+        select solar.forecast_mw::float8 as solar_mw
+        from meteologica.pjm_forecast_hourly solar
+        where solar.region = 'PJM'
+          and solar.forecast_area = 'RTO'
+          and solar.metric = 'solar'
+          and solar.forecast_period_start = l.forecast_datetime_beginning_ept
+          and solar.issue_date <= l.evaluated_at_utc
+          and solar.forecast_mw is not null
+        order by solar.issue_date desc
+        limit 1
+      ) solar on true
+      join lateral (
+        select wind.forecast_mw::float8 as wind_mw
+        from meteologica.pjm_forecast_hourly wind
+        where wind.region = 'PJM'
+          and wind.forecast_area = 'RTO'
+          and wind.metric = 'wind'
+          and wind.forecast_period_start = l.forecast_datetime_beginning_ept
+          and wind.issue_date <= l.evaluated_at_utc
+          and wind.forecast_mw is not null
+        order by wind.issue_date desc
+        limit 1
+      ) wind on true
+    ),
+    available_weather_issue as (
+      select
+        c.forecast_date,
+        max(forecast.forecast_issued_at_utc) as forecast_issued_at_utc
+      from (select distinct forecast_date from available_net_load_rows) c
+      join weather.wsi_hourly_forecasts forecast
+        on forecast.forecast_time_utc::date = c.forecast_date
+      cross join params p
+      where forecast.region = p.region
+        and (forecast.station_name = p.station_id or forecast.station_id = p.station_id)
+        and forecast.temp_f is not null
+      group by c.forecast_date
+    ),
+    available_weather_rows as (
+      select
+        forecast.forecast_time_utc::date as forecast_date,
+        extract(hour from forecast.forecast_time_utc)::int + 1 as hour_ending
+      from weather.wsi_hourly_forecasts forecast
+      join available_weather_issue issue
+        on forecast.forecast_time_utc::date = issue.forecast_date
+       and forecast.forecast_issued_at_utc = issue.forecast_issued_at_utc
+      cross join params p
+      where forecast.region = p.region
+        and (forecast.station_name = p.station_id or forecast.station_id = p.station_id)
+        and forecast.temp_f is not null
+        and extract(hour from forecast.forecast_time_utc)::int + 1 between p.hour_start and p.hour_end
+      group by forecast.forecast_time_utc::date, extract(hour from forecast.forecast_time_utc)::int + 1
     ),
     available_dates as (
-      select distinct forecast_datetime_beginning_ept::date as forecast_date
-      from pjm.load_frcstd_7_day
-      where forecast_area = 'RTO_COMBINED'
-        and forecast_datetime_beginning_ept::date >= current_date
-        and forecast_datetime_beginning_ept is not null
-        and forecast_load_mw is not null
+      select n.forecast_date
+      from available_net_load_rows n
+      join available_weather_rows w
+        on w.forecast_date = n.forecast_date
+       and w.hour_ending = n.hour_ending
+      cross join params p
+      group by n.forecast_date
+      having count(distinct n.hour_ending) = max(p.hour_end - p.hour_start + 1)
+         and count(distinct w.hour_ending) = max(p.hour_end - p.hour_start + 1)
     ),
     selected_date as (
-      select coalesce(
-        (select forecast_date from available_dates where forecast_date = (select requested_forecast_date from params)),
-        (select min(forecast_date) from available_dates)
-      ) as forecast_date
+      select case
+        when (select requested_forecast_date from params) is not null then (
+          select forecast_date
+          from available_dates
+          where forecast_date = (select requested_forecast_date from params)
+        )
+        else (select min(forecast_date) from available_dates)
+      end as forecast_date
+    ),
+    year_bounds as (
+      select
+        extract(year from current_date)::int as current_year,
+        extract(year from current_date)::int - (select lookback_years from params) as first_history_year,
+        case
+          when (select include_current_year from params) then extract(year from current_date)::int
+          else extract(year from current_date)::int - 1
+        end as last_history_year
+    ),
+    selected_years as (
+      select generate_series(first_history_year, last_history_year)::int as year
+      from year_bounds
+    ),
+    history_bounds as (
+      select
+        make_date((select min(year) from selected_years), 1, 1)::timestamp as history_start,
+        (make_date((select max(year) from selected_years), 12, 31) + interval '1 day')::timestamp as history_end_exclusive
+    ),
+    latest_load_issue as (
+      select max(load.issue_date) as evaluated_at_utc
+      from meteologica.pjm_forecast_hourly load
+      join selected_date d
+        on load.forecast_period_start::date = d.forecast_date
+      where load.region = 'PJM'
+        and load.forecast_area = 'RTO'
+        and load.metric = 'load'
+        and load.issue_date is not null
+        and load.forecast_period_start is not null
+        and load.forecast_mw is not null
+    ),
+    forecast_load_rows as (
+      select
+        load.forecast_period_start as forecast_datetime_beginning_ept,
+        load.issue_date as evaluated_at_datetime_ept,
+        load.issue_date as evaluated_at_datetime_utc,
+        extract(hour from load.forecast_period_start)::int + 1 as hour_ending,
+        load.forecast_mw::float8 as load_mw,
+        load.updated_at as load_updated_at
+      from meteologica.pjm_forecast_hourly load
+      join latest_load_issue issue
+        on load.issue_date = issue.evaluated_at_utc
+      join selected_date d
+        on load.forecast_period_start::date = d.forecast_date
+      cross join params p
+      where load.region = 'PJM'
+        and load.forecast_area = 'RTO'
+        and load.metric = 'load'
+        and extract(hour from load.forecast_period_start)::int + 1 between p.hour_start and p.hour_end
+        and load.forecast_mw is not null
+    ),
+    forecast_net_load as (
+      select
+        l.forecast_datetime_beginning_ept,
+        l.evaluated_at_datetime_ept,
+        l.evaluated_at_datetime_utc,
+        l.hour_ending,
+        l.load_mw,
+        solar.solar_mw,
+        wind.wind_mw,
+        (l.load_mw - solar.solar_mw - wind.wind_mw)::float8 as net_load_mw,
+        greatest(l.load_updated_at, coalesce(solar.updated_at, l.load_updated_at), coalesce(wind.updated_at, l.load_updated_at)) as updated_at
+      from forecast_load_rows l
+      join lateral (
+        select
+          solar.forecast_mw::float8 as solar_mw,
+          solar.updated_at
+        from meteologica.pjm_forecast_hourly solar
+        where solar.region = 'PJM'
+          and solar.forecast_area = 'RTO'
+          and solar.metric = 'solar'
+          and solar.forecast_period_start = l.forecast_datetime_beginning_ept
+          and solar.issue_date <= l.evaluated_at_datetime_utc
+          and solar.forecast_mw is not null
+        order by solar.issue_date desc
+        limit 1
+      ) solar on true
+      join lateral (
+        select
+          wind.forecast_mw::float8 as wind_mw,
+          wind.updated_at
+        from meteologica.pjm_forecast_hourly wind
+        where wind.region = 'PJM'
+          and wind.forecast_area = 'RTO'
+          and wind.metric = 'wind'
+          and wind.forecast_period_start = l.forecast_datetime_beginning_ept
+          and wind.issue_date <= l.evaluated_at_datetime_utc
+          and wind.forecast_mw is not null
+        order by wind.issue_date desc
+        limit 1
+      ) wind on true
+    )`;
+  }
+
+  return `
+    forecast_date_candidates as (
+      select load.forecast_datetime_beginning_ept::date as forecast_date
+      from pjm.load_frcstd_7_day load
+      cross join params p
+      where load.forecast_area = 'RTO_COMBINED'
+        and load.forecast_datetime_beginning_ept::date >= current_date
+        and load.forecast_datetime_beginning_ept is not null
+        and load.forecast_datetime_beginning_utc is not null
+        and load.evaluated_at_datetime_utc is not null
+        and load.forecast_load_mw is not null
+        and extract(hour from load.forecast_datetime_beginning_ept)::int + 1 between p.hour_start and p.hour_end
+      group by load.forecast_datetime_beginning_ept::date
+    ),
+    available_latest_load_issue as (
+      select
+        c.forecast_date,
+        max(load.evaluated_at_datetime_utc) as evaluated_at_utc
+      from forecast_date_candidates c
+      join pjm.load_frcstd_7_day load
+        on load.forecast_datetime_beginning_ept::date = c.forecast_date
+      cross join params p
+      where load.forecast_area = 'RTO_COMBINED'
+        and load.evaluated_at_datetime_utc is not null
+        and load.forecast_datetime_beginning_ept is not null
+        and load.forecast_datetime_beginning_utc is not null
+        and load.forecast_load_mw is not null
+        and extract(hour from load.forecast_datetime_beginning_ept)::int + 1 between p.hour_start and p.hour_end
+      group by c.forecast_date
+    ),
+    available_load_rows as (
+      select
+        load.forecast_datetime_beginning_ept::date as forecast_date,
+        load.forecast_datetime_beginning_ept,
+        load.forecast_datetime_beginning_utc,
+        load.evaluated_at_datetime_utc,
+        extract(hour from load.forecast_datetime_beginning_ept)::int + 1 as hour_ending,
+        load.forecast_load_mw::float8 as load_mw
+      from pjm.load_frcstd_7_day load
+      join available_latest_load_issue issue
+        on load.forecast_datetime_beginning_ept::date = issue.forecast_date
+       and load.evaluated_at_datetime_utc = issue.evaluated_at_utc
+      cross join params p
+      where load.forecast_area = 'RTO_COMBINED'
+        and extract(hour from load.forecast_datetime_beginning_ept)::int + 1 between p.hour_start and p.hour_end
+        and load.forecast_load_mw is not null
+    ),
+    available_net_load_rows as (
+      select
+        l.forecast_date,
+        l.forecast_datetime_beginning_ept,
+        l.forecast_datetime_beginning_utc,
+        l.evaluated_at_datetime_utc,
+        l.hour_ending,
+        l.load_mw,
+        solar.solar_mw,
+        wind.wind_mw
+      from available_load_rows l
+      join lateral (
+        select solar_forecast_mwh::float8 as solar_mw
+        from pjm.hourly_solar_power_forecast solar
+        where solar.datetime_beginning_utc = l.forecast_datetime_beginning_utc
+          and solar.evaluated_at_utc is not null
+          and solar.evaluated_at_utc <= l.evaluated_at_datetime_utc
+          and solar.solar_forecast_mwh is not null
+        order by solar.evaluated_at_utc desc
+        limit 1
+      ) solar on true
+      join lateral (
+        select wind_forecast_mwh::float8 as wind_mw
+        from pjm.hourly_wind_power_forecast wind
+        where wind.datetime_beginning_utc = l.forecast_datetime_beginning_utc
+          and wind.evaluated_at_utc is not null
+          and wind.evaluated_at_utc <= l.evaluated_at_datetime_utc
+          and wind.wind_forecast_mwh is not null
+        order by wind.evaluated_at_utc desc
+        limit 1
+      ) wind on true
+    ),
+    available_weather_issue as (
+      select
+        c.forecast_date,
+        max(forecast.forecast_issued_at_utc) as forecast_issued_at_utc
+      from (select distinct forecast_date from available_net_load_rows) c
+      join weather.wsi_hourly_forecasts forecast
+        on forecast.forecast_time_utc::date = c.forecast_date
+      cross join params p
+      where forecast.region = p.region
+        and (forecast.station_name = p.station_id or forecast.station_id = p.station_id)
+        and forecast.temp_f is not null
+      group by c.forecast_date
+    ),
+    available_weather_rows as (
+      select
+        forecast.forecast_time_utc::date as forecast_date,
+        extract(hour from forecast.forecast_time_utc)::int + 1 as hour_ending
+      from weather.wsi_hourly_forecasts forecast
+      join available_weather_issue issue
+        on forecast.forecast_time_utc::date = issue.forecast_date
+       and forecast.forecast_issued_at_utc = issue.forecast_issued_at_utc
+      cross join params p
+      where forecast.region = p.region
+        and (forecast.station_name = p.station_id or forecast.station_id = p.station_id)
+        and forecast.temp_f is not null
+        and extract(hour from forecast.forecast_time_utc)::int + 1 between p.hour_start and p.hour_end
+      group by forecast.forecast_time_utc::date, extract(hour from forecast.forecast_time_utc)::int + 1
+    ),
+    available_dates as (
+      select n.forecast_date
+      from available_net_load_rows n
+      join available_weather_rows w
+        on w.forecast_date = n.forecast_date
+       and w.hour_ending = n.hour_ending
+      cross join params p
+      group by n.forecast_date
+      having count(distinct n.hour_ending) = max(p.hour_end - p.hour_start + 1)
+         and count(distinct w.hour_ending) = max(p.hour_end - p.hour_start + 1)
+    ),
+    selected_date as (
+      select case
+        when (select requested_forecast_date from params) is not null then (
+          select forecast_date
+          from available_dates
+          where forecast_date = (select requested_forecast_date from params)
+        )
+        else (select min(forecast_date) from available_dates)
+      end as forecast_date
     ),
     year_bounds as (
       select
@@ -396,7 +855,382 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
         order by wind.evaluated_at_utc desc
         limit 1
       ) wind on true
+    )`;
+}
+
+interface ForecastHour {
+  forecastDatetimeEpt: string | null;
+  hourEnding: number;
+  loadMw: number | null;
+  windMw: number | null;
+  solarMw: number | null;
+  netLoadMw: number | null;
+  tempF: number | null;
+  totalOutagesMw: number | null;
+  evaluatedAtEpt: string | null;
+}
+
+interface HistoricalRow {
+  datetimeBeginningEpt: string | null;
+  hourEnding: number;
+  actualYear: number;
+  rtPrice: number | null;
+  tempF: number | null;
+  grossLoadMw: number | null;
+  windMw: number | null;
+  solarMw: number | null;
+  netLoadMw: number | null;
+  totalOutagesMw: number | null;
+  rowAsOf: string | null;
+}
+
+interface AnalogPoint {
+  targetDatetimeEpt: string | null;
+  targetHourEnding: number;
+  datetimeBeginningEpt: string | null;
+  hourEnding: number;
+  actualYear: number;
+  rtPrice: number | null;
+  tempF: number | null;
+  grossLoadMw: number | null;
+  windMw: number | null;
+  solarMw: number | null;
+  netLoadMw: number | null;
+  totalOutagesMw: number | null;
+  distance: number | null;
+}
+
+function percentile(sortedValues: number[], pct: number): number | null {
+  if (!sortedValues.length) return null;
+  const bounded = Math.min(Math.max(pct, 0), 1);
+  const position = (sortedValues.length - 1) * bounded;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  if (lower === upper) return sortedValues[lower];
+  const weight = position - lower;
+  return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
+}
+
+function emptyStats() {
+  return {
+    count: 0,
+    minPrice: null,
+    p05: null,
+    p25: null,
+    median: null,
+    p75: null,
+    p95: null,
+    maxPrice: null,
+    meanPrice: null,
+    stdDev: null,
+    skewness: null,
+  };
+}
+
+function statsFromPrices(rawPrices: Array<number | null | undefined>) {
+  const prices = rawPrices
+    .filter((price): price is number => price !== null && price !== undefined && Number.isFinite(price))
+    .sort((a, b) => a - b);
+  if (!prices.length) return emptyStats();
+
+  const count = prices.length;
+  const minPrice = prices[0];
+  const maxPrice = prices[count - 1];
+  const meanPrice = prices.reduce((sum, price) => sum + price, 0) / count;
+  const variance = prices.reduce((sum, price) => sum + (price - meanPrice) ** 2, 0) / count;
+  const stdDev = Math.sqrt(variance);
+  const skewness =
+    stdDev > 0
+      ? prices.reduce((sum, price) => sum + ((price - meanPrice) / stdDev) ** 3, 0) / count
+      : null;
+
+  return {
+    count,
+    minPrice,
+    p05: percentile(prices, 0.05),
+    p25: percentile(prices, 0.25),
+    median: percentile(prices, 0.5),
+    p75: percentile(prices, 0.75),
+    p95: percentile(prices, 0.95),
+    maxPrice,
+    meanPrice,
+    stdDev,
+    skewness,
+  };
+}
+
+function tailsFromPrices(rawPrices: Array<number | null | undefined>) {
+  const prices = rawPrices.filter(
+    (price): price is number => price !== null && price !== undefined && Number.isFinite(price),
+  );
+  if (!prices.length) {
+    return { belowZero: null, above100: null, above250: null, above500: null };
+  }
+  const count = prices.length;
+  return {
+    belowZero: prices.filter((price) => price < 0).length / count,
+    above100: prices.filter((price) => price > 100).length / count,
+    above250: prices.filter((price) => price > 250).length / count,
+    above500: prices.filter((price) => price > 500).length / count,
+  };
+}
+
+function histogramFromPrices(rawPrices: Array<number | null | undefined>, binCount = 18) {
+  const prices = rawPrices.filter(
+    (price): price is number => price !== null && price !== undefined && Number.isFinite(price),
+  );
+  if (!prices.length) {
+    return Array.from({ length: binCount }, (_, binIndex) => ({
+      binIndex,
+      binStart: null,
+      binEnd: null,
+      count: 0,
+      pct: null,
+    }));
+  }
+
+  const minPrice = Math.min(...prices);
+  const maxPrice = Math.max(...prices);
+  const bins = Array.from({ length: binCount }, (_, binIndex) => ({
+    binIndex,
+    binStart: minPrice === maxPrice ? minPrice : minPrice + ((maxPrice - minPrice) * binIndex) / binCount,
+    binEnd: minPrice === maxPrice ? maxPrice : minPrice + ((maxPrice - minPrice) * (binIndex + 1)) / binCount,
+    count: 0,
+    pct: 0,
+  }));
+
+  prices.forEach((price) => {
+    const rawIndex = minPrice === maxPrice ? 0 : Math.floor(((price - minPrice) / (maxPrice - minPrice)) * binCount);
+    bins[Math.min(Math.max(rawIndex, 0), binCount - 1)].count += 1;
+  });
+
+  return bins.map((bin) => ({
+    ...bin,
+    pct: bin.count / prices.length,
+  }));
+}
+
+function groupYearCounts(rows: Array<{ actualYear: number }>) {
+  const counts = new Map<number, number>();
+  rows.forEach((row) => {
+    counts.set(row.actualYear, (counts.get(row.actualYear) ?? 0) + 1);
+  });
+  return Array.from(counts.entries())
+    .sort(([left], [right]) => left - right)
+    .map(([year, rowCount]) => ({ year, rowCount }));
+}
+
+function analogTargetKey(point: Pick<AnalogPoint, "targetDatetimeEpt" | "targetHourEnding">): string {
+  return `${point.targetDatetimeEpt ?? "unknown"}|${point.targetHourEnding}`;
+}
+
+function computeAnalogPoints(
+  forecastHours: ForecastHour[],
+  historicalRows: HistoricalRow[],
+  analogsPerHour: number,
+): AnalogPoint[] {
+  const temps = historicalRows
+    .map((row) => row.tempF)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const loads = historicalRows
+    .map((row) => row.netLoadMw)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const minTemp = temps.length ? Math.min(...temps) : 0;
+  const maxTemp = temps.length ? Math.max(...temps) : 1;
+  const minLoad = loads.length ? Math.min(...loads) : 0;
+  const maxLoad = loads.length ? Math.max(...loads) : 1;
+  const tempRange = maxTemp - minTemp || 1;
+  const loadRange = maxLoad - minLoad || 1;
+  const rowsByHour = new Map<number, HistoricalRow[]>();
+
+  historicalRows.forEach((row) => {
+    const current = rowsByHour.get(row.hourEnding) ?? [];
+    current.push(row);
+    rowsByHour.set(row.hourEnding, current);
+  });
+
+  return forecastHours.flatMap((hour) => {
+    if (hour.tempF === null || hour.netLoadMw === null) return [];
+    const targetTempF = hour.tempF;
+    const targetNetLoadMw = hour.netLoadMw;
+    const candidates = (rowsByHour.get(hour.hourEnding) ?? [])
+      .map((row) => {
+        const distance =
+          Math.abs(((row.tempF ?? minTemp) - minTemp) / tempRange - (targetTempF - minTemp) / tempRange) * 0.45 +
+          Math.abs(((row.netLoadMw ?? minLoad) - minLoad) / loadRange - (targetNetLoadMw - minLoad) / loadRange) * 0.55;
+        return {
+          targetDatetimeEpt: hour.forecastDatetimeEpt,
+          targetHourEnding: hour.hourEnding,
+          datetimeBeginningEpt: row.datetimeBeginningEpt,
+          hourEnding: row.hourEnding,
+          actualYear: row.actualYear,
+          rtPrice: row.rtPrice,
+          tempF: row.tempF,
+          grossLoadMw: row.grossLoadMw,
+          windMw: row.windMw,
+          solarMw: row.solarMw,
+          netLoadMw: row.netLoadMw,
+          totalOutagesMw: row.totalOutagesMw,
+          distance,
+        };
+      })
+      .sort((left, right) => {
+        if ((left.distance ?? 0) !== (right.distance ?? 0)) return (left.distance ?? 0) - (right.distance ?? 0);
+        return (right.datetimeBeginningEpt ?? "").localeCompare(left.datetimeBeginningEpt ?? "");
+      });
+
+    const years = Array.from(new Set(candidates.map((candidate) => candidate.actualYear)));
+    const quota = Math.max(1, Math.floor(analogsPerHour / Math.max(years.length, 1)));
+    const selected: AnalogPoint[] = [];
+    const selectedKeys = new Set<string>();
+
+    years.forEach((year) => {
+      candidates
+        .filter((candidate) => candidate.actualYear === year)
+        .slice(0, quota)
+        .forEach((candidate) => {
+          const key = `${candidate.datetimeBeginningEpt}|${candidate.actualYear}`;
+          if (!selectedKeys.has(key) && selected.length < analogsPerHour) {
+            selectedKeys.add(key);
+            selected.push(candidate);
+          }
+        });
+    });
+
+    candidates.forEach((candidate) => {
+      const key = `${candidate.datetimeBeginningEpt}|${candidate.actualYear}`;
+      if (!selectedKeys.has(key) && selected.length < analogsPerHour) {
+        selectedKeys.add(key);
+        selected.push(candidate);
+      }
+    });
+
+    return selected.sort((left, right) => {
+      if ((left.distance ?? 0) !== (right.distance ?? 0)) return (left.distance ?? 0) - (right.distance ?? 0);
+      return (right.datetimeBeginningEpt ?? "").localeCompare(left.datetimeBeginningEpt ?? "");
+    });
+  });
+}
+
+function hourlyDistributionsFromAnalogs(analogPoints: AnalogPoint[]) {
+  const byTarget = new Map<string, AnalogPoint[]>();
+  analogPoints.forEach((point) => {
+    const key = analogTargetKey(point);
+    const current = byTarget.get(key) ?? [];
+    current.push(point);
+    byTarget.set(key, current);
+  });
+
+  return Array.from(byTarget.values())
+    .map((points) => {
+      const first = points[0];
+      const stats = statsFromPrices(points.map((point) => point.rtPrice));
+      return {
+        forecastDatetimeEpt: first.targetDatetimeEpt,
+        hourEnding: first.targetHourEnding,
+        analogCount: stats.count,
+        p25: stats.p25,
+        median: stats.median,
+        p75: stats.p75,
+        p95: stats.p95,
+      };
+    })
+    .sort((left, right) => (left.forecastDatetimeEpt ?? "").localeCompare(right.forecastDatetimeEpt ?? ""));
+}
+
+function yearShiftFromAnalogs(analogPoints: AnalogPoint[]) {
+  const currentYear = new Date().getFullYear();
+  const currentYearPoints = analogPoints.filter((point) => point.actualYear === currentYear);
+  const priorYearPoints = analogPoints.filter((point) => point.actualYear !== currentYear);
+  const currentYearMedian = statsFromPrices(currentYearPoints.map((point) => point.rtPrice)).median;
+  const priorYearMedian = statsFromPrices(priorYearPoints.map((point) => point.rtPrice)).median;
+  return {
+    currentYear,
+    currentYearCount: currentYearPoints.length,
+    priorYearCount: priorYearPoints.length,
+    currentYearMedian,
+    priorYearMedian,
+    medianShift:
+      currentYearMedian !== null && priorYearMedian !== null ? currentYearMedian - priorYearMedian : null,
+  };
+}
+
+function buildForecastAvailableDatesSql(forecastSource: ForecastSourceMode): string {
+  const fundamentalsSql = forecastFundamentalsSql(forecastSource);
+  const sourceLabel = forecastSourceLabel(forecastSource);
+  return `
+    with params as (
+      select
+        $1::text as load_area,
+        $2::text as generation_area,
+        $3::text as station_id,
+        $4::text as region,
+        $5::text as hub,
+        $6::date as requested_forecast_date,
+        least($7::int, $8::int) as hour_start,
+        greatest($7::int, $8::int) as hour_end,
+        $9::text as season_start_mmdd,
+        $10::text as season_end_mmdd,
+        $11::int as lookback_years,
+        $12::boolean as include_current_year,
+        $13::text as day_type,
+        $14::float8 as min_price,
+        $15::float8 as max_price,
+        $16::float8 as min_outages,
+        $17::float8 as max_outages,
+        $18::int as analogs_per_hour
     ),
+    ${fundamentalsSql}
+    select jsonb_build_object(
+      'selected', jsonb_build_object(
+        'forecastDate', (select forecast_date::text from selected_date),
+        'hourStart', (select hour_start from params),
+        'hourEnd', (select hour_end from params),
+        'loadArea', (select load_area from params),
+        'generationArea', (select generation_area from params),
+        'stationId', (select station_id from params),
+        'region', (select region from params),
+        'hub', (select hub from params),
+        'forecastSource', '${forecastSource}',
+        'forecastSourceLabel', '${sourceLabel}',
+        'sourceArea', 'RTO'
+      ),
+      'available_dates', coalesce((select jsonb_agg(forecast_date::text order by forecast_date) from available_dates), '[]'::jsonb)
+    ) as payload
+  `;
+}
+
+function buildForecastAnalogSql(
+  rtSource: RtSource,
+  component: PriceComponent,
+  forecastSource: ForecastSourceMode,
+): string {
+  const priceSql = priceSourceSql(rtSource, component);
+  const fundamentalsSql = forecastFundamentalsSql(forecastSource);
+  const sourceLabel = forecastSourceLabel(forecastSource);
+  return `
+    with params as (
+      select
+        $1::text as load_area,
+        $2::text as generation_area,
+        $3::text as station_id,
+        $4::text as region,
+        $5::text as hub,
+        $6::date as requested_forecast_date,
+        least($7::int, $8::int) as hour_start,
+        greatest($7::int, $8::int) as hour_end,
+        $9::text as season_start_mmdd,
+        $10::text as season_end_mmdd,
+        $11::int as lookback_years,
+        $12::boolean as include_current_year,
+        $13::text as day_type,
+        $14::float8 as min_price,
+        $15::float8 as max_price,
+        $16::float8 as min_outages,
+        $17::float8 as max_outages,
+        $18::int as analogs_per_hour
+    ),
+    ${fundamentalsSql},
     latest_weather_issue as (
       select max(forecast.forecast_issued_at_utc) as forecast_issued_at_utc
       from weather.wsi_hourly_forecasts forecast
@@ -476,6 +1310,7 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
         and m.is_verified = false
         and m.datetime_beginning_ept >= hb.history_start
         and m.datetime_beginning_ept < hb.history_end_exclusive
+        ${historicalHourPredicate("m.datetime_beginning_ept")}
       union all
       select
         p_load.datetime_beginning_ept,
@@ -490,6 +1325,7 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
       where p_load.load_area = p.load_area
         and p_load.datetime_beginning_ept >= hb.history_start
         and p_load.datetime_beginning_ept < hb.history_end_exclusive
+        ${historicalHourPredicate("p_load.datetime_beginning_ept")}
     ),
     load_hourly as (
       select *
@@ -512,6 +1348,7 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
       where s.area = p.generation_area
         and s.datetime_beginning_ept >= hb.history_start
         and s.datetime_beginning_ept < hb.history_end_exclusive
+        ${historicalHourPredicate("s.datetime_beginning_ept")}
     ),
     wind_hourly as (
       select
@@ -524,6 +1361,7 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
       where w_gen.area = p.generation_area
         and w_gen.datetime_beginning_ept >= hb.history_start
         and w_gen.datetime_beginning_ept < hb.history_end_exclusive
+        ${historicalHourPredicate("w_gen.datetime_beginning_ept")}
     ),
     weather_hourly as (
       select
@@ -537,6 +1375,7 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
         and wobs.region = p.region
         and wobs.observation_time_local >= hb.history_start
         and wobs.observation_time_local < hb.history_end_exclusive
+        ${historicalHourPredicate("wobs.observation_time_local")}
       group by wobs.observation_time_local
     ),
     outage_daily as (
@@ -619,186 +1458,6 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
         and (p.min_outages is null or a.total_outages_mw >= p.min_outages)
         and (p.max_outages is null or a.total_outages_mw <= p.max_outages)
     ),
-    feature_ranges as (
-      select
-        min(temp_f)::float8 as min_temp,
-        max(temp_f)::float8 as max_temp,
-        min(net_load_mw)::float8 as min_load,
-        max(net_load_mw)::float8 as max_load,
-        min(total_outages_mw)::float8 as min_outage,
-        max(total_outages_mw)::float8 as max_outage
-      from prefiltered_actuals
-    ),
-    analog_candidates as (
-      select
-        t.forecast_datetime_beginning_ept as target_datetime_ept,
-        t.hour_ending as target_hour_ending,
-        t.net_load_mw as target_net_load_mw,
-        t.temp_f as target_temp_f,
-        t.total_outages_mw as target_outages_mw,
-        a.datetime_beginning_ept,
-        a.hour_ending,
-        a.actual_year,
-        a.rt_price,
-        a.temp_f,
-        a.net_load_mw,
-        a.total_outages_mw,
-        (
-          coalesce(abs(((a.temp_f - fr.min_temp) / nullif(fr.max_temp - fr.min_temp, 0)) - ((t.temp_f - fr.min_temp) / nullif(fr.max_temp - fr.min_temp, 0))), 0) * 0.34
-          + coalesce(abs(((a.net_load_mw - fr.min_load) / nullif(fr.max_load - fr.min_load, 0)) - ((t.net_load_mw - fr.min_load) / nullif(fr.max_load - fr.min_load, 0))), 0) * 0.43
-          + coalesce(abs(((a.total_outages_mw - fr.min_outage) / nullif(fr.max_outage - fr.min_outage, 0)) - ((t.total_outages_mw - fr.min_outage) / nullif(fr.max_outage - fr.min_outage, 0))), 0) * 0.18
-          + case when a.hour_ending = t.hour_ending then 0 else 0.25 end
-        )::float8 as distance
-      from target_hours t
-      join prefiltered_actuals a
-        on a.hour_ending = t.hour_ending
-      cross join feature_ranges fr
-    ),
-    analog_ranked as (
-      select
-        *,
-        row_number() over (partition by target_datetime_ept order by distance, datetime_beginning_ept desc) as target_rank
-      from analog_candidates
-    ),
-    analogs as (
-      select *
-      from analog_ranked
-      where target_rank <= (select analogs_per_hour from params)
-    ),
-    price_stats_base as (
-      select
-        count(*) as "count",
-        min(rt_price)::float8 as min_price,
-        percentile_cont(0.05) within group (order by rt_price)::float8 as p05,
-        percentile_cont(0.25) within group (order by rt_price)::float8 as p25,
-        percentile_cont(0.50) within group (order by rt_price)::float8 as median,
-        percentile_cont(0.75) within group (order by rt_price)::float8 as p75,
-        percentile_cont(0.95) within group (order by rt_price)::float8 as p95,
-        max(rt_price)::float8 as max_price,
-        avg(rt_price)::float8 as mean_price,
-        stddev_pop(rt_price)::float8 as std_dev
-      from analogs
-    ),
-    price_stats as (
-      select
-        b."count",
-        b.min_price,
-        b.p05,
-        b.p25,
-        b.median,
-        b.p75,
-        b.p95,
-        b.max_price,
-        b.mean_price,
-        b.std_dev,
-        case
-          when b.std_dev is null or b.std_dev = 0 then null
-          else avg(power((a.rt_price - b.mean_price) / b.std_dev, 3))::float8
-        end as skewness
-      from price_stats_base b
-      left join analogs a
-        on a.rt_price is not null
-      group by
-        b."count",
-        b.min_price,
-        b.p05,
-        b.p25,
-        b.median,
-        b.p75,
-        b.p95,
-        b.max_price,
-        b.mean_price,
-        b.std_dev
-    ),
-    tail_stats as (
-      select
-        avg(case when rt_price < 0 then 1.0 else 0.0 end)::float8 as below_zero,
-        avg(case when rt_price > 100 then 1.0 else 0.0 end)::float8 as above_100,
-        avg(case when rt_price > 250 then 1.0 else 0.0 end)::float8 as above_250,
-        avg(case when rt_price > 500 then 1.0 else 0.0 end)::float8 as above_500
-      from analogs
-    ),
-    histogram_bins as (
-      select
-        gs::int as bin_index,
-        case
-          when ps."count" = 0 then null
-          when ps.max_price = ps.min_price then ps.min_price
-          else ps.min_price + ((ps.max_price - ps.min_price) * gs / 18.0)
-        end as bin_start,
-        case
-          when ps."count" = 0 then null
-          when ps.max_price = ps.min_price then ps.max_price
-          else ps.min_price + ((ps.max_price - ps.min_price) * (gs + 1) / 18.0)
-        end as bin_end
-      from price_stats ps
-      cross join generate_series(0, 17) as gs
-    ),
-    histogram_counts as (
-      select
-        h.bin_index,
-        h.bin_start::float8 as bin_start,
-        h.bin_end::float8 as bin_end,
-        count(a.rt_price) as bin_count,
-        case
-          when ps."count" = 0 then null
-          else (count(a.rt_price)::float8 / ps."count"::float8)
-        end as pct
-      from histogram_bins h
-      cross join price_stats ps
-      left join analogs a
-        on a.rt_price is not null
-       and (
-         (ps.max_price = ps.min_price and h.bin_index = 0 and a.rt_price = ps.min_price)
-         or (
-           ps.max_price > ps.min_price
-           and a.rt_price >= h.bin_start
-           and (a.rt_price < h.bin_end or (h.bin_index = 17 and a.rt_price <= h.bin_end))
-         )
-       )
-      group by h.bin_index, h.bin_start, h.bin_end, ps."count"
-    ),
-    hourly_distributions as (
-      select
-        to_char(target_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as forecast_datetime_ept,
-        target_hour_ending as hour_ending,
-        count(*) as analog_count,
-        percentile_cont(0.25) within group (order by rt_price)::float8 as p25,
-        percentile_cont(0.50) within group (order by rt_price)::float8 as median,
-        percentile_cont(0.75) within group (order by rt_price)::float8 as p75,
-        percentile_cont(0.95) within group (order by rt_price)::float8 as p95
-      from analogs
-      group by target_datetime_ept, target_hour_ending
-    ),
-    year_shift as (
-      select
-        (select current_year from year_bounds) as current_year,
-        count(*) filter (where actual_year = (select current_year from year_bounds)) as current_year_count,
-        count(*) filter (where actual_year <> (select current_year from year_bounds)) as prior_year_count,
-        percentile_cont(0.50) within group (order by rt_price) filter (where actual_year = (select current_year from year_bounds))::float8 as current_year_median,
-        percentile_cont(0.50) within group (order by rt_price) filter (where actual_year <> (select current_year from year_bounds))::float8 as prior_year_median,
-        (
-          percentile_cont(0.50) within group (order by rt_price) filter (where actual_year = (select current_year from year_bounds))
-          - percentile_cont(0.50) within group (order by rt_price) filter (where actual_year <> (select current_year from year_bounds))
-        )::float8 as median_shift
-      from analogs
-    ),
-    analog_point_rows as (
-      select
-        to_char(target_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as target_datetime_ept,
-        target_hour_ending,
-        to_char(datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as datetime_beginning_ept,
-        hour_ending,
-        actual_year,
-        rt_price,
-        temp_f,
-        net_load_mw,
-        total_outages_mw,
-        distance
-      from analogs
-      order by distance, target_datetime_ept, datetime_beginning_ept desc
-      limit 80
-    ),
     forecast_hour_rows as (
       select
         to_char(forecast_datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as forecast_datetime_ept,
@@ -813,13 +1472,33 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
       from target_hours
       order by forecast_datetime_beginning_ept
     ),
+    historical_rows as (
+      select
+        to_char(datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as datetime_beginning_ept,
+        hour_ending,
+        actual_year,
+        rt_price,
+        temp_f,
+        gross_load_mw,
+        wind_mw,
+        solar_mw,
+        net_load_mw,
+        total_outages_mw,
+        to_char(row_as_of, 'YYYY-MM-DD"T"HH24:MI:SS') as row_as_of
+      from prefiltered_actuals
+      order by datetime_beginning_ept
+    ),
     summary_row as (
       select
         (select count(*) from target_hours) as forecast_hour_count,
         (select count(*) from prefiltered_actuals) as historical_pool_count,
-        (select count(*) from analogs) as analog_count,
-        to_char(max(row_as_of), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
-      from target_hours
+        to_char(
+          greatest(
+            coalesce((select max(row_as_of) from target_hours), timestamp 'epoch'),
+            coalesce((select max(row_as_of) from prefiltered_actuals), timestamp 'epoch')
+          ),
+          'YYYY-MM-DD"T"HH24:MI:SS'
+        ) as as_of
     )
     select jsonb_build_object(
       'selected', jsonb_build_object(
@@ -831,6 +1510,9 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
         'stationId', (select station_id from params),
         'region', (select region from params),
         'hub', (select hub from params),
+        'forecastSource', '${forecastSource}',
+        'forecastSourceLabel', '${sourceLabel}',
+        'sourceArea', 'RTO',
         'rtSource', '${rtSource}',
         'component', '${component}',
         'seasonStart', (select season_start_mmdd from params),
@@ -842,46 +1524,68 @@ function buildForecastAnalogSql(rtSource: RtSource, component: PriceComponent): 
       ),
       'available_dates', coalesce((select jsonb_agg(forecast_date::text order by forecast_date) from available_dates), '[]'::jsonb),
       'forecast_hours', coalesce((select jsonb_agg(to_jsonb(forecast_hour_rows) order by forecast_datetime_ept) from forecast_hour_rows), '[]'::jsonb),
-      'price_distribution', jsonb_build_object(
-        'stats', (select to_jsonb(price_stats) from price_stats),
-        'tails', (select to_jsonb(tail_stats) from tail_stats),
-        'histogram', coalesce((select jsonb_agg(to_jsonb(histogram_counts) order by bin_index) from histogram_counts), '[]'::jsonb)
-      ),
-      'hourly_distributions', coalesce((select jsonb_agg(to_jsonb(hourly_distributions) order by forecast_datetime_ept) from hourly_distributions), '[]'::jsonb),
-      'year_shift', (select to_jsonb(year_shift) from year_shift),
-      'analog_points', coalesce((select jsonb_agg(to_jsonb(analog_point_rows) order by distance, target_datetime_ept, datetime_beginning_ept desc) from analog_point_rows), '[]'::jsonb),
+      'historical_rows', coalesce((select jsonb_agg(to_jsonb(historical_rows) order by datetime_beginning_ept) from historical_rows), '[]'::jsonb),
       'summary', (select to_jsonb(summary_row) from summary_row)
     ) as payload
   `;
 }
 
-const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  const { searchParams } = new URL(request.url);
-  const region = parseIdentifier(searchParams.get("region"), DEFAULT_REGION);
-  const loadArea = parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA);
-  const generationArea = parseIdentifier(searchParams.get("generationArea"), DEFAULT_GENERATION_AREA);
-  const stationId = parseIdentifier(searchParams.get("stationId"), DEFAULT_STATION_ID);
-  const requestedHub = searchParams.get("hub")?.trim().toUpperCase() || DEFAULT_HUB;
-  const hub = PRICE_HUBS.includes(requestedHub as (typeof PRICE_HUBS)[number])
-    ? requestedHub
-    : DEFAULT_HUB;
-  const rtSource = parseRtSource(searchParams.get("rtSource"));
-  const component = parsePriceComponent(searchParams.get("component"));
-  const forecastDate = parseDate(searchParams.get("forecastDate"));
-  const hourStart = parseHour(searchParams.get("hourStart"), 8);
-  const hourEnd = parseHour(searchParams.get("hourEnd"), 23);
-  const seasonStart = parseMonthDay(searchParams.get("seasonStart"), "05-01");
-  const seasonEnd = parseMonthDay(searchParams.get("seasonEnd"), "08-31");
-  const lookbackYears = parseLookbackYears(searchParams.get("lookbackYears"));
-  const includeCurrentYear = parseBoolean(searchParams.get("includeCurrentYear"), true);
-  const dayType = parseDayType(searchParams.get("dayType"));
-  const minPrice = parseBoundedNumber(searchParams.get("minPrice"));
-  const maxPrice = parseBoundedNumber(searchParams.get("maxPrice"));
-  const minOutages = parseBoundedNumber(searchParams.get("minOutages"));
-  const maxOutages = parseBoundedNumber(searchParams.get("maxOutages"));
-  const analogsPerHour = parseAnalogsPerHour(searchParams.get("analogsPerHour"));
+function forecastAnalogMemoryCacheKey(input: ForecastAnalogRequestInput): string {
+  const normalizedHourStart = Math.min(input.hourStart, input.hourEnd);
+  const normalizedHourEnd = Math.max(input.hourStart, input.hourEnd);
 
-  const [row] = await query<ForecastAnalogRow>(buildForecastAnalogSql(rtSource, component), [
+  return responseCacheKey([
+    input.datesOnly ? "dates" : "full",
+    input.forecastSource,
+    input.loadArea,
+    input.generationArea,
+    input.stationId,
+    input.region,
+    input.hub,
+    input.datesOnly ? "" : input.rtSource,
+    input.datesOnly ? "" : input.component,
+    input.forecastDate,
+    normalizedHourStart,
+    normalizedHourEnd,
+    input.seasonStart,
+    input.seasonEnd,
+    input.lookbackYears,
+    input.includeCurrentYear,
+    input.dayType,
+    input.minPrice,
+    input.maxPrice,
+    input.minOutages,
+    input.maxOutages,
+    input.analogsPerHour,
+  ]);
+}
+
+async function loadForecastAnalogResult(input: ForecastAnalogRequestInput): Promise<ObservedRouteResult> {
+  const {
+    region,
+    loadArea,
+    generationArea,
+    stationId,
+    hub,
+    rtSource,
+    component,
+    forecastSource,
+    forecastDate,
+    hourStart,
+    hourEnd,
+    seasonStart,
+    seasonEnd,
+    lookbackYears,
+    includeCurrentYear,
+    dayType,
+    minPrice,
+    maxPrice,
+    minOutages,
+    maxOutages,
+    analogsPerHour,
+    datesOnly,
+  } = input;
+  const queryParams = [
     loadArea,
     generationArea,
     stationId,
@@ -900,103 +1604,201 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     minOutages,
     maxOutages,
     analogsPerHour,
-  ]);
+  ];
+
+  if (datesOnly) {
+    const [row] = await query<ForecastAnalogRow>(buildForecastAvailableDatesSql(forecastSource), queryParams);
+    const raw = parseJsonField<ForecastAnalogSql | null>(row?.payload, null);
+    const availableForecastDates = raw?.available_dates ?? [];
+
+    return {
+      payload: {
+        iso: "pjm",
+        source: `${forecastSourceLabel(forecastSource)} RTO complete forecast dates`,
+        selected: raw?.selected ?? {},
+        availableForecastDates,
+      },
+      headers: responseHeaders(),
+      rowCount: availableForecastDates.length,
+    };
+  }
+
+  const [row] = await query<ForecastAnalogRow>(
+    buildForecastAnalogSql(rtSource, component, forecastSource),
+    queryParams,
+  );
 
   const raw = parseJsonField<ForecastAnalogSql | null>(row?.payload, null);
-  const summary = raw?.summary ?? {};
-  const asOf = typeof summary.as_of === "string" ? summary.as_of : null;
-  const analogCount = toInt(summary.analog_count);
-
-  if (!raw || !raw.forecast_hours?.length) {
+  if (!raw) {
     return {
       status: 404,
       payload: { error: "No complete forward forecast fundamentals are available for the selected date and hours" },
-      headers: { "Cache-Control": "no-store" },
+      headers: responseHeaders("no-store"),
     };
   }
+
+  const summary = raw?.summary ?? {};
+  const asOf = typeof summary.as_of === "string" ? summary.as_of : null;
+  const forecastHours: ForecastHour[] = (raw.forecast_hours ?? []).map((item) => ({
+    forecastDatetimeEpt: isoLocal(item.forecast_datetime_ept),
+    hourEnding: toInt(item.hour_ending),
+    loadMw: toNumber(item.load_mw),
+    windMw: toNumber(item.wind_mw),
+    solarMw: toNumber(item.solar_mw),
+    netLoadMw: toNumber(item.net_load_mw),
+    tempF: toNumber(item.temp_f),
+    totalOutagesMw: toNumber(item.total_outages_mw),
+    evaluatedAtEpt: isoLocal(item.evaluated_at_ept),
+  }));
+
+  if (!forecastHours.length) {
+    return {
+      status: 404,
+      payload: { error: "No complete forward forecast fundamentals are available for the selected date and hours" },
+      headers: responseHeaders("no-store"),
+    };
+  }
+
+  const historicalRows: HistoricalRow[] = (raw.historical_rows ?? []).map((item) => ({
+    datetimeBeginningEpt: isoLocal(item.datetime_beginning_ept),
+    hourEnding: toInt(item.hour_ending),
+    actualYear: toInt(item.actual_year),
+    rtPrice: toNumber(item.rt_price),
+    tempF: toNumber(item.temp_f),
+    grossLoadMw: toNumber(item.gross_load_mw),
+    windMw: toNumber(item.wind_mw),
+    solarMw: toNumber(item.solar_mw),
+    netLoadMw: toNumber(item.net_load_mw),
+    totalOutagesMw: toNumber(item.total_outages_mw),
+    rowAsOf: isoLocal(item.row_as_of),
+  }));
+  const analogPoints = computeAnalogPoints(forecastHours, historicalRows, analogsPerHour);
+  const analogPrices = analogPoints.map((point) => point.rtPrice);
+  const analogCount = analogPoints.length;
+  const yearShift = yearShiftFromAnalogs(analogPoints);
 
   return {
     payload: {
       iso: "pjm",
       source:
-        "pjm latest net load forecast + WSI latest weather forecast + PJM latest outage forecast + historical RT price analogs",
-      formula: "forecast net_load_mw = load - solar - wind; analog distance = normalized temp/load/outage similarity",
+        `${forecastSourceLabel(forecastSource)} RTO net load forecast + WSI latest weather forecast + historical RT price analogs`,
+      formula: "forecast net_load_mw = load - solar - wind; analog distance = normalized temp/load similarity",
       selected: raw.selected ?? {},
       availableForecastDates: raw.available_dates ?? [],
-      forecastHours: (raw.forecast_hours ?? []).map((item) => ({
-        forecastDatetimeEpt: isoLocal(item.forecast_datetime_ept),
-        hourEnding: toInt(item.hour_ending),
-        loadMw: toNumber(item.load_mw),
-        windMw: toNumber(item.wind_mw),
-        solarMw: toNumber(item.solar_mw),
-        netLoadMw: toNumber(item.net_load_mw),
-        tempF: toNumber(item.temp_f),
-        totalOutagesMw: toNumber(item.total_outages_mw),
-        evaluatedAtEpt: isoLocal(item.evaluated_at_ept),
-      })),
+      forecastHours,
       priceDistribution: {
-        stats: mapStats(raw.price_distribution?.stats),
-        tails: {
-          belowZero: toNumber(raw.price_distribution?.tails?.below_zero),
-          above100: toNumber(raw.price_distribution?.tails?.above_100),
-          above250: toNumber(raw.price_distribution?.tails?.above_250),
-          above500: toNumber(raw.price_distribution?.tails?.above_500),
-        },
-        histogram: (raw.price_distribution?.histogram ?? []).map((item) => ({
-          binIndex: toInt(item.bin_index),
-          binStart: toNumber(item.bin_start),
-          binEnd: toNumber(item.bin_end),
-          count: toInt(item.bin_count),
-          pct: toNumber(item.pct),
-        })),
+        stats: statsFromPrices(analogPrices),
+        tails: tailsFromPrices(analogPrices),
+        histogram: histogramFromPrices(analogPrices),
       },
-      hourlyDistributions: (raw.hourly_distributions ?? []).map((item) => ({
-        forecastDatetimeEpt: isoLocal(item.forecast_datetime_ept),
-        hourEnding: toInt(item.hour_ending),
-        analogCount: toInt(item.analog_count),
-        p25: toNumber(item.p25),
-        median: toNumber(item.median),
-        p75: toNumber(item.p75),
-        p95: toNumber(item.p95),
-      })),
-      yearShift: raw.year_shift
-        ? {
-            currentYear: toInt(raw.year_shift.current_year),
-            currentYearCount: toInt(raw.year_shift.current_year_count),
-            priorYearCount: toInt(raw.year_shift.prior_year_count),
-            currentYearMedian: toNumber(raw.year_shift.current_year_median),
-            priorYearMedian: toNumber(raw.year_shift.prior_year_median),
-            medianShift: toNumber(raw.year_shift.median_shift),
+      hourlyDistributions: hourlyDistributionsFromAnalogs(analogPoints),
+      yearShift,
+      yearCounts: {
+        historicalPool: groupYearCounts(historicalRows),
+        analogPool: groupYearCounts(analogPoints),
+      },
+      analogPoints: analogPoints
+        .slice()
+        .sort((left, right) => {
+          if ((left.distance ?? 0) !== (right.distance ?? 0)) return (left.distance ?? 0) - (right.distance ?? 0);
+          if ((left.targetDatetimeEpt ?? "") !== (right.targetDatetimeEpt ?? "")) {
+            return (left.targetDatetimeEpt ?? "").localeCompare(right.targetDatetimeEpt ?? "");
           }
-        : null,
-      analogPoints: (raw.analog_points ?? []).map((item) => ({
-        targetDatetimeEpt: isoLocal(item.target_datetime_ept),
-        targetHourEnding: toInt(item.target_hour_ending),
-        datetimeBeginningEpt: isoLocal(item.datetime_beginning_ept),
-        hourEnding: toInt(item.hour_ending),
-        actualYear: toInt(item.actual_year),
-        rtPrice: toNumber(item.rt_price),
-        tempF: toNumber(item.temp_f),
-        netLoadMw: toNumber(item.net_load_mw),
-        totalOutagesMw: toNumber(item.total_outages_mw),
-        distance: toNumber(item.distance),
-      })),
+          return (right.datetimeBeginningEpt ?? "").localeCompare(left.datetimeBeginningEpt ?? "");
+        })
+        .slice(0, 2000),
       summary: {
         forecastHourCount: toInt(summary.forecast_hour_count),
-        historicalPoolCount: toInt(summary.historical_pool_count),
+        historicalPoolCount: historicalRows.length,
         analogCount,
         asOf: isoLocal(asOf),
       },
     },
-    headers: { "Cache-Control": CACHE_HEADER },
+    headers: responseHeaders(),
     rowCount: analogCount,
     dataAsOf: asOf,
   };
+}
+
+const loadForecastAnalogResultCached = unstable_cache(
+  async (input: ForecastAnalogRequestInput) => loadForecastAnalogResult(input),
+  ["pjm-forecast-price-analogs-v1"],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: ["pjm-forecast-price-analogs"],
+  },
+);
+
+const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
+  const { searchParams } = new URL(request.url);
+  const requestedHub = searchParams.get("hub")?.trim().toUpperCase() || DEFAULT_HUB;
+  const hub = PRICE_HUBS.includes(requestedHub as (typeof PRICE_HUBS)[number])
+    ? requestedHub
+    : DEFAULT_HUB;
+  const input: ForecastAnalogRequestInput = {
+    region: parseIdentifier(searchParams.get("region"), DEFAULT_REGION),
+    loadArea: parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA),
+    generationArea: parseIdentifier(searchParams.get("generationArea"), DEFAULT_GENERATION_AREA),
+    stationId: parseIdentifier(searchParams.get("stationId"), DEFAULT_STATION_ID),
+    hub,
+    rtSource: parseRtSource(searchParams.get("rtSource")),
+    component: parsePriceComponent(searchParams.get("component")),
+    forecastSource: parseForecastSource(searchParams.get("source")),
+    forecastDate: parseDate(searchParams.get("forecastDate")),
+    hourStart: parseHour(searchParams.get("hourStart"), 8),
+    hourEnd: parseHour(searchParams.get("hourEnd"), 23),
+    seasonStart: parseMonthDay(searchParams.get("seasonStart"), "05-01"),
+    seasonEnd: parseMonthDay(searchParams.get("seasonEnd"), "08-31"),
+    lookbackYears: parseLookbackYears(searchParams.get("lookbackYears")),
+    includeCurrentYear: parseBoolean(searchParams.get("includeCurrentYear"), true),
+    dayType: parseDayType(searchParams.get("dayType")),
+    minPrice: parseBoundedNumber(searchParams.get("minPrice")),
+    maxPrice: parseBoundedNumber(searchParams.get("maxPrice")),
+    minOutages: parseBoundedNumber(searchParams.get("minOutages")),
+    maxOutages: parseBoundedNumber(searchParams.get("maxOutages")),
+    analogsPerHour: parseAnalogsPerHour(searchParams.get("analogsPerHour")),
+    datesOnly: parseBoolean(searchParams.get("datesOnly"), false),
+  };
+  const forceRefresh = parseBoolean(searchParams.get("refresh"), false);
+  const cacheKey = forecastAnalogMemoryCacheKey(input);
+
+  if (!forceRefresh) {
+    const cached = responseCache().get(cacheKey);
+    if (cached) {
+      if (cached.expiresAt > Date.now()) {
+        return withResponseCacheHeader(cached.result, "fresh");
+      }
+      responseCache().delete(cacheKey);
+    }
+
+    const inFlight = inFlightCache().get(cacheKey);
+    if (inFlight) {
+      return withResponseCacheHeader(await inFlight, "deduped");
+    }
+  }
+
+  const resultPromise = forceRefresh
+    ? loadForecastAnalogResult(input)
+    : loadForecastAnalogResultCached(input);
+
+  if (!forceRefresh) {
+    inFlightCache().set(cacheKey, resultPromise);
+  }
+
+  try {
+    const result = await resultPromise;
+    if (!forceRefresh && isCacheableResponse(result)) {
+      storeResponseCacheEntry(cacheKey, result);
+      return withResponseCacheHeader(result, "miss");
+    }
+    return result;
+  } finally {
+    if (!forceRefresh) {
+      inFlightCache().delete(cacheKey);
+    }
+  }
 });
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isActualsRegimeScatterDevEnabled()) {
-    return Response.json({ error: "Not found" }, { status: 404 });
-  }
   return observedGET(request);
 }

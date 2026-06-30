@@ -4,6 +4,10 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/cache/warm-price-distributions/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/pjm-da-lmps/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
@@ -40,6 +44,10 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/pjm-forecast-price-analogs/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/pjm-weather/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
@@ -52,6 +60,10 @@
   "crons": [
     {
       "path": "/api/cache/warm-forecasts",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cache/warm-price-distributions",
       "schedule": "*/15 * * * *"
     }
   ]

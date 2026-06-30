@@ -176,7 +176,7 @@ export function observedJsonRoute(
             route: config.route,
             owner: config.owner,
             purpose: config.purpose,
-            status: 500,
+            status,
             duration_ms: durationMs,
             db_duration_ms: dbDurationMs,
             db_query_count: metrics.dbQueryCount,

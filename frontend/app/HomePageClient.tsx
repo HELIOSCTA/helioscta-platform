@@ -124,10 +124,8 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "pjm-net-load-forecast") {
     return "pjm-forecasts";
   }
-  if (showLocalDevFeatures && value === "pjm-actuals-regime-scatter") {
-    return "pjm-actuals-regime-scatter";
-  }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
+  if (value === "pjm-actuals-regime-scatter") return "pjm-actuals-regime-scatter";
   if (value === "pjm-term-bible") return "pjm-term-bible";
   if (value === "pjm-ops-summary") return "pjm-ops-summary";
   if (value === "pjm-load-growth") return "pjm-load-growth";
