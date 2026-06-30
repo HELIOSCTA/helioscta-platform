@@ -33,7 +33,7 @@ and recreate the hung-process behavior this promoted path avoids.
 On the licensed Windows ICE host:
 
 ```powershell
-cd C:\Services\HeliosCTA\helioscta-platform
+cd C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -m pip install -r backend\requirements-local-windows.txt -e backend
 ```
 
@@ -53,7 +53,7 @@ Run from the production clone in PowerShell:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
-  -RepoRoot C:\Services\HeliosCTA\helioscta-platform `
+  -RepoRoot C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -PullLatest `
   -InstallDependencies `
@@ -79,7 +79,7 @@ Run one coordinator tick directly:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\run_ice_python_once.ps1 `
-  -RepoRoot C:\Services\HeliosCTA\helioscta-platform `
+  -RepoRoot C:\Users\AidanKeaveny\Documents\github\helioscta-platform-prod `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe
 ```
 
