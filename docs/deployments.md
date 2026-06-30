@@ -897,8 +897,8 @@ FROM isone.seven_day_solar_forecast;
 ## pjm-data-miner-scrape-modules
 
 - Status: deployed; daily batch timer enabled.
-- Scope: 35 promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 25 support scrapes run through the shared batch
+- Scope: promoted PJM Data Miner scrape modules under
+  `backend.scrapes.power.pjm`; 26 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `load_frcstd_7_day`, `hrl_dmd_bids`, `gen_outages_by_type`, and the four
   Operations Summary feeds were promoted to dedicated timers.
@@ -920,6 +920,10 @@ FROM isone.seven_day_solar_forecast;
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-data-miner-batch.lock`.
+- Runtime update: `gen_by_fuel` was promoted into the shared batch on
+  `2026-06-30`. Production table and index operator SQL were applied, and an
+  initial scrape populated `pjm.gen_by_fuel` with `570` rows across `10` fuel
+  types through `2026-06-30 18:00 UTC`.
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-da-hrl-lmps.timer` and
   `helios-rt-fivemin-hrl-lmps.timer` remain separate because those price

@@ -76,7 +76,7 @@ data-readiness events. `helios-pjm-load-frcstd-7-day.timer` refreshes the PJM
 seven-day load forecast hourly. `helios-pjm-gen-outages-by-type.timer` refreshes
 the PJM outage dashboard source 5, 30, and 60 minutes after the 06:00 EPT
 PJM Data Miner publication, while
-`helios-pjm-data-miner-batch.timer` runs the remaining 27 support lower-level
+`helios-pjm-data-miner-batch.timer` runs the remaining 26 support lower-level
 scrape modules daily.
 `helios-pjm-ops-sum.timer` refreshes PJM Operations Summary dashboard context
 five minutes after each 05:00-08:00 EPT source update.

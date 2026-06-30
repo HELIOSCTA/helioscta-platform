@@ -70,7 +70,7 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 25
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 26
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next

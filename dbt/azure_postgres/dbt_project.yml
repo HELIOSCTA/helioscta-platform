@@ -150,6 +150,12 @@ models:
             +enabled: false
           index_pjm_five_min_solar_generation:
             +enabled: false
+        gen_by_fuel:
+          +materialized: ephemeral
+          table_pjm_gen_by_fuel:
+            +enabled: false
+          index_pjm_gen_by_fuel:
+            +enabled: false
         load_frcstd_hist:
           +materialized: ephemeral
           table_pjm_load_frcstd_hist:

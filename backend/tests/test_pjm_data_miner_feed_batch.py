@@ -23,6 +23,7 @@ BATCH_FEEDS = [
     "day_gen_capacity",
     "dispatched_reserves",
     "five_min_solar_generation",
+    "gen_by_fuel",
     "load_frcstd_hist",
     "hourly_solar_power_forecast",
     "hourly_wind_power_forecast",
@@ -71,6 +72,7 @@ def test_batch_feed_configs_have_contract_fields():
 def test_forecast_feed_configs_have_90_day_hot_retention():
     assert FEED_CONFIGS["load_frcstd_hist"].hot_retention_days is None
     assert FEED_CONFIGS["frcstd_gen_outages"].hot_retention_days is None
+    assert FEED_CONFIGS["gen_by_fuel"].hot_retention_days is None
     assert FEED_CONFIGS["gen_outages_by_type"].hot_retention_days is None
 
     expected = {
@@ -190,6 +192,51 @@ def test_normalize_feed_frame_parses_pjm_datetimes_without_inference_warning():
     assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
     assert df["datetime_beginning_ept"].isna().sum() == 1
     assert df["datetime_beginning_utc"].isna().sum() == 1
+
+
+def test_gen_by_fuel_normalization_coerces_fuel_mix_rows():
+    config = FEED_CONFIGS["gen_by_fuel"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "datetime_beginning_utc": "6/29/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/29/2026 12:00:00 AM",
+                    "fuel_type": " Coal ",
+                    "mw": "21638",
+                    "fuel_percentage_of_total": "0.208",
+                    "is_renewable": "False",
+                },
+                {
+                    "datetime_beginning_utc": "6/29/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/29/2026 12:00:00 AM",
+                    "fuel_type": " Coal ",
+                    "mw": "21639",
+                    "fuel_percentage_of_total": "0.209",
+                    "is_renewable": "False",
+                },
+                {
+                    "datetime_beginning_utc": "6/29/2026 4:00:00 AM",
+                    "datetime_beginning_ept": "6/29/2026 12:00:00 AM",
+                    "fuel_type": " Hydro ",
+                    "mw": "571",
+                    "fuel_percentage_of_total": "0.005",
+                    "is_renewable": "True",
+                },
+            ]
+        ),
+        config,
+    )
+
+    assert len(df) == 2
+    coal = df.loc[df["fuel_type"] == "Coal"].iloc[0]
+    hydro = df.loc[df["fuel_type"] == "Hydro"].iloc[0]
+    assert coal["mw"] == 21639
+    assert coal["fuel_percentage_of_total"] == 0.209
+    assert bool(coal["is_renewable"]) is False
+    assert bool(hydro["is_renewable"]) is True
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_ept"])
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
 
 
 def test_hourly_renewables_forecast_configs_preserve_source_vintages():

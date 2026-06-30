@@ -62,6 +62,8 @@ models/power/pjm/dispatched_reserves/
 models/power/pjm/dispatched_reserves/pjm_dispatched_reserves/
 models/power/pjm/five_min_solar_generation/
 models/power/pjm/five_min_solar_generation/pjm_five_min_solar_generation/
+models/power/pjm/gen_by_fuel/
+models/power/pjm/gen_by_fuel/pjm_gen_by_fuel/
 models/power/pjm/load_frcstd_hist/
 models/power/pjm/load_frcstd_hist/pjm_load_frcstd_hist/
 models/power/pjm/hrl_load_metered/
@@ -197,6 +199,7 @@ dbt compile --profiles-dir . --select path:models/power/pjm/da_transconstraints/
 dbt compile --profiles-dir . --select path:models/power/pjm/day_gen_capacity/pjm_day_gen_capacity
 dbt compile --profiles-dir . --select path:models/power/pjm/dispatched_reserves/pjm_dispatched_reserves
 dbt compile --profiles-dir . --select path:models/power/pjm/five_min_solar_generation/pjm_five_min_solar_generation
+dbt compile --profiles-dir . --select path:models/power/pjm/gen_by_fuel/pjm_gen_by_fuel
 dbt compile --profiles-dir . --select path:models/power/pjm/load_frcstd_hist/pjm_load_frcstd_hist
 dbt compile --profiles-dir . --select path:models/power/pjm/hrl_load_metered/pjm_hrl_load_metered
 dbt compile --profiles-dir . --select path:models/power/pjm/hrl_load_prelim/pjm_hrl_load_prelim

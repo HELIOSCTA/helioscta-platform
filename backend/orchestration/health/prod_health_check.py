@@ -82,6 +82,7 @@ PJM_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
     SupportFeed("five_min_solar_generation", "pjm", "five_min_solar_generation"),
     SupportFeed("five_min_tie_flows", "pjm", "five_min_tie_flows"),
     SupportFeed("frcstd_gen_outages", "pjm", "frcstd_gen_outages"),
+    SupportFeed("gen_by_fuel", "pjm", "gen_by_fuel"),
     SupportFeed("gen_outages_by_type", "pjm", "gen_outages_by_type"),
     SupportFeed("hrl_dmd_bids", "pjm", "hrl_dmd_bids"),
     SupportFeed("hrl_load_metered", "pjm", "hrl_load_metered"),
