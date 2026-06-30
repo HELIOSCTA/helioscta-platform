@@ -24,6 +24,10 @@ export function isActualsRegimeScatterDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
 
+export function isPriceDistributionsDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
 export function isOpsSummaryDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }

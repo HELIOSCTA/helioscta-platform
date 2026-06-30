@@ -1,4 +1,5 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
+import { isPriceDistributionsDevEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -234,6 +235,14 @@ async function warmTargetsWithConcurrency(
 }
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
+  if (!isPriceDistributionsDevEnabled()) {
+    return {
+      status: 404,
+      payload: { error: "Not found" },
+      headers: { "Cache-Control": CACHE_HEADER },
+    };
+  }
+
   if (!hasWarmAccess(request)) {
     return {
       status: 404,
@@ -290,6 +299,13 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
 });
 
 export function HEAD(request: Request): Response {
+  if (!isPriceDistributionsDevEnabled()) {
+    return new Response(null, {
+      status: 404,
+      headers: { "Cache-Control": CACHE_HEADER },
+    });
+  }
+
   return new Response(null, {
     status: hasWarmAccess(request) ? 200 : 404,
     headers: { "Cache-Control": CACHE_HEADER },

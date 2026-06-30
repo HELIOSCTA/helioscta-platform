@@ -125,7 +125,10 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
-  if (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter") {
+  if (
+    showLocalDevFeatures &&
+    (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter")
+  ) {
     return "pjm-price-distributions";
   }
   if (value === "pjm-term-bible") return "pjm-term-bible";
@@ -243,7 +246,7 @@ export default function HomePageClient({
         footer: "Term Bible | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
-    if (activeSection === "pjm-price-distributions") {
+    if (showLocalDevFeatures && activeSection === "pjm-price-distributions") {
       return {
         title: "Price Distributions",
         subtitle:
@@ -299,7 +302,7 @@ export default function HomePageClient({
         "PJM day-ahead and real-time LMPs with hourly component breakdowns and hub summaries.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
-  }, [activeSection]);
+  }, [activeSection, showLocalDevFeatures]);
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
@@ -408,7 +411,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "pjm-price-distributions" && (
+            {showLocalDevFeatures && activeSection === "pjm-price-distributions" && (
               <FreshnessCard
                 statusLabel={pjmPriceDistributionsFreshness.status}
                 statusClass={pjmPriceDistributionsFreshness.statusClass}
@@ -539,7 +542,7 @@ export default function HomePageClient({
               onFreshnessChange={setPjmTermBibleFreshness}
             />
           )}
-          {activeSection === "pjm-price-distributions" && (
+          {showLocalDevFeatures && activeSection === "pjm-price-distributions" && (
             <PjmPriceDistributions
               refreshToken={pjmPriceDistributionsRefreshToken}
               onFreshnessChange={setPjmPriceDistributionsFreshness}

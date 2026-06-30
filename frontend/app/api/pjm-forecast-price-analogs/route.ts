@@ -2,6 +2,7 @@ import { unstable_cache } from "next/cache";
 
 import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { isPriceDistributionsDevEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -1806,5 +1807,12 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 });
 
 export async function GET(request: Request): Promise<Response> {
+  if (!isPriceDistributionsDevEnabled()) {
+    return new Response(null, {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+
   return observedGET(request);
 }
