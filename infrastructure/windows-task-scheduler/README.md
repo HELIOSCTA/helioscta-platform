@@ -142,6 +142,17 @@ coordinator active for promoted ICE settlements. Do not delete legacy tasks
 until the coordinator has run successfully and downstream consumers have been
 verified.
 
+Run the cutover cleanup from an elevated PowerShell session:
+
+```powershell
+.\infrastructure\windows-task-scheduler\disable_legacy_ice_tasks.ps1
+```
+
+The cleanup script exports legacy task definitions to
+`C:\ProgramData\HeliosCTA\state\task-backups`, stops and disables the legacy
+per-feed ICE tasks, stops lingering ICE Python processes, and disables the old
+`HeliosCTA-IcePython` NSSM service startup.
+
 ## Remove
 
 ```powershell
