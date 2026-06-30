@@ -29,8 +29,13 @@ def test_rt_hrl_orchestration_allows_metadata_override(monkeypatch):
 
     monkeypatch.setattr(rt_hrl_lmps.scrape, "main", fake_main)
 
-    rt_hrl_lmps.main(run_mode="manual", metadata={"manual_reason": "operator"})
+    rt_hrl_lmps.main(
+        database="stage_db",
+        run_mode="manual",
+        metadata={"manual_reason": "operator"},
+    )
 
+    assert captured["database"] == "stage_db"
     assert captured["run_mode"] == "manual"
     assert captured["metadata"] == {
         "scheduler": "helios-pjm-rt-hrl-lmps.timer",

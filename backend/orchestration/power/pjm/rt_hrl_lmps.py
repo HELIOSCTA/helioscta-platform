@@ -20,12 +20,13 @@ DEFAULT_METADATA = {
 
 
 def main(
+    database: str | None = None,
     run_mode: str = DEFAULT_RUN_MODE,
     metadata: dict[str, Any] | None = None,
 ) -> int:
     """Run the verified hourly RT LMP scrape with post-publish metadata."""
     fetch_metadata = {**DEFAULT_METADATA, **(metadata or {})}
-    scrape.main(run_mode=run_mode, metadata=fetch_metadata)
+    scrape.main(database=database, run_mode=run_mode, metadata=fetch_metadata)
     return 0
 
 

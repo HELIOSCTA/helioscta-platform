@@ -831,9 +831,8 @@ FROM isone.seven_day_solar_forecast;
   documented daily verified hourly RT posting window between `11 a.m.` and
   `12 p.m.` EPT.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
-- Overlap protection: service uses `/usr/bin/flock` with the shared
-  `/tmp/helios-pjm-data-miner-batch.lock` so it cannot overlap the PJM support
-  batch.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-rt-hrl-lmps.lock`.
 - Safe rerun story: upsert on `(datetime_beginning_utc, pnode_id, pnode_name,
   row_is_current, version_nbr)`.
 
