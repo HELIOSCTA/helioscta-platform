@@ -19,6 +19,7 @@ BATCH_FEEDS = [
     "ancillary_services",
     "da_interface_flows_and_limits",
     "da_marginal_value",
+    "da_reserve_market_results",
     "da_transconstraints",
     "day_gen_capacity",
     "dispatched_reserves",
@@ -437,6 +438,72 @@ def test_configured_numeric_type_wins_for_all_null_columns(monkeypatch):
         "DOUBLE PRECISION",
         "DOUBLE PRECISION",
         "DOUBLE PRECISION",
+    ]
+
+
+def test_da_reserve_market_results_normalization_uses_da_source_shape(monkeypatch):
+    config = FEED_CONFIGS["da_reserve_market_results"]
+    df = normalize_feed_frame(
+        pd.DataFrame(
+            [
+                {
+                    "as_mw": "15997.60",
+                    "as_req_mw": "3392.20",
+                    "datetime_beginning_ept": "7/1/2026 11:00:00 PM",
+                    "datetime_beginning_utc": "7/2/2026 3:00:00 AM",
+                    "dsr_as_mw": "",
+                    "ircmwt2": "0.00",
+                    "locale": " PJM RTO Reserve Zone ",
+                    "mcp": "0.00",
+                    "mcp_capped": "0.00",
+                    "nsr_mw": "",
+                    "service": " Thirty Minutes Reserve ",
+                    "ss_mw": "137.00",
+                    "total_mw": "15997.60",
+                },
+                {
+                    "as_mw": "15998.60",
+                    "as_req_mw": "3393.20",
+                    "datetime_beginning_ept": "7/1/2026 11:00:00 PM",
+                    "datetime_beginning_utc": "7/2/2026 3:00:00 AM",
+                    "dsr_as_mw": "",
+                    "ircmwt2": "0.00",
+                    "locale": " PJM RTO Reserve Zone ",
+                    "mcp": "0.10",
+                    "mcp_capped": "0.10",
+                    "nsr_mw": "",
+                    "service": " Thirty Minutes Reserve ",
+                    "ss_mw": "138.00",
+                    "total_mw": "15998.60",
+                },
+            ]
+        ),
+        config,
+    )
+    captured: dict[str, object] = {}
+
+    def fake_upsert_dataframe(**kwargs):
+        captured.update(kwargs)
+        return True
+
+    monkeypatch.setattr(data_miner_feed.db, "upsert_dataframe", fake_upsert_dataframe)
+
+    upsert_feed_frame(df, config, database="stage_db")
+
+    assert len(df) == 1
+    row = df.iloc[0]
+    assert row["locale"] == "PJM RTO Reserve Zone"
+    assert row["service"] == "Thirty Minutes Reserve"
+    assert row["mcp"] == 0.10
+    assert row["ss_mw"] == 138.00
+    assert pd.isna(row["dsr_as_mw"])
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_ept"])
+    assert pd.api.types.is_datetime64_any_dtype(df["datetime_beginning_utc"])
+    assert captured["table_name"] == "da_reserve_market_results"
+    assert captured["primary_key"] == [
+        "datetime_beginning_utc",
+        "locale",
+        "service",
     ]
 
 

@@ -26,6 +26,13 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _get_int_env(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or not value.strip():
+        return default
+    return int(value.strip())
+
+
 def _get_first_env(*names: str, default: str | None = None) -> str | None:
     for name in names:
         value = os.getenv(name)
@@ -79,12 +86,53 @@ AZURE_SQL_PASSWORD = os.getenv("AZURE_SQL_PASSWORD")
 AZURE_OUTLOOK_CLIENT_ID = os.getenv("AZURE_OUTLOOK_CLIENT_ID")
 AZURE_OUTLOOK_TENANT_ID = os.getenv("AZURE_OUTLOOK_TENANT_ID")
 AZURE_OUTLOOK_CLIENT_SECRET = os.getenv("AZURE_OUTLOOK_CLIENT_SECRET")
+AZURE_OUTLOOK_SENDER = _get_first_env(
+    "AZURE_OUTLOOK_SENDER",
+    "HELIOS_EMAIL_FROM_ADDRESS",
+)
+
+# Email notifications. Disabled by default so production send behavior is
+# opt-in through the VM environment file.
+HELIOS_EMAIL_NOTIFICATIONS_ENABLED = _get_bool_env(
+    "HELIOS_EMAIL_NOTIFICATIONS_ENABLED"
+)
+HELIOS_EMAIL_RECIPIENTS = (
+    _get_csv_env("HELIOS_EMAIL_RECIPIENTS")
+    or ["aidan.keaveny@helioscta.com"]
+)
+HELIOS_EMAIL_FRONTEND_BASE_URL = _get_first_env(
+    "HELIOS_EMAIL_FRONTEND_BASE_URL",
+    "FRONTEND_BASE_URL",
+    default="https://frontend-helioscta.vercel.app",
+)
+HELIOS_EMAIL_MAX_ATTEMPTS = _get_int_env("HELIOS_EMAIL_MAX_ATTEMPTS", 6)
+HELIOS_EMAIL_STALE_SENDING_MINUTES = _get_int_env(
+    "HELIOS_EMAIL_STALE_SENDING_MINUTES",
+    30,
+)
 
 # ────── Slack ──────
 SLACK_DEFAULT_GROUP_ID = os.getenv("SLACK_DEFAULT_GROUP_ID")
 SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 SLACK_DEFAULT_CHANNEL_NAME = os.getenv("SLACK_DEFAULT_CHANNEL_NAME")
 SLACK_DEFAULT_WEBHOOK_URL = os.getenv("SLACK_DEFAULT_WEBHOOK_URL")
+SLACK_DEFAULT_CHANNEL_ID = _get_first_env(
+    "SLACK_DEFAULT_CHANNEL_ID",
+    "SLACK_DEFAULT_GROUP_ID",
+)
+SLACK_POWER_ALERTS_CHANNEL_ID = _get_first_env("SLACK_POWER_ALERTS_CHANNEL_ID")
+SLACK_POWER_ALERTS_CHANNEL_NAME = _get_first_env(
+    "SLACK_POWER_ALERTS_CHANNEL_NAME",
+    default="#helios-alerts-power",
+)
+HELIOS_SLACK_NOTIFICATIONS_ENABLED = _get_bool_env(
+    "HELIOS_SLACK_NOTIFICATIONS_ENABLED"
+)
+HELIOS_SLACK_MAX_ATTEMPTS = _get_int_env("HELIOS_SLACK_MAX_ATTEMPTS", 6)
+HELIOS_SLACK_STALE_SENDING_MINUTES = _get_int_env(
+    "HELIOS_SLACK_STALE_SENDING_MINUTES",
+    30,
+)
 
 # ────── POWER──────
 # PJM CREDENTIALS

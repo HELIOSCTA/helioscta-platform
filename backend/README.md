@@ -18,6 +18,26 @@ AZURE_POSTGRES_WRITER_SSLMODE=require
 
 PJM_API_KEY=
 
+HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
+HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com
+HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
+HELIOS_EMAIL_MAX_ATTEMPTS=6
+HELIOS_EMAIL_STALE_SENDING_MINUTES=30
+AZURE_OUTLOOK_CLIENT_ID=
+AZURE_OUTLOOK_TENANT_ID=
+AZURE_OUTLOOK_CLIENT_SECRET=
+AZURE_OUTLOOK_SENDER=
+
+HELIOS_SLACK_NOTIFICATIONS_ENABLED=false
+HELIOS_SLACK_MAX_ATTEMPTS=6
+HELIOS_SLACK_STALE_SENDING_MINUTES=30
+SLACK_BOT_TOKEN=
+SLACK_DEFAULT_CHANNEL_ID=C0BEDBTAL2H
+SLACK_DEFAULT_CHANNEL_NAME=#helios-alerts-power
+SLACK_POWER_ALERTS_CHANNEL_ID=C0BEDBTAL2H
+SLACK_POWER_ALERTS_CHANNEL_NAME=#helios-alerts-power
+SLACK_DEFAULT_WEBHOOK_URL=
+
 ERCOT_USERNAME=
 ERCOT_PASSCODE=
 ERCOT_API_KEY=
@@ -147,6 +167,17 @@ polling policy as hourly demand bids, then upserts by
 contingency_facility` and logs one resolved API fetch telemetry row to
 `ops.api_fetch_log`.
 
+PJM day-ahead reserve market results run through
+`backend.orchestration.power.pjm.da_reserve_market_results` and write
+`pjm.da_reserve_market_results`. The VM timer
+`helios-pjm-da-reserve-market-results.timer` runs daily at `13:45
+America/New_York`, after the observed day-ahead ancillary service market
+publication window. The scheduled path polls PJM Data Miner
+`da_reserve_market_results` for the next market day every two minutes for up to
+four hours, then upserts by `datetime_beginning_utc x locale x service`, logs
+one resolved API fetch telemetry row to `ops.api_fetch_log`, emits a complete
+day readiness event, and queues one Slack release notification.
+
 PJM simple hourly refreshes run through the hourly bucket at
 `backend.orchestration.power.pjm.hourly_bucket`. It includes
 `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, which writes
@@ -225,6 +256,24 @@ only perform application writes.
 Scheduled orchestration that emits API telemetry or data-availability events
 also assumes the shared `ops.api_fetch_log` and `ops.data_availability_events`
 tables have been applied by operator SQL before the timer is enabled.
+
+Release-email notifications use `ops.email_notification_outbox` for durable
+retry and duplicate suppression. The DA HRL LMP scheduled workflow enqueues one
+email per readiness event and recipient, keyed by event plus recipient. The
+outbox sender retries due `pending`/`failed` rows and only sends when
+`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true`.
+
+Slack notifications use `ops.slack_notification_outbox` for the same durable
+retry and duplicate-suppression pattern. The Slack sender posts through
+`SLACK_BOT_TOKEN` with Slack `chat.postMessage` and only sends when
+`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`; `SLACK_DEFAULT_WEBHOOK_URL` is kept
+as a fallback path, not the preferred production path. The PJM DA HRL LMP,
+verified RT HRL LMP, verified RT five-minute HRL LMP, and DA reserve market
+results scheduled workflows enqueue one Slack notification to
+`#helios-alerts-power` after the target market date is complete and the scrape
+has succeeded. Each notification key is derived from the
+`ops.data_availability_events.event_key`, so reruns do not duplicate the
+channel message.
 
 After the Azure Postgres permission defaults have been installed, new schemas
 and tables created by `helios_admin` inherit the expected read-only grants

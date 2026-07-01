@@ -16,6 +16,8 @@ passwords before execution. Do not commit real passwords.
    - `dbt/azure_postgres/models/setup/schemas.sql`
    - `dbt/azure_postgres/models/ops/table_ops_api_fetch_log.sql`
    - `dbt/azure_postgres/models/ops/table_ops_data_availability_events.sql`
+   - `dbt/azure_postgres/models/ops/table_ops_email_notification_outbox.sql`
+   - `dbt/azure_postgres/models/ops/table_ops_slack_notification_outbox.sql`
    - required feed `table_*.sql` files, such as
      `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/table_pjm_da_hrl_lmps.sql`
      or
@@ -94,9 +96,10 @@ existing Azure Postgres server
 - Application schema, table, and index DDL is documented under
   `dbt/azure_postgres/models/` as disabled operator reference SQL. Run those
   files manually with `helios_admin`.
-- Shared runtime observability tables in `models/ops/` are application objects,
-  not dbt runtime models. Apply them before enabling workflows that emit API
-  telemetry or data-availability events.
+- Shared runtime observability and notification tables in `models/ops/` are
+  application objects, not dbt runtime models. Apply them before enabling
+  workflows that emit API telemetry, data-availability events, or email/Slack
+  notifications.
 - `permissions/01_apply_database_permissions.sql` applies read-only grants to
   existing application schemas and installs read-only defaults for future
   schemas, tables, and sequences created by `helios_admin`.

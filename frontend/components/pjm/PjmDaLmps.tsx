@@ -63,11 +63,11 @@ const ONPEAK_HOURS = HOURS.filter((hour) => hour >= ONPEAK_START && hour <= ONPE
 const OFFPEAK_HOURS = HOURS.filter((hour) => hour < ONPEAK_START || hour > ONPEAK_END);
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
-type ComponentKey = "energy" | "congestion" | "loss" | "total";
-type ComponentSelection = ComponentKey | "all";
-type LmpProduct = "da" | "rt" | "dart";
-type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
-type RtLmpSource = "verified" | "unverified";
+export type ComponentKey = "energy" | "congestion" | "loss" | "total";
+export type ComponentSelection = ComponentKey | "all";
+export type LmpProduct = "da" | "rt" | "dart";
+export type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
+export type RtLmpSource = "verified" | "unverified";
 type SettleDayType = "all" | "weekday" | "weekend" | "holiday";
 type SettleSortDirection = "asc" | "desc";
 // Sort/selection column keys for the daily settles grid: the three period summaries
@@ -965,20 +965,30 @@ function SelectionStatsBar({
 
 export default function PjmDaLmps({
   initialDate = null,
+  initialView = null,
+  initialProduct = null,
+  initialRtSource = null,
+  initialHub = null,
+  initialComponent = null,
   refreshToken = 0,
   onFreshnessChange,
 }: {
   initialDate?: string | null;
+  initialView?: LmpView | null;
+  initialProduct?: LmpProduct | null;
+  initialRtSource?: RtLmpSource | null;
+  initialHub?: string | null;
+  initialComponent?: ComponentSelection | null;
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmDaLmpsFreshnessSummary) => void;
 }) {
-  const [activeProduct, setActiveProduct] = useState<LmpProduct>("da");
-  const [rtSource, setRtSource] = useState<RtLmpSource>("unverified");
+  const [activeProduct, setActiveProduct] = useState<LmpProduct>(initialProduct ?? "da");
+  const [rtSource, setRtSource] = useState<RtLmpSource>(initialRtSource ?? "unverified");
   const [data, setData] = useState<PjmLmpsPayload | null>(null);
-  const [selectedHub, setSelectedHub] = useState("WESTERN HUB");
+  const [selectedHub, setSelectedHub] = useState(initialHub ?? "WESTERN HUB");
   const [date, setDate] = useState<string | null>(initialDate);
   const [dateInput, setDateInput] = useState("");
-  const [activeView, setActiveView] = useState<LmpView>("daily-settles");
+  const [activeView, setActiveView] = useState<LmpView>(initialView ?? "daily-settles");
   // Empty until seeded from the latest available date (see the seeding effect below).
   // The settles fetch is gated on these being set, so we never issue a wasted query
   // for a guessed "today" window.
@@ -1000,7 +1010,9 @@ export default function PjmDaLmps({
   // Seed the settles range to the latest available date once, the first time PJM data
   // loads — so we don't land on an empty "today" window before settles are posted.
   const settlesRangeSeededRef = useRef(false);
-  const [singleComponent, setSingleComponent] = useState<ComponentSelection>("all");
+  const [singleComponent, setSingleComponent] = useState<ComponentSelection>(
+    initialComponent ?? "all",
+  );
   const [compareBaseDate, setCompareBaseDate] = useState(() => todayDate());
   const [compareDate, setCompareDate] = useState(() => offsetDate(todayDate(), -1));
   const [compareComponent, setCompareComponent] = useState<ComponentKey>("total");

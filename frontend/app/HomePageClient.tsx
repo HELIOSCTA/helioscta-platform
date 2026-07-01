@@ -10,7 +10,13 @@ import NavPositions, {
 import PjmPriceDistributions, {
   type PjmPriceDistributionsFreshnessSummary,
 } from "@/components/pjm/PjmPriceDistributions";
-import PjmDaLmps, { type PjmDaLmpsFreshnessSummary } from "@/components/pjm/PjmDaLmps";
+import PjmDaLmps, {
+  type ComponentSelection as PjmLmpComponentSelection,
+  type LmpProduct as PjmLmpProduct,
+  type LmpView as PjmLmpView,
+  type PjmDaLmpsFreshnessSummary,
+  type RtLmpSource as PjmLmpRtSource,
+} from "@/components/pjm/PjmDaLmps";
 import PjmDaModel, {
   type PjmDaModelFreshnessSummary,
 } from "@/components/pjm/PjmDaModel";
@@ -199,6 +205,44 @@ function parseDateParam(value: string | null): string | undefined {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
+function parsePjmLmpViewParam(value: string | null): PjmLmpView | undefined {
+  return value === "single-day" ||
+    value === "compare-dates" ||
+    value === "compare-hubs" ||
+    value === "daily-settles"
+    ? value
+    : undefined;
+}
+
+function parsePjmLmpProductParam(value: string | null): PjmLmpProduct | undefined {
+  return value === "da" || value === "rt" || value === "dart" ? value : undefined;
+}
+
+function parsePjmLmpRtSourceParam(value: string | null): PjmLmpRtSource | undefined {
+  return value === "verified" || value === "unverified" ? value : undefined;
+}
+
+function parsePjmLmpComponentParam(
+  value: string | null,
+): PjmLmpComponentSelection | undefined {
+  return value === "all" ||
+    value === "energy" ||
+    value === "congestion" ||
+    value === "loss" ||
+    value === "total"
+    ? value
+    : undefined;
+}
+
+function parseTextParam(value: string | null): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseRefreshParam(value: string | null): boolean {
+  return value === "1" || value === "true";
+}
+
 export default function HomePageClient({
   showLocalDevFeatures,
 }: HomePageClientProps) {
@@ -263,6 +307,16 @@ export default function HomePageClient({
     useState<NavPositionsFreshnessSummary>(DEFAULT_NAV_POSITIONS_FRESHNESS);
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
+  const initialPjmDaLmpView = parsePjmLmpViewParam(searchParams.get("view"));
+  const initialPjmDaLmpProduct = parsePjmLmpProductParam(searchParams.get("product"));
+  const initialPjmDaLmpRtSource = parsePjmLmpRtSourceParam(
+    searchParams.get("source") ?? searchParams.get("rtSource"),
+  );
+  const initialPjmDaLmpHub = parseTextParam(searchParams.get("hub"));
+  const initialPjmDaLmpComponent = parsePjmLmpComponentParam(
+    searchParams.get("component"),
+  );
+  const initialPjmDaLmpRefresh = parseRefreshParam(searchParams.get("refresh"));
   const initialForecastType = parseInitialForecastType(
     searchParams.get("forecastType"),
     searchParams.get("section"),
@@ -698,7 +752,12 @@ export default function HomePageClient({
           {activeSection === "pjm-da-lmps" && (
             <PjmDaLmps
               initialDate={initialPjmDaLmpDate}
-              refreshToken={pjmDaLmpsRefreshToken}
+              initialView={initialPjmDaLmpView}
+              initialProduct={initialPjmDaLmpProduct}
+              initialRtSource={initialPjmDaLmpRtSource}
+              initialHub={initialPjmDaLmpHub}
+              initialComponent={initialPjmDaLmpComponent}
+              refreshToken={pjmDaLmpsRefreshToken + (initialPjmDaLmpRefresh ? 1 : 0)}
               onFreshnessChange={setPjmDaLmpsFreshness}
             />
           )}

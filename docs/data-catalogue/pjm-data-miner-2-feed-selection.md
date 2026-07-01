@@ -61,6 +61,7 @@ These feeds define the current PJM pricing foundation.
 | ops_sum_frcst_peak_rto | Operations Summary - Projected RTO Statistics at Peak | Frontend operations dashboard context | Morning 05:05-08:05 EPT refresh |
 | ops_sum_prev_period | Operations Summary - Actual Operational Statistics | Frontend operations dashboard context | Morning 05:05-08:05 EPT refresh; sparse before 2017-05-31 |
 | ops_sum_prjctd_tie_flow | Operations Summary - Projected Scheduled Tie Flow | Frontend operations dashboard context | Morning 05:05-08:05 EPT refresh |
+| da_reserve_market_results | Day-Ahead Ancillary Service Market Results | Reserve market clearing details | Dedicated daily post-DA timer at 13:45 America/New_York with publication polling |
 
 ### Tier 1 - Promote Next
 
@@ -106,7 +107,6 @@ stack.
 | ancillary_services | Real-Time Ancillary Service Hourly LMPs | Locational Marginal Prices | RT ancillary price context |
 | ancillary_services_fivemin_hrl | Real-Time Ancillary Service Five-Minute LMPs | Locational Marginal Prices | Five-minute ancillary price context |
 | da_ancillary_services | Day-Ahead Ancillary Service LMPs | Locational Marginal Prices | DA ancillary price context |
-| da_reserve_market_results | Day-Ahead Ancillary Service Market Results | Ancillary Services | Reserve market clearing details |
 | reserve_market_results | Real-Time Ancillary Service Market Results | Ancillary Services | RT reserve market clearing details |
 | dispatched_reserves | Dispatched Reserves | Ancillary Services | Five-minute reserve deployment |
 | rt_dispatch_reserves | Real-Time Dispatched Reserves | Ancillary Services | Verified dispatched reserves |

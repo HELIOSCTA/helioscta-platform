@@ -47,13 +47,14 @@ A backend workflow is production-ready when it has:
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 25 support scrapes daily at `04:30 UTC`; `helios-pjm-da-transconstraints.timer` and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 24 support scrapes daily at `04:30 UTC`; `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
 | PJM price repair | In place | `helios-pjm-hourly-price-backfill-7-day.timer` reruns seven-day DA, verified RT hourly, verified RT five-minute HRL, and unverified RT hourly LMP backfills nightly at `02:00 America/New_York`. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
+| Release notifications | In place | DA HRL LMPs send email and Slack; verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
@@ -70,19 +71,24 @@ These are not blockers for the first DA workflow, but they are blockers for a
 mature production backend platform:
 
 - No automated deploy pipeline.
-- No systemd failure notification path; alerts are intentionally deferred.
+- No systemd failure notification path; current Slack coverage is limited to
+  data-release notifications.
 - No standardized overlap protection for every future timer; current critical
   DA, RT five-minute HRL, and PJM batch jobs use `flock`.
 - No formal database migration tool.
 - No centralized freshness or pipeline-health dashboard; use the operator
   health digest until a dashboard is promoted.
-- No Vercel/report consumer for `ops.data_availability_events`.
+- PJM DA and verified RT hourly LMP release report links are deployed to Vercel
+  and can open the single-day LMP view from a data-availability event business
+  date. Verified RT five-minute release Slack currently links to the PJM source
+  definition only.
 
 ## Hardening Backlog
 
 Recommended order:
 
-1. Build the Vercel/report consumer from `ops.data_availability_events`.
+1. Extend release notifications beyond the current critical PJM LMP release
+   flows only after recipient and alert criteria are explicitly approved.
 2. Add systemd failure notifications when an alert channel is selected.
 3. Standardize overlap protection for future dedicated timers.
 4. Evaluate whether manual operator SQL is sufficient or a migration tool is
@@ -130,6 +136,11 @@ Current criticality decision:
 - Dedicated support price timer: `rt_hrl_lmps`, because the verified hourly RT
   feed posts after the early PJM Data Miner support batch. It starts at
   11:30 a.m. EPT on business days and polls every 5 minutes for up to 5 hours.
+- Dedicated day-ahead ancillary service timer:
+  `da_reserve_market_results`, because the feed posts after the early PJM Data
+  Miner support batch. It starts at 13:45 America/New_York, polls every two
+  minutes for up to four hours, emits a complete-day readiness event, and
+  queues one Slack release notification.
 - PJM hourly bucket: `rt_unverified_hrl_lmps` runs hourly after the source's
   typical top-of-hour refresh and stays out of the daily support batch so
   dashboard-facing RT prices do not wait for the next overnight job. Add other

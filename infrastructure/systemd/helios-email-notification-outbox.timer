@@ -1,0 +1,12 @@
+[Unit]
+Description=Scheduled HeliosCTA email notification outbox sender timer
+
+[Timer]
+OnCalendar=*-*-* *:0/5:00 UTC
+Persistent=false
+RandomizedDelaySec=30s
+AccuracySec=30s
+Unit=helios-email-notification-outbox.service
+
+[Install]
+WantedBy=timers.target

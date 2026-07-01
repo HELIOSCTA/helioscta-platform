@@ -58,6 +58,13 @@ GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
 ```
 
+Email/report links can open the PJM DA LMP page directly into the single-day
+view:
+
+```text
+/?section=pjm-da-lmps&view=single-day&product=rt&source=verified&date=YYYY-MM-DD&hub=WESTERN%20HUB&component=all&refresh=1
+```
+
 Local development also exposes a clearly separated `DEV` sidebar section:
 
 ```text

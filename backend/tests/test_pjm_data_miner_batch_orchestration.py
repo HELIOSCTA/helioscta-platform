@@ -13,6 +13,7 @@ def test_batch_feed_list_excludes_da_orchestration_target():
     assert "gen_outages_by_type" not in data_miner_batch.DEFAULT_FEEDS
     assert "hrl_dmd_bids" not in data_miner_batch.DEFAULT_FEEDS
     assert "da_transconstraints" not in data_miner_batch.DEFAULT_FEEDS
+    assert "da_reserve_market_results" not in data_miner_batch.DEFAULT_FEEDS
     assert "rt_unverified_hrl_lmps" not in data_miner_batch.DEFAULT_FEEDS
     assert "ops_sum_frcstd_tran_lim" not in data_miner_batch.DEFAULT_FEEDS
     assert "ops_sum_frcst_peak_area" not in data_miner_batch.DEFAULT_FEEDS

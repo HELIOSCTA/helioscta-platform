@@ -54,6 +54,8 @@ models/power/pjm/da_interface_flows_and_limits/
 models/power/pjm/da_interface_flows_and_limits/pjm_da_interface_flows_and_limits/
 models/power/pjm/da_marginal_value/
 models/power/pjm/da_marginal_value/pjm_da_marginal_value/
+models/power/pjm/da_reserve_market_results/
+models/power/pjm/da_reserve_market_results/pjm_da_reserve_market_results/
 models/power/pjm/da_transconstraints/
 models/power/pjm/da_transconstraints/pjm_da_transconstraints/
 models/power/pjm/day_gen_capacity/
@@ -197,6 +199,7 @@ dbt compile --profiles-dir . --select path:models/power/pjm/agg_definitions/pjm_
 dbt compile --profiles-dir . --select path:models/power/pjm/ancillary_services/pjm_ancillary_services
 dbt compile --profiles-dir . --select path:models/power/pjm/da_interface_flows_and_limits/pjm_da_interface_flows_and_limits
 dbt compile --profiles-dir . --select path:models/power/pjm/da_marginal_value/pjm_da_marginal_value
+dbt compile --profiles-dir . --select path:models/power/pjm/da_reserve_market_results/pjm_da_reserve_market_results
 dbt compile --profiles-dir . --select path:models/power/pjm/da_transconstraints/pjm_da_transconstraints
 dbt compile --profiles-dir . --select path:models/power/pjm/day_gen_capacity/pjm_day_gen_capacity
 dbt compile --profiles-dir . --select path:models/power/pjm/dispatched_reserves/pjm_dispatched_reserves
@@ -458,6 +461,8 @@ Run order for a new database:
 models/setup/schemas.sql
 models/ops/table_ops_api_fetch_log.sql
 models/ops/table_ops_data_availability_events.sql
+models/ops/table_ops_email_notification_outbox.sql
+models/ops/table_ops_slack_notification_outbox.sql
 models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql
 models/power/ercot/actual_system_load/table_ercot_actual_system_load.sql
 models/power/ercot/dam_shadow_prices/table_ercot_dam_shadow_prices.sql

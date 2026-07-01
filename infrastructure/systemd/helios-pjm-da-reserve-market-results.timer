@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM day-ahead reserve market results timer
+
+[Timer]
+OnCalendar=*-*-* 13:45:00 America/New_York
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=2min
+Unit=helios-pjm-da-reserve-market-results.service
+
+[Install]
+WantedBy=timers.target

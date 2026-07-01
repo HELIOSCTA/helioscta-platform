@@ -84,6 +84,75 @@ def test_rt_fivemin_hrl_skips_readiness_event_for_incomplete_current_rows(monkey
     assert captured == []
 
 
+def test_rt_fivemin_hrl_slack_notifications_are_idempotent_and_sent(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    monkeypatch.setattr(
+        rt_fivemin_hrl_lmps.slack_notifications,
+        "build_pjm_rt_fivemin_hrl_lmp_release_slack",
+        lambda **kwargs: {
+            "notification_key": f"{kwargs['event']['event_key']}:slack:release",
+            "channel_id": "CPOWER",
+            "channel_name": "#helios-alerts-power",
+            "message_text": "message",
+            "dataset": "pjm_rt_fivemin_hrl_lmps",
+            "source_event_key": kwargs["event"]["event_key"],
+            "source_event_id": kwargs["event"]["id"],
+            "payload": {},
+        },
+    )
+
+    def fake_enqueue(**kwargs):
+        calls.append(kwargs)
+        return {"created": True}
+
+    monkeypatch.setattr(
+        rt_fivemin_hrl_lmps.slack_notifications,
+        "enqueue_slack_notification",
+        fake_enqueue,
+    )
+    monkeypatch.setattr(
+        rt_fivemin_hrl_lmps.slack_notifications,
+        "notifications_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        rt_fivemin_hrl_lmps.slack_notifications,
+        "send_due_slack_notifications",
+        lambda **kwargs: [{"status": "sent", **kwargs}],
+    )
+
+    queued = rt_fivemin_hrl_lmps._notify_rt_fivemin_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": (
+                    "pjm_rt_fivemin_hrl_lmps:data_ready:"
+                    "2026-06-30:hub_zone_interface"
+                ),
+            }
+        ],
+        run_mode="scheduled",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 1
+    assert calls[0]["notification_key"] == (
+        "pjm_rt_fivemin_hrl_lmps:data_ready:"
+        "2026-06-30:hub_zone_interface:slack:release"
+    )
+    assert calls[0]["channel_id"] == "CPOWER"
+    assert calls[0]["database"] == "stage_db"
+
+
 def _rt_fivemin_availability_frame(periods: int) -> pd.DataFrame:
     nodes = [
         (1, "WESTERN HUB", "HUB"),

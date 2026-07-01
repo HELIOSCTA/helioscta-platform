@@ -1,0 +1,12 @@
+[Unit]
+Description=Scheduled HeliosCTA Slack notification outbox sender timer
+
+[Timer]
+OnCalendar=*-*-* *:*:00 UTC
+Persistent=false
+RandomizedDelaySec=10s
+AccuracySec=10s
+Unit=helios-slack-notification-outbox.service
+
+[Install]
+WantedBy=timers.target

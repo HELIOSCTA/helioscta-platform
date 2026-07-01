@@ -37,6 +37,7 @@ Feed selection and promotion priority are documented in
 | ancillary_services | Real-Time Ancillary Service Hourly LMPs | Locational Marginal Prices | datetime_beginning_ept window | pjm.ancillary_services |
 | da_interface_flows_and_limits | Day Ahead Interface Flows and Limits | Imports and Exports | datetime_beginning_ept window | pjm.da_interface_flows_and_limits |
 | da_marginal_value | Day-Ahead Marginal Value | Constraints | datetime_beginning_ept window | pjm.da_marginal_value |
+| da_reserve_market_results | Day-Ahead Ancillary Service Market Results | Ancillary Services | datetime_beginning_ept window | pjm.da_reserve_market_results |
 | da_transconstraints | Day-Ahead Transmission Constraints | Constraints | datetime_beginning_ept window | pjm.da_transconstraints |
 | day_gen_capacity | Daily Generation Capacity | Generation | bid_datetime_beginning_ept window | pjm.day_gen_capacity |
 | dispatched_reserves | Dispatched Reserves | Ancillary Services | datetime_beginning_ept window | pjm.dispatched_reserves |
@@ -80,6 +81,7 @@ Feed selection and promotion priority are documented in
 | Promoted | ancillary_services | Real-Time Ancillary Service Hourly LMPs | none | none | Daily on Business Days | Indefinitely | datetime_beginning_utc, datetime_beginning_ept, ancillary_service, row_is_current, version_nbr |
 | Promoted | da_interface_flows_and_limits | Day Ahead Interface Flows and Limits | none | none | Daily | Indefinitely | datetime_beginning_utc, interface_limit_name |
 | Promoted | da_marginal_value | Day-Ahead Marginal Value | none | none | Daily | Indefinitely | datetime_beginning_utc, monitored_facility, contingency_facility |
+| Promoted | da_reserve_market_results | Day-Ahead Ancillary Service Market Results | none | none | Daily | Indefinitely | datetime_beginning_utc, locale, service |
 | Promoted | da_transconstraints | Day-Ahead Transmission Constraints | none | none | Daily | Indefinitely | datetime_beginning_utc, day_ahead_congestion_event, monitored_facility, contingency_facility |
 | Promoted | day_gen_capacity | Daily Generation Capacity | none | none | Daily | Indefinitely | bid_datetime_beginning_utc |
 | Promoted | dispatched_reserves | Dispatched Reserves | none | none | Every 5 minutes | 30 days | datetime_beginning_utc, datetime_beginning_ept, area, reserve_type |
@@ -298,6 +300,27 @@ Feed selection and promotion priority are documented in
   `dbt/azure_postgres/models/power/pjm/da_marginal_value/`.
 - Manual table DDL:
   `dbt/azure_postgres/models/power/pjm/da_marginal_value/table_pjm_da_marginal_value.sql`.
+
+### da_reserve_market_results
+
+- Source system: PJM Data Miner 2 `da_reserve_market_results`.
+- Destination: `pjm.da_reserve_market_results`.
+- Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, locale, service`.
+- Uniqueness key: `datetime_beginning_utc, locale, service`.
+- Freshness field: `datetime_beginning_ept`.
+- Runtime: `backend.orchestration.power.pjm.da_reserve_market_results` for the
+  scheduled publication-aware refresh; `backend.scrapes.power.pjm.da_reserve_market_results`
+  remains the lower-level scrape module.
+- Scheduled path: `helios-pjm-da-reserve-market-results.timer` starts the
+  orchestration at `13:45 America/New_York`; the orchestration polls every two
+  minutes for up to four hours.
+- Runtime observability: `ops.api_fetch_log` and `ops.data_availability_events`.
+- Data availability event:
+  `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`.
+- dbt folder:
+  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/`.
+- Manual table DDL:
+  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/table_pjm_da_reserve_market_results.sql`.
 
 ### da_transconstraints
 

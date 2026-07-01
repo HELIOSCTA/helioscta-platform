@@ -28,6 +28,19 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## frontend-pjm-da-lmp-release-report
+
+- Status: deployed to Vercel production on `2026-06-30`.
+- Deployment ID: `dpl_5WmQHANXX3gA94RRQuXtDAGek5ZW`.
+- Production aliases:
+  - `https://frontend-helioscta.vercel.app`
+  - `https://frontend-nzg1fn64h-helioscta.vercel.app`
+- Report link shape:
+  `/?section=pjm-da-lmps&view=single-day&product=da&date=YYYY-MM-DD&hub=WESTERN%20HUB&component=all&refresh=1`.
+- Verification: `HEAD /api/pjm-da-lmps?date=2026-07-01&refresh=1` returned
+  `200` with `Cache-Control: no-store` when called with the Vercel protection
+  bypass header.
+
 ## helios-pjm-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
@@ -38,6 +51,9 @@ boundary, or log path changes.
 - Destination table: `pjm.da_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
+- Release notification outputs:
+  - `ops.email_notification_outbox`
+  - `ops.slack_notification_outbox`
 - Unit files:
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.timer`
@@ -79,6 +95,109 @@ WHERE pipeline_name = 'da_hrl_lmps'
 ORDER BY created_at DESC
 LIMIT 10;
 ```
+
+Verification SQL for email release notifications:
+
+```sql
+SELECT
+    notification_key,
+    recipient_email,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.email_notification_outbox
+WHERE dataset = 'pjm_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+Verification SQL for Slack release notifications:
+
+```sql
+SELECT
+    notification_key,
+    channel_id,
+    channel_name,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.slack_notification_outbox
+WHERE dataset = 'pjm_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+## helios-email-notification-outbox
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; timer enabled,
+  Microsoft Graph credentials configured, and manual smoke email sent.
+- Workflow: durable email notification retry sender.
+- Runtime module: `backend.orchestration.notifications.email_outbox`.
+- Destination table: updates `ops.email_notification_outbox`.
+- Email provider: Microsoft Graph via existing Azure Outlook app credentials.
+- Unit files:
+  - `infrastructure/systemd/helios-email-notification-outbox.service`
+  - `infrastructure/systemd/helios-email-notification-outbox.timer`
+- Schedule: every five minutes, with `RandomizedDelaySec=30s`.
+- Recipient scope: defaults to `aidan.keaveny@helioscta.com`; production should
+  keep `HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com` until the recipient
+  list is explicitly expanded.
+- Send status: enabled in `/etc/helioscta/backend.env` with
+  `HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com`.
+- Smoke verification: `manual_email_smoke:20260630T202529Z` was marked `sent`
+  at `2026-06-30 20:23:06 UTC` on attempt `1`.
+- Duplicate suppression: unique outbox key on `(notification_key,
+  recipient_email)`.
+- Retry policy: failed rows remain in the outbox and are retried until
+  `HELIOS_EMAIL_MAX_ATTEMPTS`, then marked `dead` for manual inspection.
+- Residual delivery caveat: if Microsoft Graph accepts a message and the
+  process crashes before the row is marked `sent`, a later stale-row retry can
+  send the same recipient a duplicate email.
+
+## helios-slack-notification-outbox
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; timer enabled,
+  Slack bot credentials configured, and manual smoke messages sent.
+- Workflow: durable Slack notification retry sender.
+- Runtime module: `backend.orchestration.notifications.slack_outbox`.
+- Destination table: updates `ops.slack_notification_outbox`.
+- Provider: Slack Web API `chat.postMessage` through `SLACK_BOT_TOKEN`; incoming
+  webhook remains fallback only.
+- Unit files:
+  - `infrastructure/systemd/helios-slack-notification-outbox.service`
+  - `infrastructure/systemd/helios-slack-notification-outbox.timer`
+- Schedule: every minute, with `RandomizedDelaySec=10s`.
+- Default channel scope: `SLACK_DEFAULT_CHANNEL_ID` or
+  `SLACK_DEFAULT_CHANNEL_NAME`; production uses channel IDs.
+- Send status: enabled in `/etc/helioscta/backend.env` with
+  `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
+- Slack bot: `helioscta_alerts`.
+- Default channel: `#helios-alerts-power` / `C0BEDBTAL2H`.
+- Active managed public alert channel:
+  - `#helios-alerts-power` / `C0BEDBTAL2H`
+- Archived during cleanup:
+  - `#helios-alerts-critical` / `C0BEJJYEM8R`
+  - `#helios-alerts-gas` / `C0BEJJXR3SM`
+  - `#helios-alerts-weather` / `C0BEADC03MZ`
+  - `#helios-alerts-positions` / `C0BELD1UV1S`
+  - `#helios-alerts-dev` / `C0BEDBTS71T`
+  - `#helioscta-alerts`
+  - `#test123`
+- Smoke verification: `manual_slack_bot_smoke:20260630T222122Z` was marked
+  `sent` at `2026-06-30 22:21:33 UTC` on attempt `1` via
+  `slack_chat_post_message`; provider channel ID was `C0BEE4WSA0L`.
+- Channel setup verification: `manual_slack_dev_channel_smoke:20260701T143202Z`
+  was marked `sent` at `2026-07-01 14:32:09 UTC` on attempt `1` via
+  `slack_chat_post_message`; provider channel ID was `C0BEDBTS71T`.
+- Earlier failed smoke rows from the inactive token/webhook tests were also
+  retried and marked `sent` after the valid bot token was installed.
+- Duplicate suppression: unique outbox key on `(notification_key, channel_id)`.
+- Retry policy: failed rows remain in the outbox and are retried until
+  `HELIOS_SLACK_MAX_ATTEMPTS`, then marked `dead` for manual inspection.
 
 ## ercot-congestion-batch
 
@@ -813,8 +932,8 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-pjm-rt-hrl-lmps
 
-- Status: deployed; timer enabled and manual VM run succeeded most recently on
-  `2026-06-30 17:38 UTC`.
+- Status: deployed; timer enabled and scheduled VM run succeeded most recently
+  on `2026-07-01 15:31 UTC`.
 - Workflow: PJM verified hourly Real-Time LMP publication polling.
 - Runtime module: `backend.orchestration.power.pjm.rt_hrl_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
@@ -834,10 +953,18 @@ FROM isone.seven_day_solar_forecast;
   posting window between `11 a.m.` and `12 p.m.` EPT.
 - Polling policy: poll every `300` seconds for up to `5` hours until the
   target market date returns a complete hub hourly shape.
+- Data readiness: emits
+  `pjm_rt_hrl_lmps:data_ready:<business_date>:hub` after the scrape succeeds.
+- Slack release notification: scheduled runs enqueue one durable outbox message
+  to `#helios-alerts-power` with the single-day RT LMP report link; duplicates
+  are suppressed by `(notification_key, channel_id)`.
 - Latest VM verification: service exited `status=0/SUCCESS`, poll telemetry
-  found target market date `2026-06-29` on attempt `1`, the scrape upserted
-  `2,016` rows across recent posted market dates, and the timer's next
-  elapse was `2026-07-01 15:33 UTC`.
+  found target market date `2026-06-30` on attempt `1`, the scrape upserted
+  `2,016` rows across recent posted market dates, emitted complete readiness
+  event `pjm_rt_hrl_lmps:data_ready:2026-06-30:hub` with `288` rows, `12`
+  hubs, and `24` periods, and sent Slack notification
+  `pjm_rt_hrl_lmps:data_ready:2026-06-30:hub:slack:release` to
+  `#helios-alerts-power` / `C0BEDBTAL2H` on attempt `1`.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-rt-hrl-lmps.lock`.
@@ -908,8 +1035,9 @@ FROM isone.seven_day_solar_forecast;
   `backend.scrapes.power.pjm`; 24 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
-  `hrl_dmd_bids`, `da_transconstraints`, `gen_outages_by_type`, and the four
-  Operations Summary feeds were promoted to dedicated timers.
+  `hrl_dmd_bids`, `da_transconstraints`, `da_reserve_market_results`,
+  `gen_outages_by_type`, and the four Operations Summary feeds were promoted
+  to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -970,6 +1098,9 @@ FROM isone.seven_day_solar_forecast;
   source posts hourly and drives the forecast dashboard.
   `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
   needs same-afternoon publication polling after the DA LMP timer starts.
+  `helios-pjm-da-reserve-market-results.timer` remains separate because the
+  day-ahead ancillary service market results post after the early support batch
+  and need a post-publication retry window.
   `helios-pjm-gen-outages-by-type.timer` runs later because the source was
   observed unavailable at the early `04:30 UTC` batch but available during a
   manual `13:55 UTC` VM run.
@@ -1193,6 +1324,118 @@ FROM ops.api_fetch_log
 WHERE pipeline_name = 'da_transconstraints'
 ORDER BY created_at DESC
 LIMIT 20;
+```
+
+## helios-pjm-da-reserve-market-results
+
+- Status: production DDL applied and initial local scrape succeeded; timer
+  unit is promoted for VM deployment.
+- Workflow: PJM Day-Ahead Ancillary Service Market Results orchestration.
+- Runtime module:
+  `backend.orchestration.power.pjm.da_reserve_market_results`.
+- Lower-level scrape module:
+  `backend.scrapes.power.pjm.da_reserve_market_results`.
+- Source system: PJM Data Miner 2 `da_reserve_market_results`.
+- Destination table: `pjm.da_reserve_market_results`.
+- Source grain: `datetime_beginning_utc x locale x service`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Release notification output: `ops.slack_notification_outbox`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-da-reserve-market-results.service`
+  - `infrastructure/systemd/helios-pjm-da-reserve-market-results.timer`
+- Schedule: daily at `13:45 America/New_York` with `Persistent=true`,
+  `AccuracySec=1min`, and `RandomizedDelaySec=2min`.
+- Timer behavior: missed runs fire after VM downtime. The orchestration polls
+  every two minutes for up to four hours, and safe reruns upsert on the source
+  primary key.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-da-reserve-market-results.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Operator SQL applied locally on `2026-07-01`:
+  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/table_pjm_da_reserve_market_results.sql`
+  and
+  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/index_pjm_da_reserve_market_results.sql`.
+- Initial local scrape verification on `2026-07-01`: run ID
+  `9220dd85-5f87-48b3-a534-77dd4f4dadf1` upserted `1,320` rows covering
+  `2026-06-21 00:00` through `2026-07-01 23:00` EPT, across `2` locales and
+  `3` services, with zero duplicate primary-key groups.
+- Polling orchestration update: scheduled runtime now waits for a complete
+  next-market-day publication, emits
+  `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`, and
+  queues one Slack release alert keyed by that readiness event.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT locale) AS locales,
+    COUNT(DISTINCT service) AS services,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.da_reserve_market_results
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'da_reserve_market_results'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_da_reserve_market_results'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+Verification SQL for Slack release notifications:
+
+```sql
+SELECT
+    notification_key,
+    channel_id,
+    channel_name,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.slack_notification_outbox
+WHERE dataset = 'pjm_da_reserve_market_results'
+ORDER BY created_at DESC
+LIMIT 10;
 ```
 
 ## helios-pjm-ops-sum
@@ -1645,6 +1888,7 @@ LIMIT 20;
 - Destination table: `pjm.rt_fivemin_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
+- Release notification output: `ops.slack_notification_outbox`.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.service`
   - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer`
@@ -1670,6 +1914,24 @@ LIMIT 20;
 - API batching note: PJM rejected comma-separated multi-ID `pnode_id` requests
   during production optimization testing, so the runtime intentionally keeps
   `pnode_id_batch_size=1`.
+
+Verification SQL for Slack release notifications:
+
+```sql
+SELECT
+    notification_key,
+    channel_id,
+    channel_name,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.slack_notification_outbox
+WHERE dataset = 'pjm_rt_fivemin_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
 
 ## helios-prod-health-check
 

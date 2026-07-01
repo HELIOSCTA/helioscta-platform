@@ -53,7 +53,8 @@ helios-pjm-da-hrl-lmps.timer
 
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
-terminal/file logging, and DA LMP data readiness event emission.
+terminal/file logging, DA LMP data readiness event emission, and DA release
+email/Slack notification enqueueing.
 The service uses `flock` with `/tmp/helios-pjm-da-hrl-lmps.lock`.
 
 The live production VM currently has `helios-pjm-da-hrl-lmps.timer` enabled on
@@ -113,6 +114,25 @@ the target market day returns normalized constraint rows, upserts
 at `17:00 UTC`, matching `helios-pjm-hrl-dmd-bids.timer`, with a four-hour
 polling ceiling and two-minute poll interval. The service uses `flock` with
 `/tmp/helios-pjm-da-transconstraints.lock`.
+
+## PJM Day-Ahead Reserve Market Results
+
+PJM day-ahead reserve market results have their own post-publication timer:
+
+```text
+helios-pjm-da-reserve-market-results.service
+helios-pjm-da-reserve-market-results.timer
+```
+
+It runs `backend.orchestration.power.pjm.da_reserve_market_results`, polls PJM
+Data Miner until the next day-ahead market date has complete hourly
+locale/service rows, upserts `pjm.da_reserve_market_results`, writes one
+resolved PJM Data Miner API telemetry row to `ops.api_fetch_log`, emits a
+complete-day readiness event, and queues one Slack release notification. The
+timer runs daily at `13:45 America/New_York` with `Persistent=true`,
+`AccuracySec=1min`, and `RandomizedDelaySec=2min`, after the observed
+day-ahead ancillary service market publication window. The service uses
+`flock` with `/tmp/helios-pjm-da-reserve-market-results.lock`.
 
 ## PJM Operations Summary
 
@@ -282,8 +302,9 @@ helios-pjm-rt-fivemin-hrl-lmps.timer
 
 It runs `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`, which reuses the
 lower-level scrape, upserts `pjm.rt_fivemin_hrl_lmps`, and emits complete-day
-readiness events for hub, zone, and interface pricing nodes. The service uses
-`flock` with `/tmp/helios-pjm-rt-fivemin-hrl-lmps.lock`.
+readiness events for hub, zone, and interface pricing nodes. Scheduled runs
+also enqueue one Slack release notification per complete business date. The
+service uses `flock` with `/tmp/helios-pjm-rt-fivemin-hrl-lmps.lock`.
 
 ## Production Health Digest
 
@@ -608,6 +629,67 @@ systemctl status helios-weather-wsi-hourly-forecast.timer
 journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
 ```
 
+## Email Notification Outbox
+
+`helios-email-notification-outbox.timer` flushes due rows from
+`ops.email_notification_outbox` every five minutes. It is intentionally
+separate from scrape timers so a transient Microsoft Graph or credential
+failure can be retried without rerunning the data scrape. The DA HRL LMP
+workflow enqueues release notifications after a complete readiness event.
+
+Required environment values in `/etc/helioscta/backend.env`:
+
+```text
+HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true
+HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com
+HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
+AZURE_OUTLOOK_CLIENT_ID=
+AZURE_OUTLOOK_TENANT_ID=
+AZURE_OUTLOOK_CLIENT_SECRET=
+AZURE_OUTLOOK_SENDER=
+```
+
+Verify the outbox with:
+
+```bash
+systemctl status helios-email-notification-outbox.service
+systemctl status helios-email-notification-outbox.timer
+journalctl -u helios-email-notification-outbox.service -n 100 --no-pager
+```
+
+## Slack Notification Outbox
+
+`helios-slack-notification-outbox.timer` flushes due rows from
+`ops.slack_notification_outbox` every minute. It is intentionally separate from
+scrape timers so transient Slack API failures can be retried without rerunning
+the data scrape. Current PJM release producers are DA HRL LMPs, verified RT HRL
+LMPs, verified RT five-minute HRL LMPs, and DA reserve market results.
+
+Required environment values in `/etc/helioscta/backend.env`:
+
+```text
+HELIOS_SLACK_NOTIFICATIONS_ENABLED=true
+HELIOS_SLACK_MAX_ATTEMPTS=6
+HELIOS_SLACK_STALE_SENDING_MINUTES=30
+SLACK_BOT_TOKEN=
+SLACK_DEFAULT_CHANNEL_ID=C0BEDBTAL2H
+SLACK_DEFAULT_CHANNEL_NAME=#helios-alerts-power
+SLACK_POWER_ALERTS_CHANNEL_ID=C0BEDBTAL2H
+SLACK_POWER_ALERTS_CHANNEL_NAME=#helios-alerts-power
+SLACK_DEFAULT_WEBHOOK_URL=
+```
+
+Prefer `SLACK_BOT_TOKEN` plus a channel ID for production routing. Keep the
+incoming webhook only as a fallback.
+
+Verify the outbox with:
+
+```bash
+systemctl status helios-slack-notification-outbox.service
+systemctl status helios-slack-notification-outbox.timer
+journalctl -u helios-slack-notification-outbox.service -n 100 --no-pager
+```
+
 ## Naming
 
 Use predictable names:
@@ -636,12 +718,18 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.s
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-market-results.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-market-results.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-email-notification-outbox.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-email-notification-outbox.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-slack-notification-outbox.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-slack-notification-outbox.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
@@ -684,9 +772,12 @@ sudo systemctl enable --now helios-pjm-hourly-bucket.timer
 sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
 sudo systemctl enable --now helios-pjm-da-transconstraints.timer
+sudo systemctl enable --now helios-pjm-da-reserve-market-results.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
+sudo systemctl enable --now helios-email-notification-outbox.timer
+sudo systemctl enable --now helios-slack-notification-outbox.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
@@ -720,6 +811,7 @@ sudo systemctl start helios-pjm-hourly-bucket.service
 sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
 sudo systemctl start helios-pjm-hrl-dmd-bids.service
 sudo systemctl start helios-pjm-da-transconstraints.service
+sudo systemctl start helios-pjm-da-reserve-market-results.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-pjm-ops-sum.service
@@ -778,6 +870,14 @@ For the PJM day-ahead transmission constraints refresh:
 systemctl status helios-pjm-da-transconstraints.service
 systemctl status helios-pjm-da-transconstraints.timer
 journalctl -u helios-pjm-da-transconstraints.service -n 200 --no-pager
+```
+
+For the PJM day-ahead reserve market results refresh:
+
+```bash
+systemctl status helios-pjm-da-reserve-market-results.service
+systemctl status helios-pjm-da-reserve-market-results.timer
+journalctl -u helios-pjm-da-reserve-market-results.service -n 200 --no-pager
 ```
 
 For the PJM Operations Summary refresh:

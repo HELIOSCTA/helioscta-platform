@@ -85,6 +85,8 @@ function summarizeHub(hub: string, rows: LmpRow[]) {
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const requestedDate = parseDate(searchParams.get("date"));
+  const forceRefresh = searchParams.get("refresh") === "1";
+  const cacheHeader = forceRefresh ? "no-store" : CACHE_HEADER;
 
   const latest = await query<{ target_date: string | null }>(
     `
@@ -143,7 +145,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
         ),
       ),
     },
-    headers: { "Cache-Control": CACHE_HEADER, "X-Power-Da-Lmps-Cache": "MISS" },
+    headers: { "Cache-Control": cacheHeader, "X-Power-Da-Lmps-Cache": "MISS" },
     rowCount: rows.length,
     dataAsOf: asOf,
   };
