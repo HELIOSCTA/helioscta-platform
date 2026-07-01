@@ -64,7 +64,7 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/dev/nav-positions?fund=all&rawLimit=200
-GET /api/pjm-generation?date=YYYY-MM-DD
+GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/pjm-weather?region=PJM&hours=24
@@ -201,13 +201,17 @@ Promoted table grain:
 `pjm.day_gen_capacity` is keyed by `bid_datetime_beginning_utc`.
 `pjm.rt_and_self_ecomax` is keyed by `datetime_beginning_utc`.
 
-The route `GET /api/pjm-generation` accepts optional `date=YYYY-MM-DD`.
-Without `date`, it selects the latest operating day where all three feeds have
-at least 23 hourly timestamps, allowing DST-short days. The response returns
-hourly fuel mix, capacity economic max, emergency max, committed capacity,
-scheduled-generation economic max fields, fuel summary rows, and source-window
-freshness. Historical depth is limited by `pjm.rt_and_self_ecomax` until that
-feed is backfilled.
+The route `GET /api/pjm-generation` accepts optional `endDate=YYYY-MM-DD` and
+`lookbackDays=1..31`; legacy `date=YYYY-MM-DD` is still accepted as a
+single-day request. Without a date, it selects the latest `pjm.gen_by_fuel`
+operating day, even when the current day is still partial. Historical selectable
+dates still require at least 23 hourly timestamps, allowing DST-short days. The
+response returns selected lookback dates, per-date fuel-hour coverage, hourly
+fuel mix, hourly fuel ramps, daily fuel summaries, capacity economic max,
+emergency max, committed capacity, scheduled-generation economic max fields,
+fuel summary rows, and source-window freshness. Capacity and
+scheduled-generation feeds are joined as nonblocking overlays, so fuel-mix date
+depth and intraday availability are not limited by `pjm.rt_and_self_ecomax`.
 
 ## PJM Daily Load Growth Source Contract
 

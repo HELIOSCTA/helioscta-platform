@@ -72,7 +72,7 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 25
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 24
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
@@ -176,15 +176,17 @@ helios-pjm-hourly-bucket.service
 helios-pjm-hourly-bucket.timer
 ```
 
-It runs `backend.orchestration.power.pjm.hourly_bucket`. The initial bucket
-member is `rt_unverified_hrl_lmps`, which upserts current hub, zone, and
-interface rows into `pjm.rt_unverified_hrl_lmps` and writes API telemetry to
+It runs `backend.orchestration.power.pjm.hourly_bucket`. Bucket members are
+`rt_unverified_hrl_lmps`, which upserts current hub, zone, and interface rows
+into `pjm.rt_unverified_hrl_lmps`, and `gen_by_fuel`, which upserts hourly
+fuel mix rows into `pjm.gen_by_fuel`. Both write API telemetry to
 `ops.api_fetch_log`. The timer runs hourly at minute `15` UTC with
 `Persistent=false` and `RandomizedDelaySec=2min`; bucket members should pull a
 rolling recent window or current snapshot so missed hourly starts do not need
 replay on VM boot. The nightly
 `helios-pjm-hourly-price-backfill-7-day.timer` remains the repair path for
-recent posted LMP market dates.
+recent posted LMP market dates, while `gen_by_fuel` uses its rolling
+generation-by-fuel window as the repair path.
 
 The service uses `flock` with `/tmp/helios-pjm-hourly-bucket.lock`.
 

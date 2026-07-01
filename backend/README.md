@@ -147,15 +147,16 @@ polling policy as hourly demand bids, then upserts by
 contingency_facility` and logs one resolved API fetch telemetry row to
 `ops.api_fetch_log`.
 
-PJM unverified hourly real-time LMPs run through the hourly bucket at
-`backend.orchestration.power.pjm.hourly_bucket`, which currently includes
-`backend.orchestration.power.pjm.rt_unverified_hrl_lmps` and writes
-`pjm.rt_unverified_hrl_lmps`. The scheduled path refreshes the hub, zone, and
-interface scope hourly, logs PJM API telemetry to `ops.api_fetch_log`, and
-uses the same primary-key upsert as the nightly price repair workflow. This
-feed is not settlement quality and remains subject to later PJM verification;
-the verified hourly and five-minute RT LMP tables remain the settlement-quality
-paths.
+PJM simple hourly refreshes run through the hourly bucket at
+`backend.orchestration.power.pjm.hourly_bucket`. It includes
+`backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, which writes
+`pjm.rt_unverified_hrl_lmps`, and
+`backend.orchestration.power.pjm.gen_by_fuel`, which writes
+`pjm.gen_by_fuel`. The scheduled path refreshes rolling recent windows hourly,
+logs PJM API telemetry to `ops.api_fetch_log`, and uses the existing
+primary-key upserts. Unverified RT hourly LMPs are not settlement quality and
+remain subject to later PJM verification; the verified hourly and five-minute
+RT LMP tables remain the settlement-quality paths.
 
 Meteologica xTraders helpers use the existing
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` environment

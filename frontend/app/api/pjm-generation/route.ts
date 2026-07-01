@@ -6,12 +6,17 @@ export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const CACHE_HEADER = "public, s-maxage=300, stale-while-revalidate=60";
+const DEFAULT_LOOKBACK_DAYS = 7;
+const LEGACY_DATE_LOOKBACK_DAYS = 1;
+const MAX_LOOKBACK_DAYS = 31;
+const TOTAL_FUEL_TYPE = "Total";
+
 const ROUTE_CONFIG = {
   route: "/api/pjm-generation",
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "PJM generation fuel mix and capacity context",
+  purpose: "PJM generation fuel mix levels, ramps, and capacity context",
   p95TargetMs: 1_500,
   freshnessSource:
     "pjm.gen_by_fuel.updated_at, pjm.day_gen_capacity.updated_at, pjm.rt_and_self_ecomax.updated_at",
@@ -19,6 +24,8 @@ const ROUTE_CONFIG = {
 
 interface AvailableDateRow {
   operating_date: string;
+  hour_count: number | string;
+  is_complete: boolean | string;
 }
 
 interface SourceFreshnessRow {
@@ -30,6 +37,7 @@ interface SourceFreshnessRow {
 }
 
 interface HourlyDbRow {
+  operating_date: string;
   hour_ept: string;
   hour_utc: string;
   hour_beginning: number | string;
@@ -64,6 +72,7 @@ interface FuelHour {
 }
 
 interface HourlyGenerationRow {
+  operatingDate: string;
   hourEpt: string;
   hourUtc: string;
   hourBeginning: number;
@@ -81,8 +90,44 @@ interface HourlyGenerationRow {
   selfScheduledEcomaxMw: number | null;
 }
 
+interface DailyFuelSummaryRow {
+  date: string;
+  fuelType: string;
+  hourlyRows: number;
+  flatAvgMw: number | null;
+  onPeakAvgMw: number | null;
+  offPeakAvgMw: number | null;
+  minMw: number | null;
+  maxMw: number | null;
+  totalMwh: number | null;
+  avgSharePct: number | null;
+  maxUpRampMw: number | null;
+  maxDownRampMw: number | null;
+}
+
+interface RampRow {
+  date: string;
+  hourEpt: string;
+  hourBeginning: number;
+  hourEnding: number;
+  fuelType: string;
+  rampMw: number | null;
+}
+
+interface DateCoverage {
+  date: string;
+  hourCount: number;
+  isComplete: boolean;
+}
+
 function parseDate(value: string | null): string | null {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
+}
+
+function parseLookbackDays(value: string | null, fallback: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isInteger(parsed)) return fallback;
+  return Math.min(Math.max(parsed, 1), MAX_LOOKBACK_DAYS);
 }
 
 function toNumber(value: unknown): number | null {
@@ -108,6 +153,17 @@ function avg(values: Array<number | null>): number | null {
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
 }
 
+function sum(values: Array<number | null>): number | null {
+  const numbers = values.filter((value): value is number => value !== null);
+  if (!numbers.length) return null;
+  return numbers.reduce((total, value) => total + value, 0);
+}
+
+function minValue(values: Array<number | null>): number | null {
+  const numbers = values.filter((value): value is number => value !== null);
+  return numbers.length ? Math.min(...numbers) : null;
+}
+
 function maxValue(values: Array<number | null>): number | null {
   const numbers = values.filter((value): value is number => value !== null);
   return numbers.length ? Math.max(...numbers) : null;
@@ -123,6 +179,23 @@ function isoOrText(value: string | null): string | null {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
+function toBoolean(value: unknown): boolean {
+  return value === true || value === "true" || value === "t" || value === "1";
+}
+
+function shareToPct(value: number | null): number | null {
+  if (value === null) return null;
+  return Math.abs(value) <= 1 ? value * 100 : value;
+}
+
+function hourEnding(hourBeginning: number): number {
+  return (hourBeginning % 24) + 1;
+}
+
+function isOnPeak(hour: number): boolean {
+  return hour >= 8 && hour <= 23;
+}
+
 function normalizeFuel(value: unknown): FuelHour | null {
   if (!value || typeof value !== "object") return null;
   const item = value as {
@@ -135,7 +208,7 @@ function normalizeFuel(value: unknown): FuelHour | null {
   return {
     fuelType: item.fuelType,
     mw: round(toNumber(item.mw)),
-    share: round(toNumber(item.share), 2),
+    share: round(shareToPct(toNumber(item.share)), 2),
     isRenewable: typeof item.isRenewable === "boolean" ? item.isRenewable : null,
   };
 }
@@ -147,6 +220,7 @@ function normalizeHourly(row: HourlyDbRow): HourlyGenerationRow {
   const disclaimer = row.conf_disclaimer?.trim() || null;
 
   return {
+    operatingDate: row.operating_date,
     hourEpt: row.hour_ept,
     hourUtc: row.hour_utc,
     hourBeginning: toInteger(row.hour_beginning),
@@ -176,15 +250,158 @@ function sourceFreshness(rows: SourceFreshnessRow[]) {
   }));
 }
 
+function normalizeDateCoverage(rows: AvailableDateRow[]): DateCoverage[] {
+  return rows.map((row) => ({
+    date: row.operating_date,
+    hourCount: toInteger(row.hour_count),
+    isComplete: toBoolean(row.is_complete),
+  }));
+}
+
+function valueForFuel(row: HourlyGenerationRow, fuelType: string): number | null {
+  if (fuelType === TOTAL_FUEL_TYPE) return row.totalGenerationMw;
+  return row.fuels.find((fuel) => fuel.fuelType === fuelType)?.mw ?? null;
+}
+
+function shareForFuel(row: HourlyGenerationRow, fuelType: string): number | null {
+  if (fuelType === TOTAL_FUEL_TYPE) return row.totalGenerationMw === null ? null : 100;
+  const fuel = row.fuels.find((item) => item.fuelType === fuelType);
+  if (!fuel) return null;
+  if (fuel.share !== null) return fuel.share;
+  if (fuel.mw === null || !row.totalGenerationMw) return null;
+  return (fuel.mw / row.totalGenerationMw) * 100;
+}
+
+function selectedDatesForLookback(
+  availableDates: string[],
+  selectedEndDate: string | null,
+  lookbackDays: number,
+): string[] {
+  if (!selectedEndDate) return [];
+  return availableDates
+    .filter((date) => date <= selectedEndDate)
+    .slice(0, lookbackDays)
+    .reverse();
+}
+
+function groupHourlyByDate(hourly: HourlyGenerationRow[]): Map<string, HourlyGenerationRow[]> {
+  const byDate = new Map<string, HourlyGenerationRow[]>();
+  for (const row of hourly) {
+    const rows = byDate.get(row.operatingDate) ?? [];
+    rows.push(row);
+    byDate.set(row.operatingDate, rows);
+  }
+  for (const rows of byDate.values()) {
+    rows.sort((first, second) => first.hourEpt.localeCompare(second.hourEpt));
+  }
+  return byDate;
+}
+
+function buildRampRows(
+  hourly: HourlyGenerationRow[],
+  selectedDates: string[],
+  fuelTypes: string[],
+): RampRow[] {
+  const byDate = groupHourlyByDate(hourly);
+  const rampRows: RampRow[] = [];
+  const fuelsWithTotal = [TOTAL_FUEL_TYPE, ...fuelTypes];
+
+  for (const date of selectedDates) {
+    const rows = byDate.get(date) ?? [];
+    for (let index = 0; index < rows.length; index += 1) {
+      const row = rows[index];
+      const previous = rows[index - 1];
+      for (const fuelType of fuelsWithTotal) {
+        const value = valueForFuel(row, fuelType);
+        const previousValue = previous ? valueForFuel(previous, fuelType) : null;
+        rampRows.push({
+          date,
+          hourEpt: row.hourEpt,
+          hourBeginning: row.hourBeginning,
+          hourEnding: hourEnding(row.hourBeginning),
+          fuelType,
+          rampMw: value === null || previousValue === null ? null : round(value - previousValue),
+        });
+      }
+    }
+  }
+
+  return rampRows;
+}
+
+function buildDailySummary(
+  hourly: HourlyGenerationRow[],
+  selectedDates: string[],
+  fuelTypes: string[],
+  rampRows: RampRow[],
+): DailyFuelSummaryRow[] {
+  const byDate = groupHourlyByDate(hourly);
+  const rampByDateFuel = new Map<string, number[]>();
+  for (const ramp of rampRows) {
+    if (ramp.rampMw === null) continue;
+    const key = `${ramp.date}|${ramp.fuelType}`;
+    const values = rampByDateFuel.get(key) ?? [];
+    values.push(ramp.rampMw);
+    rampByDateFuel.set(key, values);
+  }
+
+  const fuelsWithTotal = [TOTAL_FUEL_TYPE, ...fuelTypes];
+  const dailyRows: DailyFuelSummaryRow[] = [];
+
+  for (const date of selectedDates) {
+    const rows = byDate.get(date) ?? [];
+    for (const fuelType of fuelsWithTotal) {
+      const entries = rows
+        .map((row) => ({
+          hourEnding: hourEnding(row.hourBeginning),
+          value: valueForFuel(row, fuelType),
+          share: shareForFuel(row, fuelType),
+        }))
+        .filter((entry) => entry.value !== null);
+      const allValues = entries.map((entry) => entry.value);
+      const onPeakValues = entries
+        .filter((entry) => isOnPeak(entry.hourEnding))
+        .map((entry) => entry.value);
+      const offPeakValues = entries
+        .filter((entry) => !isOnPeak(entry.hourEnding))
+        .map((entry) => entry.value);
+      const rampValues = rampByDateFuel.get(`${date}|${fuelType}`) ?? [];
+
+      dailyRows.push({
+        date,
+        fuelType,
+        hourlyRows: entries.length,
+        flatAvgMw: round(avg(allValues)),
+        onPeakAvgMw: round(avg(onPeakValues)),
+        offPeakAvgMw: round(avg(offPeakValues)),
+        minMw: round(minValue(allValues)),
+        maxMw: round(maxValue(allValues)),
+        totalMwh: round(sum(allValues)),
+        avgSharePct: round(avg(entries.map((entry) => entry.share)), 2),
+        maxUpRampMw: round(maxValue(rampValues)),
+        maxDownRampMw: round(minValue(rampValues)),
+      });
+    }
+  }
+
+  return dailyRows;
+}
+
 function emptyPayload({
   requestedDate,
   selectedDate,
+  selectedDates,
+  lookbackDays,
   availableDates,
+  availableDateCoverage,
   freshness,
 }: {
   requestedDate: string | null;
   selectedDate: string | null;
+  selectedDates: string[];
+  lookbackDays: number;
   availableDates: string[];
+  availableDateCoverage: DateCoverage[];
   freshness: ReturnType<typeof sourceFreshness>;
 }) {
   return {
@@ -192,8 +409,14 @@ function emptyPayload({
     source: "PJM Data Miner Generation",
     requestedDate,
     selectedDate,
+    selectedStartDate: selectedDates[0] ?? null,
+    selectedDates,
+    lookbackDays,
     latestCommonDate: availableDates[0] ?? null,
     availableDates,
+    availableDateCoverage,
+    selectedDateCoverage: null,
+    fuelTypes: [],
     asOf: maxStamp(freshness.map((row) => row.latestUpdateAt)),
     freshness,
     summary: {
@@ -215,59 +438,51 @@ function emptyPayload({
     },
     hourly: [],
     fuelSummary: [],
+    dailySummary: [],
+    rampRows: [],
     metadata: {
-      dateSelection: "Dates require at least 23 hourly timestamps in all three source feeds.",
-      units: "MW for hourly values and average MW for daily summaries.",
+      dateSelection:
+        "Historical dates require at least 23 hourly timestamps in pjm.gen_by_fuel. The latest fuel-mix operating day is included even when partial. Capacity and scheduled-generation overlays are nonblocking.",
+      units: "MW for hourly values, MW/hr for ramps, and average MW for daily summaries.",
     },
   };
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
-  const requestedDate = parseDate(searchParams.get("date"));
+  const legacyDateOnly =
+    Boolean(searchParams.get("date")) &&
+    !searchParams.has("endDate") &&
+    !searchParams.has("lookbackDays");
+  const requestedDate = parseDate(searchParams.get("endDate")) ?? parseDate(searchParams.get("date"));
+  const lookbackDays = parseLookbackDays(
+    searchParams.get("lookbackDays"),
+    legacyDateOnly ? LEGACY_DATE_LOOKBACK_DAYS : DEFAULT_LOOKBACK_DAYS,
+  );
 
   const [availableRows, freshnessRows] = await Promise.all([
     query<AvailableDateRow>(`
-      with sched_dates as (
+      with date_counts as (
         select
-          datetime_beginning_ept::date as operating_date
-        from pjm.rt_and_self_ecomax
-        group by 1
-        having count(distinct datetime_beginning_utc) >= 23
-        order by 1 desc
-        limit 180
+          datetime_beginning_ept::date as operating_date,
+          count(distinct datetime_beginning_utc) as hour_count
+        from pjm.gen_by_fuel
+        group by datetime_beginning_ept::date
       ),
-      date_bounds as (
-        select
-          min(operating_date) as start_date,
-          max(operating_date) as end_date
-        from sched_dates
-      ),
-      gen_dates as (
-        select
-          g.datetime_beginning_ept::date as operating_date
-        from pjm.gen_by_fuel g
-        cross join date_bounds b
-        where g.datetime_beginning_ept >= b.start_date::timestamp
-          and g.datetime_beginning_ept < (b.end_date + interval '1 day')::timestamp
-        group by 1
-        having count(distinct g.datetime_beginning_utc) >= 23
-      ),
-      capacity_dates as (
-        select
-          c.bid_datetime_beginning_ept::date as operating_date
-        from pjm.day_gen_capacity c
-        cross join date_bounds b
-        where c.bid_datetime_beginning_ept >= b.start_date::timestamp
-          and c.bid_datetime_beginning_ept < (b.end_date + interval '1 day')::timestamp
-        group by 1
-        having count(distinct c.bid_datetime_beginning_utc) >= 23
+      latest_date as (
+        select max(operating_date) as operating_date
+        from date_counts
       )
-      select to_char(s.operating_date, 'YYYY-MM-DD') as operating_date
-      from sched_dates s
-      inner join gen_dates g using (operating_date)
-      inner join capacity_dates c using (operating_date)
-      order by s.operating_date desc
+      select
+        to_char(d.operating_date, 'YYYY-MM-DD') as operating_date,
+        d.hour_count,
+        (d.hour_count >= 23) as is_complete
+      from date_counts d
+      cross join latest_date l
+      where d.hour_count >= 23
+        or d.operating_date = l.operating_date
+      order by d.operating_date desc
+      limit 240
     `),
     query<SourceFreshnessRow>(`
       select
@@ -296,18 +511,28 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     `),
   ]);
 
-  const availableDates = availableRows.map((row) => row.operating_date);
+  const availableDateCoverage = normalizeDateCoverage(availableRows);
+  const availableDates = availableDateCoverage.map((row) => row.date);
   const selectedDate =
     requestedDate && availableDates.includes(requestedDate)
       ? requestedDate
-      : availableDates[0] ?? null;
+      : requestedDate
+        ? availableDates.find((date) => date <= requestedDate) ?? availableDates.at(-1) ?? null
+        : availableDates[0] ?? null;
+  const selectedDates = selectedDatesForLookback(availableDates, selectedDate, lookbackDays);
+  const selectedDateCoverage = selectedDate
+    ? availableDateCoverage.find((row) => row.date === selectedDate) ?? null
+    : null;
   const freshness = sourceFreshness(freshnessRows);
 
-  if (!selectedDate) {
+  if (!selectedDate || !selectedDates.length) {
     const payload = emptyPayload({
       requestedDate,
       selectedDate,
+      selectedDates,
+      lookbackDays,
       availableDates,
+      availableDateCoverage,
       freshness,
     });
     return {
@@ -325,6 +550,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           select
             datetime_beginning_utc,
             min(datetime_beginning_ept) as datetime_beginning_ept,
+            to_char(min(datetime_beginning_ept)::date, 'YYYY-MM-DD') as operating_date,
             sum(coalesce(mw, 0))::float8 as total_generation_mw,
             coalesce(sum(mw) filter (where is_renewable is true), 0)::float8 as renewable_mw,
             coalesce(sum(mw) filter (where is_renewable is not true), 0)::float8 as nonrenewable_mw,
@@ -338,10 +564,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
               order by fuel_type
             ) as fuels
           from pjm.gen_by_fuel
-          where datetime_beginning_ept::date = $1::date
+          where datetime_beginning_ept::date = any($1::date[])
           group by datetime_beginning_utc
         )
         select
+          f.operating_date,
           to_char(f.datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as hour_ept,
           to_char(f.datetime_beginning_utc, 'YYYY-MM-DD"T"HH24:MI:SS') as hour_utc,
           extract(hour from f.datetime_beginning_ept)::int as hour_beginning,
@@ -362,7 +589,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           on s.datetime_beginning_utc = f.datetime_beginning_utc
         order by f.datetime_beginning_ept
       `,
-      [selectedDate],
+      [selectedDates],
     ),
     query<FuelSummaryDbRow>(
       `
@@ -376,11 +603,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           sum(mw)::float8 as total_mwh,
           avg(fuel_percentage_of_total)::float8 as avg_share
         from pjm.gen_by_fuel
-        where datetime_beginning_ept::date = $1::date
+        where datetime_beginning_ept::date = any($1::date[])
         group by fuel_type
         order by avg(mw) desc nulls last, fuel_type
       `,
-      [selectedDate],
+      [selectedDates],
     ),
   ]);
 
@@ -396,16 +623,25 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     minMw: round(toNumber(row.min_mw)),
     maxMw: round(toNumber(row.max_mw)),
     totalMwh: round(toNumber(row.total_mwh)),
-    avgSharePct: round(toNumber(row.avg_share), 2),
+    avgSharePct: round(shareToPct(toNumber(row.avg_share)), 2),
   }));
+  const fuelTypes = fuelSummary.map((row) => row.fuelType);
+  const rampRows = buildRampRows(hourly, selectedDates, fuelTypes);
+  const dailySummary = buildDailySummary(hourly, selectedDates, fuelTypes, rampRows);
 
   const payload = {
     iso: "pjm",
     source: "PJM Data Miner Generation",
     requestedDate,
     selectedDate,
+    selectedStartDate: selectedDates[0] ?? null,
+    selectedDates,
+    lookbackDays,
     latestCommonDate: availableDates[0] ?? null,
     availableDates,
+    availableDateCoverage,
+    selectedDateCoverage,
+    fuelTypes: [TOTAL_FUEL_TYPE, ...fuelTypes],
     asOf,
     freshness,
     summary: {
@@ -445,9 +681,12 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     },
     hourly,
     fuelSummary,
+    dailySummary,
+    rampRows,
     metadata: {
-      dateSelection: "Dates require at least 23 hourly timestamps in all three source feeds.",
-      units: "MW for hourly values and average MW for daily summaries.",
+      dateSelection:
+        "Historical dates require at least 23 hourly timestamps in pjm.gen_by_fuel. The latest fuel-mix operating day is included even when partial. Capacity and scheduled-generation overlays are nonblocking.",
+      units: "MW for hourly values, MW/hr for ramps, and average MW for daily summaries.",
       capacityDefinitions: {
         economicMax:
           "Total economic megawatts offered into the Energy Market from cost-based offers; does not reflect outages and excludes emergency units.",

@@ -19,9 +19,9 @@ def test_batch_feed_list_excludes_da_orchestration_target():
     assert "ops_sum_frcst_peak_rto" not in data_miner_batch.DEFAULT_FEEDS
     assert "ops_sum_prev_period" not in data_miner_batch.DEFAULT_FEEDS
     assert "ops_sum_prjctd_tie_flow" not in data_miner_batch.DEFAULT_FEEDS
-    assert "gen_by_fuel" in data_miner_batch.DEFAULT_FEEDS
+    assert "gen_by_fuel" not in data_miner_batch.DEFAULT_FEEDS
     assert "rt_and_self_ecomax" in data_miner_batch.DEFAULT_FEEDS
-    assert len(data_miner_batch.DEFAULT_FEEDS) == 25
+    assert len(data_miner_batch.DEFAULT_FEEDS) == 24
     assert len(set(data_miner_batch.DEFAULT_FEEDS)) == len(data_miner_batch.DEFAULT_FEEDS)
 
 

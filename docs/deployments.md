@@ -905,11 +905,11 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 25 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 24 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
-  `rt_unverified_hrl_lmps`, `load_frcstd_7_day`, `hrl_dmd_bids`,
-  `da_transconstraints`, `gen_outages_by_type`, and the four Operations
-  Summary feeds were promoted to dedicated timers.
+  `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
+  `hrl_dmd_bids`, `da_transconstraints`, `gen_outages_by_type`, and the four
+  Operations Summary feeds were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -935,6 +935,10 @@ FROM isone.seven_day_solar_forecast;
   `2026-06-30`. Production table and index operator SQL were applied, and an
   initial scrape populated `pjm.gen_by_fuel` with `570` rows across `10` fuel
   types through `2026-06-30 18:00 UTC`.
+- Runtime change: `gen_by_fuel` is moved from the daily support batch into
+  `backend.orchestration.power.pjm.hourly_bucket` so intraday fuel-mix rows
+  refresh hourly through `helios-pjm-hourly-bucket.timer` after this repo
+  update is deployed to the VM.
 - VM verification: `/opt/helioscta-platform` fast-forwarded to `88ed50a` on
   `2026-06-30`; a transient systemd run of
   `backend.scrapes.power.pjm.gen_by_fuel` exited `status=0/SUCCESS` at
@@ -959,9 +963,9 @@ FROM isone.seven_day_solar_forecast;
   workflows emit data-readiness events. `helios-pjm-rt-hrl-lmps.timer` runs
   later because verified hourly RT LMPs post after the early support batch.
   `helios-pjm-hourly-bucket.timer` runs hourly because unverified RT hourly
-  prices update throughout the operating day and the source retains only 30
-  days; this bucket is the extension point for other PJM feeds with the same
-  cadence and safe rerun shape.
+  prices and generation-by-fuel rows update throughout the operating day; this
+  bucket is the extension point for other PJM feeds with the same cadence and
+  safe rerun shape.
   `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
   source posts hourly and drives the forecast dashboard.
   `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
@@ -980,12 +984,17 @@ FROM isone.seven_day_solar_forecast;
 - Workflow: PJM hourly scrape bucket.
 - Runtime module:
   `backend.orchestration.power.pjm.hourly_bucket`.
-- Initial bucket member:
+- Bucket members:
   `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, which calls lower
-  level scrape module `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`.
-- Initial source system: PJM Data Miner 2 `rt_unverified_hrl_lmps`.
-- Initial destination table: `pjm.rt_unverified_hrl_lmps`.
-- Initial source grain: `datetime_beginning_utc x pnode_name x type`.
+  level scrape module `backend.scrapes.power.pjm.rt_unverified_hrl_lmps`, and
+  `backend.orchestration.power.pjm.gen_by_fuel`, which calls lower level
+  scrape module `backend.scrapes.power.pjm.gen_by_fuel`.
+- Source systems: PJM Data Miner 2 `rt_unverified_hrl_lmps` and
+  `gen_by_fuel`.
+- Destination tables: `pjm.rt_unverified_hrl_lmps` and `pjm.gen_by_fuel`.
+- Source grains: `datetime_beginning_utc x pnode_name x type` for
+  `rt_unverified_hrl_lmps`; `datetime_beginning_utc x fuel_type` for
+  `gen_by_fuel`.
 - API telemetry: `ops.api_fetch_log`.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-hourly-bucket.service`
@@ -995,7 +1004,9 @@ FROM isone.seven_day_solar_forecast;
 - Latest VM verification: bucket service exited `status=0/SUCCESS`; latest
   `rt_unverified_hrl_lmps` telemetry rows use scheduler
   `helios-pjm-hourly-bucket.timer` with `bucket=pjm_hourly_bucket` and
-  `bucket_feed=rt_unverified_hrl_lmps`.
+  `bucket_feed=rt_unverified_hrl_lmps`. After deploying the `2026-07-01`
+  runtime update, verify latest `gen_by_fuel` telemetry has the same scheduler
+  and `bucket_feed=gen_by_fuel`.
 - Retired units:
   `helios-pjm-rt-unverified-hrl-lmps.service` and
   `helios-pjm-rt-unverified-hrl-lmps.timer`.
@@ -1005,7 +1016,8 @@ FROM isone.seven_day_solar_forecast;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-hourly-bucket.lock`.
 - Safe rerun story: upsert on
-  `(datetime_beginning_utc, pnode_name, type)`.
+  `(datetime_beginning_utc, pnode_name, type)` for `rt_unverified_hrl_lmps`
+  and `(datetime_beginning_utc, fuel_type)` for `gen_by_fuel`.
 
 Verification SQL for table freshness:
 
@@ -1023,6 +1035,23 @@ ORDER BY market_date DESC
 LIMIT 10;
 ```
 
+Verification SQL for `gen_by_fuel` freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS operating_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT datetime_beginning_utc) AS hours,
+    COUNT(DISTINCT fuel_type) AS fuel_types,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.gen_by_fuel
+GROUP BY datetime_beginning_ept::date
+ORDER BY operating_date DESC
+LIMIT 10;
+```
+
 Verification SQL for API telemetry:
 
 ```sql
@@ -1037,6 +1066,8 @@ WHERE pipeline_name = 'rt_unverified_hrl_lmps'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
 
 ## helios-pjm-hrl-dmd-bids
 

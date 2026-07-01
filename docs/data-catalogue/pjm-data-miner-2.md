@@ -362,6 +362,11 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, fuel_type`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.gen_by_fuel`.
+- Scheduled orchestration:
+  `backend.orchestration.power.pjm.hourly_bucket`, hourly at minute `15` UTC
+  through `helios-pjm-hourly-bucket.timer`; the bucket calls
+  `backend.orchestration.power.pjm.gen_by_fuel`.
+- Runtime observability: `ops.api_fetch_log`.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/gen_by_fuel/`.
 - Manual table DDL:

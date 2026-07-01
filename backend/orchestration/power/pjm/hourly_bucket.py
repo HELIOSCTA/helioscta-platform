@@ -43,6 +43,10 @@ DEFAULT_FEEDS: tuple[HourlyFeed, ...] = (
         name="rt_unverified_hrl_lmps",
         module_path="backend.orchestration.power.pjm.rt_unverified_hrl_lmps",
     ),
+    HourlyFeed(
+        name="gen_by_fuel",
+        module_path="backend.orchestration.power.pjm.gen_by_fuel",
+    ),
 )
 
 
