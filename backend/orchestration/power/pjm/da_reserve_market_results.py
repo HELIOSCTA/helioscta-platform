@@ -9,10 +9,9 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pandas as pd
-from dateutil.relativedelta import relativedelta
-
 from backend import credentials
 from backend.orchestration.power.pjm._policies import (
     DataNotYetAvailable,
@@ -51,7 +50,7 @@ POLL_WAIT_SECONDS = 2 * 60
 
 def _target_market_date(value: date | datetime | str | None = None) -> date:
     if value is None:
-        return (datetime.now() + relativedelta(days=1)).date()
+        return datetime.now(ZoneInfo(LOCAL_MARKET_TIMEZONE)).date()
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):

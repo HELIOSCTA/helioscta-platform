@@ -1,12 +1,24 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 
 import pandas as pd
 import pytest
 
 from backend.orchestration.power.pjm import da_reserve_market_results
 from backend.orchestration.power.pjm._policies import DataNotYetAvailable
+
+
+def test_default_target_market_date_uses_current_eastern_date(monkeypatch):
+    class FakeDateTime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            value = datetime(2026, 7, 2, 1, 30, tzinfo=timezone.utc)
+            return value.astimezone(tz) if tz else value
+
+    monkeypatch.setattr(da_reserve_market_results, "datetime", FakeDateTime)
+
+    assert da_reserve_market_results._target_market_date() == date(2026, 7, 1)
 
 
 def test_market_day_shape_requires_full_locale_service_hours():

@@ -173,10 +173,11 @@ PJM day-ahead reserve market results run through
 `helios-pjm-da-reserve-market-results.timer` runs daily at `13:45
 America/New_York`, after the observed day-ahead ancillary service market
 publication window. The scheduled path polls PJM Data Miner
-`da_reserve_market_results` for the next market day every two minutes for up to
-four hours, then upserts by `datetime_beginning_utc x locale x service`, logs
-one resolved API fetch telemetry row to `ops.api_fetch_log`, emits a complete
-day readiness event, and queues one Slack release notification.
+`da_reserve_market_results` for the current PJM/Eastern market date every two
+minutes for up to four hours, then upserts by
+`datetime_beginning_utc x locale x service`, logs one resolved API fetch
+telemetry row to `ops.api_fetch_log`, emits a complete day readiness event,
+and queues one Slack release notification.
 
 PJM simple hourly refreshes run through the hourly bucket at
 `backend.orchestration.power.pjm.hourly_bucket`. It includes
@@ -257,11 +258,10 @@ Scheduled orchestration that emits API telemetry or data-availability events
 also assumes the shared `ops.api_fetch_log` and `ops.data_availability_events`
 tables have been applied by operator SQL before the timer is enabled.
 
-Release-email notifications use `ops.email_notification_outbox` for durable
-retry and duplicate suppression. The DA HRL LMP scheduled workflow enqueues one
-email per readiness event and recipient, keyed by event plus recipient. The
-outbox sender retries due `pending`/`failed` rows and only sends when
-`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true`.
+Email notification utilities and `ops.email_notification_outbox` remain in the
+repo for historical/manual support, but promoted release alerts are Slack-only
+while the Slack-first notification policy is active. The DA HRL LMP scheduled
+workflow does not enqueue release emails.
 
 Slack notifications use `ops.slack_notification_outbox` for the same durable
 retry and duplicate-suppression pattern. The Slack sender posts through

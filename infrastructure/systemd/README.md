@@ -125,7 +125,7 @@ helios-pjm-da-reserve-market-results.timer
 ```
 
 It runs `backend.orchestration.power.pjm.da_reserve_market_results`, polls PJM
-Data Miner until the next day-ahead market date has complete hourly
+Data Miner until the current PJM/Eastern market date has complete hourly
 locale/service rows, upserts `pjm.da_reserve_market_results`, writes one
 resolved PJM Data Miner API telemetry row to `ops.api_fetch_log`, emits a
 complete-day readiness event, and queues one Slack release notification. The
@@ -631,16 +631,16 @@ journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
 
 ## Email Notification Outbox
 
-`helios-email-notification-outbox.timer` flushes due rows from
-`ops.email_notification_outbox` every five minutes. It is intentionally
-separate from scrape timers so a transient Microsoft Graph or credential
-failure can be retried without rerunning the data scrape. The DA HRL LMP
-workflow enqueues release notifications after a complete readiness event.
+`helios-email-notification-outbox.timer` is retained for historical/manual
+email notification support. Current promoted release alerts are Slack-only, so
+production should keep this timer disabled and
+`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false` unless email workflows are
+explicitly re-enabled.
 
-Required environment values in `/etc/helioscta/backend.env`:
+Environment values in `/etc/helioscta/backend.env` when email is re-enabled:
 
 ```text
-HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true
+HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
 HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com
 HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
 AZURE_OUTLOOK_CLIENT_ID=
@@ -776,7 +776,6 @@ sudo systemctl enable --now helios-pjm-da-reserve-market-results.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
-sudo systemctl enable --now helios-email-notification-outbox.timer
 sudo systemctl enable --now helios-slack-notification-outbox.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer

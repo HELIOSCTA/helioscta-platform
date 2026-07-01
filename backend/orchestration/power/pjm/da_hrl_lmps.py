@@ -23,7 +23,6 @@ from backend.orchestration.power.pjm._policies import (
 )
 from backend.utils import (
     db,
-    email_notifications,
     slack_notifications,
     script_logging,
 )
@@ -409,52 +408,6 @@ def _utc_timestamp(value: Any) -> datetime:
     return timestamp.to_pydatetime()
 
 
-def _notify_da_release_events(
-    *,
-    events: list[dict[str, Any]],
-    run_mode: str,
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if run_mode != "scheduled":
-        run_logger.info("Skipping DA release email notifications outside scheduled mode.")
-        return 0
-    if not events:
-        return 0
-
-    queued = 0
-    try:
-        for event in events:
-            enqueued = email_notifications.enqueue_pjm_da_hrl_lmp_release_notifications(
-                event=event,
-                database=database,
-            )
-            queued += sum(1 for row in enqueued if row.get("created"))
-
-        if not email_notifications.notifications_enabled():
-            run_logger.info(
-                "DA release email notifications "
-                f"queued={queued}; sending is disabled."
-            )
-            return queued
-
-        processed = email_notifications.send_due_email_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "DA release email notifications "
-            f"queued={queued}, processed={len(processed)}."
-        )
-    except Exception:
-        run_logger.exception(
-            "DA release email notification handling failed; "
-            "scrape data and readiness events remain committed."
-        )
-
-    return queued
-
-
 def _notify_da_slack_release_events(
     *,
     events: list[dict[str, Any]],
@@ -574,14 +527,6 @@ def main(
                 "No complete DA HRL LMP business date detected; "
                 "no data availability event emitted."
             )
-
-        run_logger.section("Handling release email notification(s) ...")
-        _notify_da_release_events(
-            events=events,
-            run_mode=run_mode,
-            database=database,
-            run_logger=run_logger,
-        )
 
         run_logger.section("Handling release Slack notification(s) ...")
         _notify_da_slack_release_events(

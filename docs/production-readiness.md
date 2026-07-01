@@ -54,7 +54,7 @@ A backend workflow is production-ready when it has:
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
-| Release notifications | In place | DA HRL LMPs send email and Slack; verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
+| Release notifications | In place | DA HRL LMPs, verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. Email release alerts are disabled while the Slack-first policy is active. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |

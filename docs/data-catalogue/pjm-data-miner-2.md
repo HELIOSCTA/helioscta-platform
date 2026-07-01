@@ -313,7 +313,7 @@ Feed selection and promotion priority are documented in
   remains the lower-level scrape module.
 - Scheduled path: `helios-pjm-da-reserve-market-results.timer` starts the
   orchestration at `13:45 America/New_York`; the orchestration polls every two
-  minutes for up to four hours.
+  minutes for up to four hours for the current PJM/Eastern market date.
 - Runtime observability: `ops.api_fetch_log` and `ops.data_availability_events`.
 - Data availability event:
   `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`.

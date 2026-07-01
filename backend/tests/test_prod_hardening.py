@@ -426,6 +426,12 @@ def test_orchestrated_da_slack_notifications_are_idempotent_and_sent(monkeypatch
     assert calls[0]["database"] == "stage_db"
 
 
+def test_orchestrated_da_release_notifications_are_slack_only():
+    assert not hasattr(orchestrated_da_hrl_lmps, "email_notifications")
+    assert not hasattr(orchestrated_da_hrl_lmps, "_notify_da_release_events")
+    assert hasattr(orchestrated_da_hrl_lmps, "_notify_da_slack_release_events")
+
+
 def _da_availability_frame(hours: int) -> pd.DataFrame:
     rows = []
     for hour in range(hours):

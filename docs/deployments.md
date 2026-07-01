@@ -51,9 +51,7 @@ boundary, or log path changes.
 - Destination table: `pjm.da_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
-- Release notification outputs:
-  - `ops.email_notification_outbox`
-  - `ops.slack_notification_outbox`
+- Release notification output: `ops.slack_notification_outbox`.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.timer`
@@ -96,23 +94,6 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-Verification SQL for email release notifications:
-
-```sql
-SELECT
-    notification_key,
-    recipient_email,
-    status,
-    attempts,
-    next_attempt_at,
-    sent_at,
-    created_at
-FROM ops.email_notification_outbox
-WHERE dataset = 'pjm_da_hrl_lmps'
-ORDER BY created_at DESC
-LIMIT 10;
-```
-
 Verification SQL for Slack release notifications:
 
 ```sql
@@ -133,8 +114,10 @@ LIMIT 10;
 
 ## helios-email-notification-outbox
 
-- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; timer enabled,
-  Microsoft Graph credentials configured, and manual smoke email sent.
+- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; disabled on
+  `2026-07-01` while release alerts are Slack-only. Microsoft Graph
+  credentials were configured, and a manual smoke email was sent before
+  disabling the sender.
 - Workflow: durable email notification retry sender.
 - Runtime module: `backend.orchestration.notifications.email_outbox`.
 - Destination table: updates `ops.email_notification_outbox`.
@@ -142,12 +125,13 @@ LIMIT 10;
 - Unit files:
   - `infrastructure/systemd/helios-email-notification-outbox.service`
   - `infrastructure/systemd/helios-email-notification-outbox.timer`
-- Schedule: every five minutes, with `RandomizedDelaySec=30s`.
+- Schedule when enabled: every five minutes, with `RandomizedDelaySec=30s`.
 - Recipient scope: defaults to `aidan.keaveny@helioscta.com`; production should
   keep `HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com` until the recipient
   list is explicitly expanded.
-- Send status: enabled in `/etc/helioscta/backend.env` with
-  `HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com`.
+- Send status: disabled in `/etc/helioscta/backend.env` with
+  `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false`; the timer should remain disabled
+  unless email workflows are explicitly re-enabled.
 - Smoke verification: `manual_email_smoke:20260630T202529Z` was marked `sent`
   at `2026-06-30 20:23:06 UTC` on attempt `1`.
 - Duplicate suppression: unique outbox key on `(notification_key,
@@ -1361,9 +1345,20 @@ LIMIT 20;
   `2026-06-21 00:00` through `2026-07-01 23:00` EPT, across `2` locales and
   `3` services, with zero duplicate primary-key groups.
 - Polling orchestration update: scheduled runtime now waits for a complete
-  next-market-day publication, emits
+  current PJM/Eastern market-date publication, emits
   `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`, and
   queues one Slack release alert keyed by that readiness event.
+- Production hotfix on `2026-07-01 19:29 UTC`: VM runtime was missing
+  `backend.scrapes.power.pjm.da_reserve_market_results` and the matching
+  `FEED_CONFIGS["da_reserve_market_results"]` entry. Copied the missing scrape
+  module, inserted the feed config, changed the orchestrator default from the
+  unavailable next market day to the current PJM/Eastern market date, and
+  reran `helios-pjm-da-reserve-market-results.service`. The service exited
+  `status=0/SUCCESS`, upserted `120` rows for `2026-07-01`, created readiness
+  event `pjm_da_reserve_market_results:data_ready:2026-07-01:locale_service`,
+  and sent Slack notification
+  `pjm_da_reserve_market_results:data_ready:2026-07-01:locale_service:slack:release`
+  to `#helios-alerts-power` / `C0BEDBTAL2H` on attempt `1`.
 
 Verification SQL for table freshness:
 
