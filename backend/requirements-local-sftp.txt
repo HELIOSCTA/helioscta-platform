@@ -1,6 +1,7 @@
 # Optional local SFTP workflow dependencies.
 #
-# Install these only on hosts that run local SFTP pulls such as NAV positions.
+# Install these only on hosts that run local SFTP pulls such as NAV positions
+# or Clear Street transactions.
 # Do not install this file on the Linux production VM unless a VM-hosted SFTP
 # workflow is explicitly promoted later.
 

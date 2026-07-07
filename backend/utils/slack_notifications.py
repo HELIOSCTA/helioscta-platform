@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlencode
@@ -34,6 +35,9 @@ PJM_DA_RESERVE_MARKET_RESULTS_SOURCE_FEED = "da_reserve_market_results"
 PJM_DA_RESERVE_MARKET_RESULTS_SOURCE_URL = (
     "https://dataminer2.pjm.com/feed/da_reserve_market_results/definition"
 )
+CLEAR_STREET_EOD_TRANSACTIONS_DATASET = "clear_street_eod_transactions"
+CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL = "Clear Street SFTP"
+CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED = "Helios_Transactions"
 MAX_ERROR_MESSAGE_LENGTH = 2000
 
 
@@ -50,6 +54,10 @@ def default_channel_id() -> str | None:
 
 def power_alerts_channel_id() -> str | None:
     return credentials.SLACK_POWER_ALERTS_CHANNEL_ID or default_channel_id()
+
+
+def positions_trades_alerts_channel_id() -> str | None:
+    return credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID or default_channel_id()
 
 
 def build_pjm_da_hrl_lmp_report_url(
@@ -245,6 +253,222 @@ def build_pjm_da_reserve_market_results_release_slack(
             "scope": "locale_service",
         },
     )
+
+
+def build_clear_street_eod_transactions_slack(
+    *,
+    summary: dict[str, Any],
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a Slack outbox payload for a successful Clear Street EOD pull."""
+    rows_processed = int(summary.get("rows_processed", 0) or 0)
+    files_processed = int(summary.get("files_processed", 0) or 0)
+    target_table = str(summary.get("target_table") or "clear_street.eod_transactions")
+    latest_trade_date = _format_yyyymmdd_date(
+        summary.get("max_trade_date_from_sftp")
+    )
+    earliest_trade_date = _format_yyyymmdd_date(
+        summary.get("min_trade_date_from_sftp")
+    )
+    latest_upload = _coerce_utc_datetime(
+        summary.get("latest_sftp_upload_timestamp")
+    )
+    latest_upload_display = latest_upload.strftime("%Y-%m-%d %H:%M UTC")
+    upload_key = latest_upload.strftime("%Y%m%dT%H%M%SZ")
+    event_key = (
+        f"{CLEAR_STREET_EOD_TRANSACTIONS_DATASET}:data_ready:"
+        f"{latest_trade_date}:{upload_key}"
+    )
+
+    message_text = (
+        "Clear Street EOD transactions loaded for "
+        f"{latest_trade_date}: {rows_processed:,} rows from "
+        f"{files_processed:,} file(s). Latest SFTP upload: "
+        f"{latest_upload_display}. Target table: {target_table}."
+    )
+
+    message_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Clear Street EOD Transactions Loaded",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Latest trade date*\n{latest_trade_date}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Rows written*\n{rows_processed:,}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Files processed*\n{files_processed:,}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Latest upload*\n{latest_upload_display}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Date range*\n{earliest_trade_date} to {latest_trade_date}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Target table*\n`{target_table}`",
+                },
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        "Source: "
+                        f"{CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL} "
+                        f"`{CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED}`"
+                    ),
+                }
+            ],
+        },
+    ]
+
+    payload = {
+        "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "target_table": target_table,
+        "latest_trade_date": latest_trade_date,
+        "earliest_trade_date": earliest_trade_date,
+        "latest_sftp_upload_timestamp": latest_upload.isoformat(),
+        "rows_processed": rows_processed,
+        "files_processed": files_processed,
+        "files_downloaded": int(summary.get("files_downloaded", 0) or 0),
+        "lookback_days": int(summary.get("lookback_days", 0) or 0),
+        "source_system": CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL,
+        "source_feed": CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED,
+    }
+
+    return {
+        "notification_key": f"{event_key}:slack:release",
+        "channel_id": channel_id or positions_trades_alerts_channel_id(),
+        "channel_name": (
+            channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
+        ),
+        "message_text": message_text,
+        "message_blocks": message_blocks,
+        "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "payload": payload,
+    }
+
+
+def build_clear_street_eod_transactions_timeout_slack(
+    *,
+    target_trade_date: str,
+    window_start_at: datetime,
+    window_end_at: datetime,
+    poll_count: int,
+    poll_wait_seconds: int,
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a Slack outbox payload for a missing Clear Street EOD file."""
+    target_trade_date_display = _format_yyyymmdd_date(target_trade_date)
+    window_start_display = _format_local_datetime(window_start_at)
+    window_end_display = _format_local_datetime(window_end_at)
+    event_key = (
+        f"{CLEAR_STREET_EOD_TRANSACTIONS_DATASET}:data_missing:"
+        f"{target_trade_date_display}"
+    )
+    message_text = (
+        "Clear Street EOD transactions were not available for "
+        f"{target_trade_date_display} by {window_end_display} after "
+        f"{poll_count:,} poll attempt(s)."
+    )
+    message_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Clear Street EOD Transactions Missing",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Target trade date*\n{target_trade_date_display}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Poll attempts*\n{poll_count:,}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Window start*\n{window_start_display}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Window end*\n{window_end_display}",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Poll cadence*\n{poll_wait_seconds:,} seconds",
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Target table*\n`clear_street.eod_transactions`",
+                },
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        "Source: "
+                        f"{CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL} "
+                        f"`{CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED}`"
+                    ),
+                }
+            ],
+        },
+    ]
+    payload = {
+        "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "target_table": "clear_street.eod_transactions",
+        "target_trade_date": target_trade_date_display,
+        "window_start_at": window_start_at.isoformat(),
+        "window_end_at": window_end_at.isoformat(),
+        "poll_count": poll_count,
+        "poll_wait_seconds": poll_wait_seconds,
+        "source_system": CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL,
+        "source_feed": CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED,
+    }
+    return {
+        "notification_key": f"{event_key}:slack:timeout",
+        "channel_id": channel_id or positions_trades_alerts_channel_id(),
+        "channel_name": (
+            channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
+        ),
+        "message_text": message_text,
+        "message_blocks": message_blocks,
+        "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "payload": payload,
+    }
 
 
 def _build_pjm_lmp_release_slack(
@@ -736,6 +960,35 @@ def _business_date_from_event(event: dict[str, Any]) -> str:
     if len(parts) >= 3 and parts[2]:
         return parts[2]
     raise ValueError(f"Cannot derive business date from event_key: {event_key}")
+
+
+def _format_yyyymmdd_date(value: Any) -> str:
+    if value is None:
+        raise ValueError("Missing YYYYMMDD date value")
+    text = str(value).strip()
+    if re.fullmatch(r"\d{8}", text):
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
+def _coerce_utc_datetime(value: Any) -> datetime:
+    if value is None:
+        raise ValueError("Missing UTC timestamp value")
+    if isinstance(value, datetime):
+        timestamp = value
+    else:
+        timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
+def _format_local_datetime(value: datetime) -> str:
+    timezone_label = value.tzname() or ""
+    if timezone_label:
+        timezone_label = f" {timezone_label}"
+    return value.strftime("%Y-%m-%d %H:%M") + timezone_label
 
 
 def _dict_rows(cursor: Any) -> list[dict[str, Any]]:

@@ -1,8 +1,9 @@
 # Windows Task Scheduler Runtime
 
-This folder is the local-only activation surface for ICE Python workflows.
-ICE Python requires a licensed Windows ICE XL / ICE Python runtime, so these
-jobs remain excluded from Linux VM systemd.
+This folder is the local-only activation surface for Windows-hosted workflows.
+ICE Python requires a licensed Windows ICE XL / ICE Python runtime, and Clear
+Street EOD transaction pulls use local SFTP credentials, so these jobs remain
+excluded from Linux VM systemd until explicitly promoted there.
 
 ## Production Model
 
@@ -146,6 +147,98 @@ Also check freshness on:
 
 - `ice_python.settlements`
 - `ice_python.settlement_contract_dates`
+
+## Clear Street EOD Transactions
+
+Task Scheduler runs one overnight task:
+
+```text
+\HeliosCTA\Positions And Trades\HeliosCTA Clear Street EOD Transactions
+```
+
+The task starts daily at local hour `19`. Each launch calls:
+
+```powershell
+python -c "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=300))"
+```
+
+The Python orchestration owns the target-date policy. For an overnight window
+that starts at 19:00 and ends at 05:00, the target trade date is the date at
+the 19:00 window start. After midnight, the same process continues polling for
+the prior evening's target file. It exits as soon as the target
+`Helios_Transactions_YYYYMMDD.csv` file is processed, or exits nonzero at the
+05:00 timeout. The scheduled path writes one resolved `ops.api_fetch_log` row
+with `operation_name = 'clear_street_eod_transactions_poll'`, `poll_count`,
+`poll_wait_seconds`, and the target trade date in metadata.
+
+Run from the production clone in PowerShell:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+The installer verifies writer credentials plus `CLEAR_STREET_SFTP_HOST`,
+`CLEAR_STREET_SFTP_USER`, and `CLEAR_STREET_SSH_KEY_CONTENT` from machine/user
+environment variables or the untracked `backend\.env` in the production clone.
+Slack delivery also requires `SLACK_BOT_TOKEN`,
+`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID`, and
+`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
+
+Manual smoke:
+
+```powershell
+.\infrastructure\windows-task-scheduler\run_clear_street_transactions_poll.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
+```
+
+Inspect task status and logs:
+
+```powershell
+Get-ScheduledTask `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA Clear Street EOD Transactions"
+
+Get-ScheduledTaskInfo `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA Clear Street EOD Transactions"
+
+Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\clear-street-task-scheduler.log -Tail 100
+```
+
+Verify data and telemetry with read-only SQL:
+
+```sql
+SELECT
+    created_at,
+    operation_name,
+    status,
+    rows_written,
+    error_type,
+    error_message,
+    metadata
+FROM ops.api_fetch_log
+WHERE provider = 'clear_street_sftp'
+ORDER BY created_at DESC
+LIMIT 20;
+
+SELECT
+    trade_date_from_sftp,
+    COUNT(*) AS row_count,
+    MAX(sftp_upload_timestamp) AS latest_upload
+FROM clear_street.eod_transactions
+GROUP BY trade_date_from_sftp
+ORDER BY trade_date_from_sftp DESC
+LIMIT 10;
+```
 
 ## Cutover From Legacy Tasks
 

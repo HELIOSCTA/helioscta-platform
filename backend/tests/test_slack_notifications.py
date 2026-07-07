@@ -284,6 +284,142 @@ def test_pjm_da_reserve_market_results_slack_uses_source_without_report_link(
     )
 
 
+def test_clear_street_eod_transactions_slack_uses_positions_trades_channel(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_DEFAULT_CHANNEL_ID",
+        "CDEFAULT",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_DEFAULT_CHANNEL_NAME",
+        "#helios-alerts",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID",
+        "CPOSITIONS",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME",
+        "#helios-alerts-positions-trades",
+    )
+
+    message = slack_notifications.build_clear_street_eod_transactions_slack(
+        summary={
+            "target_table": "clear_street.eod_transactions",
+            "lookback_days": 5,
+            "files_downloaded": 5,
+            "files_processed": 5,
+            "rows_processed": 6321,
+            "min_trade_date_from_sftp": "20260630",
+            "max_trade_date_from_sftp": "20260706",
+            "latest_sftp_upload_timestamp": datetime(
+                2026,
+                7,
+                7,
+                2,
+                8,
+                17,
+                tzinfo=timezone.utc,
+            ),
+        },
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_eod_transactions:data_ready:"
+        "2026-07-06:20260707T020817Z:slack:release"
+    )
+    assert message["channel_id"] == "CPOSITIONS"
+    assert message["channel_name"] == "#helios-alerts-positions-trades"
+    assert message["dataset"] == "clear_street_eod_transactions"
+    assert message["source_event_key"] == (
+        "clear_street_eod_transactions:data_ready:"
+        "2026-07-06:20260707T020817Z"
+    )
+    assert message["message_text"].startswith(
+        "Clear Street EOD transactions loaded for 2026-07-06: "
+        "6,321 rows from 5 file(s)."
+    )
+    assert message["payload"]["target_table"] == "clear_street.eod_transactions"
+    assert message["payload"]["earliest_trade_date"] == "2026-06-30"
+    assert message["payload"]["latest_trade_date"] == "2026-07-06"
+    assert message["payload"]["latest_sftp_upload_timestamp"] == (
+        "2026-07-07T02:08:17+00:00"
+    )
+    assert message["message_blocks"][0]["text"]["text"] == (
+        "Clear Street EOD Transactions Loaded"
+    )
+    assert message["message_blocks"][1]["fields"] == [
+        {"type": "mrkdwn", "text": "*Latest trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Rows written*\n6,321"},
+        {"type": "mrkdwn", "text": "*Files processed*\n5"},
+        {"type": "mrkdwn", "text": "*Latest upload*\n2026-07-07 02:08 UTC"},
+        {"type": "mrkdwn", "text": "*Date range*\n2026-06-30 to 2026-07-06"},
+        {
+            "type": "mrkdwn",
+            "text": "*Target table*\n`clear_street.eod_transactions`",
+        },
+    ]
+
+
+def test_clear_street_eod_transactions_timeout_slack_uses_positions_channel(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID",
+        "CPOSITIONS",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME",
+        "#helios-alerts-positions-trades",
+    )
+
+    message = slack_notifications.build_clear_street_eod_transactions_timeout_slack(
+        target_trade_date="20260706",
+        window_start_at=datetime(2026, 7, 6, 19, tzinfo=timezone.utc),
+        window_end_at=datetime(2026, 7, 7, 5, tzinfo=timezone.utc),
+        poll_count=121,
+        poll_wait_seconds=300,
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_eod_transactions:data_missing:"
+        "2026-07-06:slack:timeout"
+    )
+    assert message["channel_id"] == "CPOSITIONS"
+    assert message["channel_name"] == "#helios-alerts-positions-trades"
+    assert message["dataset"] == "clear_street_eod_transactions"
+    assert message["source_event_key"] == (
+        "clear_street_eod_transactions:data_missing:2026-07-06"
+    )
+    assert message["message_text"].startswith(
+        "Clear Street EOD transactions were not available for 2026-07-06"
+    )
+    assert message["payload"]["target_trade_date"] == "2026-07-06"
+    assert message["payload"]["poll_count"] == 121
+    assert message["payload"]["poll_wait_seconds"] == 300
+    assert message["message_blocks"][0]["text"]["text"] == (
+        "Clear Street EOD Transactions Missing"
+    )
+    assert message["message_blocks"][1]["fields"] == [
+        {"type": "mrkdwn", "text": "*Target trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Poll attempts*\n121"},
+        {"type": "mrkdwn", "text": "*Window start*\n2026-07-06 19:00 UTC"},
+        {"type": "mrkdwn", "text": "*Window end*\n2026-07-07 05:00 UTC"},
+        {"type": "mrkdwn", "text": "*Poll cadence*\n300 seconds"},
+        {
+            "type": "mrkdwn",
+            "text": "*Target table*\n`clear_street.eod_transactions`",
+        },
+    ]
+
+
 def test_enqueue_slack_notification_is_idempotent(monkeypatch):
     captured: dict[str, object] = {}
 

@@ -35,6 +35,9 @@ dbt/**/.user.yml
 backend/**/logs/
 backend/mcp_server/runs/
 
+# Local SFTP downloads
+backend/scrapes/clear_street/downloads/
+
 # dbt
 dbt/**/target/
 dbt/**/dbt_packages/

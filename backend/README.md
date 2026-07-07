@@ -36,6 +36,8 @@ SLACK_DEFAULT_CHANNEL_ID=C0BEDBTAL2H
 SLACK_DEFAULT_CHANNEL_NAME=#helios-alerts-power
 SLACK_POWER_ALERTS_CHANNEL_ID=C0BEDBTAL2H
 SLACK_POWER_ALERTS_CHANNEL_NAME=#helios-alerts-power
+SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID=
+SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME=#helios-alerts-positions-trades
 SLACK_DEFAULT_WEBHOOK_URL=
 
 ERCOT_USERNAME=
@@ -54,6 +56,12 @@ NAV_SFTP_USER=
 NAV_SFTP_PASSWORD=
 NAV_SFTP_PORT=22
 NAV_SFTP_REMOTE_DIR=/
+
+CLEAR_STREET_SFTP_HOST=
+CLEAR_STREET_SFTP_USER=
+CLEAR_STREET_SFTP_PORT=22
+CLEAR_STREET_SFTP_REMOTE_DIR=/
+CLEAR_STREET_SSH_KEY_CONTENT=
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -237,6 +245,27 @@ position valuation snapshots to `nav.positions`, and use the existing
 run with `python -m backend.orchestration.nav.positions`; do not add NAV
 systemd units unless the workflow is explicitly promoted to the Linux VM.
 
+Clear Street end-of-day transaction helpers are local SFTP workflows. They live
+under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,
+write raw transaction rows to `clear_street.eod_transactions`, and use the
+existing `CLEAR_STREET_SFTP_*` variables plus `CLEAR_STREET_SSH_KEY_CONTENT`
+for RSA key authentication. The source grain is `trade_date_from_sftp x
+sftp_upload_timestamp x source row number`; safe reruns upsert by that key
+while preserving separate Clear Street uploads for the same trade date. The
+initial activation path is a manual local run with
+`python -m backend.orchestration.clear_street.transactions`; do not add Clear
+Street systemd units unless the workflow is explicitly promoted to the Linux
+VM. Downloaded raw CSVs are cached under
+`backend/scrapes/clear_street/downloads/` by default and that folder is
+gitignored. The local Windows Task Scheduler path starts one scheduled poll at
+19:00 local time, checks every five minutes for that window's target
+trade-date file, and exits successfully as soon as the file is processed or
+fails at 05:00 local time. Successful runs enqueue one duplicate-safe Slack
+outbox row to the positions/trades Slack channel when configured, falling back
+to the default Slack channel; timeout alerts enqueue to the same
+positions/trades channel. Actual posting still depends on
+`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true` and Slack bot/webhook credentials.
+
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
 provider credentials. The runtime module is
@@ -273,7 +302,9 @@ results scheduled workflows enqueue one Slack notification to
 `#helios-alerts-power` after the target market date is complete and the scrape
 has succeeded. Each notification key is derived from the
 `ops.data_availability_events.event_key`, so reruns do not duplicate the
-channel message.
+channel message. Clear Street EOD transaction runs enqueue to
+`#helios-alerts-positions-trades` through
+`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID` when set.
 
 After the Azure Postgres permission defaults have been installed, new schemas
 and tables created by `helios_admin` inherit the expected read-only grants
@@ -311,11 +342,19 @@ outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
 install the local Windows Task Scheduler coordinator from
 `infrastructure/windows-task-scheduler/`.
 
-For local NAV SFTP runs only:
+For local SFTP runs only:
 
 ```powershell
 python -m pip install -r backend\requirements-local-sftp.txt -e backend
 python -m backend.orchestration.nav.positions
+python -m backend.orchestration.clear_street.transactions
+.\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -InstallDependencies `
+  -RunImportSmoke
 ```
 
 ## Manual PJM Backfills
