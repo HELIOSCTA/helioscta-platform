@@ -1,6 +1,7 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import { isDurationCurvesDevEnabled } from "@/lib/server/devFeatures";
+import { buildNercOffPeakDaysValuesSql } from "@/lib/tradingCalendars";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -90,9 +91,9 @@ const MONTH_LABELS = [
 ] as const;
 
 const HOUR_FILTER_LABELS: Record<HourFilter, string> = {
-  weekday_onpeak: "Weekday HE8-23, no holiday adjustment",
+  weekday_onpeak: "NERC business-day HE8-23",
   all_he8_23: "All days HE8-23",
-  offpeak: "Off-peak: weekends plus weekday HE1-7 and HE24, no holiday adjustment",
+  offpeak: "Off-peak: NERC off-peak days plus business-day HE1-7 and HE24",
   all_hours: "All hours",
 };
 
@@ -191,13 +192,13 @@ function componentExpr(market: Market, rtSource: RtSource, component: ComponentK
 
 function hourFilterSql(hourFilter: HourFilter): string {
   if (hourFilter === "weekday_onpeak") {
-    return "and extract(isodow from datetime_beginning_ept)::int between 1 and 5 and (extract(hour from datetime_beginning_ept)::int + 1) between 8 and 23";
+    return "and extract(isodow from datetime_beginning_ept)::int between 1 and 5 and datetime_beginning_ept::date not in (select holiday_date from nerc_off_peak_days) and (extract(hour from datetime_beginning_ept)::int + 1) between 8 and 23";
   }
   if (hourFilter === "all_he8_23") {
     return "and (extract(hour from datetime_beginning_ept)::int + 1) between 8 and 23";
   }
   if (hourFilter === "offpeak") {
-    return "and (extract(isodow from datetime_beginning_ept)::int in (6, 7) or (extract(hour from datetime_beginning_ept)::int + 1) not between 8 and 23)";
+    return "and (extract(isodow from datetime_beginning_ept)::int in (6, 7) or datetime_beginning_ept::date in (select holiday_date from nerc_off_peak_days) or (extract(hour from datetime_beginning_ept)::int + 1) not between 8 and 23)";
   }
   return "";
 }
@@ -272,9 +273,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const source = sourceConfig(market, rtSource);
   const valueExpr = componentExpr(market, rtSource, component);
   const filterSql = hourFilterSql(hourFilter);
+  const startYear = Math.min(...years);
+  const endYear = Math.max(...years);
 
   const rows = await query<PriceRow>(
     `
+      with nerc_off_peak_days as (
+${buildNercOffPeakDaysValuesSql(startYear, endYear)}
+      )
       select
         extract(year from datetime_beginning_ept)::int as year,
         to_char(datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as datetime_beginning_ept,
@@ -356,7 +362,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         sorting: "Each selected year's matching hourly prices are sorted descending.",
         holidayAdjustment:
           hourFilter === "weekday_onpeak" || hourFilter === "offpeak"
-            ? "No holiday calendar is applied in this v1 view."
+            ? "NERC off-peak days are applied to weekday_onpeak and offpeak filters."
             : null,
         availableHubs: REPORT_HUBS,
       },

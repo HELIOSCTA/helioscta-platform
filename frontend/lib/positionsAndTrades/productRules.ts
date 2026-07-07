@@ -6,7 +6,7 @@ import {
   type ProductRuleGroup,
 } from "./productLookup";
 
-export type ProductRuleSource = "nav" | "clearStreet" | "clearStreetIntraday" | "marex";
+export type ProductRuleSource = "nav" | "clearStreet" | "clear_street" | "clearStreetIntraday" | "marex";
 export type PutCall = "C" | "P";
 export type ExchangeName = "IFED" | "NYME";
 
@@ -241,11 +241,22 @@ export function normalizeExchangeName(value: string | null | undefined): Exchang
 }
 
 function aliasSourceForRuleSource(source: ProductRuleSource): ProductAliasSource {
-  return source === "marex" ? "marex" : "nav";
+  if (source === "marex") return "marex";
+  if (source === "clearStreet" || source === "clear_street" || source === "clearStreetIntraday") {
+    return "clear_street";
+  }
+  return "nav";
 }
 
 function isOptionInput(input: ProductRuleInput, putCall: PutCall | null): boolean {
-  return putCall !== null || normalizeLookupText(input.type)?.includes("OPTION") === true;
+  const normalizedType = normalizeLookupText(input.type);
+  return (
+    putCall !== null ||
+    normalizedType === "O" ||
+    normalizedType === "OPT" ||
+    normalizedType === "OPTION" ||
+    normalizedType?.includes("OPTION") === true
+  );
 }
 
 export function findProductLookup(

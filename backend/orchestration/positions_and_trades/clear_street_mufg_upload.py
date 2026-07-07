@@ -1,0 +1,278 @@
+"""Orchestrate Clear Street trade CSV uploads to MUFG SFTP."""
+
+from __future__ import annotations
+
+import os
+import time
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
+from backend.scrapes.positions_and_trades import mufg_clear_street_trades as scrape
+from backend.utils import script_logging, slack_notifications
+from backend.utils.ops_logging import log_api_fetch, redact_secrets
+
+PIPELINE_NAME = scrape.API_SCRAPE_NAME
+PROVIDER = scrape.SOURCE_SYSTEM
+OPERATION_NAME = scrape.API_SCRAPE_NAME
+
+
+def main(
+    *,
+    expected_trade_date: str | date | datetime | None = None,
+    local_dir: str | Path | None = None,
+    database: str | None = None,
+    run_mode: str = "manual",
+    metadata: dict[str, Any] | None = None,
+    send_slack: bool = True,
+    run_logger: Any | None = None,
+) -> int:
+    """Upload the latest generated Clear Street MUFG trade file."""
+    owns_logger = run_logger is None
+    if run_logger is None:
+        run_logger = script_logging.init_logging(
+            name=PIPELINE_NAME,
+            log_dir=script_logging.get_log_dir(Path(__file__).parent / "logs"),
+            log_to_file=True,
+            delete_if_no_errors=True,
+        )
+    started_at = time.perf_counter()
+    summary: dict[str, object] | None = None
+    status = "success"
+    error_type: str | None = None
+    error_message: str | None = None
+
+    try:
+        run_logger.header(PIPELINE_NAME)
+        run_logger.info(f"Run mode: {run_mode}")
+        if expected_trade_date is not None:
+            run_logger.info(f"Expected trade date: {expected_trade_date}")
+
+        summary = scrape.run_clear_street_trades_mufg_upload(
+            expected_trade_date=expected_trade_date,
+            local_dir=local_dir,
+            database=database,
+        )
+        rows_uploaded = int(summary.get("rows_uploaded", 0) or 0)
+        if send_slack:
+            _notify_mufg_slack_success(
+                summary=summary,
+                database=database,
+                run_logger=run_logger,
+            )
+        run_logger.success(
+            f"{PIPELINE_NAME} completed; {rows_uploaded:,} rows uploaded."
+        )
+        return 0
+    except Exception as exc:
+        status = "failure"
+        error_type = type(exc).__name__
+        error_message = redact_secrets(str(exc))
+        failure_summary = _failure_summary(
+            expected_trade_date=expected_trade_date,
+            local_dir=local_dir,
+            metadata=metadata,
+        )
+        run_logger.exception(
+            f"Clear Street MUFG upload orchestration failed: {error_message}"
+        )
+        if send_slack:
+            _notify_mufg_slack_failure(
+                summary=summary or failure_summary,
+                error_type=error_type,
+                error_message=error_message,
+                database=database,
+                run_logger=run_logger,
+            )
+        raise
+    finally:
+        elapsed_ms = round((time.perf_counter() - started_at) * 1000)
+        _log_fetch(
+            status=status,
+            elapsed_ms=elapsed_ms,
+            summary=summary,
+            error_type=error_type,
+            error_message=error_message,
+            run_mode=run_mode,
+            metadata=metadata,
+            database=database,
+            expected_trade_date=expected_trade_date,
+            local_dir=local_dir,
+        )
+        if owns_logger:
+            script_logging.close_logging()
+
+
+def _notify_mufg_slack_success(
+    *,
+    summary: dict[str, object],
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    if not slack_notifications.positions_trades_alerts_channel_id():
+        run_logger.info(
+            "Skipping MUFG upload Slack notification; no Slack channel configured."
+        )
+        return 0
+
+    try:
+        message = slack_notifications.build_clear_street_mufg_upload_success_slack(
+            summary=summary,
+        )
+        enqueued = slack_notifications.enqueue_slack_notification(
+            database=database,
+            **message,
+        )
+        queued = 1 if enqueued.get("created") else 0
+        if not slack_notifications.notifications_enabled():
+            run_logger.info(
+                f"MUFG upload Slack notification queued={queued}; sending is disabled."
+            )
+            return queued
+
+        processed = slack_notifications.send_due_slack_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            f"MUFG upload Slack notification queued={queued}, "
+            f"processed={len(processed)}."
+        )
+        return queued
+    except Exception:
+        run_logger.exception(
+            "MUFG upload Slack notification handling failed; "
+            "upload telemetry remains committed."
+        )
+        return 0
+
+
+def _notify_mufg_slack_failure(
+    *,
+    summary: dict[str, object],
+    error_type: str,
+    error_message: str,
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    if not slack_notifications.positions_trades_alerts_channel_id():
+        run_logger.info(
+            "Skipping MUFG upload failure Slack notification; "
+            "no Slack channel configured."
+        )
+        return 0
+
+    try:
+        message = slack_notifications.build_clear_street_mufg_upload_failure_slack(
+            summary=summary,
+            error_type=error_type,
+            error_message=error_message,
+        )
+        enqueued = slack_notifications.enqueue_slack_notification(
+            database=database,
+            **message,
+        )
+        queued = 1 if enqueued.get("created") else 0
+        if not slack_notifications.notifications_enabled():
+            run_logger.info(
+                "MUFG upload failure Slack notification "
+                f"queued={queued}; sending is disabled."
+            )
+            return queued
+
+        processed = slack_notifications.send_due_slack_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            "MUFG upload failure Slack notification "
+            f"queued={queued}, processed={len(processed)}."
+        )
+        return queued
+    except Exception:
+        run_logger.exception(
+            "MUFG upload failure Slack notification handling failed; "
+            "upload telemetry remains committed."
+        )
+        return 0
+
+
+def _log_fetch(
+    *,
+    status: str,
+    elapsed_ms: int,
+    summary: dict[str, object] | None,
+    error_type: str | None,
+    error_message: str | None,
+    run_mode: str,
+    metadata: dict[str, Any] | None,
+    database: str | None,
+    expected_trade_date: str | date | datetime | None,
+    local_dir: str | Path | None,
+) -> None:
+    rows = int(summary.get("rows_uploaded", 0)) if summary else None
+    telemetry_metadata: dict[str, Any] = {
+        "run_mode": run_mode,
+        "expected_trade_date": _expected_trade_date_metadata(expected_trade_date),
+        "local_dir": str(scrape.resolve_local_dir(local_dir)),
+        **(metadata or {}),
+    }
+    if summary:
+        telemetry_metadata.update(summary)
+
+    log_api_fetch(
+        actor_type="backend",
+        provider=PROVIDER,
+        pipeline_name=PIPELINE_NAME,
+        operation_name=OPERATION_NAME,
+        target_table=scrape.TARGET_NAME,
+        method="SFTP",
+        target_host=os.environ.get("MUFG_SFTP_HOST") or "mufg-sftp",
+        target_path=os.environ.get("MUFG_SFTP_REMOTE_DIR") or "/",
+        status=status,
+        http_status=None,
+        elapsed_ms=elapsed_ms,
+        rows_returned=rows,
+        rows_written=rows,
+        error_type=error_type,
+        error_message=error_message,
+        metadata=telemetry_metadata,
+        database=database,
+    )
+
+
+def _failure_summary(
+    *,
+    expected_trade_date: str | date | datetime | None,
+    local_dir: str | Path | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, object]:
+    expected = _expected_trade_date_metadata(expected_trade_date)
+    return {
+        "target_table": scrape.TARGET_NAME,
+        "source_table": scrape.SOURCE_TABLE_FQN,
+        "sql_filename": scrape.DEFAULT_SQL_FILENAME,
+        "expected_trade_date_from_sftp": expected,
+        "sftp_date": _display_trade_date(expected),
+        "local_dir": str(scrape.resolve_local_dir(local_dir)),
+        "remote_dir": os.environ.get("MUFG_SFTP_REMOTE_DIR") or "/",
+        **(metadata or {}),
+    }
+
+
+def _expected_trade_date_metadata(
+    value: str | date | datetime | None,
+) -> str | None:
+    if value is None:
+        return None
+    return scrape.normalize_trade_date(value)
+
+
+def _display_trade_date(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

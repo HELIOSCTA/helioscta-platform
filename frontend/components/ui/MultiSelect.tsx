@@ -70,7 +70,7 @@ export default function MultiSelect({
       </label>
       <button
         onClick={() => setOpen(!open)}
-        className="w-full rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-left text-sm text-gray-200 truncate focus:border-gray-500 focus:outline-none"
+        className="w-full truncate rounded-md border border-gray-600 bg-gray-950 px-3 py-1.5 text-left text-sm text-gray-100 shadow-inner shadow-black/30 focus:border-gray-400 focus:outline-none"
       >
         {selected.length === 0 ? (
           <span className="text-gray-600">{placeholder}</span>
@@ -80,22 +80,22 @@ export default function MultiSelect({
       </button>
       {open && (
         <div
-          className="absolute top-full left-0 z-50 mt-1 w-full rounded-md border border-gray-700 bg-[#12141d] shadow-xl"
+          className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-gray-600 bg-gray-950 shadow-2xl shadow-black/50"
         >
-          <div className="sticky top-0 bg-[#12141d] p-2 border-b border-gray-700">
+          <div className="sticky top-0 border-b border-gray-700 bg-gray-950 p-2">
             <input
               type="text"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search..."
-              className="w-full rounded border border-gray-600 bg-gray-900 px-2 py-1 text-xs text-gray-200 placeholder-gray-600 focus:outline-none"
+              className="w-full rounded border border-gray-600 bg-[#0d1119] px-2 py-1 text-xs text-gray-100 placeholder-gray-600 focus:border-gray-400 focus:outline-none"
               autoFocus
             />
           </div>
           {selected.length > 0 && (
             <button
               onClick={() => onChange([])}
-              className="w-full px-3 py-1.5 text-xs text-gray-500 hover:text-gray-300 text-left border-b border-gray-700"
+              className="w-full border-b border-gray-700 px-3 py-1.5 text-left text-xs text-gray-400 hover:bg-gray-900 hover:text-gray-100"
             >
               Clear all ({selected.length})
             </button>
@@ -107,13 +107,13 @@ export default function MultiSelect({
               filtered.map((option) => (
                 <label
                   key={option.value}
-                  className="flex items-center gap-2 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-800 cursor-pointer"
+                  className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-sky-500/15 hover:text-white"
                 >
                   <input
                     type="checkbox"
                     checked={selected.includes(option.value)}
                     onChange={() => toggle(option.value)}
-                    className="rounded accent-blue-500"
+                    className="rounded border-gray-600 bg-gray-950 accent-sky-500"
                   />
                   <span className="truncate">{option.label}</span>
                 </label>

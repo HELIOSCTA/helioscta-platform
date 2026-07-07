@@ -432,10 +432,17 @@ def run_clear_street_transactions(
         local_dir=resolved_dir,
         target_trade_date=normalized_target_trade_date,
     )
-    frames = [
-        parse_transaction_file(downloaded.local_path)
-        for downloaded in downloaded_files
-    ]
+    frames = []
+    source_files = []
+    for downloaded in downloaded_files:
+        frame = parse_transaction_file(downloaded.local_path)
+        frames.append(frame)
+        source_files.append(
+            _build_source_file_summary(
+                downloaded=downloaded,
+                rows_processed=len(frame),
+            )
+        )
     df = (
         pd.concat(frames, ignore_index=True)
         if frames
@@ -462,6 +469,8 @@ def run_clear_street_transactions(
         "files_downloaded": len(downloaded_files),
         "files_processed": len(frames),
         "rows_processed": rows_processed,
+        "source_files": source_files,
+        "latest_trade_file": _latest_trade_file_summary(source_files),
         "target_trade_date_from_sftp": normalized_target_trade_date,
         "target_file_found": bool(downloaded_files)
         if normalized_target_trade_date is not None
@@ -470,6 +479,38 @@ def run_clear_street_transactions(
         "max_trade_date_from_sftp": max_trade_date_from_sftp,
         "latest_sftp_upload_timestamp": latest_sftp_upload_timestamp,
     }
+
+
+def _build_source_file_summary(
+    *,
+    downloaded: DownloadedClearStreetFile,
+    rows_processed: int,
+) -> dict[str, object]:
+    parsed = parse_transaction_filename(downloaded.local_path.name)
+    return {
+        "remote_filename": downloaded.remote_filename,
+        "local_filename": downloaded.local_path.name,
+        "trade_date_from_sftp": parsed["trade_date_from_sftp"],
+        "sftp_upload_timestamp": pd.Timestamp(
+            parsed["sftp_upload_timestamp"]
+        ).to_pydatetime(),
+        "rows_processed": int(rows_processed),
+    }
+
+
+def _latest_trade_file_summary(
+    source_files: list[dict[str, object]],
+) -> dict[str, object] | None:
+    if not source_files:
+        return None
+    return max(
+        source_files,
+        key=lambda file_summary: (
+            str(file_summary.get("trade_date_from_sftp") or ""),
+            str(file_summary.get("sftp_upload_timestamp") or ""),
+            str(file_summary.get("remote_filename") or ""),
+        ),
+    )
 
 
 def _connect_to_clear_street_sftp(

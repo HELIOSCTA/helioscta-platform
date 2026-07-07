@@ -4,12 +4,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
+import ClearStreetTrades, {
+  type ClearStreetTradesFreshnessSummary,
+} from "@/components/clear-street/ClearStreetTrades";
+import GasDailyPrices from "@/components/gas/GasDailyPrices";
 import NavPositions, {
   type NavPositionsFreshnessSummary,
 } from "@/components/nav/NavPositions";
 import PjmPriceDistributions, {
   type PjmPriceDistributionsFreshnessSummary,
 } from "@/components/pjm/PjmPriceDistributions";
+import PjmPriceView from "@/components/pjm/PjmPriceView";
 import PjmDaLmps, {
   type ComponentSelection as PjmLmpComponentSelection,
   type LmpProduct as PjmLmpProduct,
@@ -35,6 +40,9 @@ import PjmOutages, { type PjmOutagesFreshnessSummary } from "@/components/pjm/Pj
 import PjmOpsSummary, {
   type PjmOpsSummaryFreshnessSummary,
 } from "@/components/pjm/PjmOpsSummary";
+import PjmTightnessLookback, {
+  type PjmTightnessLookbackFreshnessSummary,
+} from "@/components/pjm/PjmTightnessLookback";
 import PjmPriceDurationCurves, {
   type PjmPriceDurationCurvesFreshnessSummary,
 } from "@/components/pjm/PjmPriceDurationCurves";
@@ -43,6 +51,7 @@ import WeatherDashboard, {
   type WeatherDashboardFreshnessSummary,
 } from "@/components/weather/WeatherDashboard";
 import Sidebar, { type ActiveSection } from "@/components/Sidebar";
+import SparkSpreadEvolution from "@/components/spark/SparkSpreadEvolution";
 
 const DEFAULT_PJM_DA_LMPS_FRESHNESS: PjmDaLmpsFreshnessSummary = {
   status: "Unknown",
@@ -94,6 +103,15 @@ const DEFAULT_PJM_GENERATION_FRESHNESS: PjmGenerationFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Generation --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_TIGHTNESS_LOOKBACK_FRESHNESS: PjmTightnessLookbackFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Tightness --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -154,6 +172,15 @@ const DEFAULT_NAV_POSITIONS_FRESHNESS: NavPositionsFreshnessSummary = {
   latestUpdateLabel: "--",
 };
 
+const DEFAULT_CLEAR_STREET_TRADES_FRESHNESS: ClearStreetTradesFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Trades --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
 interface HomePageClientProps {
   showLocalDevFeatures: boolean;
 }
@@ -171,14 +198,27 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "nav-positions") {
     return "nav-positions";
   }
+  if (showLocalDevFeatures && value === "clear-street-trades") {
+    return "clear-street-trades";
+  }
+  if (showLocalDevFeatures && value === "spark-spreads") {
+    return "spark-spreads";
+  }
+  if (showLocalDevFeatures && value === "gas-prices") {
+    return "gas-prices";
+  }
   if (showLocalDevFeatures && value === "pjm-generation") {
     return "pjm-generation";
+  }
+  if (showLocalDevFeatures && value === "pjm-tightness-lookback") {
+    return "pjm-tightness-lookback";
   }
   if (showLocalDevFeatures && value === "pjm-net-load-forecast") {
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
   if (showLocalDevFeatures && value === "pjm-da-model") return "pjm-da-model";
+  if (showLocalDevFeatures && value === "pjm-price-view") return "pjm-price-view";
   if (
     showLocalDevFeatures &&
     (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter")
@@ -257,6 +297,8 @@ export default function HomePageClient({
   const [pjmPriceDistributionsRefreshToken, setPjmPriceDistributionsRefreshToken] =
     useState(0);
   const [pjmGenerationRefreshToken, setPjmGenerationRefreshToken] = useState(0);
+  const [pjmTightnessLookbackRefreshToken, setPjmTightnessLookbackRefreshToken] =
+    useState(0);
   const [pjmOpsSummaryRefreshToken, setPjmOpsSummaryRefreshToken] = useState(0);
   const [pjmTermBibleRefreshToken, setPjmTermBibleRefreshToken] = useState(0);
   const [pjmLoadGrowthRefreshToken, setPjmLoadGrowthRefreshToken] = useState(0);
@@ -264,12 +306,15 @@ export default function HomePageClient({
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [navPositionsRefreshToken, setNavPositionsRefreshToken] = useState(0);
+  const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [pjmDaModelFreshnessOpen, setPjmDaModelFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
   const [pjmPriceDistributionsFreshnessOpen, setPjmPriceDistributionsFreshnessOpen] =
     useState(false);
   const [pjmGenerationFreshnessOpen, setPjmGenerationFreshnessOpen] = useState(false);
+  const [pjmTightnessLookbackFreshnessOpen, setPjmTightnessLookbackFreshnessOpen] =
+    useState(false);
   const [pjmOpsSummaryFreshnessOpen, setPjmOpsSummaryFreshnessOpen] = useState(false);
   const [pjmTermBibleFreshnessOpen, setPjmTermBibleFreshnessOpen] = useState(false);
   const [pjmLoadGrowthFreshnessOpen, setPjmLoadGrowthFreshnessOpen] = useState(false);
@@ -277,6 +322,8 @@ export default function HomePageClient({
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
   const [navPositionsFreshnessOpen, setNavPositionsFreshnessOpen] = useState(false);
+  const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
+    useState(false);
   const [pjmDaLmpsFreshness, setPjmDaLmpsFreshness] =
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
   const [pjmDaModelFreshness, setPjmDaModelFreshness] =
@@ -291,6 +338,10 @@ export default function HomePageClient({
     );
   const [pjmGenerationFreshness, setPjmGenerationFreshness] =
     useState<PjmGenerationFreshnessSummary>(DEFAULT_PJM_GENERATION_FRESHNESS);
+  const [pjmTightnessLookbackFreshness, setPjmTightnessLookbackFreshness] =
+    useState<PjmTightnessLookbackFreshnessSummary>(
+      DEFAULT_PJM_TIGHTNESS_LOOKBACK_FRESHNESS,
+    );
   const [pjmOpsSummaryFreshness, setPjmOpsSummaryFreshness] =
     useState<PjmOpsSummaryFreshnessSummary>(DEFAULT_PJM_OPS_SUMMARY_FRESHNESS);
   const [pjmTermBibleFreshness, setPjmTermBibleFreshness] =
@@ -305,6 +356,10 @@ export default function HomePageClient({
     useState<WeatherDashboardFreshnessSummary>(DEFAULT_PJM_WEATHER_FRESHNESS);
   const [navPositionsFreshness, setNavPositionsFreshness] =
     useState<NavPositionsFreshnessSummary>(DEFAULT_NAV_POSITIONS_FRESHNESS);
+  const [clearStreetTradesFreshness, setClearStreetTradesFreshness] =
+    useState<ClearStreetTradesFreshnessSummary>(
+      DEFAULT_CLEAR_STREET_TRADES_FRESHNESS,
+    );
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
   const initialPjmDaLmpView = parsePjmLmpViewParam(searchParams.get("view"));
@@ -367,6 +422,30 @@ export default function HomePageClient({
         footer: "Positions | Source: nav.positions / Azure PostgreSQL",
       };
     }
+    if (showLocalDevFeatures && activeSection === "clear-street-trades") {
+      return {
+        title: "Trades",
+        subtitle:
+          "Local DEV Clear Street MUFG trades derived with frontend JSON and TypeScript product rules.",
+        footer:
+          "Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "spark-spreads") {
+      return {
+        title: "Sparks",
+        subtitle:
+          "ICE settlement-backed PJM Western Hub spark spread evolution by contract strip and year.",
+        footer: "Sparks | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "gas-prices") {
+      return {
+        title: "Gas Prices",
+        subtitle: "Daily ICE physical next-day gas WVAP Close by gas day, trade date, and hub.",
+        footer: "Gas Prices | WVAP Close",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
       return {
         title: "Generation",
@@ -374,6 +453,24 @@ export default function HomePageClient({
           "PJM fuel mix, daily generation capacity, and scheduled generation economic max by operating hour.",
         footer:
           "Generation | Source: PJM Data Miner gen_by_fuel, day_gen_capacity, and rt_and_self_ecomax / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "pjm-price-view") {
+      return {
+        title: "Price View",
+        subtitle:
+          "Hourly PJM load, wind, solar, net load, Western Hub RT prices, Tetco M3 gas, and heat rate.",
+        footer:
+          "Price View | Source: PJM load/generation/RT LMPs + ICE Tetco M3 WVAP / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "pjm-tightness-lookback") {
+      return {
+        title: "Tightness Lookback",
+        subtitle:
+          "PJM yesterday adequacy lookback using load, reserves, prices, constraints, interchange, generation, and outages.",
+        footer:
+          "Tightness Lookback | Source: PJM Data Miner operational feeds / Azure PostgreSQL",
       };
     }
     if (activeSection === "pjm-term-bible") {
@@ -615,6 +712,28 @@ export default function HomePageClient({
               />
             )}
 
+            {showLocalDevFeatures && activeSection === "clear-street-trades" && (
+              <FreshnessCard
+                statusLabel={clearStreetTradesFreshness.status}
+                statusClass={clearStreetTradesFreshness.statusClass}
+                summary={clearStreetTradesFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: clearStreetTradesFreshness.status,
+                    className: clearStreetTradesFreshness.statusClass,
+                  },
+                  { label: "Selection", value: clearStreetTradesFreshness.targetDateLabel },
+                  { label: "Latest SFTP Date", value: clearStreetTradesFreshness.latestDateLabel },
+                  { label: "Latest Upload", value: clearStreetTradesFreshness.latestUpdateLabel },
+                ]}
+                open={clearStreetTradesFreshnessOpen}
+                onToggle={() => setClearStreetTradesFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setClearStreetTradesRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "pjm-generation" && (
               <FreshnessCard
                 statusLabel={pjmGenerationFreshness.status}
@@ -634,6 +753,28 @@ export default function HomePageClient({
                 onToggle={() => setPjmGenerationFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
                 onAction={() => setPjmGenerationRefreshToken((value) => value + 1)}
+              />
+            )}
+
+            {showLocalDevFeatures && activeSection === "pjm-tightness-lookback" && (
+              <FreshnessCard
+                statusLabel={pjmTightnessLookbackFreshness.status}
+                statusClass={pjmTightnessLookbackFreshness.statusClass}
+                summary={pjmTightnessLookbackFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmTightnessLookbackFreshness.status,
+                    className: pjmTightnessLookbackFreshness.statusClass,
+                  },
+                  { label: "Selected Day", value: pjmTightnessLookbackFreshness.targetDateLabel },
+                  { label: "Latest Day", value: pjmTightnessLookbackFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmTightnessLookbackFreshness.latestUpdateLabel },
+                ]}
+                open={pjmTightnessLookbackFreshnessOpen}
+                onToggle={() => setPjmTightnessLookbackFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmTightnessLookbackRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -773,6 +914,9 @@ export default function HomePageClient({
               onFreshnessChange={setPjmPriceDurationFreshness}
             />
           )}
+          {showLocalDevFeatures && activeSection === "pjm-price-view" && (
+            <PjmPriceView />
+          )}
           {activeSection === "pjm-historical-settlements" && (
             <PjmHistoricalSettlements
               initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
@@ -784,10 +928,28 @@ export default function HomePageClient({
               onFreshnessChange={setNavPositionsFreshness}
             />
           )}
+          {showLocalDevFeatures && activeSection === "clear-street-trades" && (
+            <ClearStreetTrades
+              refreshToken={clearStreetTradesRefreshToken}
+              onFreshnessChange={setClearStreetTradesFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "spark-spreads" && (
+            <SparkSpreadEvolution />
+          )}
+          {showLocalDevFeatures && activeSection === "gas-prices" && (
+            <GasDailyPrices />
+          )}
           {showLocalDevFeatures && activeSection === "pjm-generation" && (
             <PjmGeneration
               refreshToken={pjmGenerationRefreshToken}
               onFreshnessChange={setPjmGenerationFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "pjm-tightness-lookback" && (
+            <PjmTightnessLookback
+              refreshToken={pjmTightnessLookbackRefreshToken}
+              onFreshnessChange={setPjmTightnessLookbackFreshness}
             />
           )}
           {activeSection === "pjm-term-bible" && (

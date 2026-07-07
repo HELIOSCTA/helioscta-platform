@@ -10,6 +10,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from backend.orchestration.positions_and_trades import (
+    clear_street_mufg_upload,
+)
 from backend.scrapes.clear_street import transactions as scrape
 from backend.utils import script_logging, slack_notifications
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
@@ -113,6 +116,8 @@ def scheduled_main(
     metadata: dict[str, Any] | None = None,
     now_fn: Callable[[], datetime] | None = None,
     sleep_fn: Callable[[float], None] = time.sleep,
+    upload_mufg: bool = True,
+    mufg_local_dir: str | Path | None = None,
 ) -> int:
     """Poll Clear Street overnight until the target trade-date file arrives."""
     if poll_wait_seconds < 1:
@@ -188,6 +193,28 @@ def scheduled_main(
                     f"{PIPELINE_NAME} scheduled poll completed; "
                     f"{rows_processed:,} rows processed."
                 )
+                if upload_mufg:
+                    try:
+                        clear_street_mufg_upload.main(
+                            expected_trade_date=resolved_target_trade_date,
+                            local_dir=mufg_local_dir,
+                            database=database,
+                            run_mode=run_mode,
+                            metadata={
+                                "clear_street_operation_name": SCHEDULED_OPERATION_NAME,
+                                "clear_street_target_trade_date": (
+                                    resolved_target_trade_date
+                                ),
+                                "clear_street_rows_processed": rows_processed,
+                            },
+                            run_logger=run_logger,
+                        )
+                    except Exception as exc:
+                        run_logger.error(
+                            "Clear Street source file loaded, but MUFG upload "
+                            f"failed: {redact_secrets(str(exc))}"
+                        )
+                        return 1
                 return 0
 
             current_time = now()
@@ -236,6 +263,7 @@ def scheduled_main(
             "window_end_at": window.deadline_at.isoformat(),
             "window_start_hour": window_start_hour,
             "window_end_hour": window_end_hour,
+            "mufg_upload_enabled": upload_mufg,
             **(metadata or {}),
         }
         _log_fetch(

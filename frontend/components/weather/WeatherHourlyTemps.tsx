@@ -13,10 +13,11 @@ import {
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
+import WsiForecastMap from "@/components/weather/WsiForecastMap";
 
 type WeatherSource = "observed" | "forecast" | "both";
 type ForecastRun = "primary" | "intraday";
-type WeatherTab = "daily-summary" | "hourly-forecast";
+type WeatherTab = "forecast-map" | "daily-summary" | "hourly-forecast";
 type WeatherVariable = "temperature" | "dewPoint" | "feelsLike";
 type WeatherStatistic = "minmax" | "avg" | "min" | "max";
 
@@ -873,7 +874,7 @@ export default function WeatherHourlyTemps({
   refreshToken?: number;
   onFreshnessChange?: (freshness: WeatherFreshnessSummary) => void;
 }) {
-  const [activeTab, setActiveTab] = useState<WeatherTab>("hourly-forecast");
+  const [activeTab, setActiveTab] = useState<WeatherTab>("forecast-map");
   const [region, setRegion] = useState("PJM");
   const [selectedStations, setSelectedStations] = useState<string[]>(["PJM"]);
   const [observedEndDate, setObservedEndDate] = useState(() => todayDate());
@@ -1235,6 +1236,19 @@ export default function WeatherHourlyTemps({
         <button
           type="button"
           role="tab"
+          aria-selected={activeTab === "forecast-map"}
+          onClick={() => setActiveTab("forecast-map")}
+          className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
+            activeTab === "forecast-map"
+              ? "bg-gray-800 text-white"
+              : "text-gray-500 hover:bg-gray-900 hover:text-gray-300"
+          }`}
+        >
+          Forecast Map
+        </button>
+        <button
+          type="button"
+          role="tab"
           aria-selected={activeTab === "hourly-forecast"}
           onClick={() => setActiveTab("hourly-forecast")}
           className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -1259,6 +1273,8 @@ export default function WeatherHourlyTemps({
           Daily Summary
         </button>
       </div>
+
+      {activeTab === "forecast-map" && <WsiForecastMap refreshToken={refreshToken} />}
 
       {activeTab === "daily-summary" && (
         <>

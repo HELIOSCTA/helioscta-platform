@@ -8,6 +8,8 @@
 -- Source system: NAV SFTP Position Valuation Detail Report XLSX files.
 -- Grain: fund_code x nav_date x sftp_upload_timestamp x source_file_name x
 -- source_file_row_number.
+-- This is a raw source table. Product-code, product-group, contract, and
+-- normalization-status fields are derived in read-only SQL, not persisted here.
 
 CREATE TABLE IF NOT EXISTS nav.positions (
     fund_code VARCHAR NOT NULL,
@@ -61,3 +63,18 @@ CREATE TABLE IF NOT EXISTS nav.positions (
         source_file_row_number
     )
 );
+
+-- Existing tables from the first NAV v1 pass may still carry rule-derived
+-- columns. Drop them so nav.positions remains raw-only and rule changes do not
+-- require source-table backfills.
+ALTER TABLE nav.positions
+    DROP COLUMN IF EXISTS product_code,
+    DROP COLUMN IF EXISTS product_group,
+    DROP COLUMN IF EXISTS product_region,
+    DROP COLUMN IF EXISTS underlying_product_code,
+    DROP COLUMN IF EXISTS contract_yyyymm,
+    DROP COLUMN IF EXISTS contract_day,
+    DROP COLUMN IF EXISTS put_call,
+    DROP COLUMN IF EXISTS normalized_strike_price,
+    DROP COLUMN IF EXISTS instrument_type,
+    DROP COLUMN IF EXISTS normalization_status;

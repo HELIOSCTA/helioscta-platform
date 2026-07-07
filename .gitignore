@@ -30,13 +30,18 @@ dbt/**/.user.yml
 !.local/README.md
 .local/obsidian/
 
+# Local-only modelling workspace
+modelling/
+
 # Runtime logs
 *.log
 backend/**/logs/
 backend/mcp_server/runs/
 
 # Local SFTP downloads
+backend/scrapes/nav/downloads/
 backend/scrapes/clear_street/downloads/
+backend/scrapes/positions_and_trades/exports/
 
 # dbt
 dbt/**/target/

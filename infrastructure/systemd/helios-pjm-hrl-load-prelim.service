@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA PJM hourly preliminary load refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-pjm-hrl-load-prelim.lock /opt/helioscta-platform/.venv/bin/python -m backend.scrapes.power.pjm.hrl_load_prelim
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-hrl-load-prelim
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { buildNercOffPeakDaysValuesSql } from "@/lib/tradingCalendars";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -201,14 +202,20 @@ function sourceHourlySql(
 }
 
 function periodDefinition(period: TermPeriod): string {
-  if (period === "5x16") return "Business-day HE8-23; no holiday adjustment";
+  if (period === "5x16") return "NERC business-day HE8-23";
   if (period === "7x16") return "All days HE8-23; no holiday adjustment";
   if (period === "7x8") return "All days HE1-7 and HE24; no holiday adjustment";
-  if (period === "wrap") return "7x8 plus weekend HE8-23; no holiday adjustment";
+  if (period === "wrap") return "7x8 plus NERC off-peak day HE8-23";
   return "Flat daily average across all available hours";
 }
 
-function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpSource): string {
+function buildSql(
+  product: LmpProduct,
+  component: LmpComponent,
+  rtSource: RtLmpSource,
+  startYear: number,
+  endYear: number,
+): string {
   return `
     WITH params AS (
       SELECT
@@ -218,6 +225,9 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         $4::text AS period,
         $5::text AS pnode_name
     ),
+    nerc_off_peak_days AS (
+${buildNercOffPeakDaysValuesSql(startYear, endYear)}
+    ),
     ${sourceHourlySql(product, component, rtSource)},
     daily AS (
       SELECT
@@ -226,6 +236,11 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         EXTRACT(MONTH FROM source_hourly.market_date)::integer AS month,
         to_char(source_hourly.market_date, 'MM-DD') AS mm_dd,
         EXTRACT(ISODOW FROM source_hourly.market_date)::integer IN (6, 7) AS is_weekend,
+        nerc_off_peak_days.holiday_date IS NOT NULL AS is_nerc_holiday,
+        (
+          EXTRACT(ISODOW FROM source_hourly.market_date)::integer IN (6, 7)
+          OR nerc_off_peak_days.holiday_date IS NOT NULL
+        ) AS is_off_peak_day,
         AVG(source_hourly.value) AS flat_value,
         AVG(source_hourly.value) FILTER (
           WHERE EXTRACT(HOUR FROM source_hourly.datetime_beginning_ept)::integer + 1 BETWEEN 8 AND 23
@@ -244,7 +259,9 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         COUNT(source_hourly.value) AS hourly_count,
         MAX(source_hourly.as_of) AS as_of
       FROM source_hourly
-      GROUP BY source_hourly.market_date
+      LEFT JOIN nerc_off_peak_days
+        ON nerc_off_peak_days.holiday_date = source_hourly.market_date
+      GROUP BY source_hourly.market_date, nerc_off_peak_days.holiday_date
     ),
     selected_daily AS (
       SELECT
@@ -253,19 +270,21 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         daily.month,
         daily.mm_dd,
         daily.is_weekend,
+        daily.is_nerc_holiday,
+        daily.is_off_peak_day,
         CASE params.period
-          WHEN '5x16' THEN CASE WHEN NOT daily.is_weekend THEN daily.raw_7x16_hour_count ELSE 0 END
+          WHEN '5x16' THEN CASE WHEN NOT daily.is_off_peak_day THEN daily.raw_7x16_hour_count ELSE 0 END
           WHEN '7x16' THEN daily.raw_7x16_hour_count
           WHEN '7x8' THEN daily.raw_7x8_hour_count
-          WHEN 'wrap' THEN CASE WHEN daily.is_weekend THEN daily.hourly_count ELSE daily.raw_7x8_hour_count END
+          WHEN 'wrap' THEN CASE WHEN daily.is_off_peak_day THEN daily.hourly_count ELSE daily.raw_7x8_hour_count END
           ELSE daily.hourly_count
         END AS hourly_count,
         daily.as_of,
         CASE params.period
-          WHEN '5x16' THEN CASE WHEN NOT daily.is_weekend THEN daily.raw_7x16_value END
+          WHEN '5x16' THEN CASE WHEN NOT daily.is_off_peak_day THEN daily.raw_7x16_value END
           WHEN '7x16' THEN daily.raw_7x16_value
           WHEN '7x8' THEN daily.raw_7x8_value
-          WHEN 'wrap' THEN CASE WHEN daily.is_weekend THEN daily.flat_value ELSE daily.raw_7x8_value END
+          WHEN 'wrap' THEN CASE WHEN daily.is_off_peak_day THEN daily.flat_value ELSE daily.raw_7x8_value END
           ELSE daily.flat_value
         END AS term_value
       FROM daily
@@ -360,7 +379,7 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
             'year', year,
             'value', ROUND(term_value::numeric, 2),
             'isWeekend', is_weekend,
-            'isNercHoliday', false,
+            'isNercHoliday', is_nerc_holiday,
             'excludesPjmOnpeakSettle', false,
             'hourlyCount', hourly_count
           )
@@ -371,9 +390,21 @@ function buildSql(product: LmpProduct, component: LmpComponent, rtSource: RtLmpS
         WHERE selected_daily.month = params.detail_month
           AND selected_daily.term_value IS NOT NULL
       ), '[]'::json),
-      'nercHolidays', '[]'::json,
+      'nercHolidays', COALESCE((
+        SELECT json_agg(
+          json_build_object(
+            'date', holiday_date::text,
+            'name', holiday_name
+          )
+          ORDER BY holiday_date
+        )
+        FROM nerc_off_peak_days
+        CROSS JOIN params
+        WHERE holiday_date >= make_date(params.start_year, 1, 1)
+          AND holiday_date < make_date(params.end_year + 1, 1, 1)
+      ), '[]'::json),
       'metadata', json_build_object(
-        'holidayAdjustment', 'No NERC holiday calendar is applied in this v1 view.',
+        'holidayAdjustment', 'NERC off-peak days are applied to 5x16 and wrap classifications.',
         'periodDefinition', $10::text,
         'availableHubs', $11::text[],
         'maxYearSpan', $12::integer
@@ -401,7 +432,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const startYear = Math.min(endYear, Math.max(requestedStartYear, earliestAllowedStartYear));
   const selectedSourceTable = sourceTable(product, rtSource);
 
-  const rows = await query<PayloadRow>(buildSql(product, component, rtSource), [
+  const rows = await query<PayloadRow>(buildSql(product, component, rtSource, startYear, endYear), [
     startYear,
     endYear,
     detailMonth,

@@ -1,0 +1,11 @@
+[Unit]
+Description=HeliosCTA PJM hourly preliminary load refresh timer
+
+[Timer]
+OnCalendar=*-*-* 05:05:00 America/New_York
+Persistent=true
+AccuracySec=1min
+Unit=helios-pjm-hrl-load-prelim.service
+
+[Install]
+WantedBy=timers.target

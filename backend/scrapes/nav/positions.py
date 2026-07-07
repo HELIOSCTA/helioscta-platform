@@ -8,7 +8,7 @@ import posixpath
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -26,8 +26,8 @@ TARGET_TABLE = "positions"
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 DEFAULT_LOOKBACK_DAYS = 5
 DEFAULT_SFTP_PORT = 22
-ENV_LOCAL_DIR = "HELIOS_NAV_POSITIONS_DIR"
 EXCEL_DATA_START_ROW = 5
+DEFAULT_LOCAL_ROOT = Path(__file__).resolve().parent / "downloads"
 
 
 @dataclass(frozen=True)
@@ -151,49 +151,50 @@ STRING_REPORT_COLUMNS = [
     if column not in NUMERIC_COLUMNS and column not in DATE_COLUMNS
 ]
 
-SQL_DATA_TYPES = [
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "INTEGER",
-    "DATE",
-    "TIMESTAMPTZ",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "DATE",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "DOUBLE PRECISION",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "DOUBLE PRECISION",
-    "VARCHAR",
-    "VARCHAR",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "DOUBLE PRECISION",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-    "VARCHAR",
-]
+SQL_DATA_TYPES_BY_COLUMN = {
+    "fund_code": "VARCHAR",
+    "source_legal_entity": "VARCHAR",
+    "source_file_name": "VARCHAR",
+    "source_file_row_number": "INTEGER",
+    "nav_date": "DATE",
+    "sftp_upload_timestamp": "TIMESTAMPTZ",
+    "broker_name": "VARCHAR",
+    "account_group": "VARCHAR",
+    "account": "VARCHAR",
+    "trade_date": "DATE",
+    "product_id_internal": "VARCHAR",
+    "product": "VARCHAR",
+    "type": "VARCHAR",
+    "month_year": "VARCHAR",
+    "client_symbol": "VARCHAR",
+    "strike_price": "DOUBLE PRECISION",
+    "call_put": "VARCHAR",
+    "product_currency_1": "VARCHAR",
+    "long_short": "VARCHAR",
+    "quantity_1": "DOUBLE PRECISION",
+    "counter_currency_ccy2": "VARCHAR",
+    "ccy2_long_short": "VARCHAR",
+    "ccy2_quantity_2": "DOUBLE PRECISION",
+    "trade_price": "DOUBLE PRECISION",
+    "multiplier_and_tick_value": "DOUBLE PRECISION",
+    "cost_in_native_currency": "DOUBLE PRECISION",
+    "open_exchange_rate": "DOUBLE PRECISION",
+    "cost_in_base_currency": "DOUBLE PRECISION",
+    "market_settlement_price": "DOUBLE PRECISION",
+    "market_value_in_native_currency": "DOUBLE PRECISION",
+    "close_exchange_rate": "DOUBLE PRECISION",
+    "market_value_in_base_currency": "DOUBLE PRECISION",
+    "sector": "VARCHAR",
+    "sub_sector": "VARCHAR",
+    "country": "VARCHAR",
+    "exchange_name": "VARCHAR",
+    "source_1_symbol": "VARCHAR",
+    "source_3_symbol": "VARCHAR",
+    "one_chicago_symbol": "VARCHAR",
+    "fas_level": "VARCHAR",
+    "option_style": "VARCHAR",
+}
+SQL_DATA_TYPES = [SQL_DATA_TYPES_BY_COLUMN[column] for column in OUTPUT_COLUMNS]
 
 COLUMN_ALIASES = {
     "faslevel": "fas_level",
@@ -208,18 +209,12 @@ SOURCE_FILENAME_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 def resolve_local_root(local_dir: str | Path | None = None) -> Path:
     """Resolve the local ignored NAV position workbook cache directory."""
     if local_dir is not None:
         return Path(local_dir)
 
-    configured = os.environ.get(ENV_LOCAL_DIR)
-    if configured:
-        return Path(configured)
-
-    repo_root = Path(__file__).resolve().parents[3]
-    return repo_root / ".local" / "sftp" / "nav_positions"
+    return DEFAULT_LOCAL_ROOT
 
 
 def resolve_fund_configs(
@@ -295,10 +290,15 @@ def pull_recent_position_files(
                     filename=attr.filename,
                     upload_timestamp=upload_timestamp,
                 )
-                sftp.get(
-                    posixpath.join(sftp_remote_dir, attr.filename),
-                    str(local_path),
-                )
+                if not local_path.exists():
+                    download_path = local_path.with_name(f"{local_path.name}.download")
+                    if download_path.exists():
+                        download_path.unlink()
+                    sftp.get(
+                        posixpath.join(sftp_remote_dir, attr.filename),
+                        str(download_path),
+                    )
+                    download_path.replace(local_path)
                 downloaded.append(
                     DownloadedNavFile(
                         fund_code=config.fund_code,
@@ -431,6 +431,18 @@ def run_nav_positions(
         "files_processed": len(frames),
         "rows_processed": rows_processed,
     }
+
+
+def backfill_position_normalization(
+    *,
+    database: str | None = None,
+    limit: int | None = None,
+) -> dict[str, object]:
+    """Deprecated: NAV rule outputs are query-time derived fields, not table columns."""
+    raise RuntimeError(
+        "nav.positions is raw-only. Product/contract normalization must be "
+        "computed in read-only SQL, not backfilled into the source table."
+    )
 
 
 def _connect_to_nav_sftp(

@@ -32,6 +32,10 @@ export function isGenerationDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
 
+export function isTightnessLookbackDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
 export function isDaModelDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }

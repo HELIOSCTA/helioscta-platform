@@ -356,7 +356,9 @@ NAV SFTP `Position Valuation Detail Report` workbooks, table grain
 `fund_code x nav_date x sftp_upload_timestamp x source_file_name x
 source_file_row_number`, primary key on that grain, freshness field
 `updated_at`. Safe reruns upsert by primary key while preserving separate NAV
-uploads for the same NAV date.
+uploads for the same NAV date. `nav.positions` is raw-only; product-code,
+product-group, contract, instrument-type, and normalization-status fields are
+derived by read-only SQL at query time.
 
 Compile the NAV query-shaping model with:
 

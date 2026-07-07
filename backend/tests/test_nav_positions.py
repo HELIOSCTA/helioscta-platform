@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -120,7 +121,7 @@ def _write_nav_workbook(path, *, account_group: str = "PNT Trading, LLC") -> Non
         ),
     ],
 )
-def test_parse_position_file_normalizes_nav_report(tmp_path, fund_code, filename):
+def test_parse_position_file_keeps_nav_report_raw(tmp_path, fund_code, filename):
     filepath = tmp_path / filename
     fund_config = positions.FUND_CONFIGS[fund_code]
     _write_nav_workbook(filepath, account_group=fund_config.legal_entity)
@@ -146,6 +147,10 @@ def test_parse_position_file_normalizes_nav_report(tmp_path, fund_code, filename
     assert row["quantity_1"] == -15
     assert row["close_exchange_rate"] == 1.0
     assert row["fas_level"] == "Level 1"
+    assert "product_code" not in df.columns
+    assert "product_group" not in df.columns
+    assert "contract_yyyymm" not in df.columns
+    assert "normalization_status" not in df.columns
 
 
 def test_run_nav_positions_downloads_parses_and_upserts(monkeypatch, tmp_path):
@@ -197,6 +202,19 @@ def test_run_nav_positions_downloads_parses_and_upserts(monkeypatch, tmp_path):
     assert summary["rows_processed"] == 1
 
 
+def test_backfill_position_normalization_is_disabled():
+    with pytest.raises(RuntimeError, match="raw-only"):
+        positions.backfill_position_normalization(database="stage_db")
+
+
+def test_resolve_local_root_defaults_to_nav_downloads(monkeypatch):
+    monkeypatch.setenv("HELIOS_NAV_POSITIONS_DIR", r"C:\do-not-use")
+
+    assert positions.resolve_local_root() == positions.DEFAULT_LOCAL_ROOT
+    assert positions.resolve_local_root().name == "downloads"
+    assert positions.resolve_local_root().parent.name == "nav"
+
+
 def test_pull_recent_position_files_uses_nav_sftp(monkeypatch, tmp_path):
     calls: dict[str, object] = {}
 
@@ -213,6 +231,7 @@ def test_pull_recent_position_files_uses_nav_sftp(monkeypatch, tmp_path):
         def get(self, remote_path, local_path):
             calls["remote_path"] = remote_path
             calls["local_path"] = local_path
+            Path(local_path).write_bytes(b"workbook")
 
         def close(self):
             calls["sftp_closed"] = True
@@ -244,10 +263,62 @@ def test_pull_recent_position_files_uses_nav_sftp(monkeypatch, tmp_path):
         "/Position Valuation Detail Report_20260205_PNT Trading, LLC.XLSX"
     )
     assert str(calls["local_path"]).endswith(
+        "Position Valuation Detail Report_20260205_PNT Trading, LLC.20260206_054037.xlsx.download"
+    )
+    assert str(downloaded[0].local_path).endswith(
         "Position Valuation Detail Report_20260205_PNT Trading, LLC.20260206_054037.xlsx"
     )
     assert calls["sftp_closed"] is True
     assert calls["transport_closed"] is True
+
+
+def test_pull_recent_position_files_preserves_existing_cached_file(monkeypatch, tmp_path):
+    cached_dir = tmp_path / "pnt"
+    cached_dir.mkdir()
+    cached_path = (
+        cached_dir
+        / "Position Valuation Detail Report_20260205_PNT Trading, LLC.20260206_054037.xlsx"
+    )
+    cached_path.write_bytes(b"preserved")
+
+    class FakeSftp:
+        def listdir_attr(self, remote_dir):
+            return [
+                SimpleNamespace(
+                    filename="Position Valuation Detail Report_20260205_PNT Trading, LLC.XLSX",
+                    st_mtime=1770356437,
+                )
+            ]
+
+        def get(self, remote_path, local_path):
+            raise AssertionError("existing cached NAV workbook should not be overwritten")
+
+        def close(self):
+            pass
+
+    class FakeTransport:
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        positions,
+        "_connect_to_nav_sftp",
+        lambda **kwargs: (FakeSftp(), FakeTransport()),
+    )
+
+    downloaded = positions.pull_recent_position_files(
+        fund_configs=[positions.FUND_CONFIGS["pnt"]],
+        lookback_days=1,
+        local_root=tmp_path,
+        sftp_host="sftp.example.test",
+        sftp_port=22,
+        sftp_user="user",
+        sftp_password="password",
+        sftp_remote_dir="/",
+    )
+
+    assert downloaded[0].local_path == cached_path
+    assert cached_path.read_bytes() == b"preserved"
 
 
 def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):

@@ -1,0 +1,362 @@
+[
+  {
+    "exchangeCode": "HHD",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NG",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": "NG",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "HH",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": "IW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "HP",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": "ZA",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "H",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PHH",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PHE",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "LN",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NG",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "LN1",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NGW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "LN2",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NGW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "LN3",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NGW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "LN4",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NGW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "LN5",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "NGW",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "KN4",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": "HZI",
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "G3",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "G4",
+    "ruleGroup": "Gas",
+    "ruleRegion": "Henry Hub",
+    "exchangeCodeUnderlying": "NG",
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "NYME"
+  },
+  {
+    "exchangeCode": "PDP",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PWA",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "DDP",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PDA",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PJL",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PMI",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": "PMI",
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "P1X",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": "PMI",
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "OPJ",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "ODP",
+    "ruleGroup": "Power",
+    "ruleRegion": "PJM",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "ERA",
+    "ruleGroup": "Power",
+    "ruleRegion": "ERCOT",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "ERN",
+    "ruleGroup": "Power",
+    "ruleRegion": "ERCOT",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "ECI",
+    "ruleGroup": "Power",
+    "ruleRegion": "ERCOT",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NEZ",
+    "ruleGroup": "Power",
+    "ruleRegion": "NEPOOL",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NEP",
+    "ruleGroup": "Power",
+    "ruleRegion": "NEPOOL",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "SPM",
+    "ruleGroup": "Power",
+    "ruleRegion": "CAISO",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NPM",
+    "ruleGroup": "Power",
+    "ruleRegion": "CAISO",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "MDC",
+    "ruleGroup": "Power",
+    "ruleRegion": "Mid-C",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "AEC",
+    "ruleGroup": "Basis",
+    "ruleRegion": "AECO",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "ALQ",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Algonquin",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "CRI",
+    "ruleGroup": "Basis",
+    "ruleRegion": "CIG Rockies",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "DGD",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Chicago",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "DOM",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Eastern Gas South",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "HXS",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Houston Ship Channel",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "UCS",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Houston Ship Channel",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NTO",
+    "ruleGroup": "Basis",
+    "ruleRegion": "NGPL TXOK",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "NWR",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Northwest Rockies",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "PGE",
+    "ruleGroup": "Basis",
+    "ruleRegion": "PG&E Citygate",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "TMT",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Tetco M3",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  },
+  {
+    "exchangeCode": "TRZ",
+    "ruleGroup": "Basis",
+    "ruleRegion": "Transco Zone 4",
+    "exchangeCodeUnderlying": null,
+    "bbgExchangeCode": null,
+    "defaultExchangeName": "IFED"
+  }
+]

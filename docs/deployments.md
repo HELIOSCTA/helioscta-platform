@@ -1016,12 +1016,12 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 24 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 23 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
-  `hrl_dmd_bids`, `da_transconstraints`, `da_reserve_market_results`,
-  `gen_outages_by_type`, and the four Operations Summary feeds were promoted
-  to dedicated timers.
+  `hrl_load_prelim`, `hrl_dmd_bids`, `da_transconstraints`,
+  `da_reserve_market_results`, `gen_outages_by_type`, and the four Operations
+  Summary feeds were promoted to dedicated timers.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -1069,6 +1069,10 @@ FROM isone.seven_day_solar_forecast;
   duplicate `datetime_beginning_utc` keys, and `4` successful
   `ops.api_fetch_log` rows for run ID
   `8bd9992a-8c62-48bb-8ea4-f8cfd9df8a66`.
+- Runtime change: `hrl_load_prelim` is moved from the early daily support batch
+  into `helios-pjm-hrl-load-prelim.timer` so the scrape runs after PJM Data
+  Miner's documented `04:55 a.m.` EPT source availability instead of the
+  previous `04:30 UTC` support-batch window.
 - Scheduling posture: the batch keeps the non-priority support scrape tables
   fresh daily. `helios-pjm-da-hrl-lmps.timer` and
   `helios-pjm-rt-fivemin-hrl-lmps.timer` remain separate because those price
@@ -1078,6 +1082,9 @@ FROM isone.seven_day_solar_forecast;
   prices and generation-by-fuel rows update throughout the operating day; this
   bucket is the extension point for other PJM feeds with the same cadence and
   safe rerun shape.
+  `helios-pjm-hrl-load-prelim.timer` runs after the preliminary-load source's
+  morning publication window because the early support batch can return empty
+  newest-day responses before PJM publishes the feed.
   `helios-pjm-load-frcstd-7-day.timer` remains separate because the forecast
   source posts hourly and drives the forecast dashboard.
   `helios-pjm-hrl-dmd-bids.timer` remains separate because the demand-bid feed
@@ -1183,6 +1190,61 @@ LIMIT 20;
 ```
 
 Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
+
+## helios-pjm-hrl-load-prelim
+
+- Status: promoted for VM deployment; timer should be enabled after pulling this
+  repo update on `helioscta-prod-vm-01`.
+- Workflow: PJM hourly preliminary load refresh.
+- Runtime module: `backend.scrapes.power.pjm.hrl_load_prelim`.
+- Source system: PJM Data Miner 2 `hrl_load_prelim`.
+- Destination table: `pjm.hrl_load_prelim`.
+- API telemetry: `ops.api_fetch_log`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-hrl-load-prelim.service`
+  - `infrastructure/systemd/helios-pjm-hrl-load-prelim.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-hrl-load-prelim.service`.
+- Schedule: daily at `05:05 America/New_York` with `AccuracySec=1min`, ten
+  minutes after PJM Data Miner's documented `04:55 a.m.` EPT update
+  availability.
+- Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-hrl-load-prelim.lock`.
+- Safe rerun story: lower-level scrape upserts on
+  `(datetime_beginning_utc, load_area)` and uses a rolling default lookback.
+- Deploy commands:
+  ```bash
+  sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.service /etc/systemd/system/
+  sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.timer /etc/systemd/system/
+  sudo systemctl daemon-reload
+  sudo systemctl enable --now helios-pjm-hrl-load-prelim.timer
+  sudo systemctl start helios-pjm-hrl-load-prelim.service
+  ```
+- Immediate gap repair for July 5 preliminary load:
+  ```bash
+  cd /opt/helioscta-platform
+  sudo -u helios -H /opt/helioscta-platform/.venv/bin/python - <<'PY'
+  from backend.backfills.power.pjm.hrl_load_prelim import main
+  print(main(start_date="2026-07-05", end_date="2026-07-05"))
+  PY
+  ```
+- Verification SQL:
+  ```sql
+  SELECT
+      datetime_beginning_ept::date AS operating_date,
+      COUNT(*) AS rows,
+      COUNT(DISTINCT load_area) AS load_areas,
+      COUNT(DISTINCT datetime_beginning_ept) AS hours,
+      MAX(updated_at) AS updated_at
+  FROM pjm.hrl_load_prelim
+  WHERE datetime_beginning_ept::date >= CURRENT_DATE - INTERVAL '3 days'
+  GROUP BY 1
+  ORDER BY 1 DESC;
+  ```
 
 ## helios-pjm-hrl-dmd-bids
 

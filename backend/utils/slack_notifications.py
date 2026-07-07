@@ -38,6 +38,9 @@ PJM_DA_RESERVE_MARKET_RESULTS_SOURCE_URL = (
 CLEAR_STREET_EOD_TRANSACTIONS_DATASET = "clear_street_eod_transactions"
 CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL = "Clear Street SFTP"
 CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_FEED = "Helios_Transactions"
+CLEAR_STREET_MUFG_UPLOAD_DATASET = "clear_street_trades_mufg_upload"
+CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL = "MUFG SFTP"
+CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED = "clear_street_trades"
 MAX_ERROR_MESSAGE_LENGTH = 2000
 
 
@@ -262,19 +265,28 @@ def build_clear_street_eod_transactions_slack(
     channel_name: str | None = None,
 ) -> dict[str, Any]:
     """Build a Slack outbox payload for a successful Clear Street EOD pull."""
-    rows_processed = int(summary.get("rows_processed", 0) or 0)
-    files_processed = int(summary.get("files_processed", 0) or 0)
     target_table = str(summary.get("target_table") or "clear_street.eod_transactions")
-    latest_trade_date = _format_yyyymmdd_date(
-        summary.get("max_trade_date_from_sftp")
+    latest_trade_file = _latest_clear_street_trade_file(summary)
+    latest_file_rows = latest_trade_file.get("rows_processed")
+    rows_processed = int(
+        latest_file_rows
+        if latest_file_rows is not None
+        else summary.get("rows_processed", 0) or 0
     )
-    earliest_trade_date = _format_yyyymmdd_date(
-        summary.get("min_trade_date_from_sftp")
+    source_filename = str(
+        latest_trade_file.get("remote_filename")
+        or latest_trade_file.get("local_filename")
+        or "unknown"
+    )
+    latest_trade_date = _format_yyyymmdd_date(
+        latest_trade_file.get("trade_date_from_sftp")
+        or summary.get("max_trade_date_from_sftp")
     )
     latest_upload = _coerce_utc_datetime(
-        summary.get("latest_sftp_upload_timestamp")
+        latest_trade_file.get("sftp_upload_timestamp")
+        or summary.get("latest_sftp_upload_timestamp")
     )
-    latest_upload_display = latest_upload.strftime("%Y-%m-%d %H:%M UTC")
+    latest_upload_display = _format_machine_local_datetime(latest_upload)
     upload_key = latest_upload.strftime("%Y%m%dT%H%M%SZ")
     event_key = (
         f"{CLEAR_STREET_EOD_TRANSACTIONS_DATASET}:data_ready:"
@@ -282,10 +294,9 @@ def build_clear_street_eod_transactions_slack(
     )
 
     message_text = (
-        "Clear Street EOD transactions loaded for "
+        "Clear Street EOD trade file loaded for "
         f"{latest_trade_date}: {rows_processed:,} rows from "
-        f"{files_processed:,} file(s). Latest SFTP upload: "
-        f"{latest_upload_display}. Target table: {target_table}."
+        f"{source_filename}. SFTP upload: {latest_upload_display}."
     )
 
     message_blocks = [
@@ -302,27 +313,19 @@ def build_clear_street_eod_transactions_slack(
             "fields": [
                 {
                     "type": "mrkdwn",
-                    "text": f"*Latest trade date*\n{latest_trade_date}",
+                    "text": f"*Trade date*\n{latest_trade_date}",
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Rows written*\n{rows_processed:,}",
+                    "text": f"*Rows loaded*\n{rows_processed:,}",
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Files processed*\n{files_processed:,}",
+                    "text": f"*Source file*\n`{source_filename}`",
                 },
                 {
                     "type": "mrkdwn",
-                    "text": f"*Latest upload*\n{latest_upload_display}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Date range*\n{earliest_trade_date} to {latest_trade_date}",
-                },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Target table*\n`{target_table}`",
+                    "text": f"*SFTP upload*\n{latest_upload_display}",
                 },
             ],
         },
@@ -345,10 +348,15 @@ def build_clear_street_eod_transactions_slack(
         "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
         "target_table": target_table,
         "latest_trade_date": latest_trade_date,
-        "earliest_trade_date": earliest_trade_date,
         "latest_sftp_upload_timestamp": latest_upload.isoformat(),
+        "latest_sftp_upload_timestamp_local": (
+            latest_upload.astimezone().isoformat()
+        ),
+        "source_filename": source_filename,
+        "local_filename": latest_trade_file.get("local_filename"),
         "rows_processed": rows_processed,
-        "files_processed": files_processed,
+        "run_rows_processed": int(summary.get("rows_processed", 0) or 0),
+        "files_processed": int(summary.get("files_processed", 0) or 0),
         "files_downloaded": int(summary.get("files_downloaded", 0) or 0),
         "lookback_days": int(summary.get("lookback_days", 0) or 0),
         "source_system": CLEAR_STREET_EOD_TRANSACTIONS_SOURCE_LABEL,
@@ -425,10 +433,6 @@ def build_clear_street_eod_transactions_timeout_slack(
                     "type": "mrkdwn",
                     "text": f"*Poll cadence*\n{poll_wait_seconds:,} seconds",
                 },
-                {
-                    "type": "mrkdwn",
-                    "text": f"*Target table*\n`clear_street.eod_transactions`",
-                },
             ],
         },
         {
@@ -465,6 +469,197 @@ def build_clear_street_eod_transactions_timeout_slack(
         "message_text": message_text,
         "message_blocks": message_blocks,
         "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "payload": payload,
+    }
+
+
+def build_clear_street_mufg_upload_success_slack(
+    *,
+    summary: dict[str, Any],
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Build a Slack outbox payload for a successful Clear Street MUFG upload."""
+    trade_date = _clear_street_mufg_trade_date(summary)
+    rows_uploaded = int(
+        summary.get("rows_uploaded")
+        or summary.get("rows_exported", 0)
+        or 0
+    )
+    filename = str(
+        summary.get("remote_filename")
+        or summary.get("filename")
+        or "unknown"
+    )
+    uploaded_at = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    uploaded_at_display = _format_machine_local_datetime(uploaded_at)
+    event_key = (
+        f"{CLEAR_STREET_MUFG_UPLOAD_DATASET}:data_ready:{trade_date}"
+    )
+    message_text = (
+        "Clear Street MUFG trade file uploaded for "
+        f"{trade_date}: {rows_uploaded:,} rows in {filename}. "
+        f"Uploaded: {uploaded_at_display}."
+    )
+    message_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Clear Street MUFG Upload Complete",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Trade date*\n{trade_date}"},
+                {"type": "mrkdwn", "text": f"*Rows uploaded*\n{rows_uploaded:,}"},
+                {"type": "mrkdwn", "text": f"*File*\n`{filename}`"},
+                {"type": "mrkdwn", "text": f"*Uploaded*\n{uploaded_at_display}"},
+            ],
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        "Destination: "
+                        f"{CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL} "
+                        f"`{CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED}`"
+                    ),
+                }
+            ],
+        },
+    ]
+    payload = {
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "target_table": summary.get("target_table"),
+        "source_table": summary.get("source_table"),
+        "trade_date": trade_date,
+        "rows_uploaded": rows_uploaded,
+        "rows_exported": int(summary.get("rows_exported", rows_uploaded) or 0),
+        "filename": filename,
+        "remote_dir": summary.get("remote_dir"),
+        "remote_path": summary.get("remote_path"),
+        "sql_filename": summary.get("sql_filename"),
+        "sftp_date": summary.get("sftp_date"),
+        "sftp_date_from_sql": summary.get("sftp_date_from_sql"),
+        "expected_trade_date_from_sftp": summary.get("expected_trade_date_from_sftp"),
+        "sql_extract_empty": bool(summary.get("sql_extract_empty", False)),
+        "sql_extract_sftp_date_mismatch": bool(
+            summary.get("sql_extract_sftp_date_mismatch", False)
+        ),
+        "uploaded_at": uploaded_at.isoformat(),
+        "uploaded_at_local": uploaded_at.astimezone().isoformat(),
+        "source_system": CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL,
+        "source_feed": CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED,
+        "trade_status_counts": summary.get("trade_status_counts", {}),
+        "non_ok_trade_status_rows": int(
+            summary.get("non_ok_trade_status_rows", 0) or 0
+        ),
+    }
+    return {
+        "notification_key": f"{event_key}:slack:release",
+        "channel_id": channel_id or positions_trades_alerts_channel_id(),
+        "channel_name": (
+            channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
+        ),
+        "message_text": message_text,
+        "message_blocks": message_blocks,
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "payload": payload,
+    }
+
+
+def build_clear_street_mufg_upload_failure_slack(
+    *,
+    summary: dict[str, Any],
+    error_type: str,
+    error_message: str,
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a Slack outbox payload for a failed Clear Street MUFG upload."""
+    trade_date = _clear_street_mufg_trade_date(summary)
+    filename = summary.get("remote_filename") or summary.get("filename")
+    short_error = _truncate_slack_text(error_message, max_length=400)
+    event_key = (
+        f"{CLEAR_STREET_MUFG_UPLOAD_DATASET}:data_failed:{trade_date}"
+    )
+    message_text = (
+        "Clear Street MUFG trade upload failed for "
+        f"{trade_date}: {error_type} - {short_error}"
+    )
+    fields = [
+        {"type": "mrkdwn", "text": f"*Trade date*\n{trade_date}"},
+        {"type": "mrkdwn", "text": f"*Error type*\n`{error_type}`"},
+        {"type": "mrkdwn", "text": f"*Error*\n{short_error}"},
+    ]
+    if filename:
+        fields.append({"type": "mrkdwn", "text": f"*File*\n`{filename}`"})
+
+    message_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Clear Street MUFG Upload Failed",
+                "emoji": True,
+            },
+        },
+        {"type": "section", "fields": fields},
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": (
+                        "Destination: "
+                        f"{CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL} "
+                        f"`{CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED}`"
+                    ),
+                }
+            ],
+        },
+    ]
+    payload = {
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "target_table": summary.get("target_table"),
+        "source_table": summary.get("source_table"),
+        "trade_date": trade_date,
+        "filename": filename,
+        "remote_dir": summary.get("remote_dir"),
+        "remote_path": summary.get("remote_path"),
+        "sql_filename": summary.get("sql_filename"),
+        "sftp_date": summary.get("sftp_date"),
+        "sftp_date_from_sql": summary.get("sftp_date_from_sql"),
+        "expected_trade_date_from_sftp": summary.get("expected_trade_date_from_sftp"),
+        "sql_extract_empty": bool(summary.get("sql_extract_empty", False)),
+        "sql_extract_sftp_date_mismatch": bool(
+            summary.get("sql_extract_sftp_date_mismatch", False)
+        ),
+        "rows_exported": int(summary.get("rows_exported", 0) or 0),
+        "error_type": error_type,
+        "error_message": error_message,
+        "source_system": CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL,
+        "source_feed": CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED,
+    }
+    return {
+        "notification_key": f"{event_key}:slack:failure",
+        "channel_id": channel_id or positions_trades_alerts_channel_id(),
+        "channel_name": (
+            channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
+        ),
+        "message_text": message_text,
+        "message_blocks": message_blocks,
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
         "source_event_key": event_key,
         "source_event_id": None,
         "payload": payload,
@@ -971,6 +1166,26 @@ def _format_yyyymmdd_date(value: Any) -> str:
     return text
 
 
+def _clear_street_mufg_trade_date(summary: dict[str, Any]) -> str:
+    for key in [
+        "expected_trade_date_from_sftp",
+        "trade_date",
+        "sftp_date_from_sql",
+        "sftp_date",
+    ]:
+        value = summary.get(key)
+        if value:
+            return _format_yyyymmdd_date(value)
+    return "unknown"
+
+
+def _truncate_slack_text(value: Any, *, max_length: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= max_length:
+        return text
+    return text[: max_length - 3].rstrip() + "..."
+
+
 def _coerce_utc_datetime(value: Any) -> datetime:
     if value is None:
         raise ValueError("Missing UTC timestamp value")
@@ -982,6 +1197,54 @@ def _coerce_utc_datetime(value: Any) -> datetime:
     if timestamp.tzinfo is None:
         return timestamp.replace(tzinfo=timezone.utc)
     return timestamp.astimezone(timezone.utc)
+
+
+def _format_machine_local_datetime(value: datetime) -> str:
+    local_value = value.astimezone()
+    timezone_label = _compact_timezone_label(local_value.tzname() or "")
+    if timezone_label:
+        timezone_label = f" {timezone_label}"
+    return local_value.strftime("%Y-%m-%d %H:%M") + timezone_label
+
+
+def _compact_timezone_label(value: str) -> str:
+    if " " not in value:
+        return value
+    abbreviation = "".join(
+        word[0]
+        for word in value.split()
+        if word and word[0].isalpha()
+    )
+    if 2 <= len(abbreviation) <= 5:
+        return abbreviation.upper()
+    return value
+
+
+def _latest_clear_street_trade_file(summary: dict[str, Any]) -> dict[str, Any]:
+    latest_trade_file = summary.get("latest_trade_file")
+    if isinstance(latest_trade_file, dict):
+        return latest_trade_file
+
+    source_files = summary.get("source_files")
+    if isinstance(source_files, list):
+        dict_files = [file for file in source_files if isinstance(file, dict)]
+        if dict_files:
+            return max(
+                dict_files,
+                key=lambda file_summary: (
+                    str(file_summary.get("trade_date_from_sftp") or ""),
+                    str(file_summary.get("sftp_upload_timestamp") or ""),
+                    str(file_summary.get("remote_filename") or ""),
+                ),
+            )
+
+    return {
+        "remote_filename": summary.get("latest_source_filename"),
+        "local_filename": summary.get("latest_local_filename"),
+        "trade_date_from_sftp": summary.get("max_trade_date_from_sftp"),
+        "sftp_upload_timestamp": summary.get("latest_sftp_upload_timestamp"),
+        "rows_processed": summary.get("rows_processed"),
+    }
 
 
 def _format_local_datetime(value: datetime) -> str:

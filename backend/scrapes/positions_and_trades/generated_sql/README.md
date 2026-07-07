@@ -1,0 +1,25 @@
+# Generated Position And Trade SQL
+
+This directory contains the standalone Postgres SQL extract generated from the
+packaged position and trade product rule JSON.
+
+Regenerate after changing rules:
+
+```powershell
+python -m backend.scrapes.positions_and_trades.sql_generator
+```
+
+Generated artifacts:
+
+- `clear_street_trades_mufg_latest.sql` reads raw
+  `clear_street.eod_transactions`, applies the Clear Street product rules
+  inline, filters to the latest SFTP trade date and MUFG firm numbers, and
+  returns the CSV-shaped extract columns.
+- `nav_positions/` contains read-only NAV grouped marts, checks, and drilldowns
+  over raw `nav.positions`. These SQL files derive product code, product
+  family, market, contract, option, strike, and rule-status fields at query
+  time instead of persisting them to the NAV source table.
+
+The Clear Street file is also the packaged runtime input for the Clear Street
+to MUFG upload workflow. All files remain read-only: they do not create,
+update, or persist database objects.

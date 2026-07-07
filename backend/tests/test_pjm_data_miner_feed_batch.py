@@ -6,6 +6,7 @@ import warnings
 import pandas as pd
 
 from backend.scrapes.power.pjm import data_miner_feed
+from backend.orchestration.power.pjm import data_miner_batch
 from backend.scrapes.power.pjm.data_miner_feed import (
     normalize_feed_frame,
     upsert_feed_frame,
@@ -69,6 +70,10 @@ def test_batch_feed_configs_have_contract_fields():
         assert config.display_name
         assert config.posting_frequency
         assert config.retention_time
+
+
+def test_publication_specific_feeds_are_not_in_early_support_batch():
+    assert "hrl_load_prelim" not in data_miner_batch.DEFAULT_FEEDS
 
 
 def test_forecast_feed_configs_have_90_day_hot_retention():

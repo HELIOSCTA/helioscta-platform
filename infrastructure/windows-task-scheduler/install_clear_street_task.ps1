@@ -141,6 +141,18 @@ function Assert-Config {
         @{
             Label = "Clear Street SSH key"
             Names = @("CLEAR_STREET_SSH_KEY_CONTENT")
+        },
+        @{
+            Label = "MUFG SFTP host"
+            Names = @("MUFG_SFTP_HOST")
+        },
+        @{
+            Label = "MUFG SFTP user"
+            Names = @("MUFG_SFTP_USER")
+        },
+        @{
+            Label = "MUFG SFTP password"
+            Names = @("MUFG_SFTP_PASSWORD")
         }
     )
 
@@ -153,7 +165,7 @@ function Assert-Config {
 
     if ($missing.Count -gt 0) {
         throw (
-            "Production checkout is missing Clear Street schedule config: " +
+            "Production checkout is missing Clear Street/MUFG schedule config: " +
             ($missing -join ", ") +
             ". Set machine/user environment variables or create an " +
             "untracked backend\.env file in the production clone before scheduling."

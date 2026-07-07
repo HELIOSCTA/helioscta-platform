@@ -287,6 +287,18 @@ def test_pjm_da_reserve_market_results_slack_uses_source_without_report_link(
 def test_clear_street_eod_transactions_slack_uses_positions_trades_channel(
     monkeypatch,
 ):
+    latest_upload = datetime(
+        2026,
+        7,
+        7,
+        2,
+        8,
+        17,
+        tzinfo=timezone.utc,
+    )
+    latest_upload_display = slack_notifications._format_machine_local_datetime(
+        latest_upload
+    )
     monkeypatch.setattr(
         slack_notifications.credentials,
         "SLACK_DEFAULT_CHANNEL_ID",
@@ -315,17 +327,45 @@ def test_clear_street_eod_transactions_slack_uses_positions_trades_channel(
             "files_downloaded": 5,
             "files_processed": 5,
             "rows_processed": 6321,
+            "source_files": [
+                {
+                    "remote_filename": "Helios_Transactions_20260630.csv",
+                    "local_filename": (
+                        "Helios_Transactions_20260630.20260630_200100.csv"
+                    ),
+                    "trade_date_from_sftp": "20260630",
+                    "sftp_upload_timestamp": datetime(
+                        2026,
+                        6,
+                        30,
+                        20,
+                        1,
+                        tzinfo=timezone.utc,
+                    ),
+                    "rows_processed": 1100,
+                },
+                {
+                    "remote_filename": "Helios_Transactions_20260706.csv",
+                    "local_filename": (
+                        "Helios_Transactions_20260706.20260707_020817.csv"
+                    ),
+                    "trade_date_from_sftp": "20260706",
+                    "sftp_upload_timestamp": latest_upload,
+                    "rows_processed": 920,
+                },
+            ],
+            "latest_trade_file": {
+                "remote_filename": "Helios_Transactions_20260706.csv",
+                "local_filename": (
+                    "Helios_Transactions_20260706.20260707_020817.csv"
+                ),
+                "trade_date_from_sftp": "20260706",
+                "sftp_upload_timestamp": latest_upload,
+                "rows_processed": 920,
+            },
             "min_trade_date_from_sftp": "20260630",
             "max_trade_date_from_sftp": "20260706",
-            "latest_sftp_upload_timestamp": datetime(
-                2026,
-                7,
-                7,
-                2,
-                8,
-                17,
-                tzinfo=timezone.utc,
-            ),
+            "latest_sftp_upload_timestamp": latest_upload,
         },
     )
 
@@ -341,29 +381,71 @@ def test_clear_street_eod_transactions_slack_uses_positions_trades_channel(
         "2026-07-06:20260707T020817Z"
     )
     assert message["message_text"].startswith(
-        "Clear Street EOD transactions loaded for 2026-07-06: "
-        "6,321 rows from 5 file(s)."
+        "Clear Street EOD trade file loaded for 2026-07-06: "
+        "920 rows from Helios_Transactions_20260706.csv."
     )
+    assert f"SFTP upload: {latest_upload_display}." in message["message_text"]
+    assert "Target table" not in message["message_text"]
     assert message["payload"]["target_table"] == "clear_street.eod_transactions"
-    assert message["payload"]["earliest_trade_date"] == "2026-06-30"
     assert message["payload"]["latest_trade_date"] == "2026-07-06"
     assert message["payload"]["latest_sftp_upload_timestamp"] == (
         "2026-07-07T02:08:17+00:00"
     )
+    assert message["payload"]["latest_sftp_upload_timestamp_local"] == (
+        latest_upload.astimezone().isoformat()
+    )
+    assert message["payload"]["source_filename"] == "Helios_Transactions_20260706.csv"
+    assert message["payload"]["rows_processed"] == 920
+    assert message["payload"]["run_rows_processed"] == 6321
     assert message["message_blocks"][0]["text"]["text"] == (
         "Clear Street EOD Transactions Loaded"
     )
     assert message["message_blocks"][1]["fields"] == [
-        {"type": "mrkdwn", "text": "*Latest trade date*\n2026-07-06"},
-        {"type": "mrkdwn", "text": "*Rows written*\n6,321"},
-        {"type": "mrkdwn", "text": "*Files processed*\n5"},
-        {"type": "mrkdwn", "text": "*Latest upload*\n2026-07-07 02:08 UTC"},
-        {"type": "mrkdwn", "text": "*Date range*\n2026-06-30 to 2026-07-06"},
+        {"type": "mrkdwn", "text": "*Trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Rows loaded*\n920"},
         {
             "type": "mrkdwn",
-            "text": "*Target table*\n`clear_street.eod_transactions`",
+            "text": "*Source file*\n`Helios_Transactions_20260706.csv`",
         },
+        {"type": "mrkdwn", "text": f"*SFTP upload*\n{latest_upload_display}"},
     ]
+
+
+def test_clear_street_eod_transactions_slack_preserves_latest_zero_rows():
+    message = slack_notifications.build_clear_street_eod_transactions_slack(
+        summary={
+            "target_table": "clear_street.eod_transactions",
+            "files_downloaded": 2,
+            "files_processed": 2,
+            "rows_processed": 1200,
+            "latest_trade_file": {
+                "remote_filename": "Helios_Transactions_20260706.csv",
+                "local_filename": (
+                    "Helios_Transactions_20260706.20260707_020817.csv"
+                ),
+                "trade_date_from_sftp": "20260706",
+                "sftp_upload_timestamp": datetime(
+                    2026,
+                    7,
+                    7,
+                    2,
+                    8,
+                    17,
+                    tzinfo=timezone.utc,
+                ),
+                "rows_processed": 0,
+            },
+        },
+        channel_id="CPOSITIONS",
+        channel_name="#helios-alerts-positions-trades",
+    )
+
+    assert message["payload"]["rows_processed"] == 0
+    assert message["payload"]["run_rows_processed"] == 1200
+    assert message["message_text"].startswith(
+        "Clear Street EOD trade file loaded for 2026-07-06: "
+        "0 rows from Helios_Transactions_20260706.csv."
+    )
 
 
 def test_clear_street_eod_transactions_timeout_slack_uses_positions_channel(
@@ -413,9 +495,122 @@ def test_clear_street_eod_transactions_timeout_slack_uses_positions_channel(
         {"type": "mrkdwn", "text": "*Window start*\n2026-07-06 19:00 UTC"},
         {"type": "mrkdwn", "text": "*Window end*\n2026-07-07 05:00 UTC"},
         {"type": "mrkdwn", "text": "*Poll cadence*\n300 seconds"},
+    ]
+
+
+def test_clear_street_mufg_upload_success_slack_uses_positions_channel(
+    monkeypatch,
+):
+    uploaded_at = datetime(2026, 7, 7, 16, 30, tzinfo=timezone.utc)
+    uploaded_at_display = slack_notifications._format_machine_local_datetime(
+        uploaded_at
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID",
+        "CPOSITIONS",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME",
+        "#helios-alerts-positions-trades",
+    )
+
+    message = slack_notifications.build_clear_street_mufg_upload_success_slack(
+        summary={
+            "target_table": "mufg_sftp.clear_street_trades",
+            "source_table": "clear_street.eod_transactions",
+            "expected_trade_date_from_sftp": "20260706",
+            "sftp_date_from_sql": "20260705",
+            "sql_extract_sftp_date_mismatch": True,
+            "rows_exported": 74,
+            "rows_uploaded": 74,
+            "filename": "Helios_Transactions_20260706_filtered.csv",
+            "remote_dir": "/",
+            "remote_path": "/Helios_Transactions_20260706_filtered.csv",
+            "sql_filename": "clear_street_trades_mufg_latest.sql",
+            "trade_status_counts": {"ok": 74},
+            "non_ok_trade_status_rows": 0,
+        },
+        now=uploaded_at,
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_trades_mufg_upload:data_ready:"
+        "2026-07-06:slack:release"
+    )
+    assert message["channel_id"] == "CPOSITIONS"
+    assert message["channel_name"] == "#helios-alerts-positions-trades"
+    assert message["dataset"] == "clear_street_trades_mufg_upload"
+    assert message["message_text"] == (
+        "Clear Street MUFG trade file uploaded for 2026-07-06: "
+        "74 rows in Helios_Transactions_20260706_filtered.csv. "
+        f"Uploaded: {uploaded_at_display}."
+    )
+    assert message["payload"]["rows_uploaded"] == 74
+    assert message["payload"]["expected_trade_date_from_sftp"] == "20260706"
+    assert message["payload"]["sftp_date_from_sql"] == "20260705"
+    assert message["payload"]["sql_extract_sftp_date_mismatch"] is True
+    assert message["payload"]["trade_status_counts"] == {"ok": 74}
+    assert message["message_blocks"][1]["fields"] == [
+        {"type": "mrkdwn", "text": "*Trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Rows uploaded*\n74"},
         {
             "type": "mrkdwn",
-            "text": "*Target table*\n`clear_street.eod_transactions`",
+            "text": "*File*\n`Helios_Transactions_20260706_filtered.csv`",
+        },
+        {"type": "mrkdwn", "text": f"*Uploaded*\n{uploaded_at_display}"},
+    ]
+
+
+def test_clear_street_mufg_upload_failure_slack_uses_positions_channel(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID",
+        "CPOSITIONS",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME",
+        "#helios-alerts-positions-trades",
+    )
+
+    message = slack_notifications.build_clear_street_mufg_upload_failure_slack(
+        summary={
+            "target_table": "mufg_sftp.clear_street_trades",
+            "source_table": "clear_street.eod_transactions",
+            "expected_trade_date_from_sftp": "20260706",
+            "filename": "Helios_Transactions_20260706_filtered.csv",
+            "remote_dir": "/",
+            "sql_filename": "clear_street_trades_mufg_latest.sql",
+        },
+        error_type="RuntimeError",
+        error_message="SFTP unavailable",
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_trades_mufg_upload:data_failed:"
+        "2026-07-06:slack:failure"
+    )
+    assert message["channel_id"] == "CPOSITIONS"
+    assert message["message_text"] == (
+        "Clear Street MUFG trade upload failed for 2026-07-06: "
+        "RuntimeError - SFTP unavailable"
+    )
+    assert message["payload"]["error_type"] == "RuntimeError"
+    assert message["payload"]["trade_date"] == "2026-07-06"
+    assert message["message_blocks"][1]["fields"] == [
+        {"type": "mrkdwn", "text": "*Trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Error type*\n`RuntimeError`"},
+        {
+            "type": "mrkdwn",
+            "text": "*Error*\nSFTP unavailable",
+        },
+        {
+            "type": "mrkdwn",
+            "text": "*File*\n`Helios_Transactions_20260706_filtered.csv`",
         },
     ]
 

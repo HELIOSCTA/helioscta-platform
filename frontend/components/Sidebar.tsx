@@ -8,9 +8,14 @@ export type ActiveSection =
   | "pjm-term-bible"
   | "pjm-historical-settlements"
   | "nav-positions"
+  | "clear-street-trades"
+  | "spark-spreads"
+  | "gas-prices"
   | "pjm-price-duration-curves"
+  | "pjm-price-view"
   | "pjm-price-distributions"
   | "pjm-generation"
+  | "pjm-tightness-lookback"
   | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
@@ -59,8 +64,13 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       label: "DEV",
       navItems: [
         { id: "pjm-da-model", label: "DA Model" },
+        { id: "pjm-price-view", label: "Price View" },
+        { id: "spark-spreads", label: "Sparks" },
+        { id: "gas-prices", label: "Gas Prices" },
         { id: "nav-positions", label: "Positions" },
+        { id: "clear-street-trades", label: "Trades" },
         { id: "pjm-generation", label: "Generation" },
+        { id: "pjm-tightness-lookback", label: "Tightness Lookback" },
         { id: "pjm-price-distributions", label: "Price Distributions" },
         { id: "pjm-price-duration-curves", label: "Duration Curves" },
         { id: "pjm-weather", label: "Weather" },

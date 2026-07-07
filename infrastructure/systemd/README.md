@@ -73,11 +73,27 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 24
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 23
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
 batch.
+
+## PJM Hourly Preliminary Load
+
+PJM hourly preliminary load has its own post-publication timer:
+
+```text
+helios-pjm-hrl-load-prelim.service
+helios-pjm-hrl-load-prelim.timer
+```
+
+It runs `backend.scrapes.power.pjm.hrl_load_prelim`, upserts
+`pjm.hrl_load_prelim`, and writes PJM Data Miner API telemetry to
+`ops.api_fetch_log`. PJM Data Miner lists the source update availability as
+daily `04:55 a.m.` EPT, so the timer runs daily at `05:05 America/New_York`
+with `Persistent=true` and `AccuracySec=1min`. The service uses `flock` with
+`/tmp/helios-pjm-hrl-load-prelim.lock`.
 
 ## PJM Hourly Demand Bids
 
@@ -722,6 +738,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-mar
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-market-results.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-load-frcstd-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.service /etc/systemd/system/
@@ -774,6 +792,7 @@ sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
 sudo systemctl enable --now helios-pjm-da-transconstraints.timer
 sudo systemctl enable --now helios-pjm-da-reserve-market-results.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
+sudo systemctl enable --now helios-pjm-hrl-load-prelim.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-slack-notification-outbox.timer
@@ -812,6 +831,7 @@ sudo systemctl start helios-pjm-hrl-dmd-bids.service
 sudo systemctl start helios-pjm-da-transconstraints.service
 sudo systemctl start helios-pjm-da-reserve-market-results.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
+sudo systemctl start helios-pjm-hrl-load-prelim.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-pjm-ops-sum.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
@@ -893,6 +913,14 @@ For the PJM generation outages by type refresh:
 systemctl status helios-pjm-gen-outages-by-type.service
 systemctl status helios-pjm-gen-outages-by-type.timer
 journalctl -u helios-pjm-gen-outages-by-type.service -n 200 --no-pager
+```
+
+For the PJM hourly preliminary load refresh:
+
+```bash
+systemctl status helios-pjm-hrl-load-prelim.service
+systemctl status helios-pjm-hrl-load-prelim.timer
+journalctl -u helios-pjm-hrl-load-prelim.service -n 200 --no-pager
 ```
 
 For the PJM seven-day load forecast refresh:

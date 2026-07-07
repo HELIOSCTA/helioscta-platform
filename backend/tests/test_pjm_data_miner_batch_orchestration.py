@@ -11,6 +11,7 @@ def test_batch_feed_list_excludes_da_orchestration_target():
     assert "rt_fivemin_hrl_lmps" not in data_miner_batch.DEFAULT_FEEDS
     assert "load_frcstd_7_day" not in data_miner_batch.DEFAULT_FEEDS
     assert "gen_outages_by_type" not in data_miner_batch.DEFAULT_FEEDS
+    assert "hrl_load_prelim" not in data_miner_batch.DEFAULT_FEEDS
     assert "hrl_dmd_bids" not in data_miner_batch.DEFAULT_FEEDS
     assert "da_transconstraints" not in data_miner_batch.DEFAULT_FEEDS
     assert "da_reserve_market_results" not in data_miner_batch.DEFAULT_FEEDS
@@ -22,7 +23,7 @@ def test_batch_feed_list_excludes_da_orchestration_target():
     assert "ops_sum_prjctd_tie_flow" not in data_miner_batch.DEFAULT_FEEDS
     assert "gen_by_fuel" not in data_miner_batch.DEFAULT_FEEDS
     assert "rt_and_self_ecomax" in data_miner_batch.DEFAULT_FEEDS
-    assert len(data_miner_batch.DEFAULT_FEEDS) == 24
+    assert len(data_miner_batch.DEFAULT_FEEDS) == 23
     assert len(set(data_miner_batch.DEFAULT_FEEDS)) == len(data_miner_batch.DEFAULT_FEEDS)
 
 

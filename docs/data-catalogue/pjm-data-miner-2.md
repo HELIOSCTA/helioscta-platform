@@ -441,7 +441,9 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, load_area`.
 - Uniqueness key: `datetime_beginning_utc, load_area`.
 - Freshness field: `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.hrl_load_prelim`.
+- Runtime: `backend.scrapes.power.pjm.hrl_load_prelim`, scheduled through
+  `helios-pjm-hrl-load-prelim.timer` after the source's daily `04:55 a.m.`
+  EPT publication window.
 - dbt folder:
   `dbt/azure_postgres/models/power/pjm/hrl_load_prelim/`.
 - Manual table DDL:

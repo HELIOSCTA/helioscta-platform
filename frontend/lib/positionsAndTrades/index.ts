@@ -1,4 +1,3 @@
 export * from "./productLookup";
-export * from "./productRuleSql";
+export * from "./navPositionSqlDownloads";
 export * from "./productRules";
-export * from "./productRules.fixtures";

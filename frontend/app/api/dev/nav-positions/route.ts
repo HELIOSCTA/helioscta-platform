@@ -1,3 +1,4 @@
+import { PRODUCT_ALIASES, PRODUCT_DEFINITIONS } from "@/lib/positionsAndTrades/productLookup";
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
@@ -10,6 +11,90 @@ const PRODUCT_SUMMARY_LIMIT = 600;
 const DEFAULT_RAW_LIMIT = 200;
 const MIN_RAW_LIMIT = 25;
 const MAX_RAW_LIMIT = 500;
+
+const RAW_POSITION_COLUMNS = [
+  "fund_code",
+  "source_legal_entity",
+  "source_file_name",
+  "source_file_row_number",
+  "nav_date",
+  "sftp_upload_timestamp",
+  "broker_name",
+  "account_group",
+  "account",
+  "trade_date",
+  "product_id_internal",
+  "product",
+  "type",
+  "month_year",
+  "client_symbol",
+  "strike_price",
+  "call_put",
+  "product_currency_1",
+  "long_short",
+  "quantity_1",
+  "counter_currency_ccy2",
+  "ccy2_long_short",
+  "ccy2_quantity_2",
+  "trade_price",
+  "multiplier_and_tick_value",
+  "cost_in_native_currency",
+  "open_exchange_rate",
+  "cost_in_base_currency",
+  "market_settlement_price",
+  "market_value_in_native_currency",
+  "close_exchange_rate",
+  "market_value_in_base_currency",
+  "sector",
+  "sub_sector",
+  "country",
+  "exchange_name",
+  "source_1_symbol",
+  "source_3_symbol",
+  "one_chicago_symbol",
+  "fas_level",
+  "option_style",
+  "updated_at",
+] as const;
+
+function sqlLiteral(value: string | null | undefined): string {
+  return value === null || value === undefined ? "NULL" : `'${value.replaceAll("'", "''")}'`;
+}
+
+function valuesRows(rows: string[][]): string {
+  return rows.map((row) => `      (${row.join(", ")})`).join(",\n");
+}
+
+function productCatalogValues(): string {
+  return valuesRows(
+    PRODUCT_DEFINITIONS.map((definition) => [
+      sqlLiteral(definition.exchangeCode),
+      sqlLiteral(definition.ruleGroup),
+      sqlLiteral(definition.ruleRegion),
+      sqlLiteral(definition.exchangeCodeUnderlying),
+      sqlLiteral(definition.bbgExchangeCode),
+      sqlLiteral(definition.defaultExchangeName),
+    ]),
+  );
+}
+
+function navAliasValues(): string {
+  return valuesRows(
+    PRODUCT_ALIASES.filter((alias) => alias.source === "nav" || alias.source === "any").map(
+      (alias, index) => [
+        String(index + 1),
+        sqlLiteral(alias.matchType),
+        sqlLiteral(alias.pattern),
+        sqlLiteral(alias.exchangeCode),
+        sqlLiteral(alias.optionType ?? null),
+      ],
+    ),
+  );
+}
+
+function rawPositionSelect(tableAlias: string): string {
+  return RAW_POSITION_COLUMNS.map((column) => `${tableAlias}.${column}`).join(",\n      ");
+}
 
 const ROUTE_CONFIG = {
   route: "/api/dev/nav-positions",
@@ -52,16 +137,18 @@ interface SummaryDbRow {
 }
 
 interface ProductSummaryDbRow {
-  fund_code: string | null;
-  account_group: string | null;
-  product: string | null;
-  type: string | null;
-  month_year: string | null;
-  client_symbol: string | null;
-  source_1_symbol: string | null;
-  source_3_symbol: string | null;
-  call_put: string | null;
-  strike_price: number | string | null;
+  product_code: string | null;
+  product_group: string | null;
+  product_region: string | null;
+  underlying_product_code: string | null;
+  contract_yyyymm: string | null;
+  contract_day: number | string | null;
+  put_call: string | null;
+  normalized_strike_price: number | string | null;
+  fund_codes: string | null;
+  account_groups: string | null;
+  fund_count: number | string;
+  account_group_count: number | string;
   row_count: number | string;
   account_count: number | string;
   net_quantity: number | string | null;
@@ -115,6 +202,15 @@ interface RawPositionDbRow {
   one_chicago_symbol: string | null;
   fas_level: string | null;
   option_style: string | null;
+  product_code: string | null;
+  product_group: string | null;
+  product_region: string | null;
+  underlying_product_code: string | null;
+  contract_yyyymm: string | null;
+  contract_day: number | string | null;
+  put_call: string | null;
+  normalized_strike_price: number | string | null;
+  normalization_status: string | null;
   updated_at: string | null;
 }
 
@@ -127,8 +223,36 @@ const SELECTED_POSITIONS_CTE = `
       NULLIF($4::text, '') AS search_text,
       $5::jsonb AS group_filter
   ),
+  product_catalog AS (
+    SELECT *
+    FROM (
+      VALUES
+${productCatalogValues()}
+    ) AS t(
+      exchange_code,
+      rule_group,
+      rule_region,
+      exchange_code_underlying,
+      bbg_exchange_code,
+      default_exchange_name
+    )
+  ),
+  product_aliases AS (
+    SELECT *
+    FROM (
+      VALUES
+${navAliasValues()}
+    ) AS t(
+      priority,
+      match_type,
+      pattern,
+      exchange_code,
+      option_type
+    )
+  ),
   base_positions AS (
-    SELECT p.*
+    SELECT
+      ${rawPositionSelect("p")}
     FROM nav.positions p
     CROSS JOIN params
     WHERE (params.fund_filter IS NULL OR p.fund_code = params.fund_filter)
@@ -152,37 +276,125 @@ const SELECTED_POSITIONS_CTE = `
      AND latest.nav_date = base_positions.nav_date
     GROUP BY base_positions.fund_code, base_positions.nav_date
   ),
-  selected_positions AS (
-    SELECT base_positions.*
+  latest_raw_positions AS (
+    SELECT
+      ${rawPositionSelect("base_positions")}
     FROM base_positions
     INNER JOIN latest_upload_by_fund latest
       ON latest.fund_code = base_positions.fund_code
      AND latest.nav_date = base_positions.nav_date
      AND latest.sftp_upload_timestamp = base_positions.sftp_upload_timestamp
+  ),
+  normalized AS (
+    SELECT
+      latest_raw_positions.*,
+      upper(regexp_replace(coalesce(latest_raw_positions.product, ''), '[[:space:]]+', ' ', 'g')) AS product_norm,
+      (
+        upper(coalesce(latest_raw_positions.call_put, '')) IN ('CALL', 'PUT', 'C', 'P')
+        OR upper(coalesce(latest_raw_positions.type, '')) LIKE '%OPTION%'
+      ) AS is_option,
+      CASE
+        WHEN upper(coalesce(latest_raw_positions.call_put, '')) IN ('CALL', 'C') THEN 'C'
+        WHEN upper(coalesce(latest_raw_positions.call_put, '')) IN ('PUT', 'P') THEN 'P'
+        ELSE NULL
+      END AS put_call_code,
+      CASE
+        WHEN latest_raw_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
+          THEN to_char(to_date(trim(latest_raw_positions.month_year), 'MM/DD/YYYY'), 'YYYY-MM')
+        WHEN upper(trim(coalesce(latest_raw_positions.month_year, ''))) ~ '^[A-Z]{3}\\d{2}$'
+          THEN to_char(to_date(upper(trim(latest_raw_positions.month_year)), 'MONYY'), 'YYYY-MM')
+        ELSE NULL
+      END AS rule_contract_month,
+      CASE
+        WHEN latest_raw_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
+          THEN extract(day FROM to_date(trim(latest_raw_positions.month_year), 'MM/DD/YYYY'))::integer
+        ELSE NULL
+      END AS rule_contract_day
+    FROM latest_raw_positions
+  ),
+  rule_eval AS (
+    SELECT
+      normalized.*,
+      alias.exchange_code AS rule_exchange_code,
+      catalog.rule_group,
+      catalog.rule_region,
+      catalog.exchange_code_underlying AS rule_underlying
+    FROM normalized
+    LEFT JOIN LATERAL (
+      SELECT product_aliases.*
+      FROM product_aliases
+      WHERE (
+          (product_aliases.match_type = 'exact' AND normalized.product_norm = product_aliases.pattern)
+          OR (product_aliases.match_type = 'regex' AND normalized.product_norm ~* product_aliases.pattern)
+        )
+        AND (
+          product_aliases.option_type IS NULL
+          OR product_aliases.option_type = CASE WHEN normalized.is_option THEN 'option' ELSE 'future' END
+        )
+      ORDER BY product_aliases.priority
+      LIMIT 1
+    ) alias ON TRUE
+    LEFT JOIN product_catalog catalog
+      ON catalog.exchange_code = alias.exchange_code
+  ),
+  enriched_positions AS (
+    SELECT
+      ${rawPositionSelect("rule_eval")},
+      rule_exchange_code AS product_code,
+      rule_group AS product_group,
+      rule_region AS product_region,
+      CASE WHEN is_option THEN rule_underlying ELSE NULL END AS underlying_product_code,
+      CASE
+        WHEN rule_contract_month ~ '^\\d{4}-\\d{2}$' THEN replace(rule_contract_month, '-', '')
+        ELSE NULL
+      END AS contract_yyyymm,
+      rule_contract_day AS contract_day,
+      put_call_code AS put_call,
+      CASE
+        WHEN strike_price IS NULL THEN NULL
+        ELSE round(strike_price::numeric, 3)::double precision
+      END AS normalized_strike_price,
+      CASE
+        WHEN rule_exchange_code IS NULL THEN 'unresolved_product'
+        WHEN coalesce(trim(month_year), '') <> '' AND rule_contract_month IS NULL THEN 'unparsed_contract'
+        WHEN is_option AND put_call_code IS NULL THEN 'option_missing_put_call'
+        WHEN is_option AND strike_price IS NULL THEN 'option_missing_strike'
+        ELSE 'ok'
+      END AS normalization_status
+    FROM rule_eval
+  ),
+  selected_positions AS (
+    SELECT enriched_positions.*
+    FROM enriched_positions
     CROSS JOIN params
-    WHERE (params.account_group_filter IS NULL OR base_positions.account_group = params.account_group_filter)
+    WHERE (params.account_group_filter IS NULL OR enriched_positions.account_group = params.account_group_filter)
       AND (
         params.search_text IS NULL
-        OR base_positions.product ILIKE '%' || params.search_text || '%'
-        OR base_positions.product_id_internal ILIKE '%' || params.search_text || '%'
-        OR base_positions.client_symbol ILIKE '%' || params.search_text || '%'
-        OR base_positions.source_1_symbol ILIKE '%' || params.search_text || '%'
-        OR base_positions.source_3_symbol ILIKE '%' || params.search_text || '%'
-        OR base_positions.account ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.product ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.product_code ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.product_group ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.product_region ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.product_id_internal ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.client_symbol ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.source_1_symbol ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.source_3_symbol ILIKE '%' || params.search_text || '%'
+        OR enriched_positions.account ILIKE '%' || params.search_text || '%'
       )
       AND (
         params.group_filter IS NULL
         OR (
-          base_positions.fund_code IS NOT DISTINCT FROM (params.group_filter->>'fundCode')
-          AND base_positions.account_group IS NOT DISTINCT FROM (params.group_filter->>'accountGroup')
-          AND base_positions.product IS NOT DISTINCT FROM (params.group_filter->>'product')
-          AND base_positions.type IS NOT DISTINCT FROM (params.group_filter->>'type')
-          AND base_positions.month_year IS NOT DISTINCT FROM (params.group_filter->>'monthYear')
-          AND base_positions.client_symbol IS NOT DISTINCT FROM (params.group_filter->>'clientSymbol')
-          AND base_positions.source_1_symbol IS NOT DISTINCT FROM (params.group_filter->>'source1Symbol')
-          AND base_positions.source_3_symbol IS NOT DISTINCT FROM (params.group_filter->>'source3Symbol')
-          AND base_positions.call_put IS NOT DISTINCT FROM (params.group_filter->>'callPut')
-          AND base_positions.strike_price IS NOT DISTINCT FROM
+          enriched_positions.product_code IS NOT DISTINCT FROM (params.group_filter->>'productCode')
+          AND enriched_positions.product_group IS NOT DISTINCT FROM (params.group_filter->>'productGroup')
+          AND enriched_positions.product_region IS NOT DISTINCT FROM (params.group_filter->>'productRegion')
+          AND enriched_positions.underlying_product_code IS NOT DISTINCT FROM (params.group_filter->>'underlyingProductCode')
+          AND enriched_positions.contract_yyyymm IS NOT DISTINCT FROM (params.group_filter->>'contractYyyymm')
+          AND enriched_positions.contract_day IS NOT DISTINCT FROM
+            CASE
+              WHEN params.group_filter->>'contractDay' IS NULL THEN NULL::integer
+              ELSE (params.group_filter->>'contractDay')::integer
+            END
+          AND enriched_positions.put_call IS NOT DISTINCT FROM (params.group_filter->>'putCall')
+          AND enriched_positions.normalized_strike_price IS NOT DISTINCT FROM
             CASE
               WHEN params.group_filter->>'strikePrice' IS NULL THEN NULL::double precision
               ELSE (params.group_filter->>'strikePrice')::double precision
@@ -239,19 +451,17 @@ function parseGroupFilter(value: string | null): string | null {
 
     const strikePrice = toNumber(parsed.strikePrice);
     const groupFilter = {
-      fundCode: nullableString(parsed.fundCode, 40),
-      accountGroup: nullableString(parsed.accountGroup, 120),
-      product: nullableString(parsed.product, 240),
-      type: nullableString(parsed.type, 80),
-      monthYear: nullableString(parsed.monthYear, 80),
-      clientSymbol: nullableString(parsed.clientSymbol, 120),
-      source1Symbol: nullableString(parsed.source1Symbol, 120),
-      source3Symbol: nullableString(parsed.source3Symbol, 120),
-      callPut: nullableString(parsed.callPut, 40),
+      productCode: nullableString(parsed.productCode, 40),
+      productGroup: nullableString(parsed.productGroup, 40),
+      productRegion: nullableString(parsed.productRegion, 120),
+      underlyingProductCode: nullableString(parsed.underlyingProductCode, 40),
+      contractYyyymm: nullableString(parsed.contractYyyymm, 6),
+      contractDay: toNumber(parsed.contractDay),
+      putCall: nullableString(parsed.putCall, 40),
       strikePrice,
     };
 
-    return groupFilter.fundCode ? JSON.stringify(groupFilter) : null;
+    return JSON.stringify(groupFilter);
   } catch {
     return null;
   }
@@ -283,16 +493,18 @@ function stringArray(value: unknown): string[] {
 
 function mapProductSummary(row: ProductSummaryDbRow) {
   return {
-    fundCode: row.fund_code,
-    accountGroup: row.account_group,
-    product: row.product,
-    type: row.type,
-    monthYear: row.month_year,
-    clientSymbol: row.client_symbol,
-    source1Symbol: row.source_1_symbol,
-    source3Symbol: row.source_3_symbol,
-    callPut: row.call_put,
-    strikePrice: round(row.strike_price, 6),
+    productCode: row.product_code,
+    productGroup: row.product_group,
+    productRegion: row.product_region,
+    underlyingProductCode: row.underlying_product_code,
+    contractYyyymm: row.contract_yyyymm,
+    contractDay: toNumber(row.contract_day),
+    putCall: row.put_call,
+    strikePrice: round(row.normalized_strike_price, 6),
+    fundCodes: row.fund_codes,
+    accountGroups: row.account_groups,
+    fundCount: toInteger(row.fund_count),
+    accountGroupCount: toInteger(row.account_group_count),
     rowCount: toInteger(row.row_count),
     accountCount: toInteger(row.account_count),
     netQuantity: round(row.net_quantity, 6),
@@ -348,6 +560,15 @@ function mapRawRow(row: RawPositionDbRow) {
     oneChicagoSymbol: row.one_chicago_symbol,
     fasLevel: row.fas_level,
     optionStyle: row.option_style,
+    productCode: row.product_code,
+    productGroup: row.product_group,
+    productRegion: row.product_region,
+    underlyingProductCode: row.underlying_product_code,
+    contractYyyymm: row.contract_yyyymm,
+    contractDay: toNumber(row.contract_day),
+    putCall: row.put_call,
+    normalizedStrikePrice: round(row.normalized_strike_price, 6),
+    normalizationStatus: row.normalization_status,
     updatedAt: isoOrText(row.updated_at),
   };
 }
@@ -416,16 +637,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           count(DISTINCT account_group)::integer AS account_group_count,
           count(DISTINCT account)::integer AS account_count,
           count(DISTINCT (
-            fund_code,
-            account_group,
-            product,
-            type,
-            month_year,
-            client_symbol,
-            source_1_symbol,
-            source_3_symbol,
-            call_put,
-            strike_price
+            product_code,
+            product_group,
+            product_region,
+            underlying_product_code,
+            contract_yyyymm,
+            contract_day,
+            put_call,
+            normalized_strike_price
           ))::integer AS product_group_count,
           sum(coalesce(cost_in_base_currency, 0))::double precision AS cost_base,
           sum(coalesce(market_value_in_base_currency, 0))::double precision AS market_value_base,
@@ -442,16 +661,20 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         ${SELECTED_POSITIONS_CTE}
         SELECT
-          fund_code,
-          account_group,
-          product,
-          type,
-          month_year,
-          client_symbol,
-          source_1_symbol,
-          source_3_symbol,
-          call_put,
-          strike_price::double precision AS strike_price,
+          product_code,
+          product_group,
+          product_region,
+          underlying_product_code,
+          contract_yyyymm,
+          contract_day,
+          put_call,
+          normalized_strike_price::double precision AS normalized_strike_price,
+          string_agg(DISTINCT fund_code, ', ' ORDER BY fund_code) AS fund_codes,
+          string_agg(DISTINCT account_group, ', ' ORDER BY account_group) FILTER (
+            WHERE account_group IS NOT NULL AND account_group <> ''
+          ) AS account_groups,
+          count(DISTINCT fund_code)::integer AS fund_count,
+          count(DISTINCT account_group)::integer AS account_group_count,
           count(*)::integer AS row_count,
           count(DISTINCT account)::integer AS account_count,
           sum(coalesce(quantity_1, 0))::double precision AS net_quantity,
@@ -481,17 +704,23 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           )::double precision AS avg_settlement_price
         FROM selected_positions
         GROUP BY
-          fund_code,
-          account_group,
-          product,
-          type,
-          month_year,
-          client_symbol,
-          source_1_symbol,
-          source_3_symbol,
-          call_put,
-          strike_price
-        ORDER BY abs(sum(coalesce(market_value_in_base_currency, 0))) DESC, product NULLS LAST
+          product_code,
+          product_group,
+          product_region,
+          underlying_product_code,
+          contract_yyyymm,
+          contract_day,
+          put_call,
+          normalized_strike_price
+        ORDER BY
+          abs(sum(coalesce(market_value_in_base_currency, 0))) DESC,
+          product_group NULLS LAST,
+          product_region NULLS LAST,
+          product_code NULLS LAST,
+          contract_yyyymm NULLS LAST,
+          contract_day NULLS LAST,
+          put_call NULLS LAST,
+          normalized_strike_price NULLS LAST
         LIMIT ${PRODUCT_SUMMARY_LIMIT}
       `,
       baseArgs,
@@ -541,6 +770,15 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           one_chicago_symbol,
           fas_level,
           option_style,
+          product_code,
+          product_group,
+          product_region,
+          underlying_product_code,
+          contract_yyyymm,
+          contract_day,
+          put_call,
+          normalized_strike_price::double precision AS normalized_strike_price,
+          normalization_status,
           updated_at::text AS updated_at
         FROM selected_positions
         ORDER BY
@@ -607,16 +845,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       accountGroups: stringArray(filters.account_groups),
       products: stringArray(filters.products),
       aggregationGrain: [
-        "fund_code",
-        "account_group",
-        "product",
-        "type",
-        "month_year",
-        "client_symbol",
-        "source_1_symbol",
-        "source_3_symbol",
-        "call_put",
-        "strike_price",
+        "product_code",
+        "product_group",
+        "product_region",
+        "underlying_product_code",
+        "contract_yyyymm",
+        "contract_day",
+        "put_call",
+        "normalized_strike_price",
       ],
       rawColumns: [
         "fund_code",
@@ -660,6 +896,15 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         "one_chicago_symbol",
         "fas_level",
         "option_style",
+        "product_code",
+        "product_group",
+        "product_region",
+        "underlying_product_code",
+        "contract_yyyymm",
+        "contract_day",
+        "put_call",
+        "normalized_strike_price",
+        "normalization_status",
       ],
       productSummaryLimit: PRODUCT_SUMMARY_LIMIT,
       maxRawLimit: MAX_RAW_LIMIT,

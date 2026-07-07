@@ -7,6 +7,8 @@
     "build": "next build",
     "start": "next start",
     "check:api": "node scripts/check-api-health.mjs",
+    "sql:nav-positions": "python scripts/generate-nav-position-sql.py",
+    "verify:nav-positions-sql": "python scripts/verify-nav-position-sql.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },

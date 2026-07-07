@@ -1,5 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { isNercHoliday, isNercOffPeakDay, isPjmPowerOnPeakHour } from "@/lib/tradingCalendars";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -102,6 +103,8 @@ interface NormalizedRow {
   year: number;
   isoDow: number;
   hourEnding: number;
+  isNercOffPeakDay: boolean;
+  isNercHoliday: boolean;
   total: number | null;
   energy: number | null;
   congestion: number | null;
@@ -181,7 +184,7 @@ const BLOCKS = [
     key: "5x16",
     label: "5x16",
     code: "5X16",
-    description: "Business-day HE 8-23",
+    description: "NERC business-day HE 8-23",
     matches: (row: NormalizedRow) => periodMatches("5x16", row),
   },
   {
@@ -202,7 +205,7 @@ const BLOCKS = [
     key: "wrap",
     label: "Wrap",
     code: "WRAP",
-    description: "7x8 plus weekend HE 8-23",
+    description: "7x8 plus NERC off-peak day HE 8-23",
     matches: (row: NormalizedRow) => periodMatches("wrap", row),
   },
   {
@@ -392,7 +395,7 @@ function selectedValue(row: NormalizedRow, component: ComponentKey): number | nu
 }
 
 function isOnPeak(row: NormalizedRow): boolean {
-  return row.isoDow >= 1 && row.isoDow <= 5 && row.hourEnding >= 8 && row.hourEnding <= 23;
+  return isPjmPowerOnPeakHour(row.date, row.hourEnding);
 }
 
 function periodMatches(period: TermPeriod, row: NormalizedRow): boolean {
@@ -400,16 +403,16 @@ function periodMatches(period: TermPeriod, row: NormalizedRow): boolean {
   if (period === "5x16") return isOnPeak(row);
   if (period === "7x16") return row.hourEnding >= 8 && row.hourEnding <= 23;
   if (period === "7x8") return row.hourEnding < 8 || row.hourEnding > 23;
-  if (period === "wrap") return row.hourEnding < 8 || row.hourEnding > 23 || row.isoDow >= 6;
+  if (period === "wrap") return row.hourEnding < 8 || row.hourEnding > 23 || row.isNercOffPeakDay;
   return true;
 }
 
 function periodDefinition(period: TermPeriod): string {
   if (period === "all") return "All settlement strips; hourly breakdown uses all hours";
-  if (period === "5x16") return "Business-day HE8-23; no holiday adjustment";
+  if (period === "5x16") return "NERC business-day HE8-23";
   if (period === "7x16") return "All days HE8-23; no holiday adjustment";
   if (period === "7x8") return "All days HE1-7 and HE24; no holiday adjustment";
-  if (period === "wrap") return "7x8 plus weekend HE8-23; no holiday adjustment";
+  if (period === "wrap") return "7x8 plus NERC off-peak day HE8-23";
   return "All hours; no holiday adjustment";
 }
 
@@ -499,6 +502,8 @@ function normalizeRows(rows: SourceRow[], component: ComponentKey): NormalizedRo
       year: Number(row.year),
       isoDow: Number(row.iso_dow),
       hourEnding: Number(row.hour_ending),
+      isNercOffPeakDay: isNercOffPeakDay(row.market_date),
+      isNercHoliday: isNercHoliday(row.market_date),
       total: toNumber(row.total_price),
       energy: toNumber(row.energy_price),
       congestion: toNumber(row.congestion_price),
@@ -541,6 +546,8 @@ function buildSpreadRows({
         energy: subtractValues(toRow.energy, fromRow.energy),
         congestion: subtractValues(toRow.congestion, fromRow.congestion),
         loss: subtractValues(toRow.loss, fromRow.loss),
+        isNercOffPeakDay: toRow.isNercOffPeakDay,
+        isNercHoliday: toRow.isNercHoliday,
         selectedPrice: null,
         asOf: maxString([toRow.asOf, fromRow.asOf]),
       };
@@ -644,7 +651,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     scarcityHours: buildScarcityHours(periodRows, scarcityLimit),
     metadata: {
       availableLocations: LOCATIONS,
-      holidayAdjustment: "No NERC holiday calendar is applied in this view.",
+      holidayAdjustment: "NERC off-peak days are applied to 5x16 and wrap classifications.",
       maxYearSpan: MAX_YEAR_SPAN,
       scarcityLimit,
       view,

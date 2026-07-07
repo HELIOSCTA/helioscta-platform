@@ -34,6 +34,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=5min`.
   - `helios-pjm-data-miner-batch.timer`, daily at `04:30 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
+  - `helios-pjm-hrl-load-prelim.timer`, daily at
+    `05:05 America/New_York`, `Persistent=true`, `AccuracySec=1min`.
   - `helios-pjm-rt-hrl-lmps.timer`, business days at
     `11:30 America/New_York`, `Persistent=true`,
     `RandomizedDelaySec=5min`.
@@ -86,7 +88,9 @@ data-readiness events. `helios-pjm-load-frcstd-7-day.timer` refreshes the PJM
 seven-day load forecast hourly. `helios-pjm-gen-outages-by-type.timer` refreshes
 the PJM outage dashboard source 5, 30, and 60 minutes after the 06:00 EPT
 PJM Data Miner publication, while
-`helios-pjm-data-miner-batch.timer` runs the remaining 25 support lower-level
+`helios-pjm-hrl-load-prelim.timer` refreshes preliminary hourly load after the
+source's documented 04:55 EPT publication window.
+`helios-pjm-data-miner-batch.timer` runs the remaining support lower-level
 scrape modules daily.
 `helios-pjm-ops-sum.timer` refreshes PJM Operations Summary dashboard context
 five minutes after each 05:00-08:00 EPT source update.
@@ -333,6 +337,7 @@ sudo systemctl restart helios-pjm-hourly-bucket.timer
 sudo systemctl restart helios-pjm-hourly-price-backfill-7-day.timer
 sudo systemctl restart helios-pjm-da-transconstraints.timer
 sudo systemctl restart helios-pjm-gen-outages-by-type.timer
+sudo systemctl restart helios-pjm-hrl-load-prelim.timer
 sudo systemctl restart helios-pjm-ops-sum.timer
 sudo systemctl restart helios-prod-health-check.timer
 systemctl list-timers 'helios-*'

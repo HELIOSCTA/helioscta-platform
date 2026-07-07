@@ -1,0 +1,648 @@
+[
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE NGAS HH SWG DLY DAY-[0-9]+$",
+    "exchangeCode": "HHD"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE NGAS HH SWING DAILY",
+    "exchangeCode": "HHD"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HENRY SWING",
+    "exchangeCode": "HHD"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS",
+    "exchangeCode": "NG"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS",
+    "exchangeCode": "NG"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "GLOBEX NATURAL GAS LD",
+    "exchangeCode": "HH"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NYMEX HENRY HUB FINANCIAL LDO",
+    "exchangeCode": "HH"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS LAST DAY FINAN",
+    "exchangeCode": "HH"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NYMEX HENRY HUB NATURAL GAS",
+    "exchangeCode": "HP"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "HENRY PENULTIMATE NATURAL GAS",
+    "exchangeCode": "HP"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HENRY HUB FINANCIAL",
+    "exchangeCode": "HP"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS LD1 FUTURE",
+    "exchangeCode": "H"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "HENRY HUB NATURAL GAS",
+    "exchangeCode": "H"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HENRY LD1 FIXED",
+    "exchangeCode": "H"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PHH",
+    "exchangeCode": "PHH"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HENRY PENULT FIXED",
+    "exchangeCode": "PHH",
+    "optionType": "future"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PHE",
+    "exchangeCode": "PHE",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE HH EQ",
+    "exchangeCode": "PHE",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE NGAS PEN HENRY HUB",
+    "exchangeCode": "PHE",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HENRY PENULT FIXED",
+    "exchangeCode": "PHE",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NYM EUR NATURAL GAS",
+    "exchangeCode": "LN",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS CLEARPORT",
+    "exchangeCode": "LN",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "EUR NAT GAS",
+    "exchangeCode": "LN",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL WEEK 1",
+    "exchangeCode": "LN1",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL WEEK 2",
+    "exchangeCode": "LN2",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL WEEK 3",
+    "exchangeCode": "LN3",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL WEEK 4",
+    "exchangeCode": "LN4",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL WEEK 5",
+    "exchangeCode": "LN5",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FIN WKLY WK1",
+    "exchangeCode": "LN1",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FIN WKLY WK2",
+    "exchangeCode": "LN2",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FIN WKLY WK3",
+    "exchangeCode": "LN3",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FIN WKLY WK4",
+    "exchangeCode": "LN4",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FIN WKLY WK5",
+    "exchangeCode": "LN5",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS 3M CSO",
+    "exchangeCode": "G3",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS CAL SPRD FIN 3MO",
+    "exchangeCode": "G3",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS FINANCIAL 1M SO",
+    "exchangeCode": "G4",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NATURAL GAS 1M CSO",
+    "exchangeCode": "G4",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS FINAN 1 MNTH SPRD",
+    "exchangeCode": "G4",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PJM WH RTD",
+    "exchangeCode": "PDP"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WH REAL T PEAK DAILY",
+    "exchangeCode": "PDP"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PWA",
+    "exchangeCode": "PWA"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM W HUB RT PEAK DAILY",
+    "exchangeCode": "PWA"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM AEP DAYTHUB PEAK DLY",
+    "exchangeCode": "DDP"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PJMWHPKDAY",
+    "exchangeCode": "PDA"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WEST DAY AHEAD PK DA",
+    "exchangeCode": "PDA"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PJL",
+    "exchangeCode": "PJL"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WST HUB D APDM FP FU",
+    "exchangeCode": "PJL"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE (PJM MINI|MINIPJMRT|PJM WHREAL TYM PK MINI)([-_][0-9]+)?$",
+    "exchangeCode": "PMI"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WST HUB REAL PEAK FIXED",
+    "exchangeCode": "PMI"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE PJM WHRT PEAK OPT_4096",
+    "exchangeCode": "P1X",
+    "optionType": "option"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WEST HUB RT",
+    "exchangeCode": "P1X",
+    "optionType": "option"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE PJM OFF PK[-_][0-9]+$",
+    "exchangeCode": "OPJ"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WST HUB REAL OFF PEAK FIXED",
+    "exchangeCode": "OPJ"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PJM WH OFF-PEAK DAILY",
+    "exchangeCode": "ODP"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE ERA",
+    "exchangeCode": "ERA"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "EMINI ERCOT 345RT PK DAILY",
+    "exchangeCode": "ERA"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ERCOT N 345 KV RT PEAK DLY",
+    "exchangeCode": "ERN"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "ERCOT NORTH PEAK FIXED",
+    "exchangeCode": "ERN"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE ERCOT NORTH 345KV 7X8[-_][0-9]+$",
+    "exchangeCode": "ECI"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "ERCT NORTH 345KVRT 7X8 FXD",
+    "exchangeCode": "ECI"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "ISO NEW ENG MASS MINI FU",
+    "exchangeCode": "NEZ"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^(ISO ENG MASS HUB D-PK-[0-9]+|ICE NEPOOL PK MNTH-[0-9]+)$",
+    "exchangeCode": "NEP"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "ISO MASS HUB PEAK FIXED",
+    "exchangeCode": "NEP"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE SP 15 PEAK([_-][0-9]+)?$",
+    "exchangeCode": "SPM"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "CAISO SP15 PEAK FIXED",
+    "exchangeCode": "SPM"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE NP 15 PEAK([_-][0-9]+)?$",
+    "exchangeCode": "NPM"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "CAISO NP15 PEAK FIXED",
+    "exchangeCode": "NPM"
+  },
+  {
+    "source": "nav",
+    "matchType": "regex",
+    "pattern": "^ICE MID-C PEAK([_-][0-9]+)?$",
+    "exchangeCode": "MDC"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "MID C FIN PEAK ELEC",
+    "exchangeCode": "MDC"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "AB NIT BASIS FUTURE",
+    "exchangeCode": "AEC"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "AB NIT BASIS",
+    "exchangeCode": "AEC"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE ALQCTYGTSW",
+    "exchangeCode": "ALQ"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "ALGONQUIN CITYGATES BASIS",
+    "exchangeCode": "ALQ"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE CIG ROCKIES BASIS",
+    "exchangeCode": "CRI"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "CIG ROCKIES BASIS",
+    "exchangeCode": "CRI"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE CHICAGO BASIS FUT",
+    "exchangeCode": "DGD"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "CHICAGO BASIS",
+    "exchangeCode": "DGD"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE EASTERN GAS SOUTH BASIS FU",
+    "exchangeCode": "DOM"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "DOMINION SOUTH BASIS",
+    "exchangeCode": "DOM"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE HSC BASIS",
+    "exchangeCode": "HXS"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HSC BASIS",
+    "exchangeCode": "HXS"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "HSC SWING",
+    "exchangeCode": "UCS"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "NGPL TXOK BASIS FUTURE",
+    "exchangeCode": "NTO"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NGPL TXOK BASIS",
+    "exchangeCode": "NTO"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE NGAS NYM NWP RK",
+    "exchangeCode": "NWR"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "NAT GAS B/S FERC;ROCKIES",
+    "exchangeCode": "NWR"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE NGAS NYM PG&E",
+    "exchangeCode": "PGE"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "PG&E CITYGATE BASIS",
+    "exchangeCode": "PGE"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE TETCO SWP",
+    "exchangeCode": "TMT"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "TETCO M3 BASIS",
+    "exchangeCode": "TMT"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE TRANSCO STATION 85 ZONE 4",
+    "exchangeCode": "TRZ"
+  },
+  {
+    "source": "nav",
+    "matchType": "exact",
+    "pattern": "ICE TCOZN4BASI",
+    "exchangeCode": "TRZ"
+  },
+  {
+    "source": "marex",
+    "matchType": "exact",
+    "pattern": "TRANSCO 85 Z4 BASIS",
+    "exchangeCode": "TRZ"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PMI-PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE",
+    "exchangeCode": "PMI",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PMI-OPTION ON PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE",
+    "exchangeCode": "P1X",
+    "optionType": "option"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PWA-PJM WESTERN HUB REAL-TIME PEAK DAILY MINI FIXED PRICE FUTURE",
+    "exchangeCode": "PWA",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "H-HENRY LD1 FIXED PRICE FUTURE",
+    "exchangeCode": "H",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "SPM-CAISO SP-15 DAY-AHEAD PEAK FIXED PRICE FUTURE",
+    "exchangeCode": "SPM",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PGE-PG&E CITYGATE BASIS FUTURE",
+    "exchangeCode": "PGE",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PDP-PJM WESTERN HUB REAL-TIME PEAK DAILY FIXED PRICE FUTURE",
+    "exchangeCode": "PDP",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "PHE-OPTION ON HENRY PENULTIMATE FIXED PRICE FUTURE",
+    "exchangeCode": "PHE",
+    "optionType": "option"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
+    "pattern": "CRI-CIG ROCKIES BASIS FUTURE",
+    "exchangeCode": "CRI",
+    "optionType": "future"
+  }
+]

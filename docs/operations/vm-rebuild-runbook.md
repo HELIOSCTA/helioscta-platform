@@ -103,6 +103,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstr
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-load-prelim.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
@@ -113,6 +115,7 @@ sudo systemctl enable --now helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-data-miner-batch.timer
 sudo systemctl enable --now helios-pjm-da-transconstraints.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
+sudo systemctl enable --now helios-pjm-hrl-load-prelim.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```

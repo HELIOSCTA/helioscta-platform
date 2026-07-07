@@ -169,7 +169,20 @@ the prior evening's target file. It exits as soon as the target
 `Helios_Transactions_YYYYMMDD.csv` file is processed, or exits nonzero at the
 05:00 timeout. The scheduled path writes one resolved `ops.api_fetch_log` row
 with `operation_name = 'clear_street_eod_transactions_poll'`, `poll_count`,
-`poll_wait_seconds`, and the target trade date in metadata.
+`poll_wait_seconds`, and the target trade date in metadata. Its success Slack
+notification confirms only that the target source trade file landed and loaded
+to `clear_street.eod_transactions`; downstream SQL readiness should use a
+separate notification after that layer runs and validates.
+After the source file succeeds, the same scheduled process generates
+`Helios_Transactions_YYYYMMDD_filtered.csv` from the packaged
+`clear_street_trades_mufg_latest.sql` extract using the Clear Street target
+trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
+`ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`, and queues
+positions/trades Slack success or failure notifications for the MUFG leg. The
+Clear Street target source file is the scheduler's freshness gate; MUFG-side
+empty-extract and SQL `sftp_date` mismatch conditions are metadata only. If
+the MUFG upload itself fails, the scheduled task exits nonzero while the Clear
+Street source-load telemetry remains successful.
 
 Run from the production clone in PowerShell:
 
@@ -186,7 +199,9 @@ Run from the production clone in PowerShell:
 The installer verifies writer credentials plus `CLEAR_STREET_SFTP_HOST`,
 `CLEAR_STREET_SFTP_USER`, and `CLEAR_STREET_SSH_KEY_CONTENT` from machine/user
 environment variables or the untracked `backend\.env` in the production clone.
-Slack delivery also requires `SLACK_BOT_TOKEN`,
+It also verifies `MUFG_SFTP_HOST`, `MUFG_SFTP_USER`, and
+`MUFG_SFTP_PASSWORD`; `MUFG_SFTP_PORT` defaults to `22`, and
+`MUFG_SFTP_REMOTE_DIR` defaults to `/`. Slack delivery also requires `SLACK_BOT_TOKEN`,
 `SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID`, and
 `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
 
@@ -226,7 +241,7 @@ SELECT
     error_message,
     metadata
 FROM ops.api_fetch_log
-WHERE provider = 'clear_street_sftp'
+WHERE provider IN ('clear_street_sftp', 'mufg_sftp')
 ORDER BY created_at DESC
 LIMIT 20;
 

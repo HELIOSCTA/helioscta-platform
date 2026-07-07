@@ -62,6 +62,12 @@ CLEAR_STREET_SFTP_USER=
 CLEAR_STREET_SFTP_PORT=22
 CLEAR_STREET_SFTP_REMOTE_DIR=/
 CLEAR_STREET_SSH_KEY_CONTENT=
+
+MUFG_SFTP_HOST=
+MUFG_SFTP_USER=
+MUFG_SFTP_PASSWORD=
+MUFG_SFTP_PORT=22
+MUFG_SFTP_REMOTE_DIR=/
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -239,11 +245,18 @@ persists per-window state with explicit success/failure/timeout statuses, and
 writes durable job telemetry to `ops.api_fetch_log`.
 
 NAV position helpers are local SFTP workflows. They live under
-`backend.scrapes.nav` and `backend.orchestration.nav`, write normalized NAV
-position valuation snapshots to `nav.positions`, and use the existing
-`NAV_SFTP_*` environment variables. The v1 activation path is a manual local
-run with `python -m backend.orchestration.nav.positions`; do not add NAV
-systemd units unless the workflow is explicitly promoted to the Linux VM.
+`backend.scrapes.nav` and `backend.orchestration.nav`, write raw NAV position
+valuation snapshots to `nav.positions`, and use the existing `NAV_SFTP_*`
+environment variables. `nav.positions` stores the source workbook fields plus
+file/fund metadata only. Product-code, product-group, contract,
+instrument-type, and normalization-status fields are derived by read-only SQL
+at query time, not persisted in the source table. The v1 activation path is a
+manual local run with
+`python -m backend.orchestration.nav.positions`; do not add NAV systemd units
+unless the workflow is explicitly promoted to the Linux VM. Downloaded raw NAV
+workbooks are cached under `backend/scrapes/nav/downloads/` by default and that
+folder is gitignored. The downloader preserves already-cached workbooks instead
+of overwriting them, because NAV source files can expire upstream.
 
 Clear Street end-of-day transaction helpers are local SFTP workflows. They live
 under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,
@@ -261,10 +274,24 @@ gitignored. The local Windows Task Scheduler path starts one scheduled poll at
 19:00 local time, checks every five minutes for that window's target
 trade-date file, and exits successfully as soon as the file is processed or
 fails at 05:00 local time. Successful runs enqueue one duplicate-safe Slack
-outbox row to the positions/trades Slack channel when configured, falling back
-to the default Slack channel; timeout alerts enqueue to the same
-positions/trades channel. Actual posting still depends on
+outbox row for the latest loaded source trade file only, not for downstream SQL
+readiness. The alert routes to the positions/trades Slack channel when
+configured, falling back to the default Slack channel; timeout alerts enqueue
+to the same positions/trades channel. Actual posting still depends on
 `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true` and Slack bot/webhook credentials.
+After the source file loads, the scheduled path runs the MUFG upload leg from
+`backend.orchestration.positions_and_trades.clear_street_mufg_upload`. That
+leg reads the generated read-only SQL at
+`backend/scrapes/positions_and_trades/generated_sql/clear_street_trades_mufg_latest.sql`,
+uses the Clear Street target trade date for the exported
+`Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
+the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with
+`provider = 'mufg_sftp'`, and posts positions/trades Slack success or failure
+notifications. The scheduler's only freshness gate is the arrival and load of
+the target Clear Street source file. MUFG-side empty-extract and SQL
+`sftp_date` mismatch conditions are recorded in metadata for diagnosis instead
+of blocking the v1 upload. `trade_status` values are also included in metadata
+but do not block the v1 MUFG upload.
 
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
@@ -302,9 +329,11 @@ results scheduled workflows enqueue one Slack notification to
 `#helios-alerts-power` after the target market date is complete and the scrape
 has succeeded. Each notification key is derived from the
 `ops.data_availability_events.event_key`, so reruns do not duplicate the
-channel message. Clear Street EOD transaction runs enqueue to
-`#helios-alerts-positions-trades` through
-`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID` when set.
+channel message. Clear Street EOD transaction runs enqueue a source-file-loaded
+notification to `#helios-alerts-positions-trades` through
+`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID` when set. The composed Clear Street
+to MUFG workflow also enqueues MUFG upload success/failure notifications to the
+same positions/trades channel.
 
 After the Azure Postgres permission defaults have been installed, new schemas
 and tables created by `helios_admin` inherit the expected read-only grants

@@ -152,6 +152,27 @@ export const PRODUCT_RULE_FIXTURES: readonly ProductRuleFixture[] = [
     },
   },
   {
+    name: "Clear Street option uses clear_street aliases",
+    input: {
+      source: "clearStreet",
+      product: "PMI-OPTION ON PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE",
+      type: "O",
+      contractYyyymm: 202607,
+      callPut: "C",
+      strikePrice: 50,
+    },
+    expected: {
+      contractMonth: "2026-07",
+      exchangeCode: "P1X",
+      ruleGroup: "Power",
+      ruleRegion: "PJM",
+      productCodeUnderlying: "PMI",
+      putCall: "C",
+      isOption: true,
+      iceXlSymbol: "P1X N26C50-IUS",
+    },
+  },
+  {
     name: "Unknown product leaves derived product fields null",
     input: {
       source: "nav",

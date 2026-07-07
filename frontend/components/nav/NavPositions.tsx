@@ -3,13 +3,15 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
+import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/ColumnFilterMenu";
 import DataTableShell from "@/components/dashboard/DataTableShell";
+import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
-  buildProductRuleSqlDownloads,
+  buildNavPositionSqlDownloads,
   normalizeNavPositionProduct,
-  type ProductRuleSqlDownload,
-  type ProductRuleSqlParams,
+  type NavPositionSqlDownload,
+  type NavPositionSqlParams,
   type ProductRuleResult,
 } from "@/lib/positionsAndTrades";
 
@@ -44,16 +46,18 @@ interface NavPositionsSummary {
 }
 
 interface ProductSummaryRow {
-  fundCode: string | null;
-  accountGroup: string | null;
-  product: string | null;
-  type: string | null;
-  monthYear: string | null;
-  clientSymbol: string | null;
-  source1Symbol: string | null;
-  source3Symbol: string | null;
-  callPut: string | null;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  underlyingProductCode: string | null;
+  contractYyyymm: string | null;
+  contractDay: number | null;
+  putCall: string | null;
   strikePrice: number | null;
+  fundCodes: string | null;
+  accountGroups: string | null;
+  fundCount: number;
+  accountGroupCount: number;
   rowCount: number;
   accountCount: number;
   netQuantity: number | null;
@@ -66,15 +70,13 @@ interface ProductSummaryRow {
 }
 
 interface ProductGroupFilter {
-  fundCode: string | null;
-  accountGroup: string | null;
-  product: string | null;
-  type: string | null;
-  monthYear: string | null;
-  clientSymbol: string | null;
-  source1Symbol: string | null;
-  source3Symbol: string | null;
-  callPut: string | null;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  underlyingProductCode: string | null;
+  contractYyyymm: string | null;
+  contractDay: number | null;
+  putCall: string | null;
   strikePrice: number | null;
 }
 
@@ -120,6 +122,15 @@ interface RawPositionRow {
   oneChicagoSymbol: string | null;
   fasLevel: string | null;
   optionStyle: string | null;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  underlyingProductCode: string | null;
+  contractYyyymm: string | null;
+  contractDay: number | null;
+  putCall: string | null;
+  normalizedStrikePrice: number | null;
+  normalizationStatus: string | null;
   updatedAt: string | null;
 }
 
@@ -160,6 +171,69 @@ interface NavPositionsPayload {
 }
 
 type ViewMode = "summary" | "raw" | "rules";
+type ColumnAlign = "left" | "right";
+type SortState<Key extends string> = { key: Key; direction: SortDirection };
+type ColumnFilters<Key extends string> = Partial<Record<Key, string[]>>;
+
+type ProductSummaryColumnKey =
+  | "productCode"
+  | "productGroup"
+  | "productRegion"
+  | "underlyingProductCode"
+  | "contractYyyymm"
+  | "contractDay"
+  | "putCall"
+  | "strikePrice"
+  | "funds"
+  | "accounts"
+  | "netQuantity"
+  | "costBase"
+  | "marketValueBase"
+  | "unrealizedPnlBase"
+  | "avgTradePrice"
+  | "avgSettlementPrice"
+  | "rows";
+
+type RawColumnKey =
+  | "product"
+  | "productCode"
+  | "productGroup"
+  | "productRegion"
+  | "contract"
+  | "normalizationStatus"
+  | "fundCode"
+  | "navDate"
+  | "sftpUploadTimestamp"
+  | "brokerName"
+  | "accountGroup"
+  | "account"
+  | "tradeDate"
+  | "type"
+  | "monthYear"
+  | "clientSymbol"
+  | "source1Symbol"
+  | "source3Symbol"
+  | "longShort"
+  | "quantity1"
+  | "ccy2Quantity2"
+  | "tradePrice"
+  | "marketSettlementPrice"
+  | "costInNativeCurrency"
+  | "costInBaseCurrency"
+  | "marketValueInNativeCurrency"
+  | "marketValueInBaseCurrency"
+  | "sector"
+  | "subSector"
+  | "exchangeName"
+  | "sourceFileRowNumber";
+
+interface TableColumn<Key extends string> {
+  key: Key;
+  label: string;
+  align?: ColumnAlign;
+  sticky?: boolean;
+  minClass?: string;
+}
 
 const API_CACHE_TTL_MS = 2 * 60 * 1000;
 const FIELD_LABEL_CLASS = "mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500";
@@ -229,15 +303,13 @@ function cacheKey({
 
 function groupFilterFromRow(row: ProductSummaryRow): ProductGroupFilter {
   return {
-    fundCode: row.fundCode,
-    accountGroup: row.accountGroup,
-    product: row.product,
-    type: row.type,
-    monthYear: row.monthYear,
-    clientSymbol: row.clientSymbol,
-    source1Symbol: row.source1Symbol,
-    source3Symbol: row.source3Symbol,
-    callPut: row.callPut,
+    productCode: row.productCode,
+    productGroup: row.productGroup,
+    productRegion: row.productRegion,
+    underlyingProductCode: row.underlyingProductCode,
+    contractYyyymm: row.contractYyyymm,
+    contractDay: row.contractDay,
+    putCall: row.putCall,
     strikePrice: row.strikePrice,
   };
 }
@@ -371,6 +443,304 @@ function SegmentedButton({
   );
 }
 
+function QuickFilterChip({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`rounded-sm border px-2.5 py-1 text-xs font-semibold transition-colors ${
+        active
+          ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
+          : "border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function uniqueSortedText(values: Array<string | null | undefined>): string[] {
+  return Array.from(
+    new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value))),
+  ).sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function retainAvailableSelections(selected: string[], options: string[]): string[] {
+  const available = new Set(options);
+  const retained = selected.filter((value) => available.has(value));
+  return retained.length === selected.length ? selected : retained;
+}
+
+function selectedTextMatches(value: string | null | undefined, selected: string[]): boolean {
+  if (selected.length === 0) return true;
+  return Boolean(value && selected.includes(value));
+}
+
+function sortFilterOption(left: string, right: string): number {
+  const leftNumber = Number(left.replace(/[$,%\s,]/g, ""));
+  const rightNumber = Number(right.replace(/[$,%\s,]/g, ""));
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber - rightNumber;
+  return left.localeCompare(right, undefined, { numeric: true });
+}
+
+function compareColumnValues(
+  left: string | number | null | undefined,
+  right: string | number | null | undefined,
+  direction: SortDirection,
+): number {
+  if (left === null || left === undefined || left === "") {
+    return right === null || right === undefined || right === "" ? 0 : 1;
+  }
+  if (right === null || right === undefined || right === "") return -1;
+
+  const result =
+    typeof left === "number" && typeof right === "number"
+      ? left - right
+      : String(left).localeCompare(String(right), undefined, { numeric: true });
+  return direction === "asc" ? result : -result;
+}
+
+function tableHeaderClass(column: TableColumn<string>): string {
+  const align = column.align === "left" ? "text-left" : "text-right";
+  const sticky = column.sticky ? "sticky left-0 z-20 bg-gray-950" : "";
+  return `px-3 py-2 font-semibold uppercase tracking-wide ${align} ${sticky}`;
+}
+
+function tableHeaderInnerClass(column: TableColumn<string>): string {
+  return `flex w-full items-center gap-1.5 ${
+    column.align === "left" ? "justify-start" : "justify-end"
+  }`;
+}
+
+const PRODUCT_SUMMARY_COLUMNS: Array<TableColumn<ProductSummaryColumnKey>> = [
+  { key: "productCode", label: "Code", align: "left", sticky: true, minClass: "min-w-[160px]" },
+  { key: "productGroup", label: "Group" },
+  { key: "productRegion", label: "Region" },
+  { key: "underlyingProductCode", label: "Underlying" },
+  { key: "contractYyyymm", label: "Contract" },
+  { key: "contractDay", label: "Day" },
+  { key: "putCall", label: "C/P" },
+  { key: "strikePrice", label: "Strike" },
+  { key: "funds", label: "Funds" },
+  { key: "accounts", label: "Accounts" },
+  { key: "netQuantity", label: "Net Qty" },
+  { key: "costBase", label: "Cost Base" },
+  { key: "marketValueBase", label: "MV Base" },
+  { key: "unrealizedPnlBase", label: "P&L Base" },
+  { key: "avgTradePrice", label: "Trade" },
+  { key: "avgSettlementPrice", label: "Settle" },
+  { key: "rows", label: "Rows" },
+];
+
+const RAW_COLUMNS: Array<TableColumn<RawColumnKey>> = [
+  { key: "product", label: "Product", align: "left", sticky: true, minClass: "min-w-[300px]" },
+  { key: "productCode", label: "Code" },
+  { key: "productGroup", label: "Group" },
+  { key: "productRegion", label: "Region" },
+  { key: "contract", label: "Contract" },
+  { key: "normalizationStatus", label: "Status" },
+  { key: "fundCode", label: "Fund" },
+  { key: "navDate", label: "Position Date" },
+  { key: "sftpUploadTimestamp", label: "Upload" },
+  { key: "brokerName", label: "Broker" },
+  { key: "accountGroup", label: "Account Group" },
+  { key: "account", label: "Account" },
+  { key: "tradeDate", label: "Trade Date" },
+  { key: "type", label: "Type" },
+  { key: "monthYear", label: "Month" },
+  { key: "clientSymbol", label: "Client" },
+  { key: "source1Symbol", label: "Src 1" },
+  { key: "source3Symbol", label: "Src 3" },
+  { key: "longShort", label: "Long/Short" },
+  { key: "quantity1", label: "Qty 1" },
+  { key: "ccy2Quantity2", label: "CCY 2 Qty" },
+  { key: "tradePrice", label: "Trade" },
+  { key: "marketSettlementPrice", label: "Settle" },
+  { key: "costInNativeCurrency", label: "Cost Native" },
+  { key: "costInBaseCurrency", label: "Cost Base" },
+  { key: "marketValueInNativeCurrency", label: "MV Native" },
+  { key: "marketValueInBaseCurrency", label: "MV Base" },
+  { key: "sector", label: "Sector" },
+  { key: "subSector", label: "Sub Sector" },
+  { key: "exchangeName", label: "Exchange" },
+  { key: "sourceFileRowNumber", label: "File Row" },
+];
+
+function productSummaryDisplayValue(row: ProductSummaryRow, key: ProductSummaryColumnKey): string {
+  switch (key) {
+    case "productCode":
+      return displayText(row.productCode);
+    case "productGroup":
+      return displayText(row.productGroup);
+    case "productRegion":
+      return displayText(row.productRegion);
+    case "underlyingProductCode":
+      return displayText(row.underlyingProductCode);
+    case "contractYyyymm":
+      return displayText(row.contractYyyymm);
+    case "contractDay":
+      return fmtNumber(row.contractDay, 0);
+    case "putCall":
+      return displayText(row.putCall);
+    case "strikePrice":
+      return fmtPrice(row.strikePrice);
+    case "funds":
+      return row.fundCount.toLocaleString();
+    case "accounts":
+      return row.accountCount.toLocaleString();
+    case "netQuantity":
+      return fmtQuantity(row.netQuantity);
+    case "costBase":
+      return fmtNumber(row.costBase, 0);
+    case "marketValueBase":
+      return fmtNumber(row.marketValueBase, 0);
+    case "unrealizedPnlBase":
+      return fmtNumber(row.unrealizedPnlBase, 0);
+    case "avgTradePrice":
+      return fmtPrice(row.avgTradePrice);
+    case "avgSettlementPrice":
+      return fmtPrice(row.avgSettlementPrice);
+    case "rows":
+      return row.rowCount.toLocaleString();
+  }
+}
+
+function productSummarySortValue(
+  row: ProductSummaryRow,
+  key: ProductSummaryColumnKey,
+): string | number | null {
+  switch (key) {
+    case "productCode":
+      return row.productCode;
+    case "productGroup":
+      return row.productGroup;
+    case "productRegion":
+      return row.productRegion;
+    case "underlyingProductCode":
+      return row.underlyingProductCode;
+    case "contractYyyymm":
+      return row.contractYyyymm;
+    case "contractDay":
+      return row.contractDay;
+    case "putCall":
+      return row.putCall;
+    case "strikePrice":
+      return row.strikePrice;
+    case "funds":
+      return row.fundCount;
+    case "accounts":
+      return row.accountCount;
+    case "netQuantity":
+      return row.netQuantity;
+    case "costBase":
+      return row.costBase;
+    case "marketValueBase":
+      return row.marketValueBase;
+    case "unrealizedPnlBase":
+      return row.unrealizedPnlBase;
+    case "avgTradePrice":
+      return row.avgTradePrice;
+    case "avgSettlementPrice":
+      return row.avgSettlementPrice;
+    case "rows":
+      return row.rowCount;
+  }
+}
+
+function productSummaryRowMatchesFilter(
+  row: ProductSummaryRow,
+  key: ProductSummaryColumnKey,
+  selectedValues: string[],
+): boolean {
+  if (selectedValues.length === 0) return true;
+  const value = productSummaryDisplayValue(row, key).toLowerCase();
+  return selectedValues.some((selected) => value === selected.trim().toLowerCase());
+}
+
+function productSummaryCellClass(row: ProductSummaryRow, column: TableColumn<ProductSummaryColumnKey>) {
+  const align = column.align === "left" ? "text-left" : "text-right";
+  const sticky = column.sticky
+    ? "sticky left-0 z-10 max-w-[160px] bg-[#0d1119] font-semibold text-gray-100"
+    : "";
+  const numeric = [
+    "contractDay",
+    "strikePrice",
+    "funds",
+    "accounts",
+    "netQuantity",
+    "costBase",
+    "marketValueBase",
+    "unrealizedPnlBase",
+    "avgTradePrice",
+    "avgSettlementPrice",
+    "rows",
+  ].includes(column.key)
+    ? "tabular-nums"
+    : "";
+  const tone =
+    column.key === "unrealizedPnlBase"
+      ? row.unrealizedPnlBase === null
+        ? "font-semibold text-gray-300"
+        : row.unrealizedPnlBase >= 0
+          ? "font-semibold text-emerald-200"
+          : "font-semibold text-red-200"
+      : column.key === "marketValueBase"
+        ? "font-semibold text-gray-100"
+        : column.key === "productCode"
+          ? ""
+          : "text-gray-300";
+
+  return `px-3 py-2 ${align} ${sticky} ${numeric} ${tone}`;
+}
+
+function renderProductSummaryCell(
+  row: ProductSummaryRow,
+  key: ProductSummaryColumnKey,
+  onRowSelect: (row: ProductSummaryRow) => void,
+): ReactNode {
+  if (key === "rows") {
+    return (
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onRowSelect(row);
+        }}
+        className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-semibold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
+      >
+        {row.rowCount.toLocaleString()}
+      </button>
+    );
+  }
+
+  if (key === "productCode") {
+    return (
+      <span className="block truncate" title={row.productCode ?? undefined}>
+        {displayText(row.productCode)}
+      </span>
+    );
+  }
+
+  if (key === "funds") {
+    return <span title={row.fundCodes ?? undefined}>{row.fundCount.toLocaleString()}</span>;
+  }
+
+  if (key === "accounts") {
+    return <span title={row.accountGroups ?? undefined}>{row.accountCount.toLocaleString()}</span>;
+  }
+
+  return productSummaryDisplayValue(row, key);
+}
+
 function ProductSummaryTable({
   rows,
   onRowSelect,
@@ -378,119 +748,126 @@ function ProductSummaryTable({
   rows: ProductSummaryRow[];
   onRowSelect: (row: ProductSummaryRow) => void;
 }) {
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters<ProductSummaryColumnKey>>({});
+  const [sortState, setSortState] = useState<SortState<ProductSummaryColumnKey> | null>(null);
+
+  const updateColumnFilter = (key: ProductSummaryColumnKey, values: string[]) => {
+    setColumnFilters((filters) => {
+      const next = { ...filters };
+      if (values.length > 0) next[key] = values;
+      else delete next[key];
+      return next;
+    });
+  };
+
+  const filterOptions = useMemo(() => {
+    return Object.fromEntries(
+      PRODUCT_SUMMARY_COLUMNS.map((column) => {
+        const otherFilteredRows = rows.filter((row) =>
+          Object.entries(columnFilters).every(
+            ([key, selected]) =>
+              key === column.key ||
+              productSummaryRowMatchesFilter(row, key as ProductSummaryColumnKey, selected),
+          ),
+        );
+        const options = Array.from(
+          new Set(
+            otherFilteredRows
+              .map((row) => productSummaryDisplayValue(row, column.key))
+              .filter((value) => value.trim() !== "" && value !== "-"),
+          ),
+        ).sort(sortFilterOption);
+        return [column.key, options] as const;
+      }),
+    ) as Partial<Record<ProductSummaryColumnKey, string[]>>;
+  }, [columnFilters, rows]);
+
+  const displayedRows = useMemo(() => {
+    const activeFilters = Object.entries(columnFilters)
+      .map(([key, selected]) => [key as ProductSummaryColumnKey, selected] as const)
+      .filter(([, selected]) => selected.length > 0);
+    const filtered =
+      activeFilters.length === 0
+        ? rows
+        : rows.filter((row) =>
+            activeFilters.every(([key, selected]) =>
+              productSummaryRowMatchesFilter(row, key, selected),
+            ),
+          );
+
+    if (!sortState) return filtered;
+    return [...filtered].sort((left, right) =>
+      compareColumnValues(
+        productSummarySortValue(left, sortState.key),
+        productSummarySortValue(right, sortState.key),
+        sortState.direction,
+      ),
+    );
+  }, [columnFilters, rows, sortState]);
+
+  const toggleSort = (key: ProductSummaryColumnKey) => {
+    setSortState((current) =>
+      current?.key === key && current.direction === "asc"
+        ? { key, direction: "desc" }
+        : { key, direction: "asc" },
+    );
+  };
+
   return (
-    <table className="w-full min-w-[1540px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+    <table className="w-full min-w-[1500px] border-collapse bg-[#0d1119] text-xs text-gray-200">
       <thead className="bg-gray-950 text-gray-500">
         <tr>
-          {[
-            "Product",
-            "Fund",
-            "Account Group",
-            "Type",
-            "Month",
-            "Client",
-            "Src 1",
-            "Src 3",
-            "C/P",
-            "Strike",
-            "Net Qty",
-            "Cost Base",
-            "MV Base",
-            "P&L Base",
-            "Trade",
-            "Settle",
-            "Rows",
-          ].map((label, index) => (
-            <th
-              key={label}
-              className={`px-3 py-2 font-semibold uppercase tracking-wide ${
-                index === 0 ? "sticky left-0 z-20 bg-gray-950 text-left" : "text-right"
-              }`}
-            >
-              {label}
+          {PRODUCT_SUMMARY_COLUMNS.map((column) => {
+            const sortDirection = sortState?.key === column.key ? sortState.direction : null;
+            return (
+              <th
+                key={column.key}
+                className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}
+              >
+                <div className={tableHeaderInnerClass(column)}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(column.key)}
+                    className={`flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 transition-colors hover:bg-gray-900 ${
+                      sortDirection ? "text-sky-200" : "text-gray-400"
+                    }`}
+                    aria-label={`Sort ${column.label}`}
+                  >
+                    <span className="truncate text-[10px] leading-3">{column.label}</span>
+                    <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
+                      {sortDirection === "asc" ? "\u2191" : sortDirection === "desc" ? "\u2193" : ""}
+                    </span>
+                  </button>
+                  <ColumnFilterMenu
+                    label={column.label}
+                    options={filterOptions[column.key] ?? []}
+                    selected={columnFilters[column.key] ?? []}
+                    sortDirection={sortDirection}
+                    onSort={(direction) => setSortState({ key: column.key, direction })}
+                    onChange={(values) => updateColumnFilter(column.key, values)}
+                  />
+                </div>
             </th>
-          ))}
+            );
+          })}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-800">
-        {rows.map((row, index) => {
-          const pnlTone =
-            row.unrealizedPnlBase === null
-              ? "text-gray-300"
-              : row.unrealizedPnlBase >= 0
-                ? "text-emerald-200"
-                : "text-red-200";
-          return (
-            <tr
-              key={[
-                row.fundCode,
-                row.accountGroup,
-                row.product,
-                row.type,
-                row.monthYear,
-                row.clientSymbol,
-                row.callPut,
-                row.strikePrice,
-                index,
-              ].join("|")}
-              className="hover:bg-gray-900/60"
-            >
-              <td className="sticky left-0 z-10 max-w-[280px] bg-[#0d1119] px-3 py-2 text-left font-semibold text-gray-100">
-                <span className="block truncate" title={row.product ?? undefined}>
-                  {displayText(row.product)}
-                </span>
+        {displayedRows.map((row) => (
+          <tr key={JSON.stringify(groupFilterFromRow(row))} className="hover:bg-gray-900/60">
+            {PRODUCT_SUMMARY_COLUMNS.map((column) => (
+              <td key={column.key} className={productSummaryCellClass(row, column)}>
+                {renderProductSummaryCell(row, column.key, onRowSelect)}
               </td>
-              <td className="px-3 py-2 text-right uppercase tabular-nums text-gray-300">
-                {displayText(row.fundCode)}
-              </td>
-              <td className="px-3 py-2 text-right text-gray-300">{displayText(row.accountGroup)}</td>
-              <td className="px-3 py-2 text-right text-gray-400">{displayText(row.type)}</td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                {displayText(row.monthYear)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-300">
-                {displayText(row.clientSymbol)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                {displayText(row.source1Symbol)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                {displayText(row.source3Symbol)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                {displayText(row.callPut)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(row.strikePrice)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtQuantity(row.netQuantity)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtNumber(row.costBase, 0)}</td>
-              <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-100">
-                {fmtNumber(row.marketValueBase, 0)}
-              </td>
-              <td className={`px-3 py-2 text-right tabular-nums font-semibold ${pnlTone}`}>
-                {fmtNumber(row.unrealizedPnlBase, 0)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(row.avgTradePrice)}</td>
-              <td className="px-3 py-2 text-right tabular-nums">
-                {fmtPrice(row.avgSettlementPrice)}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onRowSelect(row);
-                  }}
-                  className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-semibold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
-                >
-                  {row.rowCount.toLocaleString()}
-                </button>
-              </td>
-            </tr>
-          );
-        })}
-        {!rows.length && (
+            ))}
+          </tr>
+        ))}
+        {!displayedRows.length && (
           <tr>
-            <td colSpan={17} className="px-3 py-8 text-center text-sm text-gray-500">
+            <td
+              colSpan={PRODUCT_SUMMARY_COLUMNS.length}
+              className="px-3 py-8 text-center text-sm text-gray-500"
+            >
               No product groups match the selected filters.
             </td>
           </tr>
@@ -500,121 +877,273 @@ function ProductSummaryTable({
   );
 }
 
+function rawContractLabel(row: RawPositionRow): string {
+  return `${displayText(row.contractYyyymm)}${
+    row.contractDay !== null ? `-${String(row.contractDay).padStart(2, "0")}` : ""
+  }`;
+}
+
+function rawDisplayValue(row: RawPositionRow, key: RawColumnKey): string {
+  switch (key) {
+    case "product":
+      return displayText(row.product);
+    case "productCode":
+      return displayText(row.productCode);
+    case "productGroup":
+      return displayText(row.productGroup);
+    case "productRegion":
+      return displayText(row.productRegion);
+    case "contract":
+      return rawContractLabel(row);
+    case "normalizationStatus":
+      return displayText(row.normalizationStatus);
+    case "fundCode":
+      return displayText(row.fundCode);
+    case "navDate":
+      return fmtDate(row.navDate);
+    case "sftpUploadTimestamp":
+      return fmtDateTime(row.sftpUploadTimestamp);
+    case "brokerName":
+      return displayText(row.brokerName);
+    case "accountGroup":
+      return displayText(row.accountGroup);
+    case "account":
+      return displayText(row.account);
+    case "tradeDate":
+      return fmtDate(row.tradeDate);
+    case "type":
+      return displayText(row.type);
+    case "monthYear":
+      return displayText(row.monthYear);
+    case "clientSymbol":
+      return displayText(row.clientSymbol);
+    case "source1Symbol":
+      return displayText(row.source1Symbol);
+    case "source3Symbol":
+      return displayText(row.source3Symbol);
+    case "longShort":
+      return displayText(row.longShort);
+    case "quantity1":
+      return fmtQuantity(row.quantity1);
+    case "ccy2Quantity2":
+      return fmtQuantity(row.ccy2Quantity2);
+    case "tradePrice":
+      return fmtPrice(row.tradePrice);
+    case "marketSettlementPrice":
+      return fmtPrice(row.marketSettlementPrice);
+    case "costInNativeCurrency":
+      return fmtNumber(row.costInNativeCurrency, 0);
+    case "costInBaseCurrency":
+      return fmtNumber(row.costInBaseCurrency, 0);
+    case "marketValueInNativeCurrency":
+      return fmtNumber(row.marketValueInNativeCurrency, 0);
+    case "marketValueInBaseCurrency":
+      return fmtNumber(row.marketValueInBaseCurrency, 0);
+    case "sector":
+      return displayText(row.sector);
+    case "subSector":
+      return displayText(row.subSector);
+    case "exchangeName":
+      return displayText(row.exchangeName);
+    case "sourceFileRowNumber":
+      return row.sourceFileRowNumber.toLocaleString();
+  }
+}
+
+function rawSortValue(row: RawPositionRow, key: RawColumnKey): string | number | null {
+  switch (key) {
+    case "quantity1":
+      return row.quantity1;
+    case "ccy2Quantity2":
+      return row.ccy2Quantity2;
+    case "tradePrice":
+      return row.tradePrice;
+    case "marketSettlementPrice":
+      return row.marketSettlementPrice;
+    case "costInNativeCurrency":
+      return row.costInNativeCurrency;
+    case "costInBaseCurrency":
+      return row.costInBaseCurrency;
+    case "marketValueInNativeCurrency":
+      return row.marketValueInNativeCurrency;
+    case "marketValueInBaseCurrency":
+      return row.marketValueInBaseCurrency;
+    case "sourceFileRowNumber":
+      return row.sourceFileRowNumber;
+    case "navDate":
+      return row.navDate;
+    case "sftpUploadTimestamp":
+      return row.sftpUploadTimestamp;
+    case "tradeDate":
+      return row.tradeDate;
+    default:
+      return rawDisplayValue(row, key);
+  }
+}
+
+function rawRowMatchesFilter(row: RawPositionRow, key: RawColumnKey, selectedValues: string[]): boolean {
+  if (selectedValues.length === 0) return true;
+  const value = rawDisplayValue(row, key).toLowerCase();
+  return selectedValues.some((selected) => value === selected.trim().toLowerCase());
+}
+
+function rawCellClass(column: TableColumn<RawColumnKey>): string {
+  const align = column.align === "left" ? "text-left" : "text-right";
+  const sticky = column.sticky
+    ? "sticky left-0 z-10 max-w-[300px] bg-[#0d1119] font-semibold text-gray-100"
+    : "";
+  const numeric = [
+    "quantity1",
+    "ccy2Quantity2",
+    "tradePrice",
+    "marketSettlementPrice",
+    "costInNativeCurrency",
+    "costInBaseCurrency",
+    "marketValueInNativeCurrency",
+    "marketValueInBaseCurrency",
+    "sourceFileRowNumber",
+  ].includes(column.key)
+    ? "tabular-nums"
+    : "";
+  const tone =
+    column.key === "marketValueInBaseCurrency"
+      ? "font-semibold text-gray-100"
+      : column.key === "product"
+        ? ""
+        : "text-gray-300";
+
+  return `px-3 py-2 ${align} ${sticky} ${numeric} ${tone}`;
+}
+
+function renderRawCell(row: RawPositionRow, key: RawColumnKey): ReactNode {
+  if (key === "product") {
+    return (
+      <span className="block truncate" title={row.product ?? undefined}>
+        {displayText(row.product)}
+      </span>
+    );
+  }
+  return rawDisplayValue(row, key);
+}
+
 function RawRowsTable({ rows }: { rows: RawPositionRow[] }) {
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters<RawColumnKey>>({});
+  const [sortState, setSortState] = useState<SortState<RawColumnKey> | null>(null);
+
+  const updateColumnFilter = (key: RawColumnKey, values: string[]) => {
+    setColumnFilters((filters) => {
+      const next = { ...filters };
+      if (values.length > 0) next[key] = values;
+      else delete next[key];
+      return next;
+    });
+  };
+
+  const filterOptions = useMemo(() => {
+    return Object.fromEntries(
+      RAW_COLUMNS.map((column) => {
+        const otherFilteredRows = rows.filter((row) =>
+          Object.entries(columnFilters).every(
+            ([key, selected]) =>
+              key === column.key || rawRowMatchesFilter(row, key as RawColumnKey, selected),
+          ),
+        );
+        const options = Array.from(
+          new Set(
+            otherFilteredRows
+              .map((row) => rawDisplayValue(row, column.key))
+              .filter((value) => value.trim() !== "" && value !== "-"),
+          ),
+        ).sort(sortFilterOption);
+        return [column.key, options] as const;
+      }),
+    ) as Partial<Record<RawColumnKey, string[]>>;
+  }, [columnFilters, rows]);
+
+  const displayedRows = useMemo(() => {
+    const activeFilters = Object.entries(columnFilters)
+      .map(([key, selected]) => [key as RawColumnKey, selected] as const)
+      .filter(([, selected]) => selected.length > 0);
+    const filtered =
+      activeFilters.length === 0
+        ? rows
+        : rows.filter((row) =>
+            activeFilters.every(([key, selected]) => rawRowMatchesFilter(row, key, selected)),
+          );
+
+    if (!sortState) return filtered;
+    return [...filtered].sort((left, right) =>
+      compareColumnValues(
+        rawSortValue(left, sortState.key),
+        rawSortValue(right, sortState.key),
+        sortState.direction,
+      ),
+    );
+  }, [columnFilters, rows, sortState]);
+
+  const toggleSort = (key: RawColumnKey) => {
+    setSortState((current) =>
+      current?.key === key && current.direction === "asc"
+        ? { key, direction: "desc" }
+        : { key, direction: "asc" },
+    );
+  };
+
   return (
-    <table className="w-full min-w-[2380px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+    <table className="w-full min-w-[2680px] border-collapse bg-[#0d1119] text-xs text-gray-200">
       <thead className="bg-gray-950 text-gray-500">
         <tr>
-          {[
-            "Product",
-            "Fund",
-            "Position Date",
-            "Upload",
-            "Broker",
-            "Account Group",
-            "Account",
-            "Trade Date",
-            "Type",
-            "Month",
-            "Client",
-            "Src 1",
-            "Src 3",
-            "Long/Short",
-            "Qty 1",
-            "CCY 2 Qty",
-            "Trade",
-            "Settle",
-            "Cost Native",
-            "Cost Base",
-            "MV Native",
-            "MV Base",
-            "Sector",
-            "Sub Sector",
-            "Exchange",
-            "File Row",
-          ].map((label, index) => (
-            <th
-              key={label}
-              className={`px-3 py-2 font-semibold uppercase tracking-wide ${
-                index === 0 ? "sticky left-0 z-20 bg-gray-950 text-left" : "text-right"
-              }`}
-            >
-              {label}
+          {RAW_COLUMNS.map((column) => {
+            const sortDirection = sortState?.key === column.key ? sortState.direction : null;
+            return (
+              <th
+                key={column.key}
+                className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}
+              >
+                <div className={tableHeaderInnerClass(column)}>
+                  <button
+                    type="button"
+                    onClick={() => toggleSort(column.key)}
+                    className={`flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 transition-colors hover:bg-gray-900 ${
+                      sortDirection ? "text-sky-200" : "text-gray-400"
+                    }`}
+                    aria-label={`Sort ${column.label}`}
+                  >
+                    <span className="truncate text-[10px] leading-3">{column.label}</span>
+                    <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
+                      {sortDirection === "asc" ? "\u2191" : sortDirection === "desc" ? "\u2193" : ""}
+                    </span>
+                  </button>
+                  <ColumnFilterMenu
+                    label={column.label}
+                    options={filterOptions[column.key] ?? []}
+                    selected={columnFilters[column.key] ?? []}
+                    sortDirection={sortDirection}
+                    onSort={(direction) => setSortState({ key: column.key, direction })}
+                    onChange={(values) => updateColumnFilter(column.key, values)}
+                  />
+                </div>
             </th>
-          ))}
+            );
+          })}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-800">
-        {rows.map((row) => (
+        {displayedRows.map((row) => (
           <tr
             key={`${row.sourceFileName}|${row.sourceFileRowNumber}`}
             className="hover:bg-gray-900/60"
           >
-            <td className="sticky left-0 z-10 max-w-[300px] bg-[#0d1119] px-3 py-2 text-left font-semibold text-gray-100">
-              <span className="block truncate" title={row.product ?? undefined}>
-                {displayText(row.product)}
-              </span>
-            </td>
-            <td className="px-3 py-2 text-right uppercase tabular-nums text-gray-300">
-              {displayText(row.fundCode)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">{fmtDate(row.navDate)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {fmtDateTime(row.sftpUploadTimestamp)}
-            </td>
-            <td className="px-3 py-2 text-right text-gray-400">{displayText(row.brokerName)}</td>
-            <td className="px-3 py-2 text-right text-gray-300">{displayText(row.accountGroup)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-300">
-              {displayText(row.account)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {fmtDate(row.tradeDate)}
-            </td>
-            <td className="px-3 py-2 text-right text-gray-400">{displayText(row.type)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {displayText(row.monthYear)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-300">
-              {displayText(row.clientSymbol)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {displayText(row.source1Symbol)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {displayText(row.source3Symbol)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {displayText(row.longShort)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtQuantity(row.quantity1)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtQuantity(row.ccy2Quantity2)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">{fmtPrice(row.tradePrice)}</td>
-            <td className="px-3 py-2 text-right tabular-nums">
-              {fmtPrice(row.marketSettlementPrice)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">
-              {fmtNumber(row.costInNativeCurrency, 0)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">
-              {fmtNumber(row.costInBaseCurrency, 0)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums">
-              {fmtNumber(row.marketValueInNativeCurrency, 0)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-100">
-              {fmtNumber(row.marketValueInBaseCurrency, 0)}
-            </td>
-            <td className="px-3 py-2 text-right text-gray-400">{displayText(row.sector)}</td>
-            <td className="px-3 py-2 text-right text-gray-400">{displayText(row.subSector)}</td>
-            <td className="px-3 py-2 text-right text-gray-400">{displayText(row.exchangeName)}</td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-              {row.sourceFileRowNumber.toLocaleString()}
-            </td>
+            {RAW_COLUMNS.map((column) => (
+              <td key={column.key} className={rawCellClass(column)}>
+                {renderRawCell(row, column.key)}
+              </td>
+            ))}
           </tr>
         ))}
-        {!rows.length && (
+        {!displayedRows.length && (
           <tr>
-            <td colSpan={26} className="px-3 py-8 text-center text-sm text-gray-500">
+            <td colSpan={RAW_COLUMNS.length} className="px-3 py-8 text-center text-sm text-gray-500">
               No raw position rows match the selected filters.
             </td>
           </tr>
@@ -735,8 +1264,8 @@ function downloadTextFile(fileName: string, text: string) {
   URL.revokeObjectURL(url);
 }
 
-function SqlDownloadsPanel({ downloads }: { downloads: ProductRuleSqlDownload[] }) {
-  const downloadGroups = (["Validation", "Marts"] as const)
+function SqlDownloadsPanel({ downloads }: { downloads: NavPositionSqlDownload[] }) {
+  const downloadGroups = (["Marts", "Checks", "Drilldowns"] as const)
     .map((group) => ({
       group,
       downloads: downloads.filter((download) => download.group === group),
@@ -749,7 +1278,7 @@ function SqlDownloadsPanel({ downloads }: { downloads: ProductRuleSqlDownload[] 
         <div>
           <h2 className="text-sm font-semibold text-gray-100">SQL Downloads</h2>
           <p className="mt-1 text-xs text-gray-500">
-            Read-only validation and mart checks for the current filters.
+            Standalone read-only SQL generated from the current product rules.
           </p>
         </div>
       </div>
@@ -866,7 +1395,7 @@ function RulesView({
   payload: NavPositionsPayload | null;
   loading: boolean;
   error: string | null;
-  sqlParams: ProductRuleSqlParams;
+  sqlParams: NavPositionSqlParams;
 }) {
   const previewRows = useMemo<RulePreviewRow[]>(
     () =>
@@ -890,7 +1419,7 @@ function RulesView({
     () => buildRuleExceptionGroups(previewRows),
     [previewRows]
   );
-  const sqlDownloads = useMemo(() => buildProductRuleSqlDownloads(sqlParams), [sqlParams]);
+  const sqlDownloads = useMemo(() => buildNavPositionSqlDownloads(sqlParams), [sqlParams]);
 
   return (
     <div className="space-y-4">
@@ -964,24 +1493,22 @@ function ProductDetailModal({
                 Source Rows
               </p>
               <h2 className="mt-1 truncate text-lg font-semibold text-gray-100">
-                {displayText(group.product)}
+                {displayText(group.productCode)}
               </h2>
               <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-gray-400">
-                <span className="rounded-sm bg-gray-900 px-2 py-1 uppercase">
-                  {displayText(group.fundCode)}
+                <span className="rounded-sm bg-gray-900 px-2 py-1">
+                  {displayText(group.productGroup)}
                 </span>
                 <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.accountGroup)}
+                  {displayText(group.productRegion)}
                 </span>
                 <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.type)}
+                  {displayText(group.contractYyyymm)}
+                  {group.contractDay !== null ? `-${String(group.contractDay).padStart(2, "0")}` : ""}
                 </span>
-                <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.monthYear)}
-                </span>
-                {(group.callPut || group.strikePrice !== null) && (
+                {(group.putCall || group.strikePrice !== null) && (
                   <span className="rounded-sm bg-gray-900 px-2 py-1">
-                    {displayText(group.callPut)} {fmtPrice(group.strikePrice)}
+                    {displayText(group.putCall)} {fmtPrice(group.strikePrice)}
                   </span>
                 )}
               </div>
@@ -1062,6 +1589,9 @@ export default function NavPositions({
   const [detailData, setDetailData] = useState<NavPositionsPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [quickProductGroups, setQuickProductGroups] = useState<string[]>([]);
+  const [quickProductRegions, setQuickProductRegions] = useState<string[]>([]);
+  const [quickProductCodes, setQuickProductCodes] = useState<string[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1118,7 +1648,15 @@ export default function NavPositions({
     setDetailGroup(null);
     setDetailData(null);
     setDetailError(null);
-  }, [accountGroup, fund, productSearch, selectedDate]);
+  }, [
+    accountGroup,
+    fund,
+    productSearch,
+    quickProductCodes,
+    quickProductGroups,
+    quickProductRegions,
+    selectedDate,
+  ]);
 
   useEffect(() => {
     if (!detailGroup) return;
@@ -1192,6 +1730,80 @@ export default function NavPositions({
     if (accountGroup !== "all") values.add(accountGroup);
     return Array.from(values).sort();
   }, [accountGroup, data]);
+
+  const productGroupOptions = useMemo(
+    () => uniqueSortedText((data?.productSummary ?? []).map((row) => row.productGroup)),
+    [data],
+  );
+
+  const productRegionOptions = useMemo(
+    () =>
+      uniqueSortedText(
+        (data?.productSummary ?? [])
+          .filter((row) => selectedTextMatches(row.productGroup, quickProductGroups))
+          .map((row) => row.productRegion),
+      ),
+    [data, quickProductGroups],
+  );
+
+  const productCodeOptions = useMemo(
+    () =>
+      uniqueSortedText(
+        (data?.productSummary ?? [])
+          .filter(
+            (row) =>
+              selectedTextMatches(row.productGroup, quickProductGroups) &&
+              selectedTextMatches(row.productRegion, quickProductRegions),
+          )
+          .map((row) => row.productCode),
+      ),
+    [data, quickProductGroups, quickProductRegions],
+  );
+
+  useEffect(() => {
+    setQuickProductGroups((selected) => retainAvailableSelections(selected, productGroupOptions));
+  }, [productGroupOptions]);
+
+  useEffect(() => {
+    setQuickProductRegions((selected) => retainAvailableSelections(selected, productRegionOptions));
+  }, [productRegionOptions]);
+
+  useEffect(() => {
+    setQuickProductCodes((selected) => retainAvailableSelections(selected, productCodeOptions));
+  }, [productCodeOptions]);
+
+  const quickFilteredProductSummary = useMemo(
+    () =>
+      (data?.productSummary ?? []).filter(
+        (row) =>
+          selectedTextMatches(row.productGroup, quickProductGroups) &&
+          selectedTextMatches(row.productRegion, quickProductRegions) &&
+          selectedTextMatches(row.productCode, quickProductCodes),
+      ),
+    [data, quickProductCodes, quickProductGroups, quickProductRegions],
+  );
+
+  const quickFilteredRawRows = useMemo(
+    () =>
+      (data?.rawRows ?? []).filter(
+        (row) =>
+          selectedTextMatches(row.productGroup, quickProductGroups) &&
+          selectedTextMatches(row.productRegion, quickProductRegions) &&
+          selectedTextMatches(row.productCode, quickProductCodes),
+      ),
+    [data, quickProductCodes, quickProductGroups, quickProductRegions],
+  );
+
+  const activeQuickFilterCount =
+    quickProductGroups.length +
+    quickProductRegions.length +
+    quickProductCodes.length;
+
+  const clearQuickFilters = () => {
+    setQuickProductGroups([]);
+    setQuickProductRegions([]);
+    setQuickProductCodes([]);
+  };
 
   return (
     <div className="space-y-4">
@@ -1272,6 +1884,85 @@ export default function NavPositions({
           </label>
         </div>
 
+        {data && (
+          <div className="mt-4 border-t border-gray-800 pt-3">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
+                <div className="min-w-0">
+                  <span className={FIELD_LABEL_CLASS}>Group</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <QuickFilterChip
+                      active={quickProductGroups.length === 0}
+                      onClick={() => setQuickProductGroups([])}
+                    >
+                      All
+                    </QuickFilterChip>
+                    {productGroupOptions.map((group) => {
+                      const active = quickProductGroups.includes(group);
+                      return (
+                        <QuickFilterChip
+                          key={group}
+                          active={active}
+                          onClick={() =>
+                            setQuickProductGroups((selected) =>
+                              active
+                                ? selected.filter((value) => value !== group)
+                                : [...selected, group],
+                            )
+                          }
+                        >
+                          {group}
+                        </QuickFilterChip>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <MultiSelect
+                  label="Region"
+                  options={productRegionOptions}
+                  selected={quickProductRegions}
+                  onChange={setQuickProductRegions}
+                  placeholder="All regions"
+                  width="w-56"
+                />
+                <MultiSelect
+                  label="Code"
+                  options={productCodeOptions}
+                  selected={quickProductCodes}
+                  onChange={setQuickProductCodes}
+                  placeholder="All codes"
+                  width="w-64"
+                />
+              </div>
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <span className="text-xs text-gray-500">
+                  {quickFilteredProductSummary.length.toLocaleString()} /{" "}
+                  {data.productSummary.length.toLocaleString()} groups |{" "}
+                  {quickFilteredRawRows.length.toLocaleString()} /{" "}
+                  {data.rawRows.length.toLocaleString()} loaded raw
+                </span>
+                {activeQuickFilterCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={clearQuickFilters}
+                    className="rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-gray-600 hover:text-gray-100"
+                  >
+                    Clear Quick Filters ({activeQuickFilterCount})
+                  </button>
+                )}
+              </div>
+            </div>
+            {activeQuickFilterCount > 0 && (
+              <p className="mt-2 text-xs text-gray-600">
+                Quick filters apply to Summary and Raw only. SQL downloads still use the server
+                filters above.
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <StatusBadge
@@ -1330,18 +2021,18 @@ export default function NavPositions({
           {viewMode === "summary" && (
             <DataTableShell
               title="Product Summary"
-              subtitle={`Grouped by ${data.metadata.aggregationGrain.join(", ")}.`}
+              subtitle={`${quickFilteredProductSummary.length.toLocaleString()} of ${data.productSummary.length.toLocaleString()} groups shown. Grouped by ${data.metadata.aggregationGrain.join(", ")}.`}
             >
-              <ProductSummaryTable rows={data.productSummary} onRowSelect={setDetailGroup} />
+              <ProductSummaryTable rows={quickFilteredProductSummary} onRowSelect={setDetailGroup} />
             </DataTableShell>
           )}
 
           {viewMode === "raw" && (
             <DataTableShell
               title="Raw Position Rows"
-              subtitle={`${data.rawRows.length.toLocaleString()} of ${data.summary.rowCount.toLocaleString()} selected rows. Source columns are normalized to frontend names.`}
+              subtitle={`${quickFilteredRawRows.length.toLocaleString()} of ${data.rawRows.length.toLocaleString()} loaded rows shown. ${data.rawRows.length.toLocaleString()} of ${data.summary.rowCount.toLocaleString()} selected rows loaded.`}
             >
-              <RawRowsTable rows={data.rawRows} />
+              <RawRowsTable rows={quickFilteredRawRows} />
             </DataTableShell>
           )}
 
