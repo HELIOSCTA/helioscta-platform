@@ -24,7 +24,7 @@ boundary, or log path changes.
   - `docs/operations/manual-backfills.md`
   - `docs/operations/vm-rebuild-runbook.md`
 - Verification:
-  - GitHub Actions CI validates backend tests and dbt parse/critical compile.
+  - GitHub Actions CI validates backend tests.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
@@ -346,7 +346,7 @@ Operational notes:
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-dam-stlmnt-pnt-prices.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Application DDL applied locally with `psql` on `2026-06-13`.
 - Manual verification: `2026-06-13 16:52 UTC`; conda env
   `helioscta-platform-backend` ran the orchestration for business date
   `2026-06-13`, upserted 96 hub rows, and emitted
@@ -400,12 +400,7 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-da-hrl-lmps.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql`,
-  and
-  `dbt/azure_postgres/models/power/isone/da_hrl_lmps/index_isone_da_hrl_lmps.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-13`, upserted 29,016 rows, wrote ISO-NE API telemetry, and emitted
@@ -458,12 +453,7 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-rt-hrl-lmps-final.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql`,
-  and
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/index_isone_rt_hrl_lmps_final.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-11`, upserted 29,016 rows, wrote ISO-NE API telemetry, and emitted
@@ -522,12 +512,7 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-rt-hrl-lmps-prelim.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql`,
-  and
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/index_isone_rt_hrl_lmps_prelim.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-13`, upserted 24,180 partial current-day rows, correctly skipped
@@ -582,11 +567,7 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-hourly-system-demand.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql`
-  and
-  `dbt/azure_postgres/models/power/isone/hourly_system_demand/index_isone_hourly_system_demand.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-12`, upserted 24 rows, and emitted
@@ -618,11 +599,7 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-da-hrl-cleared-demand.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql`
-  and
-  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/index_isone_da_hrl_cleared_demand.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for operating date
   `2026-06-13`, upserted 24 rows, and emitted
@@ -681,14 +658,11 @@ LIMIT 10;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-forecast-batch.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/isone/forecast_feeds/table_isone_*.sql`
-  and `dbt/azure_postgres/models/power/isone/forecast_feeds/index_isone_forecast_feeds.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the batch for report date `2026-06-13`,
   upserted 2,632 regional demand forecast rows, 6 capacity forecast rows,
-  144 wind forecast rows, and 168 solar forecast rows. The four dbt
+  144 wind forecast rows, and 168 solar forecast rows. The four SQL
   duplicate-key tests passed.
 - Deployed runtime commit: `16012dc`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
@@ -769,11 +743,7 @@ FROM isone.seven_day_solar_forecast;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-rt-hrl-scheduled-interchange.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql`
-  and
-  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/index_isone_rt_hrl_scheduled_interchange.sql`.
-- Operator SQL applied locally on `2026-06-13`.
+- Application DDL applied locally on `2026-06-13`.
 - Manual verification: `2026-06-13`; conda env
   `helioscta-platform-backend` ran the orchestration for local date
   `2026-06-12`, upserted 168 rows across 7 interfaces x 24 hours, and emitted
@@ -809,11 +779,7 @@ FROM isone.seven_day_solar_forecast;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-external-interface-metered-data.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql`
-  and
-  `dbt/azure_postgres/models/power/isone/external_interface_metered_data/index_isone_external_interface_metered_data.sql`.
-- Operator SQL applied locally on `2026-06-14`.
+- Application DDL applied locally on `2026-06-14`.
 - Manual verification: `2026-06-14`; conda env
   `helioscta-platform-backend` ran the orchestration for local dates
   `2026-01-01` through `2026-04-30`, upserted 23,032 rows across 8 entities,
@@ -852,10 +818,7 @@ FROM isone.seven_day_solar_forecast;
   VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-settlement-point-prices.lock`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/ercot/settlement_point_prices/table_ercot_settlement_point_prices.sql`
-  and matching index SQL.
-- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Application DDL applied locally with `psql` on `2026-06-13`.
 - Manual verification: `2026-06-13 17:02 UTC`; conda env
   `helioscta-platform-backend` ran the scrape for delivery date
   `2026-06-13`, upserted 188 hub rows across 47 published intervals, and wrote
@@ -901,7 +864,7 @@ FROM isone.seven_day_solar_forecast;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-load-batch.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL applied locally with `psql` on `2026-06-13`.
+- Application DDL applied locally with `psql` on `2026-06-13`.
 - Manual verification: `2026-06-13 17:48 UTC`; conda env
   `helioscta-platform-backend` ran `actual_system_load` for operating day
   `2026-06-12`, upserted 24 rows, ran `seven_day_load_forecast` for delivery
@@ -1044,7 +1007,7 @@ FROM isone.seven_day_solar_forecast;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-data-miner-batch.lock`.
 - Runtime update: `gen_by_fuel` was promoted into the shared batch on
-  `2026-06-30`. Production table and index operator SQL were applied, and an
+  `2026-06-30`. Production table and index DDL were applied, and an
   initial scrape populated `pjm.gen_by_fuel` with `570` rows across `10` fuel
   types through `2026-06-30 18:00 UTC`.
 - Runtime change: `gen_by_fuel` is moved from the daily support batch into
@@ -1057,7 +1020,7 @@ FROM isone.seven_day_solar_forecast;
   `2026-06-30 14:12 UTC`. The `helios-pjm-data-miner-batch.timer` remained
   enabled with next run observed at `2026-07-01 04:31:14 UTC`.
 - Runtime update: `rt_and_self_ecomax` was promoted into the shared batch on
-  `2026-06-30`. Production table and index operator SQL were applied, and an
+  `2026-06-30`. Production table and index DDL were applied, and an
   initial VM scrape populated `pjm.rt_and_self_ecomax` with `48` rows for
   `2026-06-27 00:00` through `2026-06-28 23:00` EPT. The source returned no
   rows yet for the `2026-06-29` and `2026-06-30` EPT windows during the
@@ -1398,10 +1361,7 @@ LIMIT 20;
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-da-reserve-market-results.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- Operator SQL applied locally on `2026-07-01`:
-  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/table_pjm_da_reserve_market_results.sql`
-  and
-  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/index_pjm_da_reserve_market_results.sql`.
+- Application DDL applied locally on `2026-07-01`.
 - Initial local scrape verification on `2026-07-01`: run ID
   `9220dd85-5f87-48b3-a534-77dd4f4dadf1` upserted `1,320` rows covering
   `2026-06-21 00:00` through `2026-07-01 23:00` EPT, across `2` locales and
@@ -1543,12 +1503,6 @@ LIMIT 10;
   current-day rows when PJM refreshes them.
 - Historical shape note: `ops_sum_prev_period` is sparse peak/valley history
   before `2017-05-31`; complete hourly-by-area rows begin `2017-05-31`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/`,
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/`,
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/`,
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/`, and
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/`.
 - Post-run smoke SQL:
 
 ```sql
@@ -1636,9 +1590,6 @@ LIMIT 20;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Safe rerun story: upsert on `(evaluated_at_datetime_utc,
   forecast_datetime_beginning_utc, forecast_area)`.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/table_pjm_load_frcstd_7_day.sql`
-  and matching index SQL.
 - Deployed commit: `6c9fdeb`.
 - VM deployment: fast-forwarded on `/opt/helioscta-platform`, unit files
   installed, and timer enabled on `2026-06-17 12:17 UTC`.
@@ -1712,10 +1663,6 @@ LIMIT 10;
   `/tmp/helios-pjm-forecast-hourly.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Safe rerun story: upsert on each feed's source primary key.
-- Operator SQL:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/`,
-  `dbt/azure_postgres/models/power/pjm/hourly_solar_power_forecast/`, and
-  `dbt/azure_postgres/models/power/pjm/hourly_wind_power_forecast/`.
 - Local manual verification: `2026-06-18 15:43 UTC`; orchestration module
   processed 4,200 load rows, 1,704 solar rows, and 9,677 wind rows into Azure
   Postgres when run as separate predecessor jobs.
@@ -1792,13 +1739,7 @@ FROM pjm.hourly_wind_power_forecast;
 - Required VM credentials:
   `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
   `/etc/helioscta/backend.env`.
-- Operator SQL required before first run:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/table_meteologica_pjm_forecast_hourly.sql`,
-  and
-  `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/index_meteologica_pjm_forecast_hourly.sql`,
-  plus the DA price table and index SQL under
-  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/`.
+- Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(content_id, update_id, forecast_period_start)`.
 - Retention: 90 days by `issue_date` in the hot tables; the runtime purges
@@ -1878,12 +1819,7 @@ LIMIT 20;
 - Required VM credentials:
   `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
   `/etc/helioscta/backend.env`.
-- Operator SQL required before first run:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/table_meteologica_pjm_western_hub_da_power_price_forecast_hourly.sql`,
-  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/table_meteologica_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly.sql`,
-  and
-  `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/index_meteologica_pjm_da_price_forecast.sql`.
+- Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(content_id, update_id, forecast_period_start)` in each source table.
 - Retention: 90 days by `issue_date` in both hot tables; the runtime purges
@@ -2089,27 +2025,14 @@ LIMIT 10;
   `2026-06-17`; unit files installed under `/etc/systemd/system/`.
 - Production DDL: `weather` schema, NOAA table, NOAA indexes, WSI table, WSI
   indexes, and refreshed read-only grants applied on `2026-06-17`.
-- Operator SQL required before first run:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`,
-  and
-  `dbt/azure_postgres/models/weather/noaa/metar_observations/index_weather_noaa_metar_observations.sql`.
+- Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on `(station_id, observation_time_utc)`.
 - Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
   backend/tests/test_weather_wsi_hourly_observed_orchestration.py
   backend/tests/test_weather_noaa_metar_observations.py
-  backend/tests/test_weather_noaa_metar_observations_orchestration.py`, `dbt
-  parse --profiles-dir .`, and `dbt compile --profiles-dir . --select
-  path:models/weather/noaa/metar_observations/weather_noaa_metar_observations
-  path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
-  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
-  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
-  `2026-06-17`. pytest reported only pre-existing cache write warnings for
+  backend/tests/test_weather_noaa_metar_observations_orchestration.py`, and historical read-only SQL shape checks passed on `2026-06-17`. pytest reported only pre-existing cache write warnings for
   `backend/.pytest_cache`.
-- Production dbt validation: `dbt test --profiles-dir . --select
-  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
-  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
-  `2026-06-17`.
+- Production validation: read-only primary-key checks passed on `2026-06-17`.
 - VM verification: manual service run on `2026-06-17 21:04 UTC` exited
   `status=0/SUCCESS`, upserted 1,651 rows for 33 PJM stations, wrote five
   successful batched NOAA API telemetry rows, and emitted
@@ -2181,24 +2104,14 @@ LIMIT 20;
   `2026-06-17`; unit files installed under `/etc/systemd/system/`.
 - Production DDL: `weather` schema, WSI table, WSI indexes, NOAA table, NOAA
   indexes, and refreshed read-only grants applied on `2026-06-17`.
-- Operator SQL required before first run:
-  `dbt/azure_postgres/models/setup/schemas.sql`,
-  `dbt/azure_postgres/models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql`,
-  and
-  `dbt/azure_postgres/models/weather/wsi/hourly_observed/index_weather_wsi_hourly_observed_temperatures.sql`.
+- Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(station_id, observation_time_local, region)`.
 - Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
-  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, `dbt parse
-  --profiles-dir .`, and `dbt compile --profiles-dir . --select
-  path:models/weather/wsi/hourly_observed/weather_wsi_hourly_observed_temperatures
-  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
-  `2026-06-17`. pytest reported only pre-existing cache write warnings for
-  `backend/.pytest_cache`.
-- Production dbt validation: `dbt test --profiles-dir . --select
-  path:tests/test_weather_noaa_metar_observations_primary_keys.sql
-  path:tests/test_weather_wsi_hourly_observed_primary_keys.sql` passed on
-  `2026-06-18` after WSI was populated.
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, and
+  historical read-only SQL shape checks passed on `2026-06-17`. pytest reported
+  only pre-existing cache write warnings for `backend/.pytest_cache`.
+- Production validation: read-only primary-key checks passed on `2026-06-18`.
 - VM verification: manual service run on `2026-06-18 13:54 UTC` exited
   `status=0/SUCCESS`, upserted 1,935 rows for 34 PJM station IDs, wrote
   successful WSI API telemetry, and emitted
@@ -2262,29 +2175,21 @@ LIMIT 20;
 - Required VM credentials:
   `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
   `/etc/helioscta/backend.env`.
-- Operator SQL required before first run:
-  `dbt/azure_postgres/models/weather/wsi/hourly_forecast/table_weather_wsi_hourly_forecasts.sql`
-  and
-  `dbt/azure_postgres/models/weather/wsi/hourly_forecast/index_weather_wsi_hourly_forecasts.sql`.
+- Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(station_id, region, forecast_issued_at_utc, forecast_time_utc)`.
 - Local verification: `pytest backend/tests/test_weather_wsi_hourly_forecast.py
   backend/tests/test_weather_wsi_hourly_forecast_orchestration.py
   backend/tests/test_weather_wsi_hourly_observed.py
-  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, `dbt parse
-  --profiles-dir .`, and `dbt compile --profiles-dir . --select
-  path:models/weather/wsi/hourly_forecast/weather_wsi_hourly_forecasts
-  path:tests/test_weather_wsi_hourly_forecasts_primary_keys.sql` passed on
-  `2026-06-18`. pytest reported only pre-existing cache write warnings for
-  `backend/.pytest_cache`.
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, and
+  historical read-only SQL shape checks passed on `2026-06-18`. pytest reported
+  only pre-existing cache write warnings for `backend/.pytest_cache`.
 - Production DDL: `weather.wsi_hourly_forecasts` table and three forecast
   indexes were applied on `2026-06-18`:
   `idx_weather_wsi_hourly_fcst_latest`,
   `idx_weather_wsi_hourly_fcst_valid_time`, and
   `idx_weather_wsi_hourly_fcst_updated_at`.
-- Production dbt validation: `dbt test --profiles-dir . --select
-  path:tests/test_weather_wsi_hourly_forecasts_primary_keys.sql` passed on
-  `2026-06-18`.
+- Production validation: read-only primary-key checks passed on `2026-06-18`.
 - Production refresh verification: local orchestration run on
   `2026-06-18 14:19 UTC` upserted 12,240 rows for 34 PJM station IDs and one
   WSI forecast issue, wrote four successful batched WSI API telemetry rows,

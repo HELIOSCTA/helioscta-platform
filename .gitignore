@@ -15,14 +15,12 @@ env/
 .env
 !.env.example
 backend/.env
-dbt/**/.env
 infrastructure/azure-postgres/bootstrap/
 
 # Local editor and tool state
 .vscode/
 .idea/
 *.code-workspace
-dbt/**/.user.yml
 
 # Local-only context workspace
 .local/*
@@ -42,11 +40,6 @@ backend/mcp_server/runs/
 backend/scrapes/nav/downloads/
 backend/scrapes/clear_street/downloads/
 backend/scrapes/positions_and_trades/exports/
-
-# dbt
-dbt/**/target/
-dbt/**/dbt_packages/
-dbt/**/logs/
 
 # Frontend
 frontend/node_modules/

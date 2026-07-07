@@ -188,10 +188,8 @@ For every feed promoted from this selection note:
 - Backend module name, scrape name, and destination table name must exactly
   match the PJM Data Miner 2 feed short name.
 - Destination schema is `pjm`.
-- Table DDL and index SQL live in
-  `dbt/azure_postgres/models/power/pjm/<feed_short_name>/` as disabled
-  operator SQL.
-- Enabled dbt files stay read-only: source, staging, and final shaping models.
+- Table and index DDL is managed outside this repo and must be applied before scheduling.
+- Enabled SQL files stay read-only: source, staging, and final shaping models.
 - The source contract must document feed short name, display name, category,
   posting frequency, retention, grain, uniqueness key, and freshness field.
 - Runtime writes use backend `helios_admin` upserts.

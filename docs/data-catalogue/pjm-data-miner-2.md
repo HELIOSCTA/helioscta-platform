@@ -16,9 +16,8 @@ Promotion rule for this repo:
   legacy implementation code.
 - Destination schema is `pjm`.
 - Runtime writes use the backend `helios_admin` path and upsert into direct
-  tables documented by disabled dbt `table_*.sql` operator SQL.
-- dbt models are read-only validation and query shaping under
-  `dbt/azure_postgres/models/power/pjm/<feed_short_name>/`.
+  tables documented by operator-managed application tables.
+- Validation and query-shaping SQL should be documented with the consuming workflow or deployment notes.
 - Backfills are out of scope for the initial migration pass unless explicitly
   requested.
 
@@ -124,10 +123,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `pnode_id`.
 - Freshness field: `effective_date` and `termination_date`.
 - Runtime: `backend.scrapes.power.pjm.pnode`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/pnode/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/pnode/table_pjm_pnode.sql`.
 
 ### da_hrl_lmps
 
@@ -144,9 +139,6 @@ Feed selection and promotion priority are documented in
 - Runtime observability: `ops.api_fetch_log`.
 - Data availability output: `ops.data_availability_events` with event keys in
   the shape `pjm_da_hrl_lmps:data_ready:<YYYY-MM-DD>:hub`.
-- dbt folder: `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/table_pjm_da_hrl_lmps.sql`.
 
 ### rt_hrl_lmps
 
@@ -161,9 +153,6 @@ Feed selection and promotion priority are documented in
   starting on business days at 11:30 a.m. EPT and polling every 5 minutes for
   up to 5 hours until PJM's verified hourly RT posting is available.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_hrl_lmps`.
-- dbt folder: `dbt/azure_postgres/models/power/pjm/rt_hrl_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_hrl_lmps/table_pjm_rt_hrl_lmps.sql`.
 
 ### unverified_five_min_lmps
 
@@ -175,10 +164,6 @@ Feed selection and promotion priority are documented in
   `type`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.unverified_five_min_lmps`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/unverified_five_min_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/unverified_five_min_lmps/table_pjm_unverified_five_min_lmps.sql`.
 
 ### rt_fivemin_mnt_lmps
 
@@ -188,10 +173,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc`, `pnode_id`, `pnode_name`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.rt_fivemin_mnt_lmps`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_fivemin_mnt_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_fivemin_mnt_lmps/table_pjm_rt_fivemin_mnt_lmps.sql`.
 
 ### rt_fivemin_hrl_lmps
 
@@ -212,10 +193,6 @@ Feed selection and promotion priority are documented in
 - Data availability output: `ops.data_availability_events` with event keys in
   the shape
   `pjm_rt_fivemin_hrl_lmps:data_ready:<YYYY-MM-DD>:hub_zone_interface`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_fivemin_hrl_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_fivemin_hrl_lmps/table_pjm_rt_fivemin_hrl_lmps.sql`.
 
 ### five_min_tie_flows
 
@@ -226,10 +203,6 @@ Feed selection and promotion priority are documented in
   `tie_flow_name`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.five_min_tie_flows`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/five_min_tie_flows/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/five_min_tie_flows/table_pjm_five_min_tie_flows.sql`.
 
 ### act_sch_interchange
 
@@ -239,10 +212,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, tie_line`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.act_sch_interchange`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/act_sch_interchange/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/act_sch_interchange/table_pjm_act_sch_interchange.sql`.
 
 ### agg_definitions
 
@@ -257,10 +226,6 @@ Feed selection and promotion priority are documented in
 - Data type note: `agg_pnode_id` and `bus_pnode_id` require `BIGINT`; the
   current PJM sample includes IDs above signed 32-bit integer range.
 - Runtime: `backend.scrapes.power.pjm.agg_definitions`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/agg_definitions/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/agg_definitions/table_pjm_agg_definitions.sql`.
 
 ### ancillary_services
 
@@ -270,10 +235,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, datetime_beginning_ept, ancillary_service, row_is_current, version_nbr`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.ancillary_services`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ancillary_services/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ancillary_services/table_pjm_ancillary_services.sql`.
 
 ### da_interface_flows_and_limits
 
@@ -283,10 +244,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, interface_limit_name`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.da_interface_flows_and_limits`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/da_interface_flows_and_limits/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/da_interface_flows_and_limits/table_pjm_da_interface_flows_and_limits.sql`.
 
 ### da_marginal_value
 
@@ -296,10 +253,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.da_marginal_value`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/da_marginal_value/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/da_marginal_value/table_pjm_da_marginal_value.sql`.
 
 ### da_reserve_market_results
 
@@ -317,10 +270,6 @@ Feed selection and promotion priority are documented in
 - Runtime observability: `ops.api_fetch_log` and `ops.data_availability_events`.
 - Data availability event:
   `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/da_reserve_market_results/table_pjm_da_reserve_market_results.sql`.
 
 ### da_transconstraints
 
@@ -333,10 +282,6 @@ Feed selection and promotion priority are documented in
   scheduled publication-aware refresh; `backend.scrapes.power.pjm.da_transconstraints`
   remains the lower-level scrape module.
 - VM timer: `helios-pjm-da-transconstraints.timer`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/da_transconstraints/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/da_transconstraints/table_pjm_da_transconstraints.sql`.
 
 ### day_gen_capacity
 
@@ -346,10 +291,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `bid_datetime_beginning_utc`.
 - Freshness field: `bid_datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.day_gen_capacity`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/day_gen_capacity/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/day_gen_capacity/table_pjm_day_gen_capacity.sql`.
 
 ### dispatched_reserves
 
@@ -359,10 +300,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, datetime_beginning_ept, area, reserve_type`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.dispatched_reserves`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/dispatched_reserves/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/dispatched_reserves/table_pjm_dispatched_reserves.sql`.
 
 ### five_min_solar_generation
 
@@ -372,10 +309,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.five_min_solar_generation`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/five_min_solar_generation/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/five_min_solar_generation/table_pjm_five_min_solar_generation.sql`.
 
 ### gen_by_fuel
 
@@ -390,10 +323,6 @@ Feed selection and promotion priority are documented in
   through `helios-pjm-hourly-bucket.timer`; the bucket calls
   `backend.orchestration.power.pjm.gen_by_fuel`.
 - Runtime observability: `ops.api_fetch_log`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/gen_by_fuel/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/gen_by_fuel/table_pjm_gen_by_fuel.sql`.
 
 ### rt_and_self_ecomax
 
@@ -403,10 +332,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.rt_and_self_ecomax`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_and_self_ecomax/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_and_self_ecomax/table_pjm_rt_and_self_ecomax.sql`.
 
 ### load_frcstd_hist
 
@@ -416,10 +341,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `evaluated_at_utc, evaluated_at_ept, forecast_hour_beginning_utc, forecast_hour_beginning_ept, forecast_area`.
 - Freshness field: `forecast_hour_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.load_frcstd_hist`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_hist/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_hist/table_pjm_load_frcstd_hist.sql`.
 
 ### hrl_load_metered
 
@@ -429,10 +350,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.hrl_load_metered`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/hrl_load_metered/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/hrl_load_metered/table_pjm_hrl_load_metered.sql`.
 
 ### hrl_load_prelim
 
@@ -444,10 +361,6 @@ Feed selection and promotion priority are documented in
 - Runtime: `backend.scrapes.power.pjm.hrl_load_prelim`, scheduled through
   `helios-pjm-hrl-load-prelim.timer` after the source's daily `04:55 a.m.`
   EPT publication window.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/hrl_load_prelim/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/hrl_load_prelim/table_pjm_hrl_load_prelim.sql`.
 
 ### hrl_dmd_bids
 
@@ -459,10 +372,6 @@ Feed selection and promotion priority are documented in
 - Runtime: `backend.orchestration.power.pjm.hrl_dmd_bids` for the scheduled
   publication-aware refresh; `backend.scrapes.power.pjm.hrl_dmd_bids` remains
   the lower-level scrape module.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/hrl_dmd_bids/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/hrl_dmd_bids/table_pjm_hrl_dmd_bids.sql`.
 
 ### frcstd_gen_outages
 
@@ -472,10 +381,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `forecast_execution_date_ept, forecast_date`.
 - Freshness field: `forecast_execution_date_ept`.
 - Runtime: `backend.scrapes.power.pjm.frcstd_gen_outages`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/frcstd_gen_outages/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/frcstd_gen_outages/table_pjm_frcstd_gen_outages.sql`.
 
 ### rt_dispatch_reserves
 
@@ -485,10 +390,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `mkt_day, datetime_beginning_utc, datetime_beginning_ept, area, reserve_type`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.rt_dispatch_reserves`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_dispatch_reserves/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_dispatch_reserves/table_pjm_rt_dispatch_reserves.sql`.
 
 ### reserve_market_results
 
@@ -498,10 +399,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, locale, service`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.reserve_market_results`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/reserve_market_results/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/reserve_market_results/table_pjm_reserve_market_results.sql`.
 
 ### rt_default_mv_override
 
@@ -511,10 +408,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `constraint_name, contingency_description, effective_day`.
 - Freshness field: `posted_day`.
 - Runtime: `backend.scrapes.power.pjm.rt_default_mv_override`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_default_mv_override/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_default_mv_override/table_pjm_rt_default_mv_override.sql`.
 
 ### rt_marginal_value
 
@@ -524,10 +417,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.rt_marginal_value`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_marginal_value/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_marginal_value/table_pjm_rt_marginal_value.sql`.
 
 ### rt_short_term_mv_override
 
@@ -537,10 +426,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `constraint_name, contingency_description, effective_datetime_utc`.
 - Freshness field: `posted_day`.
 - Runtime: `backend.scrapes.power.pjm.rt_short_term_mv_override`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_short_term_mv_override/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_short_term_mv_override/table_pjm_rt_short_term_mv_override.sql`.
 
 ### rt_unverified_hrl_lmps
 
@@ -552,7 +437,7 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, pnode_name, type`.
 - Freshness field: `datetime_beginning_utc` and `datetime_beginning_ept`.
 - Data shape note: PJM publishes total, congestion, and marginal-loss RT
-  components. The dbt source model derives system energy as total minus
+  components. The Downstream shaping derives system energy as total minus
   congestion minus marginal loss for consistency with verified LMP models.
 - Verification note: live PJM sample on 2026-06-12 returned 29,110 rows across
   hub, zone, and interface filters with no duplicate uniqueness keys.
@@ -564,10 +449,6 @@ Feed selection and promotion priority are documented in
 - Runtime observability: `ops.api_fetch_log`.
 - Repair path: `backend.orchestration.power.pjm.hourly_price_backfill_7_day`
   reruns recent unverified hourly RT LMP market dates nightly.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/rt_unverified_hrl_lmps/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/rt_unverified_hrl_lmps/table_pjm_rt_unverified_hrl_lmps.sql`.
 
 ### load_frcstd_7_day
 
@@ -577,10 +458,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `evaluated_at_datetime_utc, forecast_datetime_beginning_utc, forecast_area`.
 - Freshness field: `evaluated_at_datetime_utc`.
 - Runtime: `backend.scrapes.power.pjm.load_frcstd_7_day`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/table_pjm_load_frcstd_7_day.sql`.
 
 ### gen_outages_by_type
 
@@ -590,10 +467,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `forecast_execution_date_ept, forecast_date, region`.
 - Freshness field: `forecast_execution_date_ept`.
 - Runtime: `backend.scrapes.power.pjm.gen_outages_by_type`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/gen_outages_by_type/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/gen_outages_by_type/table_pjm_gen_outages_by_type.sql`.
 
 ### solar_gen
 
@@ -603,10 +476,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, area`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.solar_gen`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/solar_gen/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/solar_gen/table_pjm_solar_gen.sql`.
 
 ### wind_gen
 
@@ -616,10 +485,6 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, area`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.wind_gen`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/wind_gen/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/wind_gen/table_pjm_wind_gen.sql`.
 
 ### ops_sum_frcstd_tran_lim
 
@@ -631,10 +496,6 @@ Feed selection and promotion priority are documented in
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_frcstd_tran_lim`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/table_pjm_ops_sum_frcstd_tran_lim.sql`.
 
 ### ops_sum_frcst_peak_area
 
@@ -646,10 +507,6 @@ Feed selection and promotion priority are documented in
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_frcst_peak_area`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/table_pjm_ops_sum_frcst_peak_area.sql`.
 
 ### ops_sum_frcst_peak_rto
 
@@ -661,10 +518,6 @@ Feed selection and promotion priority are documented in
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_frcst_peak_rto`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/table_pjm_ops_sum_frcst_peak_rto.sql`.
 
 ### ops_sum_prev_period
 
@@ -678,10 +531,6 @@ Feed selection and promotion priority are documented in
   `2017-05-31`; complete hourly-by-area rows begin `2017-05-31`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_prev_period`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/table_pjm_ops_sum_prev_period.sql`.
 
 ### ops_sum_prjctd_tie_flow
 
@@ -693,7 +542,3 @@ Feed selection and promotion priority are documented in
 - Freshness field: `generated_at_ept` and `projected_peak_datetime_ept`.
 - Runtime: `backend.scrapes.power.pjm.ops_sum_prjctd_tie_flow`.
 - Scheduled orchestration: `backend.orchestration.power.pjm.ops_sum`.
-- dbt folder:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/`.
-- Manual table DDL:
-  `dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/table_pjm_ops_sum_prjctd_tie_flow.sql`.

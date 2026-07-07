@@ -2,7 +2,7 @@
 
 Use this note when shaping Codex tasks that should get close to a single
 implementation pass in this repo, especially backend scrapes, orchestration,
-dbt, SQL, permissions, deployment docs, and database-backed dashboard work.
+SQL, permissions, deployment docs, and database-backed dashboard work.
 
 One-shot quality comes from narrowing uncertainty before edits, then requiring
 verification that matches the risk of the change. Do not solve this by making
@@ -25,9 +25,9 @@ discoverable, and make "done" testable.
    boundaries, visual standards, and deployment docs unless the request
    explicitly changes them.
 4. Verify against the task.
-   Run the smallest meaningful checks: targeted tests, dbt parse/compile,
-   read-only SQL checks, route/API smoke checks, permission verification SQL,
-   browser visual checks, and diff review.
+   Run the smallest meaningful checks: targeted tests, read-only SQL checks,
+   route/API smoke checks, permission verification SQL, browser visual checks,
+   and diff review.
 5. Checkpoint.
    End with changed behavior, verification results, files touched, and any
    residual risk or follow-up that is not part of the request.
@@ -54,9 +54,8 @@ Push back on assumptions that materially affect:
   with repo evidence.
 - UX consistency: future frontend changes would drift from established
   dashboard layout, controls, chart behavior, table behavior, or visual density.
-- Credentials and permissions: the request assumes dbt can write to the
-  database, uses the wrong role, or adds new secrets/config without a clear
-  operator path.
+- Credentials and permissions: the request uses the wrong role or adds new
+  secrets/config without a clear operator path.
 - Validation: the request lacks enough checks to prove correctness.
 - Complexity: the proposed implementation adds dependencies, configurability,
   abstractions, services, or migrations that are not required.
@@ -107,7 +106,7 @@ Constraints:
   or new credential requirements
 
 Done when:
-- Exact lint, test, type, dbt, SQL, route, browser, or permission checks to run
+- Exact lint, test, type, SQL, route, browser, or permission checks to run
 - What states must be inspected: loading, empty, error, stale, data
 - What deployment/operator docs must be updated
 - What the final response should include
@@ -139,26 +138,25 @@ before editing:
 Use function parameters with defaults for scrape scripts and orchestration
 entry points. Avoid argparse unless the script is intentionally operator-facing.
 
-## dbt, SQL, And Azure Postgres Add-On
+## SQL And Azure Postgres Add-On
 
-For dbt, SQL, and Azure Postgres work, make the data and permission contract
-explicit before editing:
+For SQL and Azure Postgres work, make the data and permission contract explicit
+before editing:
 
 - Source system, schema/table/model/view name, primary grain, uniqueness key,
   and timestamp/freshness fields.
-- Whether the work changes runtime code, read-only dbt models, analysis SQL,
-  operator SQL, permissions, indexes, docs, or only investigation notes.
+- Whether the work changes runtime code, analysis SQL, operator SQL,
+  permissions, indexes, docs, or only investigation notes.
 - Downstream consumers to grep, especially future `frontend/` paths when a
   database contract changes.
 - Whether the SQL runs as `helios_admin`, `helios_readonly`, or the Azure
   Postgres admin user.
 - Smallest read-only SQL query that proves the expected source shape.
-- Targeted verification command, such as dbt parse/compile for selected models
-  or permission verification SQL.
+- Targeted verification command, such as SQL lint/shape checks or permission
+  verification SQL.
 
-Do not put production write operations into dbt models. Keep operator-only SQL
-documented in `infrastructure/` or disabled/index reference files as the repo
-already does.
+Keep production write operations out of read-only SQL checks. Document
+operator-only SQL in `infrastructure/` or deployment notes.
 
 ## Frontend Add-On
 

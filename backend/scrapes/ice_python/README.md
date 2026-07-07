@@ -69,4 +69,4 @@ the current month through 36 months forward.
 
 The runtime writes to `ice_python.settlements` and
 `ice_python.settlement_contract_dates`. Those tables are operator-created from
-disabled dbt SQL. The code does not create schemas or tables at runtime.
+operator-created DDL. The code does not create schemas or tables at runtime.

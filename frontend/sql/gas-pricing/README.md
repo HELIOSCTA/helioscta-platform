@@ -24,7 +24,7 @@ remain null until those symbols are intentionally added to the scrape runtime.
 The legacy column names end in `_cash`, but this script's default value basis
 is `vwap_close`.
 
-The old dbt model used a separate ICE non-trading-day seed. This standalone
+The old shaping query used a separate ICE non-trading-day seed. This standalone
 script does not depend on a database seed table; it generates the ICE physical
 gas trading calendar from the shared TypeScript calendar module and uses that
 calendar to assign each gas day to the ICE session that priced it. Weekend and

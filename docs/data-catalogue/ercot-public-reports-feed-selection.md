@@ -76,10 +76,8 @@ For every ERCOT Public Reports feed promoted from this selection note:
 - Backend module name and destination table name should match the selected
   snake_case feed name.
 - Destination schema is `ercot`.
-- Table DDL and index SQL live in
-  `dbt/azure_postgres/models/power/ercot/<feed_name>/` as disabled operator
-  SQL.
-- Enabled dbt files stay read-only: source, staging, and final shaping models.
+- Table and index DDL is managed outside this repo and must be applied before scheduling.
+- Enabled SQL files stay read-only: source, staging, and final shaping models.
 - The source contract must document EMIL ID, report type ID, endpoint, display
   name, grain, uniqueness key, freshness field, and runtime filters.
 - Runtime writes use backend `helios_admin` upserts.

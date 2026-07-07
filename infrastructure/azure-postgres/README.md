@@ -11,52 +11,9 @@ passwords before execution. Do not commit real passwords.
 1. Connect to the maintenance database, usually `postgres`, and run:
    - `bootstrap/01_roles.sql`
    - `bootstrap/02_databases.sql`
-2. Connect to `helios_prod` as `helios_admin` and run the disabled dbt
-   operator SQL needed for application objects:
-   - `dbt/azure_postgres/models/setup/schemas.sql`
-   - `dbt/azure_postgres/models/ops/table_ops_api_fetch_log.sql`
-   - `dbt/azure_postgres/models/ops/table_ops_data_availability_events.sql`
-   - `dbt/azure_postgres/models/ops/table_ops_email_notification_outbox.sql`
-   - `dbt/azure_postgres/models/ops/table_ops_slack_notification_outbox.sql`
-   - required feed `table_*.sql` files, such as
-     `dbt/azure_postgres/models/power/pjm/da_hrl_lmps/table_pjm_da_hrl_lmps.sql`
-     or
-     `dbt/azure_postgres/models/power/ercot/dam_stlmnt_pnt_prices/table_ercot_dam_stlmnt_pnt_prices.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/da_hrl_lmps/table_isone_da_hrl_lmps.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/table_isone_rt_hrl_lmps_final.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/table_isone_rt_hrl_lmps_prelim.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/hourly_system_demand/table_isone_hourly_system_demand.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/table_isone_da_hrl_cleared_demand.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/table_isone_rt_hrl_scheduled_interchange.sql`
-     or
-     `dbt/azure_postgres/models/power/isone/external_interface_metered_data/table_isone_external_interface_metered_data.sql`
-     or ISO-NE forecast table SQL under
-     `dbt/azure_postgres/models/power/isone/forecast_feeds/`
-     or
-     `dbt/azure_postgres/models/power/meteologica/pjm_forecast_hourly/table_meteologica_pjm_forecast_hourly.sql`
-     or Meteologica DA price table SQL under
-     `dbt/azure_postgres/models/power/meteologica/pjm_da_price_forecast/`
-     or
-     `dbt/azure_postgres/models/power/miso/real_time_total_load/table_miso_real_time_total_load.sql`
-     or
-     ICE Python table SQL under
-     `dbt/azure_postgres/models/ice_python/`
-     or
-     NAV table SQL under
-     `dbt/azure_postgres/models/nav/`
-     or
-     `dbt/azure_postgres/models/weather/noaa/metar_observations/table_weather_noaa_metar_observations.sql`
-     or
-     `dbt/azure_postgres/models/weather/wsi/hourly_observed/table_weather_wsi_hourly_observed_temperatures.sql`
-     or
-     `dbt/azure_postgres/models/weather/wsi/hourly_forecast/table_weather_wsi_hourly_forecasts.sql`
-   - required `index_*.sql` files, including matching `ops` and feed indexes
+2. Connect to `helios_prod` as `helios_admin` and apply the application schema,
+   table, index, observability, and notification DDL required by the workflows
+   being enabled. That DDL is not managed in this repo.
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`
 4. Verify `helios_prod` with:
@@ -79,7 +36,7 @@ table ...`, inspect and transfer ownership first:
 
 - `helios_admin` - backend/app role. Owns schemas, runs setup SQL, and executes
   scheduled backend writes.
-- `helios_readonly` - dbt, frontend read paths, and inspection queries.
+- `helios_readonly` - frontend read paths and inspection queries.
 
 ## Database Shape
 
@@ -93,19 +50,19 @@ existing Azure Postgres server
 
 - `CREATE DATABASE` cannot run inside a transaction block.
 - `CREATE INDEX CONCURRENTLY` also cannot run inside a transaction block.
-- Application schema, table, and index DDL is documented under
-  `dbt/azure_postgres/models/` as disabled operator reference SQL. Run those
-  files manually with `helios_admin`.
-- Shared runtime observability and notification tables in `models/ops/` are
-  application objects, not dbt runtime models. Apply them before enabling
-  workflows that emit API telemetry, data-availability events, or email/Slack
-  notifications.
+- Application schema, table, and index DDL is managed outside this repo. Apply the
+  required DDL with `helios_admin` before enabling backend workflows that write
+  to those objects.
+- Shared runtime observability and notification tables are application objects.
+  Apply them before enabling workflows that emit API telemetry,
+  data-availability events, or email/Slack notifications.
 - `permissions/01_apply_database_permissions.sql` applies read-only grants to
   existing application schemas and installs read-only defaults for future
   schemas, tables, and sequences created by `helios_admin`.
 - `ALTER DEFAULT PRIVILEGES FOR ROLE helios_admin` should be run by
   `helios_admin` or a role that is a member of `helios_admin`.
-- Use `helios_readonly` for dbt. It should not own or mutate objects.
+- Use `helios_readonly` for frontend read paths and inspection queries. It
+  should not own or mutate objects.
 - Use `helios_admin` for scheduled backend scrape scripts and schema changes.
 
 ## Adding A Schema
@@ -113,15 +70,11 @@ existing Azure Postgres server
 After the initial permission script has been run, new schemas and tables do not
 need a permission script rerun when they are created by `helios_admin`.
 
-- Add application schemas to `dbt/azure_postgres/models/setup/schemas.sql`.
-- Add direct-write backend tables to disabled dbt `table_*.sql` operator SQL
-  before deploying code that writes them.
-- Add indexes to disabled dbt `index_*.sql` operator SQL.
-- Add or update shared observability tables in `models/ops/` before deploying
-  orchestration that depends on them.
-
-To add a schema, update `dbt/azure_postgres/models/setup/schemas.sql` and run
-that operator SQL manually with `helios_admin`.
+- Apply new application schemas with `helios_admin`.
+- Apply direct-write backend tables before deploying code that writes them.
+- Apply required indexes before enabling production schedules.
+- Apply or update shared observability tables before deploying orchestration
+  that depends on them.
 
 The default privileges installed during setup grant `helios_readonly` and
 backend access automatically.

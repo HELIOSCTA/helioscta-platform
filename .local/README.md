@@ -22,6 +22,5 @@ The preferred local vault layout is:
 Production-bound work still belongs in the normal repo layout:
 
 - `backend/` for promoted runtime code.
-- `dbt/azure_postgres/` for read-only validation and operator SQL contracts.
 - `frontend/` for promoted dashboard code.
 - `docs/` and `infrastructure/` for deployment and operating notes.

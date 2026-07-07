@@ -1,7 +1,7 @@
 # Backend Runtime
 
-Backend scrape scripts use the `helios_admin` database role. dbt uses separate
-read-only credentials under `dbt/azure_postgres`.
+Backend scrape scripts use the `helios_admin` database role. Frontend and
+inspection paths use separate read-only credentials.
 
 ## Environment
 
@@ -90,15 +90,15 @@ deleted by default when scripts initialize logging with `delete_if_no_errors`.
 
 ERCOT Public API helpers use the existing `ERCOT_USERNAME`,
 `ERCOT_PASSCODE`, and `ERCOT_API_KEY` environment variables. The first ERCOT
-runtime module is `backend.scrapes.power.ercot.dam_stlmnt_pnt_prices`, backed
-by disabled operator SQL under `dbt/azure_postgres/models/power/ercot/`.
+runtime module is `backend.scrapes.power.ercot.dam_stlmnt_pnt_prices`. Its
+target tables must exist before scheduled writers run.
 Promoted ERCOT schedules run orchestration modules through systemd so API
 telemetry and data-readiness events are emitted with the database writes.
 
 ISO-NE ISO Express CSV helpers use public CSV report URLs and do not require
 ISO-NE-specific credentials. The promoted ISO-NE runtime modules live under
-`backend.scrapes.power.isone` and `backend.orchestration.power.isone`, backed
-by disabled operator SQL under `dbt/azure_postgres/models/power/isone/`.
+`backend.scrapes.power.isone` and `backend.orchestration.power.isone`. Their
+target tables must exist before scheduled writers run.
 Promoted feeds currently cover DA hourly LMPs, final RT hourly LMPs,
 preliminary RT hourly LMPs, hourly system demand, and day-ahead hourly cleared
 demand. ISO-NE forecast feeds run through
@@ -117,9 +117,8 @@ MISO public Real-Time Data API helpers use unauthenticated JSON endpoints from
 `https://public-api.misoenergy.org` and do not require MISO-specific
 credentials. The first promoted MISO runtime module is
 `backend.scrapes.power.miso.real_time_total_load`, with orchestration at
-`backend.orchestration.power.miso.real_time_total_load`, backed by disabled
-operator SQL under `dbt/azure_postgres/models/power/miso/`. MISO asks public
-users to avoid accessing real-time links more than once per minute, so
+`backend.orchestration.power.miso.real_time_total_load`. MISO asks public users
+to avoid accessing real-time links more than once per minute, so
 scheduled jobs should use a conservative cadence.
 
 WSI Trader weather helpers use `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and
@@ -322,13 +321,12 @@ events to `ops.data_availability_events`. The source grain is
 ## Permissions Contract
 
 Application schemas, shared platform tables, and promoted direct-write feed
-tables are documented as disabled dbt operator SQL under
-`dbt/azure_postgres/models/`. Backend scripts assume those objects exist and
-only perform application writes.
+tables must exist before backend writers run. Backend scripts assume those
+objects exist and only perform application writes.
 
 Scheduled orchestration that emits API telemetry or data-availability events
 also assumes the shared `ops.api_fetch_log` and `ops.data_availability_events`
-tables have been applied by operator SQL before the timer is enabled.
+tables have been applied by application DDL before the timer is enabled.
 
 Email notification utilities use `ops.email_notification_outbox` for durable
 retry and duplicate suppression. Backend-generated HTML bodies should use the
@@ -369,12 +367,6 @@ For VM runtime jobs:
 
 ```bash
 pip install -r backend/requirements.txt -e backend
-```
-
-For dbt compilation:
-
-```bash
-pip install -r backend/requirements-dbt.txt
 ```
 
 For local tests:

@@ -16,13 +16,12 @@ Push back when an assumption affects:
   without an owner, table contract, validation path, safe rerun story, and
   deployment plan.
 - Architecture: the request bypasses existing `backend/scrapes/`,
-  `backend/orchestration/`, `backend/utils/`, dbt model layout, permission SQL,
-  logging, or alerting patterns.
+  `backend/orchestration/`, `backend/utils/`, permission SQL, logging, or
+  alerting patterns.
 - Data contract: source table, schema, grain, uniqueness key, freshness field,
   payload shape, or downstream consumer expectations are missing or weak.
-- Credentials and permissions: the request assumes write access from read-only
-  dbt, uses the wrong role, adds secrets to git, or changes environment
-  variable boundaries.
+- Credentials and permissions: the request uses the wrong role, adds secrets to
+  git, or changes environment variable boundaries.
 - Validation: there is no practical check proving the change works, or the
   proposed check does not match the risk.
 - Deployment and operations: scheduled VM jobs, systemd timers, logs,
@@ -71,21 +70,10 @@ When the user does not specify otherwise:
 
 ```text
 Assumption audit:
-- Concern: The request asks to add a dbt model that writes an index, but this
-  repo's dbt credentials are read-only.
-  Why it matters: dbt runs should remain safe for validation and query shaping;
-  write operations belong in operator SQL or setup scripts.
-  Recommended default: Keep the index SQL as operator reference SQL and verify
-  dbt with parse/compile only.
-  Needs user input: no
-```
-
-```text
-Assumption audit:
 - Concern: The target source table and freshness field are not named.
-  Why it matters: The dbt model grain and stale-data checks cannot be validated
-  without knowing the source contract.
-  Recommended default: Inspect existing models and use the closest documented
+  Why it matters: Table grain and stale-data checks cannot be validated without
+  knowing the source contract.
+  Recommended default: Inspect existing documentation and use the closest
   source contract if it matches the requested workflow.
   Needs user input: yes, if repo inspection cannot identify the source.
 ```

@@ -6,8 +6,7 @@ Run this while connected to `helios_prod` as `helios_admin`.
 This script applies database permissions and installs read-only defaults for
 future objects created by `helios_admin`.
 
-Application schemas, tables, and indexes are documented as disabled dbt
-operator SQL under `dbt/azure_postgres/models/` and must be applied manually
+Application schemas, tables, and indexes are documented as operator-managed SQL
 with `helios_admin`.
 */
 

@@ -1,8 +1,8 @@
 # Workflow Promotion Checklist
 
 Use this checklist before a scrape or orchestration becomes a scheduled
-production workflow. Keep dbt read-only; apply application tables and indexes
-with `helios_admin` before runtime code writes to them.
+production workflow. Apply application tables and indexes with `helios_admin`
+before runtime code writes to them.
 
 ## 1. Scope And Ownership
 
@@ -17,11 +17,9 @@ with `helios_admin` before runtime code writes to them.
 ## 2. Data Contract
 
 - Document grain, uniqueness key, freshness timestamp, and safe rerun behavior.
-- Add or update disabled operator SQL for the table and indexes under
-  `dbt/azure_postgres/models/`.
-- Add or update enabled read-only dbt source, staging, and shaping SQL where
-  the table feeds downstream queries.
-- Verify sample shape with read-only SQL before changing downstream models.
+- Document the table DDL and required indexes in the deployment or setup notes.
+- Add or update read-only query SQL where the table feeds downstream queries.
+- Verify sample shape with read-only SQL before changing downstream code.
 
 ## 3. Runtime
 
@@ -37,8 +35,6 @@ with `helios_admin` before runtime code writes to them.
 ## 4. Verification
 
 - Run backend tests for touched modules.
-- Run `dbt parse --profiles-dir .` from `dbt/azure_postgres`.
-- Run selected dbt compile for touched models.
 - Apply table/index SQL with `helios_admin` before deploying writers.
 - Run a VM import or service smoke check.
 - Verify through MCP/read-only SQL:

@@ -13,7 +13,7 @@ Context:
   - @<path>
   - @<path>
 - Existing pattern to preserve:
-  - <backend scrape/orchestration/dbt/SQL/frontend/deployment pattern>
+  - <backend scrape/orchestration/SQL/frontend/deployment pattern>
 - Source or runtime context:
   - <API/source table/model/schema/job/timer/log/screenshot/data sample>
 
@@ -37,14 +37,14 @@ Constraints:
   - Adding broad abstractions
   - Changing schema or credentials
   - Adding services, timers, or deployment behavior
-  - Mutating data from dbt
+  - Mutating production data from read-only verification paths
 
 Done when:
 - Implementation:
   - <specific behavior is present>
 - Verification:
-  - <pytest command, dbt parse/compile selector, read-only SQL, route smoke,
-    browser check, permission verification, or doc review>
+  - <pytest command, read-only SQL, route smoke, browser check, permission
+    verification, or doc review>
 - States checked:
   - <normal/empty/error/stale/loading/data freshness as relevant>
 - Final response includes:

@@ -30,9 +30,7 @@ credential boundary from `/etc/helioscta/backend.env`.
   `date, hour_ending, location_id, location_name, location_type`
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/da_hrl_lmps/`, plus duplicate-key
-  data test `dbt/azure_postgres/tests/test_isone_da_hrl_lmps_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Final Real-Time Hourly LMPs
 
@@ -44,10 +42,7 @@ credential boundary from `/etc/helioscta/backend.env`.
   `date, hour_ending, location_id, location_name, location_type`
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_final/`, plus
-  duplicate-key data test
-  `dbt/azure_postgres/tests/test_isone_rt_hrl_lmps_final_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Preliminary Real-Time Hourly LMPs
 
@@ -58,10 +53,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Primary key: `date, hour_ending, location`
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/rt_hrl_lmps_prelim/`, plus
-  duplicate-key data test
-  `dbt/azure_postgres/tests/test_isone_rt_hrl_lmps_prelim_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Hourly System Demand
 
@@ -72,10 +64,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Primary key: `date, hour_ending`
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/hourly_system_demand/`, plus
-  duplicate-key data test
-  `dbt/azure_postgres/tests/test_isone_hourly_system_demand_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Day-Ahead Hourly Cleared Demand
 
@@ -86,10 +75,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Primary key: `date, hour_ending`
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/da_hrl_cleared_demand/`, plus
-  duplicate-key data test
-  `dbt/azure_postgres/tests/test_isone_da_hrl_cleared_demand_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Forecast Batch
 
@@ -102,9 +88,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Excluded by current promotion scope: ISO-NE five-minute demand and zonal
   load forecast feeds.
 - Safe rerun story: each table is upserted by its documented primary key.
-- Validation: read-only dbt source/query models under
-  `dbt/azure_postgres/models/power/isone/forecast_feeds/`, plus per-table
-  duplicate-key data tests.
+- Validation: run read-only primary-key and freshness checks against the destination table.
 
 ## Real-Time Hourly Scheduled Interchange
 
@@ -115,7 +99,4 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Primary key: `local_date, local_hour_ending, interface_name`
 - Freshness field: `local_date`
 - Safe rerun story: upsert by the primary key.
-- Validation: dbt source and staging models under
-  `dbt/azure_postgres/models/power/isone/rt_hrl_scheduled_interchange/`,
-  plus duplicate-key data test
-  `dbt/azure_postgres/tests/test_isone_rt_hrl_scheduled_interchange_primary_keys.sql`.
+- Validation: run read-only primary-key and freshness checks against the destination table.

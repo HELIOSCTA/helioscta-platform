@@ -169,15 +169,8 @@ of the hour from 05:00 through 08:00 EPT, so the timer runs daily at `05:05`,
 `AccuracySec=1min`. The service uses `flock` with
 `/tmp/helios-pjm-ops-sum.lock`.
 
-Before enabling the timer, apply the table and index operator SQL under:
-
-```text
-dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_area/
-dbt/azure_postgres/models/power/pjm/ops_sum_frcst_peak_rto/
-dbt/azure_postgres/models/power/pjm/ops_sum_frcstd_tran_lim/
-dbt/azure_postgres/models/power/pjm/ops_sum_prev_period/
-dbt/azure_postgres/models/power/pjm/ops_sum_prjctd_tie_flow/
-```
+Before enabling the timer, apply the required table and index DDL for the Ops
+Sum tables.
 
 ## PJM Price Backfill Repair
 
@@ -264,13 +257,8 @@ minute `35` UTC with `Persistent=false` because the sources return current
 forecast snapshots/native forecast vintages. The service uses `flock` with
 `/tmp/helios-pjm-forecast-hourly.lock`.
 
-Before enabling the timer, apply the table and index operator SQL under:
-
-```text
-dbt/azure_postgres/models/power/pjm/load_frcstd_7_day/
-dbt/azure_postgres/models/power/pjm/hourly_solar_power_forecast/
-dbt/azure_postgres/models/power/pjm/hourly_wind_power_forecast/
-```
+Before enabling the timer, apply the required table and index DDL for the PJM
+hourly forecast tables.
 
 ## PJM Meteologica Hourly Forecasts
 
@@ -294,7 +282,7 @@ Successful runs purge forecast issues older than 90 days from the hot tables.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the
-Meteologica schema/table/index operator SQL has been applied for both the
+Meteologica schema/table/index application DDL has been applied for both the
 PJM forecast table and the DA price source tables.
 
 After those prerequisites are complete:
@@ -544,7 +532,7 @@ METAR observations for the PJM station basket, upserts
 `07`, `22`, `37`, and `52` UTC with `Persistent=false`. The service uses
 `flock` with `/tmp/helios-weather-noaa-metar-observations.lock`.
 
-Do not enable this timer until the weather schema/table/index operator SQL has
+Do not enable this timer until the weather schema/table/index application DDL has
 been applied.
 
 After those prerequisites are complete:
@@ -585,7 +573,7 @@ The service uses `flock` with
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
-weather schema/table/index operator SQL has been applied.
+weather schema/table/index application DDL has been applied.
 
 After those prerequisites are complete:
 
@@ -625,7 +613,7 @@ the source. The service uses `flock` with
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
-weather forecast table/index operator SQL has been applied.
+weather forecast table/index application DDL has been applied.
 
 After those prerequisites are complete:
 

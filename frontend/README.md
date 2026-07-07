@@ -240,7 +240,7 @@ The first slice supports the PJM Western Hub RT 7x Tetco M3 spark product:
 bounded ICE symbols from current year minus four through current year plus
 three, returns complete daily spark points only when power, gas, and basis legs
 are present, and exposes latest trade date, latest `updated_at`, row count, and
-source table metadata in the payload. It does not create a dbt model, frontend
+source table metadata in the payload. It does not create a database model, frontend
 cache table, backend job, or new credential requirement.
 
 ## Local DEV Gas Prices Source Contract
@@ -260,7 +260,7 @@ The route `GET /api/gas-daily-prices` accepts bounded gas-day params
 days. The response returns a daily WVAP Close matrix over the promoted next-day
 physical gas hub registry. Gas-day attribution is generated from the shared ICE
 physical gas trading calendar, so weekend and holiday strips use the same
-mapping as the standalone SQL verifier. It does not create a dbt model,
+mapping as the standalone SQL verifier. It does not create a database model,
 frontend cache table, backend job, or new credential requirement.
 
 ## Local DEV PJM Generation Source Contract
@@ -292,8 +292,8 @@ depth and intraday availability are not limited by `pjm.rt_and_self_ecomax`.
 
 The Tightness Lookback DEV view is an adequacy-first lookback for a selected
 PJM operating date, defaulting to yesterday in PJM EPT. It reads promoted PJM
-operational source tables with `helios_readonly`; it does not create a dbt
-model, frontend cache table, migration, or new credential requirement.
+operational source tables with `helios_readonly`; it does not create a
+database model, frontend cache table, migration, or new credential requirement.
 
 Primary sources are `pjm.hrl_load_metered` with fallback to
 `pjm.hrl_load_prelim` for RTO load, `pjm.rt_dispatch_reserves` for the tightest
@@ -321,7 +321,7 @@ The Price View DEV page is a source-by-hour matrix for inspecting one PJM
 operating date before building a fuller dispatch-curve workflow. It reads with
 `helios_readonly` from `pjm.hrl_load_metered`, `pjm.hrl_load_prelim`,
 `pjm.gen_by_fuel`, `pjm.rt_hrl_lmps`, and `ice_python.settlements`; it does not
-create a dbt model, frontend cache table, migration, or new credential
+create a database model, frontend cache table, migration, or new credential
 requirement.
 
 The default route `GET /api/pjm-price-view` accepts optional
@@ -517,7 +517,7 @@ values with complete `load`, `solar`, and `wind` coverage, currently `RTO`,
 non-null solar and wind forecast for the same forecast area and forecast hour.
 Hours are emitted only when load, wind, and solar all have non-null MW values,
 so net load is missing whenever either renewable component is missing. It does
-not create a dbt model, table, or materialized cache.
+not create a database model, table, or materialized cache.
 
 The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
 `area`, `baseDate`, and `compareDate`. It returns the latest complete hourly
@@ -549,7 +549,7 @@ The route `GET /api/pjm-actuals-regime-scatter` accepts bounded params for
 load area, wind/solar area, station, hub, RT source, price component, date
 range, season, hour/day filters, price/outage bounds, color regime, and max
 points. It samples matched hourly rows after server-side filters and does not
-create a dbt model, table, or materialized cache. The historical scatter
+create a database model, table, or materialized cache. The historical scatter
 endpoint remains hidden outside local Next.js runs and returns `404` on Vercel.
 
 Outage joins are retained in the API payload for future diagnostics but are not

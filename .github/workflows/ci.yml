@@ -7,33 +7,12 @@ on:
       - main
 
 jobs:
-  backend-and-dbt:
-    name: Backend tests and dbt parse
+  backend:
+    name: Backend tests
     runs-on: ubuntu-latest
 
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-      DBT_POSTGRES_HOST: localhost
-      DBT_POSTGRES_READONLY_USER: helios_readonly
-      DBT_POSTGRES_READONLY_PASSWORD: ci_dummy_password
-      DBT_POSTGRES_PORT: "5432"
-      DBT_POSTGRES_DBNAME: helios_prod
-      DBT_POSTGRES_SSLMODE: disable
-
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: helios_readonly
-          POSTGRES_PASSWORD: ci_dummy_password
-          POSTGRES_DB: helios_prod
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U helios_readonly -d helios_prod"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
 
     steps:
       - name: Check out repo
@@ -47,22 +26,11 @@ jobs:
           cache-dependency-path: |
             backend/requirements.txt
             backend/requirements-dev.txt
-            backend/requirements-dbt.txt
 
       - name: Install backend dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements-dev.txt -r backend/requirements-dbt.txt -e backend
+          python -m pip install -r backend/requirements-dev.txt -e backend
 
       - name: Run backend tests
         run: pytest backend/tests
-
-      - name: dbt parse
-        working-directory: dbt/azure_postgres
-        run: dbt parse --profiles-dir .
-
-      - name: dbt compile critical PJM models
-        working-directory: dbt/azure_postgres
-        run: |
-          dbt compile --profiles-dir . --select path:models/power/pjm/da_hrl_lmps/pjm_lmps_da
-          dbt compile --profiles-dir . --select path:models/power/pjm/rt_fivemin_hrl_lmps/pjm_lmps_rt_fivemin_hrl

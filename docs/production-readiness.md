@@ -57,13 +57,13 @@ A backend workflow is production-ready when it has:
 | Release notifications | In place | DA HRL LMPs, verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. Email release alerts are disabled while the Slack-first policy is active. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
-| CI validation | In place | GitHub Actions runs backend tests plus dbt parse/compile on pushes and pull requests. |
+| CI validation | In place | GitHub Actions runs backend tests on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |
 | Deployment register | In place | `docs/deployments.md` records host, commit, timer, and verification. |
 | Workflow promotion checklist | In place | `docs/workflow-promotion-checklist.md` is the default checklist for new timers. |
 | VM rebuild runbook | In place | `docs/operations/vm-rebuild-runbook.md` documents rebuilding the scheduler VM from committed code. |
-| Operator SQL | In progress | Application DDL is moving to disabled dbt operator SQL. |
+| Database DDL | In progress | Application DDL is managed outside this repo; backend jobs assume required tables already exist. |
 
 ## Current Gaps
 
@@ -91,7 +91,7 @@ Recommended order:
    flows only after recipient and alert criteria are explicitly approved.
 2. Add systemd failure notifications when an alert channel is selected.
 3. Standardize overlap protection for future dedicated timers.
-4. Evaluate whether manual operator SQL is sufficient or a migration tool is
+4. Evaluate whether manual application DDL is sufficient or a migration tool is
    needed.
 
 ## Workflow Promotion Checklist
@@ -100,10 +100,9 @@ Before a new scrape or orchestration becomes a scheduled production workflow:
 
 - Source system and endpoint are documented.
 - Destination schema/table, grain, and primary key are explicit.
-- Table DDL exists under disabled operator SQL.
+- Table DDL is documented in the deployment or setup notes.
 - Required table DDL has been applied with `helios_admin`.
 - Scrape or orchestration tests exist.
-- dbt source/staging models parse.
 - Safe rerun behavior is documented.
 - Cadence is tied to business value, not the fastest API polling interval.
 - Expected data volume is acceptable for Azure Postgres.
@@ -222,7 +221,7 @@ RT verified five-minute HRL LMP API note:
 Review this document after:
 
 - Adding a new scheduled workflow.
-- Changing database role, schema, or operator SQL boundaries.
+- Changing database role, schema, or application DDL boundaries.
 - Changing VM, timer, logging, or deployment behavior.
 - Adding frontend/report delivery from data-availability events.
 - Any production incident or failed scheduled run.
