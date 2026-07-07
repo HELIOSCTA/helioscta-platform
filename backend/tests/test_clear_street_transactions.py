@@ -394,6 +394,7 @@ def test_scheduled_main_polls_until_target_file_success(monkeypatch, tmp_path):
         now_fn=lambda: datetime(2026, 7, 6, 19, tzinfo=timezone.utc),
         sleep_fn=lambda seconds: sleep_calls.append(seconds),
         upload_mufg=False,
+        email_nav=False,
     )
 
     assert exit_code == 0
@@ -416,6 +417,7 @@ def test_scheduled_main_runs_mufg_upload_after_target_success(
 ):
     telemetry: list[dict[str, object]] = []
     mufg_calls: list[dict[str, object]] = []
+    nav_calls: list[dict[str, object]] = []
 
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setattr(
@@ -452,10 +454,16 @@ def test_scheduled_main_runs_mufg_upload_after_target_success(
         "main",
         lambda **kwargs: mufg_calls.append(kwargs) or 0,
     )
+    monkeypatch.setattr(
+        orchestration.clear_street_nav_email,
+        "main",
+        lambda **kwargs: nav_calls.append(kwargs) or 0,
+    )
 
     exit_code = orchestration.scheduled_main(
         database="stage_db",
         mufg_local_dir=tmp_path / "mufg",
+        nav_email_local_dir=tmp_path / "nav",
         now_fn=lambda: datetime(2026, 7, 6, 19, tzinfo=timezone.utc),
         sleep_fn=lambda seconds: None,
     )
@@ -466,12 +474,85 @@ def test_scheduled_main_runs_mufg_upload_after_target_success(
     assert mufg_calls[0]["database"] == "stage_db"
     assert mufg_calls[0]["local_dir"] == tmp_path / "mufg"
     assert mufg_calls[0]["metadata"]["clear_street_rows_processed"] == 3
+    assert len(nav_calls) == 1
+    assert nav_calls[0]["expected_trade_date"] == "20260706"
+    assert nav_calls[0]["database"] == "stage_db"
+    assert nav_calls[0]["local_dir"] == tmp_path / "nav"
+    assert nav_calls[0]["source_summary"]["target_file_found"] is True
+    assert nav_calls[0]["metadata"]["clear_street_rows_processed"] == 3
     assert len(telemetry) == 1
     assert telemetry[0]["status"] == "success"
     assert telemetry[0]["metadata"]["mufg_upload_enabled"] is True
+    assert telemetry[0]["metadata"]["nav_email_enabled"] is True
+    assert telemetry[0]["metadata"]["downstream_failures"] == []
 
 
 def test_scheduled_main_returns_nonzero_when_mufg_upload_fails(
+    monkeypatch,
+    tmp_path,
+):
+    telemetry: list[dict[str, object]] = []
+    nav_calls: list[dict[str, object]] = []
+
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_clear_street_transactions",
+        lambda **kwargs: {
+            "target_table": "clear_street.eod_transactions",
+            "lookback_days": 1,
+            "files_downloaded": 1,
+            "files_processed": 1,
+            "rows_processed": 3,
+            "target_trade_date_from_sftp": "20260706",
+            "target_file_found": True,
+            "min_trade_date_from_sftp": "20260706",
+            "max_trade_date_from_sftp": "20260706",
+            "latest_sftp_upload_timestamp": pd.Timestamp(
+                "2026-07-06 20:08:17+0000",
+                tz="UTC",
+            ).to_pydatetime(),
+        },
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "_notify_clear_street_slack_success",
+        lambda **kwargs: 1,
+    )
+    monkeypatch.setattr(
+        orchestration.clear_street_mufg_upload,
+        "main",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("MUFG down")),
+    )
+    monkeypatch.setattr(
+        orchestration.clear_street_nav_email,
+        "main",
+        lambda **kwargs: nav_calls.append(kwargs) or 0,
+    )
+
+    exit_code = orchestration.scheduled_main(
+        database="stage_db",
+        now_fn=lambda: datetime(2026, 7, 6, 19, tzinfo=timezone.utc),
+        sleep_fn=lambda seconds: None,
+    )
+
+    assert exit_code == 1
+    assert len(telemetry) == 1
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["error_type"] is None
+    assert telemetry[0]["metadata"]["target_file_found"] is True
+    assert telemetry[0]["metadata"]["mufg_upload_enabled"] is True
+    assert telemetry[0]["metadata"]["nav_email_enabled"] is True
+    assert telemetry[0]["metadata"]["downstream_failures"] == ["mufg_upload"]
+    assert len(nav_calls) == 1
+
+
+def test_scheduled_main_returns_nonzero_when_nav_email_fails(
     monkeypatch,
     tmp_path,
 ):
@@ -510,7 +591,12 @@ def test_scheduled_main_returns_nonzero_when_mufg_upload_fails(
     monkeypatch.setattr(
         orchestration.clear_street_mufg_upload,
         "main",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("MUFG down")),
+        lambda **kwargs: 0,
+    )
+    monkeypatch.setattr(
+        orchestration.clear_street_nav_email,
+        "main",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Graph down")),
     )
 
     exit_code = orchestration.scheduled_main(
@@ -525,6 +611,8 @@ def test_scheduled_main_returns_nonzero_when_mufg_upload_fails(
     assert telemetry[0]["error_type"] is None
     assert telemetry[0]["metadata"]["target_file_found"] is True
     assert telemetry[0]["metadata"]["mufg_upload_enabled"] is True
+    assert telemetry[0]["metadata"]["nav_email_enabled"] is True
+    assert telemetry[0]["metadata"]["downstream_failures"] == ["nav_email"]
 
 
 def test_scheduled_main_times_out_at_window_end(monkeypatch, tmp_path):

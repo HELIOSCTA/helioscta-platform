@@ -12,6 +12,7 @@ from typing import Any
 
 from backend.orchestration.positions_and_trades import (
     clear_street_mufg_upload,
+    clear_street_nav_email,
 )
 from backend.scrapes.clear_street import transactions as scrape
 from backend.utils import script_logging, slack_notifications
@@ -118,6 +119,8 @@ def scheduled_main(
     sleep_fn: Callable[[float], None] = time.sleep,
     upload_mufg: bool = True,
     mufg_local_dir: str | Path | None = None,
+    email_nav: bool = True,
+    nav_email_local_dir: str | Path | None = None,
 ) -> int:
     """Poll Clear Street overnight until the target trade-date file arrives."""
     if poll_wait_seconds < 1:
@@ -146,6 +149,7 @@ def scheduled_main(
     error_type: str | None = "DataNotYetAvailable"
     error_message: str | None = None
     poll_count = 0
+    downstream_failures: list[str] = []
 
     try:
         run_logger.header(f"{PIPELINE_NAME} scheduled poll")
@@ -193,6 +197,11 @@ def scheduled_main(
                     f"{PIPELINE_NAME} scheduled poll completed; "
                     f"{rows_processed:,} rows processed."
                 )
+                downstream_metadata = {
+                    "clear_street_operation_name": SCHEDULED_OPERATION_NAME,
+                    "clear_street_target_trade_date": resolved_target_trade_date,
+                    "clear_street_rows_processed": rows_processed,
+                }
                 if upload_mufg:
                     try:
                         clear_street_mufg_upload.main(
@@ -200,21 +209,34 @@ def scheduled_main(
                             local_dir=mufg_local_dir,
                             database=database,
                             run_mode=run_mode,
-                            metadata={
-                                "clear_street_operation_name": SCHEDULED_OPERATION_NAME,
-                                "clear_street_target_trade_date": (
-                                    resolved_target_trade_date
-                                ),
-                                "clear_street_rows_processed": rows_processed,
-                            },
+                            metadata=downstream_metadata,
                             run_logger=run_logger,
                         )
                     except Exception as exc:
+                        downstream_failures.append("mufg_upload")
                         run_logger.error(
                             "Clear Street source file loaded, but MUFG upload "
                             f"failed: {redact_secrets(str(exc))}"
                         )
-                        return 1
+                if email_nav:
+                    try:
+                        clear_street_nav_email.main(
+                            expected_trade_date=resolved_target_trade_date,
+                            source_summary=summary,
+                            local_dir=nav_email_local_dir,
+                            database=database,
+                            run_mode=run_mode,
+                            metadata=downstream_metadata,
+                            run_logger=run_logger,
+                        )
+                    except Exception as exc:
+                        downstream_failures.append("nav_email")
+                        run_logger.error(
+                            "Clear Street source file loaded, but NAV email "
+                            f"failed: {redact_secrets(str(exc))}"
+                        )
+                if downstream_failures:
+                    return 1
                 return 0
 
             current_time = now()
@@ -264,6 +286,8 @@ def scheduled_main(
             "window_start_hour": window_start_hour,
             "window_end_hour": window_end_hour,
             "mufg_upload_enabled": upload_mufg,
+            "nav_email_enabled": email_nav,
+            "downstream_failures": downstream_failures,
             **(metadata or {}),
         }
         _log_fetch(

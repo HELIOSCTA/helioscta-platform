@@ -179,10 +179,14 @@ After the source file succeeds, the same scheduled process generates
 trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
 `ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`, and queues
 positions/trades Slack success or failure notifications for the MUFG leg. The
-Clear Street target source file is the scheduler's freshness gate; MUFG-side
-empty-extract and SQL `sftp_date` mismatch conditions are metadata only. If
-the MUFG upload itself fails, the scheduled task exits nonzero while the Clear
-Street source-load telemetry remains successful.
+same source CSV is also emailed to NAV through Microsoft Graph with separate
+`ops.api_fetch_log` telemetry using `provider = 'microsoft_graph'`. The Clear
+Street target source file is the scheduler's freshness gate; MUFG-side
+empty-extract and SQL `sftp_date` mismatch conditions are metadata only. MUFG
+and NAV are attempted independently after source success. If either downstream
+handoff fails, the scheduled task exits nonzero after attempting the enabled
+downstream handoffs, while the Clear Street source-load telemetry remains
+successful.
 
 Run from the production clone in PowerShell:
 
@@ -201,7 +205,11 @@ The installer verifies writer credentials plus `CLEAR_STREET_SFTP_HOST`,
 environment variables or the untracked `backend\.env` in the production clone.
 It also verifies `MUFG_SFTP_HOST`, `MUFG_SFTP_USER`, and
 `MUFG_SFTP_PASSWORD`; `MUFG_SFTP_PORT` defaults to `22`, and
-`MUFG_SFTP_REMOTE_DIR` defaults to `/`. Slack delivery also requires `SLACK_BOT_TOKEN`,
+`MUFG_SFTP_REMOTE_DIR` defaults to `/`. NAV email delivery requires
+`AZURE_OUTLOOK_CLIENT_ID`, `AZURE_OUTLOOK_TENANT_ID`, and
+`AZURE_OUTLOOK_CLIENT_SECRET`. `CLEAR_STREET_NAV_EMAIL_SENDER` defaults to
+`admin@HeliosCTA.com`, and `CLEAR_STREET_NAV_EMAIL_RECIPIENTS` defaults to the
+legacy NAV recipient list. Slack delivery also requires `SLACK_BOT_TOKEN`,
 `SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID`, and
 `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
 
@@ -241,7 +249,7 @@ SELECT
     error_message,
     metadata
 FROM ops.api_fetch_log
-WHERE provider IN ('clear_street_sftp', 'mufg_sftp')
+WHERE provider IN ('clear_street_sftp', 'mufg_sftp', 'microsoft_graph')
 ORDER BY created_at DESC
 LIMIT 20;
 

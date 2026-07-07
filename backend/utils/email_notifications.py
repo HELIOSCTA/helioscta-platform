@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
@@ -268,12 +270,32 @@ def send_email_via_graph(
     subject: str,
     body_text: str,
     body_html: str | None = None,
+    sender_email: str | None = None,
+    attachments: list[str | Path] | None = None,
     timeout_seconds: int = 30,
 ) -> None:
-    sender = _required("AZURE_OUTLOOK_SENDER", credentials.AZURE_OUTLOOK_SENDER)
+    sender = _required(
+        "AZURE_OUTLOOK_SENDER",
+        sender_email or credentials.AZURE_OUTLOOK_SENDER,
+    )
     token = _graph_access_token(timeout_seconds=timeout_seconds)
     content = body_html or body_text
     content_type = "HTML" if body_html else "Text"
+    message: dict[str, Any] = {
+        "subject": subject,
+        "body": {
+            "contentType": content_type,
+            "content": content,
+        },
+        "toRecipients": [
+            {"emailAddress": {"address": recipient_email}},
+        ],
+    }
+    if attachments:
+        message["attachments"] = [
+            _graph_file_attachment(path) for path in attachments
+        ]
+
     response = requests.post(
         GRAPH_SEND_MAIL_URL_TEMPLATE.format(sender=sender),
         headers={
@@ -281,16 +303,7 @@ def send_email_via_graph(
             "Content-Type": "application/json",
         },
         json={
-            "message": {
-                "subject": subject,
-                "body": {
-                    "contentType": content_type,
-                    "content": content,
-                },
-                "toRecipients": [
-                    {"emailAddress": {"address": recipient_email}},
-                ],
-            },
+            "message": message,
             "saveToSentItems": "false",
         },
         timeout=timeout_seconds,
@@ -464,6 +477,17 @@ def _graph_access_token(*, timeout_seconds: int) -> str:
     if not token:
         raise RuntimeError("Microsoft Graph token response did not include access_token")
     return str(token)
+
+
+def _graph_file_attachment(file_path: str | Path) -> dict[str, str]:
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Email attachment not found: {path}")
+    return {
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        "name": path.name,
+        "contentBytes": base64.b64encode(path.read_bytes()).decode("utf-8"),
+    }
 
 
 def _business_date_from_event(event: dict[str, Any]) -> str:

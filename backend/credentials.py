@@ -91,6 +91,22 @@ AZURE_OUTLOOK_SENDER = _get_first_env(
     "HELIOS_EMAIL_FROM_ADDRESS",
 )
 
+CLEAR_STREET_NAV_EMAIL_SENDER = _get_first_env(
+    "CLEAR_STREET_NAV_EMAIL_SENDER",
+    "AZURE_OUTLOOK_SENDER",
+    "HELIOS_EMAIL_FROM_ADDRESS",
+    default="admin@HeliosCTA.com",
+)
+CLEAR_STREET_NAV_EMAIL_RECIPIENTS = (
+    _get_csv_env("CLEAR_STREET_NAV_EMAIL_RECIPIENTS")
+    or [
+        "Aidan.Keaveny@HeliosCTA.com",
+        "kapil.saxena@helioscta.com",
+        "edi.lacic@helioscta.com",
+        "HeliosCTA@navfundservices.com",
+    ]
+)
+
 # Email notifications. Disabled by default so production send behavior is
 # opt-in through the VM environment file.
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED = _get_bool_env(

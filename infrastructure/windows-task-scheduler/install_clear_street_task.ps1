@@ -153,6 +153,18 @@ function Assert-Config {
         @{
             Label = "MUFG SFTP password"
             Names = @("MUFG_SFTP_PASSWORD")
+        },
+        @{
+            Label = "Azure Outlook Graph client id"
+            Names = @("AZURE_OUTLOOK_CLIENT_ID")
+        },
+        @{
+            Label = "Azure Outlook Graph tenant id"
+            Names = @("AZURE_OUTLOOK_TENANT_ID")
+        },
+        @{
+            Label = "Azure Outlook Graph client secret"
+            Names = @("AZURE_OUTLOOK_CLIENT_SECRET")
         }
     )
 
@@ -165,7 +177,7 @@ function Assert-Config {
 
     if ($missing.Count -gt 0) {
         throw (
-            "Production checkout is missing Clear Street/MUFG schedule config: " +
+            "Production checkout is missing Clear Street/MUFG/NAV email schedule config: " +
             ($missing -join ", ") +
             ". Set machine/user environment variables or create an " +
             "untracked backend\.env file in the production clone before scheduling."
