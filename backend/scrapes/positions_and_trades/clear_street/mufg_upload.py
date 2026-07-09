@@ -19,11 +19,12 @@ SOURCE_SYSTEM = "mufg_sftp"
 SOURCE_FEED = "clear_street_trades"
 SOURCE_TABLE_FQN = "clear_street.eod_transactions"
 TARGET_NAME = "mufg_sftp.clear_street_trades"
-DEFAULT_SQL_FILENAME = "clear_street_trades_mufg_latest.sql"
+DEFAULT_SQL_FILENAME = "clear_street_trades/mufg/latest.sql"
 DEFAULT_CSV_FILENAME_PATTERN = "Helios_Transactions"
 DEFAULT_SFTP_PORT = 22
-DEFAULT_LOCAL_DIR = Path(__file__).resolve().parent / "exports" / "mufg"
-GENERATED_SQL_DIR = Path(__file__).resolve().parent / "generated_sql"
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_LOCAL_DIR = PACKAGE_ROOT / "exports" / "mufg"
+GENERATED_SQL_DIR = PACKAGE_ROOT / "sql" / "generated"
 PRODUCT_CODE_NULL_REQUIRED_COLUMNS: tuple[str, ...] = (
     "product_code_grouping",
     "product_code_region",

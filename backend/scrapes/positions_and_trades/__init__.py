@@ -1,6 +1,6 @@
 """Position and trade rule helpers."""
 
-from backend.scrapes.positions_and_trades.product_rules import (
+from backend.scrapes.positions_and_trades.rules.engine.product_rules import (
     ProductRuleInput,
     ProductRuleResult,
     normalize_nav_position_product,

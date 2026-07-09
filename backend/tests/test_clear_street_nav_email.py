@@ -5,7 +5,9 @@ from pathlib import Path
 import pytest
 
 from backend.orchestration.positions_and_trades import clear_street_nav_email
-from backend.scrapes.positions_and_trades import nav_clear_street_trades
+from backend.scrapes.positions_and_trades.clear_street import (
+    nav_email as nav_clear_street_trades,
+)
 
 
 def _write_trade_file(directory: Path, filename: str) -> Path:

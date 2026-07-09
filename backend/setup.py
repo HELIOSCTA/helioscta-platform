@@ -8,12 +8,12 @@ setup(
     include_package_data=True,
     package_data={
         "backend.scrapes.positions_and_trades": [
-            "generated_sql/*.sql",
-            "generated_sql/nav_positions/checks/*.sql",
-            "generated_sql/nav_positions/drilldowns/*.sql",
-            "generated_sql/nav_positions/marts/*.sql",
-            "generated_sql/README.md",
+            "sql/generated/clear_street_trades/mufg/*.sql",
+            "sql/generated/nav_positions/checks/*.sql",
+            "sql/generated/nav_positions/drilldowns/*.sql",
+            "sql/generated/nav_positions/marts/*.sql",
+            "sql/generated/README.md",
         ],
-        "backend.scrapes.positions_and_trades.rules": ["*.json"],
+        "backend.scrapes.positions_and_trades.rules.data": ["*.json"],
     },
 )

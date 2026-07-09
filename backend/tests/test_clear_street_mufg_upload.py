@@ -6,7 +6,9 @@ import pandas as pd
 import pytest
 
 from backend.orchestration.positions_and_trades import clear_street_mufg_upload
-from backend.scrapes.positions_and_trades import mufg_clear_street_trades
+from backend.scrapes.positions_and_trades.clear_street import (
+    mufg_upload as mufg_clear_street_trades,
+)
 
 
 def _extract_df(
@@ -370,7 +372,7 @@ def test_mufg_orchestration_logs_success_and_queues_slack(monkeypatch, tmp_path)
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades_mufg_latest.sql",
+        "sql_filename": "clear_street_trades/mufg/latest.sql",
         "rows_exported": 1,
         "rows_uploaded": 1,
         "sftp_date": "2026-07-06",
@@ -448,7 +450,7 @@ def test_mufg_orchestration_queues_product_code_null_warning(
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades_mufg_latest.sql",
+        "sql_filename": "clear_street_trades/mufg/latest.sql",
         "rows_exported": 2,
         "rows_uploaded": 2,
         "sftp_date": "2026-07-06",
@@ -571,7 +573,7 @@ def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades_mufg_latest.sql",
+        "sql_filename": "clear_street_trades/mufg/latest.sql",
         "rows_exported": 1,
         "rows_uploaded": 1,
         "trade_date": "2026-07-06",

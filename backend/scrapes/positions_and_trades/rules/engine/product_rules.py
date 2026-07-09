@@ -8,7 +8,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Mapping
 
-from backend.scrapes.positions_and_trades.product_lookup import (
+from backend.scrapes.positions_and_trades.rules.engine.product_lookup import (
     ProductLookupMatch,
     normalize_product_text,
     resolve_product_lookup,

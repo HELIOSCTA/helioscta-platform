@@ -175,7 +175,7 @@ to `clear_street.eod_transactions`; downstream SQL readiness should use a
 separate notification after that layer runs and validates.
 After the source file succeeds, the same scheduled process generates
 `Helios_Transactions_YYYYMMDD_filtered.csv` from the packaged
-`clear_street_trades_mufg_latest.sql` extract using the Clear Street target
+`sql/generated/clear_street_trades/mufg/latest.sql` extract using the Clear Street target
 trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
 `ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`, and queues
 positions/trades Slack success or failure notifications for the MUFG leg. The

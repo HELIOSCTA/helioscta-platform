@@ -301,7 +301,7 @@ cached CSVs must remain available until the email sender processes the row.
 After the source file loads, the scheduled path runs the MUFG upload leg from
 `backend.orchestration.positions_and_trades.clear_street_mufg_upload`. That
 leg reads the generated read-only SQL at
-`backend/scrapes/positions_and_trades/generated_sql/clear_street_trades_mufg_latest.sql`,
+`backend/scrapes/positions_and_trades/sql/generated/clear_street_trades/mufg/latest.sql`,
 uses the Clear Street target trade date for the exported
 `Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
 the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with

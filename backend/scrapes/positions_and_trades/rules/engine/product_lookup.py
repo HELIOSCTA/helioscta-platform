@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-RULES_ROOT = Path(__file__).resolve().parent / "rules"
+RULES_ROOT = Path(__file__).resolve().parents[1] / "data"
 PRODUCT_DEFINITIONS_PATH = RULES_ROOT / "product_definitions.json"
 PRODUCT_ALIASES_PATH = RULES_ROOT / "product_aliases.json"
 

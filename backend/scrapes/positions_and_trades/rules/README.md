@@ -1,7 +1,8 @@
 # Position And Trade Product Rules
 
-These JSON files are the backend source for product lookup and normalization
-rules used by `backend.scrapes.positions_and_trades`.
+The `data/` JSON files are the backend source for product lookup and
+normalization rules used by `backend.scrapes.positions_and_trades`. The
+`engine/` package contains the Python code that interprets those rule files.
 
 They do not create database objects and are not written back to source tables.
 NAV ingestion remains raw-only; product code, group, region, contract, option,

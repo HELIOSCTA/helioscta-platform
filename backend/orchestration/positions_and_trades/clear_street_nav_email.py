@@ -7,7 +7,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from backend.scrapes.positions_and_trades import nav_clear_street_trades as scrape
+from backend.scrapes.positions_and_trades.clear_street import nav_email as scrape
 from backend.utils import script_logging
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 

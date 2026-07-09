@@ -528,7 +528,7 @@ def test_clear_street_mufg_upload_success_slack_uses_positions_channel(
             "filename": "Helios_Transactions_20260706_filtered.csv",
             "remote_dir": "/",
             "remote_path": "/Helios_Transactions_20260706_filtered.csv",
-            "sql_filename": "clear_street_trades_mufg_latest.sql",
+            "sql_filename": "clear_street_trades/mufg/latest.sql",
             "trade_status_counts": {"ok": 74},
             "non_ok_trade_status_rows": 0,
         },
@@ -587,7 +587,7 @@ def test_clear_street_mufg_product_code_nulls_slack_uses_positions_channel(
             "filename": "Helios_Transactions_20260706_filtered.csv",
             "remote_dir": "/",
             "remote_path": "/Helios_Transactions_20260706_filtered.csv",
-            "sql_filename": "clear_street_trades_mufg_latest.sql",
+            "sql_filename": "clear_street_trades/mufg/latest.sql",
             "product_code_null_check": {
                 "criteria": (
                     "product_code_grouping is blank/null and "
@@ -732,7 +732,7 @@ def test_clear_street_mufg_upload_failure_slack_uses_positions_channel(
             "expected_trade_date_from_sftp": "20260706",
             "filename": "Helios_Transactions_20260706_filtered.csv",
             "remote_dir": "/",
-            "sql_filename": "clear_street_trades_mufg_latest.sql",
+            "sql_filename": "clear_street_trades/mufg/latest.sql",
         },
         error_type="RuntimeError",
         error_message="SFTP unavailable",

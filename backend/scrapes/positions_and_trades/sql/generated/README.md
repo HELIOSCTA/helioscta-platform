@@ -1,17 +1,17 @@
 # Generated Position And Trade SQL
 
-This directory contains the standalone Postgres SQL extract generated from the
-packaged position and trade product rule JSON.
+This directory contains standalone Postgres SQL generated from the packaged
+position and trade product rule JSON under `../../rules/data/`.
 
 Regenerate after changing rules:
 
 ```powershell
-python -m backend.scrapes.positions_and_trades.sql_generator
+python -m backend.scrapes.positions_and_trades.sql.generator
 ```
 
 Generated artifacts:
 
-- `clear_street_trades_mufg_latest.sql` reads raw
+- `clear_street_trades/mufg/latest.sql` reads raw
   `clear_street.eod_transactions`, applies the Clear Street product rules
   inline, filters to the latest SFTP trade date and MUFG firm numbers, and
   returns the CSV-shaped extract columns.
