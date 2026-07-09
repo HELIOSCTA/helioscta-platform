@@ -261,6 +261,17 @@ local hour `06` by default, uses a five-file lookback per fund, writes
 `operation_name = 'nav_positions_scheduled'` telemetry to `ops.api_fetch_log`,
 and exits nonzero if no source rows are processed.
 
+NAV trade break helpers are local SFTP/email workflows. They live under
+`backend.scrapes.nav.trade_breaks` and
+`backend.orchestration.nav.trade_breaks_email`, use the existing `NAV_SFTP_*`
+and `AZURE_OUTLOOK_*` variables, and do not upsert trade break rows to a
+database table. The manual local run is
+`python -m backend.orchestration.nav.trade_breaks_email`; it downloads the
+latest matching NAV Trade Breaks workbook into
+`backend/scrapes/nav/downloads/trade_breaks/`, sends that workbook as an email
+attachment to `HELIOS_EMAIL_RECIPIENTS`, and writes one failure-visibility row
+to `ops.api_fetch_log` with target `nav_email.nav_trade_breaks`.
+
 Clear Street end-of-day transaction helpers are local SFTP workflows. They live
 under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,
 write raw transaction rows to `clear_street.eod_transactions`, and use the
@@ -398,6 +409,7 @@ python -m backend.orchestration.nav.positions
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -InstallDependencies `
   -RunImportSmoke
+python -m backend.orchestration.nav.trade_breaks_email
 python -m backend.orchestration.clear_street.transactions
 .\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
