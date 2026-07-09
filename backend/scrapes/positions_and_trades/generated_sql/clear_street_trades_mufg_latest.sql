@@ -95,10 +95,11 @@ product_aliases(
         (96, 'clear_street', 'exact', 'PWA-PJM WESTERN HUB REAL-TIME PEAK DAILY MINI FIXED PRICE FUTURE', 'PWA', 'future'),
         (97, 'clear_street', 'exact', 'H-HENRY LD1 FIXED PRICE FUTURE', 'H', 'future'),
         (98, 'clear_street', 'exact', 'SPM-CAISO SP-15 DAY-AHEAD PEAK FIXED PRICE FUTURE', 'SPM', 'future'),
-        (99, 'clear_street', 'exact', 'PGE-PG&E CITYGATE BASIS FUTURE', 'PGE', 'future'),
-        (100, 'clear_street', 'exact', 'PDP-PJM WESTERN HUB REAL-TIME PEAK DAILY FIXED PRICE FUTURE', 'PDP', 'future'),
-        (101, 'clear_street', 'exact', 'PHE-OPTION ON HENRY PENULTIMATE FIXED PRICE FUTURE', 'PHE', 'option'),
-        (102, 'clear_street', 'exact', 'CRI-CIG ROCKIES BASIS FUTURE', 'CRI', 'future')
+        (99, 'clear_street', 'exact', 'ALQ-ALGONQUIN CITYGATES BASIS FUTURE', 'ALQ', 'future'),
+        (100, 'clear_street', 'exact', 'PGE-PG&E CITYGATE BASIS FUTURE', 'PGE', 'future'),
+        (101, 'clear_street', 'exact', 'PDP-PJM WESTERN HUB REAL-TIME PEAK DAILY FIXED PRICE FUTURE', 'PDP', 'future'),
+        (102, 'clear_street', 'exact', 'PHE-OPTION ON HENRY PENULTIMATE FIXED PRICE FUTURE', 'PHE', 'option'),
+        (103, 'clear_street', 'exact', 'CRI-CIG ROCKIES BASIS FUTURE', 'CRI', 'future')
 ),
 -- -----------------------------------------------------------------------------
 -- CTE 04 - source_trades

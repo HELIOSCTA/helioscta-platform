@@ -411,6 +411,64 @@ def test_scheduled_main_polls_until_target_file_success(monkeypatch, tmp_path):
     assert telemetry[0]["metadata"]["mufg_upload_enabled"] is False
 
 
+def test_clear_street_email_success_queues_source_csv(monkeypatch, tmp_path):
+    trade_file = tmp_path / "Helios_Transactions_20260706.20260707_020817.csv"
+    trade_file.write_text("RECORD_ID\n1\n", encoding="utf-8")
+    email_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        orchestration.email_notifications.credentials,
+        "HELIOS_EMAIL_RECIPIENTS",
+        ["ops@example.test"],
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "build_clear_street_eod_transactions_file_email",
+        lambda **kwargs: {
+            "notification_key": "clear-street:email:file",
+            "recipient_email": kwargs["recipient_email"],
+            "subject": "Clear Street file available",
+            "body_text": "Attached.",
+            "body_html": None,
+            "dataset": "clear_street_eod_transactions",
+            "source_event_key": "clear-street",
+            "source_event_id": None,
+            "payload": {"attachment_paths": [str(kwargs["attachment_path"])]},
+        },
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "enqueue_email_notification",
+        lambda **kwargs: email_calls.append(kwargs) or {"created": True},
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "notifications_enabled",
+        lambda: False,
+    )
+
+    queued = orchestration._notify_clear_street_email_success(
+        summary={
+            "rows_processed": 1,
+            "local_dir": str(tmp_path),
+            "latest_trade_file": {
+                "local_filename": trade_file.name,
+                "trade_date_from_sftp": "20260706",
+            },
+        },
+        database="stage_db",
+        run_logger=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    assert queued == 1
+    assert email_calls[0]["database"] == "stage_db"
+    assert email_calls[0]["recipient_email"] == "ops@example.test"
+    assert email_calls[0]["payload"]["attachment_paths"] == [str(trade_file)]
+
+
 def test_scheduled_main_runs_mufg_upload_after_target_success(
     monkeypatch,
     tmp_path,

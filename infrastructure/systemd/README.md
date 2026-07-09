@@ -662,7 +662,7 @@ HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
 AZURE_OUTLOOK_CLIENT_ID=
 AZURE_OUTLOOK_TENANT_ID=
 AZURE_OUTLOOK_CLIENT_SECRET=
-AZURE_OUTLOOK_SENDER=
+AZURE_OUTLOOK_SENDER=aidan.keaveny@helioscta.com
 ```
 
 Verify the outbox with:

@@ -562,9 +562,143 @@ def build_clear_street_mufg_upload_success_slack(
         "non_ok_trade_status_rows": int(
             summary.get("non_ok_trade_status_rows", 0) or 0
         ),
+        "product_code_null_check": summary.get("product_code_null_check", {}),
     }
     return {
         "notification_key": f"{event_key}:slack:release",
+        "channel_id": channel_id or positions_trades_alerts_channel_id(),
+        "channel_name": (
+            channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
+        ),
+        "message_text": message_text,
+        "message_blocks": message_blocks,
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "payload": payload,
+    }
+
+
+def build_clear_street_mufg_product_code_nulls_slack(
+    *,
+    summary: dict[str, Any],
+    channel_id: str | None = None,
+    channel_name: str | None = None,
+) -> dict[str, Any]:
+    """Build a Slack outbox payload for MUFG product-code null warnings."""
+    trade_date = _clear_street_mufg_trade_date(summary)
+    filename = str(
+        summary.get("remote_filename")
+        or summary.get("filename")
+        or "unknown"
+    )
+    rows_exported = int(
+        summary.get("rows_exported")
+        or summary.get("rows_uploaded", 0)
+        or 0
+    )
+    null_check = summary.get("product_code_null_check")
+    if not isinstance(null_check, dict):
+        null_check = {}
+    null_counts = _coerce_int_dict(null_check.get("null_counts"))
+    nonzero_counts = {
+        column: count for column, count in null_counts.items() if count > 0
+    }
+    null_rows = int(null_check.get("null_rows") or 0)
+    affected_products = _coerce_product_summaries(
+        null_check.get("affected_products")
+    )
+    product_count = int(
+        null_check.get("affected_product_count") or len(affected_products)
+    )
+    product_word = "product" if product_count == 1 else "products"
+    products_text = _format_affected_products_for_slack(
+        affected_products=affected_products,
+        product_count=product_count,
+    )
+    criteria = str(null_check.get("criteria") or "").strip()
+    criteria_text = (
+        criteria
+        or (
+            "product_code_grouping and product_code_region are blank/null, "
+            "and at least one ICE/CME/BBG product code is blank/null"
+        )
+    )
+
+    event_key = (
+        f"{CLEAR_STREET_MUFG_UPLOAD_DATASET}:product_code_nulls:{trade_date}"
+    )
+    message_text = (
+        "Clear Street MUFG product mapping needs review for "
+        f"{trade_date}: {null_rows:,} affected rows across {product_count:,} "
+        f"source {product_word} in {filename}."
+    )
+    message_blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": "Clear Street MUFG Product Mapping Needed",
+                "emoji": True,
+            },
+        },
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Trade date*\n{trade_date}"},
+                {"type": "mrkdwn", "text": f"*Rows affected*\n{null_rows:,}"},
+                {
+                    "type": "mrkdwn",
+                    "text": f"*Products affected*\n{product_count:,}",
+                },
+                {"type": "mrkdwn", "text": f"*File*\n`{filename}`"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Affected source products*\n" + products_text,
+            },
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    "*Next action*\n"
+                    "Add or fix the product alias/catalog rule, regenerate SQL, "
+                    "and rerun the MUFG export if the file needs replacement."
+                ),
+            },
+        },
+    ]
+    payload = {
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "target_table": summary.get("target_table"),
+        "source_table": summary.get("source_table"),
+        "trade_date": trade_date,
+        "rows_exported": rows_exported,
+        "rows_uploaded": int(summary.get("rows_uploaded", rows_exported) or 0),
+        "filename": filename,
+        "remote_dir": summary.get("remote_dir"),
+        "remote_path": summary.get("remote_path"),
+        "sql_filename": summary.get("sql_filename"),
+        "product_code_null_check": null_check,
+        "product_code_null_counts": nonzero_counts,
+        "product_code_overall_null_counts": _coerce_int_dict(
+            null_check.get("overall_null_counts")
+        ),
+        "product_code_null_rows": null_rows,
+        "product_code_null_columns": list(nonzero_counts),
+        "product_code_null_criteria": criteria_text,
+        "product_code_affected_products": affected_products,
+        "product_code_affected_product_count": product_count,
+        "source_system": CLEAR_STREET_MUFG_UPLOAD_SOURCE_LABEL,
+        "source_feed": CLEAR_STREET_MUFG_UPLOAD_SOURCE_FEED,
+    }
+    return {
+        "notification_key": f"{event_key}:slack:warning",
         "channel_id": channel_id or positions_trades_alerts_channel_id(),
         "channel_name": (
             channel_name or credentials.SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME
@@ -1184,6 +1318,90 @@ def _truncate_slack_text(value: Any, *, max_length: int) -> str:
     if len(text) <= max_length:
         return text
     return text[: max_length - 3].rstrip() + "..."
+
+
+def _coerce_int_dict(value: Any) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    counts: dict[str, int] = {}
+    for key, raw_count in value.items():
+        try:
+            counts[str(key)] = int(raw_count or 0)
+        except (TypeError, ValueError):
+            counts[str(key)] = 0
+    return counts
+
+
+def _coerce_product_summaries(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    summaries: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            summaries.append(item)
+    return summaries
+
+
+def _format_affected_products_for_slack(
+    *,
+    affected_products: list[dict[str, Any]],
+    product_count: int,
+    max_products: int = 8,
+) -> str:
+    if not affected_products:
+        return "No source product details supplied."
+
+    lines: list[str] = []
+    for product in affected_products[:max_products]:
+        row_count = int(product.get("row_count") or 0)
+        product_name = _slack_code(product.get("product") or "unknown")
+        details = _format_product_detail_parts(product)
+        detail_text = f"; {details}" if details else ""
+        row_word = "row" if row_count == 1 else "rows"
+        lines.append(f"- {product_name}: {row_count:,} {row_word}{detail_text}")
+
+    hidden_count = max(0, product_count - len(lines))
+    if hidden_count:
+        lines.append(f"- ... and {hidden_count:,} more source products")
+    return "\n".join(lines)
+
+
+def _format_product_detail_parts(product: dict[str, Any]) -> str:
+    source_fields = product.get("source_fields")
+    if not isinstance(source_fields, dict):
+        source_fields = {}
+
+    parts: list[str] = []
+    for label, key in [
+        ("futures", "futures_code"),
+        ("exch", "exch_comm_cd"),
+        ("exchange", "exchange_name"),
+        ("symbol", "symbol"),
+    ]:
+        value = source_fields.get(key)
+        if value:
+            parts.append(f"{label} {_slack_code(value)}")
+
+    months = _coerce_string_list(product.get("contract_year_months"))
+    if months:
+        parts.append("months " + ", ".join(_slack_code(month) for month in months[:4]))
+    statuses = _coerce_string_list(product.get("trade_statuses"))
+    if statuses:
+        parts.append(
+            "statuses " + ", ".join(_slack_code(status) for status in statuses[:4])
+        )
+    return "; ".join(parts)
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
+
+
+def _slack_code(value: Any) -> str:
+    text = str(value or "unknown").strip().replace("`", "'")
+    return f"`{text or 'unknown'}`"
 
 
 def _coerce_utc_datetime(value: Any) -> datetime:

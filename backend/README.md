@@ -26,7 +26,7 @@ HELIOS_EMAIL_STALE_SENDING_MINUTES=30
 AZURE_OUTLOOK_CLIENT_ID=
 AZURE_OUTLOOK_TENANT_ID=
 AZURE_OUTLOOK_CLIENT_SECRET=
-AZURE_OUTLOOK_SENDER=
+AZURE_OUTLOOK_SENDER=aidan.keaveny@helioscta.com
 
 HELIOS_SLACK_NOTIFICATIONS_ENABLED=false
 HELIOS_SLACK_MAX_ATTEMPTS=6
@@ -283,6 +283,11 @@ readiness. The alert routes to the positions/trades Slack channel when
 configured, falling back to the default Slack channel; timeout alerts enqueue
 to the same positions/trades channel. Actual posting still depends on
 `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true` and Slack bot/webhook credentials.
+Successful source-file loads also enqueue an internal email to
+`HELIOS_EMAIL_RECIPIENTS` with the downloaded raw Clear Street CSV attached;
+delivery depends on `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and Microsoft
+Graph credentials. Attachment paths are stored in the email outbox payload, so
+cached CSVs must remain available until the email sender processes the row.
 After the source file loads, the scheduled path runs the MUFG upload leg from
 `backend.orchestration.positions_and_trades.clear_street_mufg_upload`. That
 leg reads the generated read-only SQL at
@@ -291,11 +296,18 @@ uses the Clear Street target trade date for the exported
 `Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
 the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with
 `provider = 'mufg_sftp'`, and posts positions/trades Slack success or failure
-notifications. The scheduler's only freshness gate is the arrival and load of
-the target Clear Street source file. MUFG-side empty-extract and SQL
-`sftp_date` mismatch conditions are recorded in metadata for diagnosis instead
-of blocking the v1 upload. `trade_status` values are also included in metadata
-but do not block the v1 MUFG upload.
+notifications. When a MUFG output row has blank/null `product_code_grouping`,
+blank/null `product_code_region`, and at least one blank/null vendor product
+code among `ice_product_code`, `cme_product_code`, or `bbg_product_code`, the
+leg queues a separate positions/trades Slack warning listing the affected
+source products and their Clear Street identifiers, with per-column counts in
+the payload for matching rows. The scheduler's only freshness gate is the
+arrival and load of the target Clear Street source file. MUFG upload success
+also enqueues an internal email to `HELIOS_EMAIL_RECIPIENTS` with the generated
+filtered MUFG CSV attached; the email body includes any MUFG-side warnings such
+as empty extract, SQL `sftp_date` mismatch, non-ok `trade_status`, or product
+mapping issues. These conditions are recorded in metadata for diagnosis instead
+of blocking the v1 upload.
 
 NOAA AviationWeather METAR helpers use the public
 `https://aviationweather.gov/api/data/metar` endpoint and do not require
@@ -318,10 +330,18 @@ Scheduled orchestration that emits API telemetry or data-availability events
 also assumes the shared `ops.api_fetch_log` and `ops.data_availability_events`
 tables have been applied by operator SQL before the timer is enabled.
 
-Email notification utilities and `ops.email_notification_outbox` remain in the
-repo for historical/manual support, but promoted release alerts are Slack-only
-while the Slack-first notification policy is active. The DA HRL LMP scheduled
-workflow does not enqueue release emails.
+Email notification utilities use `ops.email_notification_outbox` for durable
+retry and duplicate suppression. Backend-generated HTML bodies should use the
+shared table-based helpers in `backend.utils.email_templates`, keep a plain-text
+fallback, escape dynamic values, and avoid external CSS or remote images so
+Microsoft Outlook rendering remains predictable. Subjects should keep the
+human-readable message first, format visible subject dates as `DDD MMM-DD`, and
+append Outlook organization tags with pipe separators, for example
+`Clear Street MUFG upload complete for Wed Jul-08 | HeliosCTA | Clear Street |
+MUFG Upload | Warning`. The DA HRL LMP scheduled
+workflow does not enqueue release emails. The Clear Street source and MUFG
+handoff paths do enqueue internal emails with CSV attachments to
+`HELIOS_EMAIL_RECIPIENTS` when email notifications are enabled.
 
 Slack notifications use `ops.slack_notification_outbox` for the same durable
 retry and duplicate-suppression pattern. The Slack sender posts through

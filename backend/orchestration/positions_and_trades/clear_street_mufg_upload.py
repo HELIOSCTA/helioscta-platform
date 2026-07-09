@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.scrapes.positions_and_trades import mufg_clear_street_trades as scrape
-from backend.utils import script_logging, slack_notifications
+from backend.utils import email_notifications, script_logging, slack_notifications
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
@@ -25,6 +25,7 @@ def main(
     run_mode: str = "manual",
     metadata: dict[str, Any] | None = None,
     send_slack: bool = True,
+    send_email: bool = True,
     run_logger: Any | None = None,
 ) -> int:
     """Upload the latest generated Clear Street MUFG trade file."""
@@ -56,6 +57,12 @@ def main(
         rows_uploaded = int(summary.get("rows_uploaded", 0) or 0)
         if send_slack:
             _notify_mufg_slack_success(
+                summary=summary,
+                database=database,
+                run_logger=run_logger,
+            )
+        if send_email:
+            _notify_mufg_email_success(
                 summary=summary,
                 database=database,
                 run_logger=run_logger,
@@ -124,6 +131,18 @@ def _notify_mufg_slack_success(
             **message,
         )
         queued = 1 if enqueued.get("created") else 0
+        if _has_product_code_nulls(summary):
+            null_message = (
+                slack_notifications.build_clear_street_mufg_product_code_nulls_slack(
+                    summary=summary,
+                )
+            )
+            null_enqueued = slack_notifications.enqueue_slack_notification(
+                database=database,
+                **null_message,
+            )
+            queued += 1 if null_enqueued.get("created") else 0
+
         if not slack_notifications.notifications_enabled():
             run_logger.info(
                 f"MUFG upload Slack notification queued={queued}; sending is disabled."
@@ -145,6 +164,89 @@ def _notify_mufg_slack_success(
             "upload telemetry remains committed."
         )
         return 0
+
+
+def _has_product_code_nulls(summary: dict[str, object]) -> bool:
+    null_check = summary.get("product_code_null_check")
+    if not isinstance(null_check, dict):
+        return False
+    if bool(null_check.get("has_nulls")):
+        return True
+    try:
+        return int(null_check.get("null_rows", 0) or 0) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _notify_mufg_email_success(
+    *,
+    summary: dict[str, object],
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    try:
+        attachment_path = _mufg_summary_file_path(summary)
+    except Exception:
+        run_logger.exception(
+            "Skipping MUFG upload email notification; uploaded CSV could not "
+            "be resolved."
+        )
+        return 0
+
+    queued = 0
+    try:
+        for recipient_email in email_notifications.credentials.HELIOS_EMAIL_RECIPIENTS:
+            recipient_email = recipient_email.strip().lower()
+            if not recipient_email:
+                continue
+            message = email_notifications.build_clear_street_mufg_upload_success_email(
+                summary=summary,
+                recipient_email=recipient_email,
+                attachment_path=attachment_path,
+            )
+            enqueued = email_notifications.enqueue_email_notification(
+                database=database,
+                **message,
+            )
+            queued += 1 if enqueued.get("created") else 0
+
+        if not email_notifications.notifications_enabled():
+            run_logger.info(
+                f"MUFG upload email notification queued={queued}; "
+                "sending is disabled."
+            )
+            return queued
+
+        processed = email_notifications.send_due_email_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            "MUFG upload email notification "
+            f"queued={queued}, processed={len(processed)}."
+        )
+        return queued
+    except Exception:
+        run_logger.exception(
+            "MUFG upload email notification handling failed; "
+            "upload telemetry remains committed."
+        )
+        return 0
+
+
+def _mufg_summary_file_path(summary: dict[str, object]) -> Path:
+    local_file_path = summary.get("local_file_path")
+    if local_file_path:
+        path = Path(str(local_file_path))
+    else:
+        filename = summary.get("filename") or summary.get("remote_filename")
+        local_dir = summary.get("local_dir") or scrape.DEFAULT_LOCAL_DIR
+        if not filename:
+            raise FileNotFoundError("MUFG summary is missing local_file_path/filename.")
+        path = Path(str(local_dir)) / str(filename)
+    if not path.exists():
+        raise FileNotFoundError(f"MUFG upload CSV not found: {path}")
+    return path
 
 
 def _notify_mufg_slack_failure(

@@ -24,6 +24,38 @@ DEFAULT_CSV_FILENAME_PATTERN = "Helios_Transactions"
 DEFAULT_SFTP_PORT = 22
 DEFAULT_LOCAL_DIR = Path(__file__).resolve().parent / "exports" / "mufg"
 GENERATED_SQL_DIR = Path(__file__).resolve().parent / "generated_sql"
+PRODUCT_CODE_NULL_REQUIRED_COLUMNS: tuple[str, ...] = (
+    "product_code_grouping",
+    "product_code_region",
+)
+PRODUCT_CODE_NULL_VENDOR_CODE_COLUMNS: tuple[str, ...] = (
+    "ice_product_code",
+    "cme_product_code",
+    "bbg_product_code",
+)
+PRODUCT_CODE_NULL_CHECK_COLUMNS: tuple[str, ...] = (
+    *PRODUCT_CODE_NULL_REQUIRED_COLUMNS,
+    *PRODUCT_CODE_NULL_VENDOR_CODE_COLUMNS,
+)
+PRODUCT_CODE_NULL_CRITERIA = (
+    "product_code_grouping is blank/null and product_code_region is blank/null "
+    "and at least one of ice_product_code, cme_product_code, or bbg_product_code "
+    "is blank/null"
+)
+PRODUCT_CODE_NULL_PRODUCT_ID_COLUMNS: tuple[str, ...] = (
+    "security_description",
+    "instrument_description",
+    "symbol",
+    "futures_code",
+    "exch_comm_cd",
+    "exchange_name",
+)
+PRODUCT_CODE_NULL_PRODUCT_DETAIL_COLUMNS: tuple[str, ...] = (
+    "contract_year_month",
+    "put_call",
+    "trade_status",
+)
+PRODUCT_CODE_NULL_MAX_PRODUCT_SUMMARIES = 10
 
 
 def run_clear_street_trades_mufg_upload(
@@ -96,6 +128,7 @@ def run_clear_street_trades_mufg_upload(
         "remote_path": remote_path,
         "trade_status_counts": _trade_status_counts(df),
         "non_ok_trade_status_rows": _non_ok_trade_status_rows(df),
+        "product_code_null_check": summarize_product_code_nulls(df),
     }
 
 
@@ -143,6 +176,55 @@ def write_mufg_extract_csv(
     local_path = resolved_dir / filename
     df.to_csv(local_path, index=False)
     return local_path
+
+
+def summarize_product_code_nulls(df: pd.DataFrame) -> dict[str, object]:
+    overall_counts: dict[str, int] = {}
+    masks: dict[str, pd.Series] = {}
+    missing_columns: list[str] = []
+
+    for column in PRODUCT_CODE_NULL_CHECK_COLUMNS:
+        if column not in df.columns:
+            null_mask = pd.Series(True, index=df.index)
+            overall_counts[column] = int(len(df))
+            missing_columns.append(column)
+        else:
+            null_mask = _blank_or_null_mask(df[column])
+            overall_counts[column] = int(null_mask.sum())
+        masks[column] = null_mask
+
+    required_null_mask = pd.Series(True, index=df.index)
+    for column in PRODUCT_CODE_NULL_REQUIRED_COLUMNS:
+        required_null_mask = required_null_mask & masks[column]
+
+    vendor_code_null_mask = pd.Series(False, index=df.index)
+    for column in PRODUCT_CODE_NULL_VENDOR_CODE_COLUMNS:
+        vendor_code_null_mask = vendor_code_null_mask | masks[column]
+
+    alert_mask = required_null_mask & vendor_code_null_mask
+    alert_counts = {
+        column: int((masks[column] & alert_mask).sum())
+        for column in PRODUCT_CODE_NULL_CHECK_COLUMNS
+    }
+    null_columns = [
+        column for column, count in alert_counts.items() if count > 0
+    ]
+    affected_products = _summarize_product_code_null_products(df.loc[alert_mask])
+
+    return {
+        "checked_columns": list(PRODUCT_CODE_NULL_CHECK_COLUMNS),
+        "criteria": PRODUCT_CODE_NULL_CRITERIA,
+        "required_null_columns": list(PRODUCT_CODE_NULL_REQUIRED_COLUMNS),
+        "vendor_code_columns": list(PRODUCT_CODE_NULL_VENDOR_CODE_COLUMNS),
+        "overall_null_counts": overall_counts,
+        "null_counts": alert_counts,
+        "null_columns": null_columns,
+        "null_rows": int(alert_mask.sum()),
+        "missing_columns": missing_columns,
+        "has_nulls": bool(alert_mask.any()),
+        "affected_products": affected_products,
+        "affected_product_count": len(affected_products),
+    }
 
 
 def resolve_local_dir(local_dir: str | Path | None = None) -> Path:
@@ -301,3 +383,92 @@ def _non_ok_trade_status_rows(df: pd.DataFrame) -> int:
         return 0
     statuses = df["trade_status"].fillna("null").astype(str)
     return int((statuses != "ok").sum())
+
+
+def _blank_or_null_mask(series: pd.Series) -> pd.Series:
+    text = series.astype("string").str.strip()
+    return series.isna() | text.fillna("").eq("")
+
+
+def _summarize_product_code_null_products(df: pd.DataFrame) -> list[dict[str, object]]:
+    if df.empty:
+        return []
+
+    groups: dict[tuple[str | None, ...], dict[str, object]] = {}
+    for _, row in df.iterrows():
+        source_fields = {
+            column: _clean_cell(row.get(column))
+            for column in PRODUCT_CODE_NULL_PRODUCT_ID_COLUMNS
+        }
+        key = tuple(source_fields.get(column) for column in PRODUCT_CODE_NULL_PRODUCT_ID_COLUMNS)
+        group = groups.setdefault(
+            key,
+            {
+                "product": _source_product_label(source_fields),
+                "row_count": 0,
+                "source_fields": source_fields,
+                "contract_year_months": set(),
+                "put_calls": set(),
+                "trade_statuses": set(),
+            },
+        )
+        group["row_count"] = int(group["row_count"]) + 1
+        _add_optional_set_value(
+            group,
+            "contract_year_months",
+            _clean_cell(row.get("contract_year_month")),
+        )
+        _add_optional_set_value(group, "put_calls", _clean_cell(row.get("put_call")))
+        _add_optional_set_value(
+            group,
+            "trade_statuses",
+            _clean_cell(row.get("trade_status")),
+        )
+
+    summaries: list[dict[str, object]] = []
+    for group in groups.values():
+        summaries.append(
+            {
+                "product": group["product"],
+                "row_count": int(group["row_count"]),
+                "source_fields": group["source_fields"],
+                "contract_year_months": sorted(group["contract_year_months"]),
+                "put_calls": sorted(group["put_calls"]),
+                "trade_statuses": sorted(group["trade_statuses"]),
+            }
+        )
+
+    summaries.sort(
+        key=lambda item: (-int(item["row_count"]), str(item["product"]).lower())
+    )
+    return summaries[:PRODUCT_CODE_NULL_MAX_PRODUCT_SUMMARIES]
+
+
+def _clean_cell(value: object) -> str | None:
+    if pd.isna(value):
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _source_product_label(source_fields: dict[str, str | None]) -> str:
+    for column in [
+        "security_description",
+        "instrument_description",
+        "symbol",
+        "futures_code",
+        "exch_comm_cd",
+    ]:
+        value = source_fields.get(column)
+        if value:
+            return value
+    return "unknown"
+
+
+def _add_optional_set_value(
+    group: dict[str, object],
+    key: str,
+    value: str | None,
+) -> None:
+    if value:
+        group[key].add(value)

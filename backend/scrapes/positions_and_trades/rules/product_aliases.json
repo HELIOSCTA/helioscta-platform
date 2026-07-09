@@ -620,6 +620,13 @@
   {
     "source": "clear_street",
     "matchType": "exact",
+    "pattern": "ALQ-ALGONQUIN CITYGATES BASIS FUTURE",
+    "exchangeCode": "ALQ",
+    "optionType": "future"
+  },
+  {
+    "source": "clear_street",
+    "matchType": "exact",
     "pattern": "PGE-PG&E CITYGATE BASIS FUTURE",
     "exchangeCode": "PGE",
     "optionType": "future"

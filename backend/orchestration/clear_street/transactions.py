@@ -15,7 +15,7 @@ from backend.orchestration.positions_and_trades import (
     clear_street_nav_email,
 )
 from backend.scrapes.clear_street import transactions as scrape
-from backend.utils import script_logging, slack_notifications
+from backend.utils import email_notifications, script_logging, slack_notifications
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
@@ -46,6 +46,7 @@ def main(
     database: str | None = None,
     run_mode: str = "manual",
     metadata: dict[str, Any] | None = None,
+    send_email: bool = True,
 ) -> int:
     """Run the local Clear Street transaction scrape and write telemetry."""
     run_logger = script_logging.init_logging(
@@ -76,6 +77,12 @@ def main(
             database=database,
             run_logger=run_logger,
         )
+        if send_email:
+            _notify_clear_street_email_success(
+                summary=summary,
+                database=database,
+                run_logger=run_logger,
+            )
         run_logger.success(
             f"{PIPELINE_NAME} completed; {rows_processed:,} rows processed."
         )
@@ -121,6 +128,7 @@ def scheduled_main(
     mufg_local_dir: str | Path | None = None,
     email_nav: bool = True,
     nav_email_local_dir: str | Path | None = None,
+    send_email: bool = True,
 ) -> int:
     """Poll Clear Street overnight until the target trade-date file arrives."""
     if poll_wait_seconds < 1:
@@ -193,6 +201,12 @@ def scheduled_main(
                     database=database,
                     run_logger=run_logger,
                 )
+                if send_email:
+                    _notify_clear_street_email_success(
+                        summary=summary,
+                        database=database,
+                        run_logger=run_logger,
+                    )
                 run_logger.success(
                     f"{PIPELINE_NAME} scheduled poll completed; "
                     f"{rows_processed:,} rows processed."
@@ -287,6 +301,7 @@ def scheduled_main(
             "window_end_hour": window_end_hour,
             "mufg_upload_enabled": upload_mufg,
             "nav_email_enabled": email_nav,
+            "email_notifications_enabled": send_email,
             "downstream_failures": downstream_failures,
             **(metadata or {}),
         }
@@ -355,6 +370,85 @@ def _notify_clear_street_slack_success(
             "scrape data and fetch telemetry remain committed."
         )
         return 0
+
+
+def _notify_clear_street_email_success(
+    *,
+    summary: dict[str, object],
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    rows_processed = int(summary.get("rows_processed", 0) or 0)
+    if rows_processed <= 0:
+        run_logger.info("Skipping Clear Street email notification for 0 rows.")
+        return 0
+
+    try:
+        attachment_path = _source_summary_file_path(summary)
+    except Exception:
+        run_logger.exception(
+            "Skipping Clear Street email notification; source CSV could not "
+            "be resolved."
+        )
+        return 0
+
+    queued = 0
+    try:
+        for recipient_email in email_notifications.credentials.HELIOS_EMAIL_RECIPIENTS:
+            recipient_email = recipient_email.strip().lower()
+            if not recipient_email:
+                continue
+            message = (
+                email_notifications.build_clear_street_eod_transactions_file_email(
+                    summary=summary,
+                    recipient_email=recipient_email,
+                    attachment_path=attachment_path,
+                )
+            )
+            enqueued = email_notifications.enqueue_email_notification(
+                database=database,
+                **message,
+            )
+            queued += 1 if enqueued.get("created") else 0
+
+        if not email_notifications.notifications_enabled():
+            run_logger.info(
+                f"Clear Street email notification queued={queued}; "
+                "sending is disabled."
+            )
+            return queued
+
+        processed = email_notifications.send_due_email_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            "Clear Street email notification "
+            f"queued={queued}, processed={len(processed)}."
+        )
+        return queued
+    except Exception:
+        run_logger.exception(
+            "Clear Street email notification handling failed; "
+            "scrape data and fetch telemetry remain committed."
+        )
+        return 0
+
+
+def _source_summary_file_path(summary: dict[str, object]) -> Path:
+    latest = summary.get("latest_trade_file")
+    if not isinstance(latest, dict):
+        raise FileNotFoundError("Clear Street summary has no latest_trade_file.")
+    local_filename = latest.get("local_filename")
+    local_dir = summary.get("local_dir")
+    if not local_filename or not local_dir:
+        raise FileNotFoundError(
+            "Clear Street summary is missing local_dir or local_filename."
+        )
+    path = Path(str(local_dir)) / str(local_filename)
+    if not path.exists():
+        raise FileNotFoundError(f"Clear Street source CSV not found: {path}")
+    return path
 
 
 def _notify_clear_street_slack_timeout(

@@ -179,14 +179,26 @@ After the source file succeeds, the same scheduled process generates
 trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
 `ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`, and queues
 positions/trades Slack success or failure notifications for the MUFG leg. The
-same source CSV is also emailed to NAV through Microsoft Graph with separate
-`ops.api_fetch_log` telemetry using `provider = 'microsoft_graph'`. The Clear
-Street target source file is the scheduler's freshness gate; MUFG-side
-empty-extract and SQL `sftp_date` mismatch conditions are metadata only. MUFG
-and NAV are attempted independently after source success. If either downstream
-handoff fails, the scheduled task exits nonzero after attempting the enabled
-downstream handoffs, while the Clear Street source-load telemetry remains
-successful.
+source-file success path also enqueues an internal email to
+`HELIOS_EMAIL_RECIPIENTS` with the downloaded raw Clear Street CSV attached.
+MUFG upload success enqueues an internal email with the generated filtered MUFG
+CSV attached, and the email body includes any MUFG-side warnings. If
+the MUFG output has rows with blank/null `product_code_grouping`, blank/null
+`product_code_region`, and at least one blank/null vendor product code among
+`ice_product_code`, `cme_product_code`, or `bbg_product_code`, it also queues a
+separate positions/trades Slack warning listing the affected source products
+and their Clear Street identifiers, with per-column counts in the payload for
+matching rows. These internal alert emails use `ops.email_notification_outbox`;
+attachment paths are stored in the outbox payload and require cached CSVs to
+remain available until sent. The same source CSV is also emailed to NAV through
+Microsoft Graph with separate `ops.api_fetch_log` telemetry using
+`provider = 'microsoft_graph'`. The Clear Street target source file is the
+scheduler's freshness gate;
+MUFG-side empty-extract and SQL `sftp_date` mismatch conditions are metadata
+only. MUFG and NAV are attempted independently after source success. If either
+downstream handoff fails, the scheduled task exits nonzero after attempting the
+enabled downstream handoffs, while the Clear Street source-load telemetry
+remains successful.
 
 Run from the production clone in PowerShell:
 
@@ -207,9 +219,11 @@ It also verifies `MUFG_SFTP_HOST`, `MUFG_SFTP_USER`, and
 `MUFG_SFTP_PASSWORD`; `MUFG_SFTP_PORT` defaults to `22`, and
 `MUFG_SFTP_REMOTE_DIR` defaults to `/`. NAV email delivery requires
 `AZURE_OUTLOOK_CLIENT_ID`, `AZURE_OUTLOOK_TENANT_ID`, and
-`AZURE_OUTLOOK_CLIENT_SECRET`. `CLEAR_STREET_NAV_EMAIL_SENDER` defaults to
-`admin@HeliosCTA.com`, and `CLEAR_STREET_NAV_EMAIL_RECIPIENTS` defaults to the
-legacy NAV recipient list. Slack delivery also requires `SLACK_BOT_TOKEN`,
+`AZURE_OUTLOOK_CLIENT_SECRET`. Email sends default to
+`aidan.keaveny@helioscta.com` through `AZURE_OUTLOOK_SENDER` or
+`CLEAR_STREET_NAV_EMAIL_SENDER`, and `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`
+defaults to the legacy NAV recipient list. Slack delivery also requires
+`SLACK_BOT_TOKEN`,
 `SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID`, and
 `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
+from pathlib import Path
 
 from backend.utils import email_notifications
 
@@ -26,6 +27,10 @@ def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
     )
     assert message["recipient_email"] == "aidan.keaveny@helioscta.com"
     assert message["source_event_id"] == 10
+    assert message["subject"] == (
+        "PJM DA HRL LMPs released for Wed Jul-01 | "
+        "HeliosCTA | PJM | DA HRL LMPs | Posted"
+    )
     report_url = message["payload"]["report_url"]
     assert report_url.startswith("https://frontend-helioscta.vercel.app/?")
     assert "section=pjm-da-lmps" in report_url
@@ -77,6 +82,140 @@ def test_enqueue_email_notification_is_idempotent(monkeypatch):
     assert captured["fetch"] is True
     assert captured["params"][0] == "event-1:email:release"
     assert captured["params"][1] == "aidan.keaveny@helioscta.com"
+
+
+def test_clear_street_file_email_includes_attachment_payload(tmp_path):
+    attachment = tmp_path / "Helios_Transactions_20260706.20260707_020817.csv"
+    attachment.write_text("RECORD_ID\n1\n", encoding="utf-8")
+
+    message = email_notifications.build_clear_street_eod_transactions_file_email(
+        summary={
+            "target_table": "clear_street.eod_transactions",
+            "rows_processed": 3,
+            "latest_sftp_upload_timestamp": datetime(
+                2026,
+                7,
+                7,
+                2,
+                8,
+                17,
+                tzinfo=timezone.utc,
+            ),
+            "latest_trade_file": {
+                "remote_filename": "Helios_Transactions_20260706.csv",
+                "local_filename": attachment.name,
+                "trade_date_from_sftp": "20260706",
+                "sftp_upload_timestamp": datetime(
+                    2026,
+                    7,
+                    7,
+                    2,
+                    8,
+                    17,
+                    tzinfo=timezone.utc,
+                ),
+                "rows_processed": 3,
+            },
+        },
+        recipient_email="ops@example.test",
+        attachment_path=attachment,
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_eod_transactions:data_ready:"
+        "2026-07-06:20260707T020817Z:email:file_available"
+    )
+    assert message["recipient_email"] == "ops@example.test"
+    assert message["subject"] == (
+        "Clear Street file available for Mon Jul-06 | "
+        "HeliosCTA | Clear Street | File Available"
+    )
+    assert "Attached CSV" in message["body_text"]
+    assert "HeliosCTA Alerts" in message["body_html"]
+    assert "Clear Street File Available" in message["body_html"]
+    assert "<table role=\"presentation\"" in message["body_html"]
+    assert message["payload"]["attachment_paths"] == [str(attachment)]
+
+
+def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_path):
+    attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    attachment.write_text("record_id\n1\n", encoding="utf-8")
+
+    message = email_notifications.build_clear_street_mufg_upload_success_email(
+        summary={
+            "target_table": "mufg_sftp.clear_street_trades",
+            "source_table": "clear_street.eod_transactions",
+            "expected_trade_date_from_sftp": "20260706",
+            "rows_exported": 2,
+            "rows_uploaded": 2,
+            "filename": attachment.name,
+            "remote_path": f"/{attachment.name}",
+            "trade_status_counts": {"New": 2},
+            "non_ok_trade_status_rows": 2,
+            "product_code_null_check": {
+                "null_rows": 2,
+                "has_nulls": True,
+                "affected_product_count": 1,
+                "affected_products": [
+                    {
+                        "product": "ALQ-Algonquin Citygates Basis Future",
+                        "row_count": 2,
+                        "source_fields": {
+                            "futures_code": "H9",
+                            "exch_comm_cd": "ALQ",
+                            "exchange_name": "IPE",
+                        },
+                        "contract_year_months": ["202611"],
+                        "trade_statuses": ["New"],
+                    }
+                ],
+            },
+        },
+        recipient_email="ops@example.test",
+        attachment_path=attachment,
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_trades_mufg_upload:data_ready:"
+        "2026-07-06:email:upload_complete"
+    )
+    assert message["subject"] == (
+        "Clear Street MUFG upload complete for Mon Jul-06 | "
+        "HeliosCTA | Clear Street | MUFG Upload | Warning"
+    )
+    assert "Warnings:" in message["body_text"]
+    assert "Product mapping needed" in message["body_text"]
+    assert "ALQ-Algonquin Citygates Basis Future" in message["body_text"]
+    assert "HeliosCTA Alerts" in message["body_html"]
+    assert "Clear Street MUFG Upload Complete" in message["body_html"]
+    assert "Affected Source Products" in message["body_html"]
+    assert "<table role=\"presentation\"" in message["body_html"]
+    assert message["payload"]["attachment_paths"] == [str(attachment)]
+    assert message["payload"]["warnings"]
+
+
+def test_clear_street_mufg_upload_email_subject_omits_warning_tag_without_warnings(
+    tmp_path,
+):
+    attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    attachment.write_text("record_id\n1\n", encoding="utf-8")
+
+    message = email_notifications.build_clear_street_mufg_upload_success_email(
+        summary={
+            "expected_trade_date_from_sftp": "20260706",
+            "rows_exported": 1,
+            "rows_uploaded": 1,
+            "filename": attachment.name,
+            "remote_path": f"/{attachment.name}",
+        },
+        recipient_email="ops@example.test",
+        attachment_path=attachment,
+    )
+
+    assert message["subject"] == (
+        "Clear Street MUFG upload complete for Mon Jul-06 | "
+        "HeliosCTA | Clear Street | MUFG Upload"
+    )
 
 
 def test_send_due_email_notifications_skips_when_disabled(monkeypatch):
@@ -156,6 +295,59 @@ def test_send_due_email_notifications_marks_failed_for_retry(monkeypatch):
     assert calls[0]["max_attempts"] == 6
     assert calls[0]["error_type"] == "RuntimeError"
     assert calls[0]["database"] == "stage_db"
+
+
+def test_send_due_email_notifications_uses_payload_attachment_paths(
+    monkeypatch,
+    tmp_path,
+):
+    attachment = tmp_path / "Helios_Transactions_20260706.csv"
+    attachment.write_text("RECORD_ID\n1\n", encoding="utf-8")
+    sent_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        email_notifications.credentials,
+        "HELIOS_EMAIL_NOTIFICATIONS_ENABLED",
+        True,
+    )
+    monkeypatch.setattr(
+        email_notifications,
+        "_claim_due_notifications",
+        lambda **_kwargs: [
+            {
+                "id": 8,
+                "notification_key": "event-1:email:file_available",
+                "recipient_email": "ops@example.test",
+                "subject": "Subject",
+                "body_text": "Body",
+                "body_html": None,
+                "payload": {"attachment_paths": [str(attachment)]},
+                "attempts": 1,
+                "max_attempts": 6,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        email_notifications,
+        "send_email_via_graph",
+        lambda **kwargs: sent_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        email_notifications,
+        "_mark_notification_sent",
+        lambda **kwargs: {
+            "id": kwargs["notification_id"],
+            "notification_key": "event-1:email:file_available",
+            "recipient_email": "ops@example.test",
+            "status": "sent",
+            "attempts": 1,
+        },
+    )
+
+    results = email_notifications.send_due_email_notifications(database="stage_db")
+
+    assert results[0]["status"] == "sent"
+    assert sent_calls[0]["attachments"] == [str(attachment)]
 
 
 def test_send_email_via_graph_supports_file_attachments(monkeypatch, tmp_path):

@@ -244,6 +244,26 @@ def test_clear_street_aliases_match_source_descriptions():
     assert option_alias.exchange_code == "P1X"
 
 
+def test_clear_street_algonquin_alias_handles_source_futures_code():
+    result = normalize_position_product(
+        {
+            "source": "clear_street",
+            "product": "ALQ-Algonquin Citygates Basis Future",
+            "exchangeCode": "H9",
+            "exchangeName": "IPE",
+            "contractYyyymm": "202611",
+            "type": "F",
+        }
+    )
+
+    assert result.exchange_code == "ALQ"
+    assert result.rule_group == "Basis"
+    assert result.rule_region == "Algonquin"
+    assert result.exchange_name == "IFED"
+    assert result.is_option is False
+    assert result.ice_xl_symbol == "ALQ X26-IUS"
+
+
 def test_clear_street_source_uses_clear_street_aliases():
     result = normalize_position_product(
         {

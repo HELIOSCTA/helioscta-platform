@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 import requests
 
 from backend import credentials
-from backend.utils import db
+from backend.utils import db, email_templates
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,8 @@ GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 DEFAULT_PJM_DA_HRL_LMP_HUB = "WESTERN HUB"
 DEFAULT_PJM_DA_HRL_LMP_COMPONENT = "all"
 MAX_ERROR_MESSAGE_LENGTH = 2000
+CLEAR_STREET_EOD_TRANSACTIONS_DATASET = "clear_street_eod_transactions"
+CLEAR_STREET_MUFG_UPLOAD_DATASET = "clear_street_trades_mufg_upload"
 
 
 def notifications_enabled() -> bool:
@@ -65,17 +67,34 @@ def build_pjm_da_hrl_lmp_release_email(
         hub=hub,
         base_url=base_url,
     )
-    subject = f"PJM DA HRL LMPs released for {business_date}"
+    subject = _subject_with_tags(
+        f"PJM DA HRL LMPs released for {_subject_date_label(business_date)}",
+        ["HeliosCTA", "PJM", "DA HRL LMPs", "Posted"],
+    )
     body_text = (
         f"PJM DA HRL LMPs are available for {business_date}.\n\n"
         f"Report: {report_url}\n\n"
         f"Source event: {event_key}"
     )
-    body_html = (
-        "<p>PJM DA HRL LMPs are available for "
-        f"<strong>{business_date}</strong>.</p>"
-        f'<p><a href="{report_url}">Open the single-day report</a></p>'
-        f"<p>Source event: <code>{event_key}</code></p>"
+    body_html = email_templates.render_email(
+        title="PJM DA HRL LMPs Available",
+        preheader=f"PJM DA hourly LMPs are available for {business_date}.",
+        status_label="Posted",
+        status_tone="success",
+        intro=f"PJM DA hourly LMPs are available for {business_date}.",
+        facts=[
+            ("Business date", business_date),
+            ("Hub", hub),
+            ("Component", DEFAULT_PJM_DA_HRL_LMP_COMPONENT),
+            ("Source event", event_key),
+        ],
+        sections=[
+            email_templates.link_section(
+                "Report",
+                label="Open single-day report",
+                url=report_url,
+            )
+        ],
     )
     return {
         "notification_key": f"{event_key}:email:release",
@@ -91,6 +110,192 @@ def build_pjm_da_hrl_lmp_release_email(
             "report_url": report_url,
             "hub": hub,
             "component": DEFAULT_PJM_DA_HRL_LMP_COMPONENT,
+        },
+    }
+
+
+def build_clear_street_eod_transactions_file_email(
+    *,
+    summary: dict[str, Any],
+    recipient_email: str,
+    attachment_path: str | Path,
+) -> dict[str, Any]:
+    """Build an internal email alert for an available Clear Street source CSV."""
+    latest_trade_file = _latest_clear_street_trade_file(summary)
+    trade_date = _format_yyyymmdd_date(
+        latest_trade_file.get("trade_date_from_sftp")
+        or summary.get("max_trade_date_from_sftp")
+    )
+    upload_timestamp = _coerce_utc_datetime(
+        latest_trade_file.get("sftp_upload_timestamp")
+        or summary.get("latest_sftp_upload_timestamp")
+    )
+    upload_display = _format_machine_local_datetime(upload_timestamp)
+    upload_key = upload_timestamp.strftime("%Y%m%dT%H%M%SZ")
+    source_filename = str(
+        latest_trade_file.get("remote_filename")
+        or latest_trade_file.get("local_filename")
+        or Path(attachment_path).name
+    )
+    rows_processed = int(
+        latest_trade_file.get("rows_processed")
+        if latest_trade_file.get("rows_processed") is not None
+        else summary.get("rows_processed", 0) or 0
+    )
+    event_key = (
+        f"{CLEAR_STREET_EOD_TRANSACTIONS_DATASET}:data_ready:"
+        f"{trade_date}:{upload_key}"
+    )
+    attachment = str(Path(attachment_path))
+    subject = _subject_with_tags(
+        f"Clear Street file available for {_subject_date_label(trade_date)}",
+        ["HeliosCTA", "Clear Street", "File Available"],
+    )
+    body_text = (
+        f"Clear Street transaction file is available for {trade_date}.\n\n"
+        f"Attached CSV: {Path(attachment_path).name}\n"
+        f"Source file: {source_filename}\n"
+        f"Rows loaded: {rows_processed:,}\n"
+        f"SFTP upload: {upload_display}\n"
+    )
+    body_html = email_templates.render_email(
+        title="Clear Street File Available",
+        preheader=(
+            f"Clear Street transaction file is available for {trade_date}."
+        ),
+        status_label="Loaded",
+        status_tone="success",
+        intro=f"Clear Street transaction file is available for {trade_date}.",
+        facts=[
+            ("Trade date", trade_date),
+            ("Rows loaded", f"{rows_processed:,}"),
+            ("Source file", source_filename),
+            ("Attached CSV", Path(attachment_path).name),
+            ("SFTP upload", upload_display),
+        ],
+        sections=[
+            email_templates.text_section(
+                "Attachment",
+                "The downloaded raw Clear Street CSV is attached to this email.",
+            )
+        ],
+    )
+    return {
+        "notification_key": f"{event_key}:email:file_available",
+        "recipient_email": recipient_email,
+        "dataset": CLEAR_STREET_EOD_TRANSACTIONS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+        "payload": {
+            "trade_date": trade_date,
+            "source_filename": source_filename,
+            "attachment_paths": [attachment],
+            "rows_processed": rows_processed,
+            "latest_sftp_upload_timestamp": upload_timestamp.isoformat(),
+        },
+    }
+
+
+def build_clear_street_mufg_upload_success_email(
+    *,
+    summary: dict[str, Any],
+    recipient_email: str,
+    attachment_path: str | Path,
+) -> dict[str, Any]:
+    """Build an internal email alert for a completed Clear Street MUFG upload."""
+    trade_date = _clear_street_mufg_trade_date(summary)
+    filename = str(
+        summary.get("remote_filename")
+        or summary.get("filename")
+        or Path(attachment_path).name
+    )
+    rows_uploaded = int(
+        summary.get("rows_uploaded")
+        or summary.get("rows_exported", 0)
+        or 0
+    )
+    warnings = _clear_street_mufg_warning_lines(summary)
+    warning_lines = warnings or ["No warnings."]
+    warning_text = "\n".join(f"- {line}" for line in warning_lines)
+    null_check = summary.get("product_code_null_check")
+    affected_products = []
+    affected_product_count = 0
+    if isinstance(null_check, dict):
+        raw_products = null_check.get("affected_products")
+        affected_products = raw_products if isinstance(raw_products, list) else []
+        affected_product_count = int(
+            null_check.get("affected_product_count") or len(affected_products)
+        )
+    event_key = (
+        f"{CLEAR_STREET_MUFG_UPLOAD_DATASET}:data_ready:{trade_date}"
+    )
+    attachment = str(Path(attachment_path))
+    subject_tags = ["HeliosCTA", "Clear Street", "MUFG Upload"]
+    if warnings:
+        subject_tags.append("Warning")
+    subject = _subject_with_tags(
+        f"Clear Street MUFG upload complete for {_subject_date_label(trade_date)}",
+        subject_tags,
+    )
+    body_text = (
+        f"Clear Street MUFG trade file uploaded for {trade_date}.\n\n"
+        f"Attached CSV: {Path(attachment_path).name}\n"
+        f"Rows uploaded: {rows_uploaded:,}\n"
+        f"Remote path: {summary.get('remote_path') or 'unknown'}\n\n"
+        "Warnings:\n"
+        f"{warning_text}\n"
+    )
+    sections = []
+    if affected_products:
+        sections.append(
+            email_templates.product_warning_section(
+                products=affected_products,
+                product_count=affected_product_count,
+            )
+        )
+    sections.append(
+        email_templates.bullet_section(
+            "Warnings",
+            warning_lines,
+            tone="warning" if warnings else "success",
+        )
+    )
+    body_html = email_templates.render_email(
+        title="Clear Street MUFG Upload Complete",
+        preheader=f"Clear Street MUFG trade file uploaded for {trade_date}.",
+        status_label="Uploaded",
+        status_tone="warning" if warnings else "success",
+        intro=f"Clear Street MUFG trade file uploaded for {trade_date}.",
+        facts=[
+            ("Trade date", trade_date),
+            ("Rows uploaded", f"{rows_uploaded:,}"),
+            ("Attached CSV", Path(attachment_path).name),
+            ("Remote path", summary.get("remote_path") or "unknown"),
+        ],
+        sections=sections,
+    )
+    return {
+        "notification_key": f"{event_key}:email:upload_complete",
+        "recipient_email": recipient_email,
+        "dataset": CLEAR_STREET_MUFG_UPLOAD_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+        "payload": {
+            "trade_date": trade_date,
+            "filename": filename,
+            "attachment_paths": [attachment],
+            "rows_uploaded": rows_uploaded,
+            "rows_exported": int(summary.get("rows_exported", rows_uploaded) or 0),
+            "remote_path": summary.get("remote_path"),
+            "warnings": warning_lines,
+            "product_code_null_check": summary.get("product_code_null_check", {}),
+            "trade_status_counts": summary.get("trade_status_counts", {}),
         },
     }
 
@@ -225,11 +430,13 @@ def send_due_email_notifications(
     results = []
     for row in claimed:
         try:
+            payload = _coerce_payload(row.get("payload"))
             send_email_via_graph(
                 recipient_email=row["recipient_email"],
                 subject=row["subject"],
                 body_text=row["body_text"],
                 body_html=row.get("body_html"),
+                attachments=_attachment_paths_from_payload(payload),
             )
         except Exception as exc:
             failed = _mark_notification_failed(
@@ -363,6 +570,7 @@ def _claim_due_notifications(
                 outbox.subject,
                 outbox.body_text,
                 outbox.body_html,
+                outbox.payload,
                 outbox.attempts,
                 outbox.max_attempts;
             """,
@@ -488,6 +696,188 @@ def _graph_file_attachment(file_path: str | Path) -> dict[str, str]:
         "name": path.name,
         "contentBytes": base64.b64encode(path.read_bytes()).decode("utf-8"),
     }
+
+
+def _latest_clear_street_trade_file(summary: dict[str, Any]) -> dict[str, Any]:
+    latest = summary.get("latest_trade_file")
+    if isinstance(latest, dict):
+        return latest
+    return {}
+
+
+def _subject_with_tags(subject: str, tags: list[str]) -> str:
+    clean_tags = [str(tag).strip() for tag in tags if str(tag).strip()]
+    if not clean_tags:
+        return subject
+    return " | ".join([subject, *clean_tags])
+
+
+def _subject_date_label(value: Any) -> str:
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%d", "%Y%m%d"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%a %b-%d")
+        except ValueError:
+            continue
+    return text
+
+
+def _format_yyyymmdd_date(value: Any) -> str:
+    if value is None:
+        raise ValueError("Missing YYYYMMDD date value")
+    text = str(value).strip()
+    if len(text) == 8 and text.isdigit():
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    return text
+
+
+def _clear_street_mufg_trade_date(summary: dict[str, Any]) -> str:
+    for key in [
+        "expected_trade_date_from_sftp",
+        "trade_date",
+        "sftp_date_from_sql",
+        "sftp_date",
+    ]:
+        value = summary.get(key)
+        if value:
+            return _format_yyyymmdd_date(value)
+    return "unknown"
+
+
+def _clear_street_mufg_warning_lines(summary: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    if bool(summary.get("sql_extract_empty", False)):
+        warnings.append("SQL extract returned 0 rows.")
+    if bool(summary.get("sql_extract_sftp_date_mismatch", False)):
+        expected = summary.get("expected_trade_date_from_sftp") or "unknown"
+        actual = summary.get("sftp_date_from_sql") or summary.get("sftp_date")
+        warnings.append(
+            "SQL extract SFTP date does not match expected Clear Street "
+            f"trade date: expected {expected}, actual {actual or 'unknown'}."
+        )
+    non_ok_rows = int(summary.get("non_ok_trade_status_rows", 0) or 0)
+    if non_ok_rows > 0:
+        warnings.append(
+            f"{non_ok_rows:,} rows have non-ok trade_status: "
+            f"{_format_counts(summary.get('trade_status_counts'))}."
+        )
+
+    null_check = summary.get("product_code_null_check")
+    if isinstance(null_check, dict) and (
+        bool(null_check.get("has_nulls"))
+        or int(null_check.get("null_rows", 0) or 0) > 0
+    ):
+        null_rows = int(null_check.get("null_rows", 0) or 0)
+        product_count = int(
+            null_check.get("affected_product_count")
+            or len(null_check.get("affected_products") or [])
+        )
+        product_word = "product" if product_count == 1 else "products"
+        products = _format_email_affected_products(
+            null_check.get("affected_products")
+        )
+        product_text = f": {products}" if products else "."
+        warnings.append(
+            "Product mapping needed for "
+            f"{null_rows:,} rows across {product_count:,} source "
+            f"{product_word}{product_text}"
+        )
+    return warnings
+
+
+def _format_counts(value: Any) -> str:
+    if not isinstance(value, dict):
+        return "not supplied"
+    parts = [f"{key}={count}" for key, count in value.items()]
+    return ", ".join(parts) if parts else "not supplied"
+
+
+def _format_email_affected_products(value: Any, max_products: int = 8) -> str:
+    if not isinstance(value, list):
+        return ""
+    parts: list[str] = []
+    for item in value[:max_products]:
+        if not isinstance(item, dict):
+            continue
+        row_count = int(item.get("row_count") or 0)
+        product = str(item.get("product") or "unknown")
+        details = _format_email_product_details(item)
+        detail_text = f"; {details}" if details else ""
+        row_word = "row" if row_count == 1 else "rows"
+        parts.append(f"{product} ({row_count:,} {row_word}{detail_text})")
+    hidden_count = max(0, len(value) - len(parts))
+    if hidden_count:
+        parts.append(f"{hidden_count:,} more source products")
+    return "; ".join(parts)
+
+
+def _format_email_product_details(product: dict[str, Any]) -> str:
+    source_fields = product.get("source_fields")
+    if not isinstance(source_fields, dict):
+        source_fields = {}
+    parts: list[str] = []
+    for label, key in [
+        ("futures", "futures_code"),
+        ("exch", "exch_comm_cd"),
+        ("exchange", "exchange_name"),
+        ("symbol", "symbol"),
+    ]:
+        value = source_fields.get(key)
+        if value:
+            parts.append(f"{label} {value}")
+    months = _coerce_string_list(product.get("contract_year_months"))
+    if months:
+        parts.append("months " + ", ".join(months[:4]))
+    statuses = _coerce_string_list(product.get("trade_statuses"))
+    if statuses:
+        parts.append("statuses " + ", ".join(statuses[:4]))
+    return "; ".join(parts)
+
+
+def _coerce_payload(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            payload = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+def _attachment_paths_from_payload(payload: dict[str, Any]) -> list[str | Path] | None:
+    raw_paths = payload.get("attachment_paths")
+    if not isinstance(raw_paths, list):
+        return None
+    paths = [str(path).strip() for path in raw_paths if str(path).strip()]
+    return paths or None
+
+
+def _coerce_utc_datetime(value: Any) -> datetime:
+    if value is None:
+        raise ValueError("Missing UTC timestamp value")
+    if isinstance(value, datetime):
+        timestamp = value
+    else:
+        timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
+def _format_machine_local_datetime(value: datetime) -> str:
+    local_value = value.astimezone()
+    timezone_label = local_value.tzname() or ""
+    if timezone_label:
+        timezone_label = f" {timezone_label}"
+    return local_value.strftime(f"%Y-%m-%d %H:%M{timezone_label}")
+
+
+def _coerce_string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item).strip() for item in value if str(item).strip()]
 
 
 def _business_date_from_event(event: dict[str, Any]) -> str:

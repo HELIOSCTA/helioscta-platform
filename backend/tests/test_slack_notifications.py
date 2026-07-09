@@ -563,6 +563,154 @@ def test_clear_street_mufg_upload_success_slack_uses_positions_channel(
     ]
 
 
+def test_clear_street_mufg_product_code_nulls_slack_uses_positions_channel(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID",
+        "CPOSITIONS",
+    )
+    monkeypatch.setattr(
+        slack_notifications.credentials,
+        "SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME",
+        "#helios-alerts-positions-trades",
+    )
+
+    message = slack_notifications.build_clear_street_mufg_product_code_nulls_slack(
+        summary={
+            "target_table": "mufg_sftp.clear_street_trades",
+            "source_table": "clear_street.eod_transactions",
+            "expected_trade_date_from_sftp": "20260706",
+            "rows_exported": 74,
+            "rows_uploaded": 74,
+            "filename": "Helios_Transactions_20260706_filtered.csv",
+            "remote_dir": "/",
+            "remote_path": "/Helios_Transactions_20260706_filtered.csv",
+            "sql_filename": "clear_street_trades_mufg_latest.sql",
+            "product_code_null_check": {
+                "criteria": (
+                    "product_code_grouping is blank/null and "
+                    "product_code_region is blank/null and at least one of "
+                    "ice_product_code, cme_product_code, or bbg_product_code "
+                    "is blank/null"
+                ),
+                "overall_null_counts": {
+                    "product_code_grouping": 4,
+                    "product_code_region": 4,
+                    "ice_product_code": 2,
+                    "cme_product_code": 12,
+                    "bbg_product_code": 16,
+                },
+                "null_counts": {
+                    "product_code_grouping": 2,
+                    "product_code_region": 2,
+                    "ice_product_code": 2,
+                    "cme_product_code": 1,
+                    "bbg_product_code": 0,
+                },
+                "null_columns": [
+                    "product_code_grouping",
+                    "product_code_region",
+                    "ice_product_code",
+                    "cme_product_code",
+                ],
+                "null_rows": 2,
+                "has_nulls": True,
+                "missing_columns": [],
+                "affected_products": [
+                    {
+                        "product": "ALQ-Algonquin Citygates Basis Future",
+                        "row_count": 2,
+                        "source_fields": {
+                            "security_description": (
+                                "ALQ-Algonquin Citygates Basis Future"
+                            ),
+                            "futures_code": "H9",
+                            "exch_comm_cd": "ALQ",
+                            "exchange_name": "IPE",
+                        },
+                        "contract_year_months": ["202611"],
+                        "put_calls": [],
+                        "trade_statuses": ["New"],
+                    }
+                ],
+                "affected_product_count": 1,
+            },
+        },
+    )
+
+    assert message["notification_key"] == (
+        "clear_street_trades_mufg_upload:product_code_nulls:"
+        "2026-07-06:slack:warning"
+    )
+    assert message["channel_id"] == "CPOSITIONS"
+    assert message["channel_name"] == "#helios-alerts-positions-trades"
+    assert message["dataset"] == "clear_street_trades_mufg_upload"
+    assert message["message_text"] == (
+        "Clear Street MUFG product mapping needs review for 2026-07-06: "
+        "2 affected rows across 1 source product in "
+        "Helios_Transactions_20260706_filtered.csv."
+    )
+    assert message["payload"]["product_code_null_rows"] == 2
+    assert message["payload"]["product_code_null_counts"] == {
+        "product_code_grouping": 2,
+        "product_code_region": 2,
+        "ice_product_code": 2,
+        "cme_product_code": 1,
+    }
+    assert message["payload"]["product_code_affected_product_count"] == 1
+    assert message["payload"]["product_code_affected_products"] == [
+        {
+            "product": "ALQ-Algonquin Citygates Basis Future",
+            "row_count": 2,
+            "source_fields": {
+                "security_description": "ALQ-Algonquin Citygates Basis Future",
+                "futures_code": "H9",
+                "exch_comm_cd": "ALQ",
+                "exchange_name": "IPE",
+            },
+            "contract_year_months": ["202611"],
+            "put_calls": [],
+            "trade_statuses": ["New"],
+        }
+    ]
+    assert message["payload"]["product_code_null_columns"] == [
+        "product_code_grouping",
+        "product_code_region",
+        "ice_product_code",
+        "cme_product_code",
+    ]
+    assert message["payload"]["product_code_overall_null_counts"] == {
+        "product_code_grouping": 4,
+        "product_code_region": 4,
+        "ice_product_code": 2,
+        "cme_product_code": 12,
+        "bbg_product_code": 16,
+    }
+    assert message["message_blocks"][1]["fields"] == [
+        {"type": "mrkdwn", "text": "*Trade date*\n2026-07-06"},
+        {"type": "mrkdwn", "text": "*Rows affected*\n2"},
+        {"type": "mrkdwn", "text": "*Products affected*\n1"},
+        {
+            "type": "mrkdwn",
+            "text": "*File*\n`Helios_Transactions_20260706_filtered.csv`",
+        },
+    ]
+    assert "`ALQ-Algonquin Citygates Basis Future`: 2 rows" in message[
+        "message_blocks"
+    ][2]["text"]["text"]
+    assert "futures `H9`" in message["message_blocks"][2]["text"]["text"]
+    assert "Add or fix the product alias/catalog rule" in message[
+        "message_blocks"
+    ][3]["text"]["text"]
+    visible_text = str(message["message_blocks"])
+    assert "Criteria" not in visible_text
+    assert "Null counts by field" not in visible_text
+    assert "product_code_grouping is blank/null" not in visible_text
+    assert "`product_code_grouping`: 2" not in visible_text
+
+
 def test_clear_street_mufg_upload_failure_slack_uses_positions_channel(
     monkeypatch,
 ):
