@@ -137,6 +137,86 @@ def test_clear_street_file_email_includes_attachment_payload(tmp_path):
     assert message["payload"]["attachment_paths"] == [str(attachment)]
 
 
+def test_nav_positions_file_email_includes_workbook_attachments(tmp_path):
+    agr_attachment = (
+        tmp_path
+        / "Position Valuation Detail Report_20260708_AGR Trading II, LLC.20260709_125500.xlsx"
+    )
+    pnt_attachment = (
+        tmp_path
+        / "Position Valuation Detail Report_20260708_PNT Trading, LLC.20260709_125700.xlsx"
+    )
+    agr_attachment.write_text("xlsx", encoding="utf-8")
+    pnt_attachment.write_text("xlsx", encoding="utf-8")
+
+    message = email_notifications.build_nav_positions_file_email(
+        summary={
+            "target_table": "nav.positions",
+            "target_nav_date": "2026-07-08",
+            "rows_processed": 1842,
+            "loaded_fund_codes": ["agr", "pnt"],
+            "source_files": [
+                {
+                    "fund_code": "agr",
+                    "remote_filename": (
+                        "Position Valuation Detail Report_20260708_AGR Trading II, LLC.XLSX"
+                    ),
+                    "local_filename": agr_attachment.name,
+                    "local_path": str(agr_attachment),
+                    "sftp_upload_timestamp": datetime(
+                        2026,
+                        7,
+                        9,
+                        12,
+                        55,
+                        tzinfo=timezone.utc,
+                    ),
+                },
+                {
+                    "fund_code": "pnt",
+                    "remote_filename": (
+                        "Position Valuation Detail Report_20260708_PNT Trading, LLC.XLSX"
+                    ),
+                    "local_filename": pnt_attachment.name,
+                    "local_path": str(pnt_attachment),
+                    "sftp_upload_timestamp": datetime(
+                        2026,
+                        7,
+                        9,
+                        12,
+                        57,
+                        tzinfo=timezone.utc,
+                    ),
+                },
+            ],
+        },
+        recipient_email="ops@example.test",
+        attachment_paths=[agr_attachment, pnt_attachment],
+    )
+
+    assert message["notification_key"] == (
+        "nav_positions:data_ready:2026-07-08:"
+        "20260709T125700Z:email:file_available"
+    )
+    assert message["recipient_email"] == "ops@example.test"
+    assert message["subject"] == (
+        "NAV positions ready for review for Wed Jul-08 | "
+        "HeliosCTA | NAV | Positions"
+    )
+    assert "Attached workbooks" in message["body_text"]
+    assert "Source system: NAV SFTP" in message["body_text"]
+    assert "ready for review" in message["body_text"]
+    assert "HeliosCTA Alerts" in message["body_html"]
+    assert "NAV Positions Ready for Review" in message["body_html"]
+    assert "Review Notes" in message["body_html"]
+    assert "<table role=\"presentation\"" in message["body_html"]
+    assert message["payload"]["attachment_paths"] == [
+        str(agr_attachment),
+        str(pnt_attachment),
+    ]
+    assert message["payload"]["loaded_fund_codes"] == ["agr", "pnt"]
+
+
 def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_path):
     attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
     attachment.write_text("record_id\n1\n", encoding="utf-8")

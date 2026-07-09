@@ -8,7 +8,7 @@ import posixpath
 import re
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -208,6 +208,12 @@ SOURCE_FILENAME_RE = re.compile(
     r"(?P<upload_time>\d{6})\.xlsx$",
     re.IGNORECASE,
 )
+REMOTE_FILENAME_RE = re.compile(
+    r"^Position Valuation Detail Report_"
+    r"(?P<nav_date>\d{8})_"
+    r"(?P<legal_entity>.+)\.xlsx$",
+    re.IGNORECASE,
+)
 
 def resolve_local_root(local_dir: str | Path | None = None) -> Path:
     """Resolve the local ignored NAV position workbook cache directory."""
@@ -236,11 +242,26 @@ def resolve_fund_configs(
     return selected
 
 
+def normalize_nav_date(value: str | date | datetime | pd.Timestamp) -> date:
+    """Normalize a NAV date input to a Python date."""
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if re.fullmatch(r"\d{8}", text):
+        return datetime.strptime(text, "%Y%m%d").date()
+    return datetime.strptime(text, "%Y-%m-%d").date()
+
+
 def pull_recent_position_files(
     *,
     fund_configs: Sequence[NavPositionFundConfig],
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     local_root: str | Path | None = None,
+    target_nav_date: str | date | datetime | pd.Timestamp | None = None,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
@@ -252,6 +273,9 @@ def pull_recent_position_files(
         raise ValueError("lookback_days must be at least 1.")
 
     resolved_root = resolve_local_root(local_root)
+    normalized_target_nav_date = (
+        normalize_nav_date(target_nav_date) if target_nav_date is not None else None
+    )
     sftp_host = sftp_host or credentials.NAV_SFTP_HOST
     sftp_port = sftp_port or credentials.NAV_SFTP_PORT or DEFAULT_SFTP_PORT
     sftp_user = sftp_user or credentials.NAV_SFTP_USER
@@ -281,7 +305,15 @@ def pull_recent_position_files(
             matching_attrs = _matching_remote_attrs(
                 attrs=attrs,
                 pattern=config.remote_pattern,
-            )[:lookback_days]
+            )
+            if normalized_target_nav_date is not None:
+                matching_attrs = [
+                    attr
+                    for attr in matching_attrs
+                    if _remote_filename_nav_date(attr.filename)
+                    == normalized_target_nav_date
+                ]
+            matching_attrs = matching_attrs[:lookback_days]
             for attr in matching_attrs:
                 upload_timestamp = pd.Timestamp(
                     datetime.fromtimestamp(attr.st_mtime, tz=timezone.utc)
@@ -385,6 +417,8 @@ def run_nav_positions(
     fund_codes: Sequence[str] | None = None,
     local_dir: str | Path | None = None,
     database: str | None = None,
+    target_nav_date: str | date | datetime | pd.Timestamp | None = None,
+    require_complete_target: bool = False,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
@@ -394,16 +428,45 @@ def run_nav_positions(
     """Download, parse, and upsert recent NAV position valuation reports."""
     selected_configs = resolve_fund_configs(fund_codes)
     local_root = resolve_local_root(local_dir)
+    normalized_target_nav_date = (
+        normalize_nav_date(target_nav_date) if target_nav_date is not None else None
+    )
     downloaded_files = pull_recent_position_files(
         fund_configs=selected_configs,
         lookback_days=lookback_days,
         local_root=local_root,
+        target_nav_date=normalized_target_nav_date,
         sftp_host=sftp_host,
         sftp_port=sftp_port,
         sftp_user=sftp_user,
         sftp_password=sftp_password,
         sftp_remote_dir=sftp_remote_dir,
     )
+    downloaded_fund_codes = sorted({downloaded.fund_code for downloaded in downloaded_files})
+    expected_fund_codes = [config.fund_code for config in selected_configs]
+    missing_fund_codes = sorted(set(expected_fund_codes) - set(downloaded_fund_codes))
+    target_file_found = not missing_fund_codes if normalized_target_nav_date else None
+    source_files = [_downloaded_file_summary(downloaded) for downloaded in downloaded_files]
+
+    if (
+        normalized_target_nav_date is not None
+        and require_complete_target
+        and missing_fund_codes
+    ):
+        return {
+            "target_table": TARGET_TABLE_FQN,
+            "fund_codes": expected_fund_codes,
+            "lookback_days": lookback_days,
+            "local_root": str(local_root),
+            "target_nav_date": normalized_target_nav_date.isoformat(),
+            "target_file_found": False,
+            "loaded_fund_codes": downloaded_fund_codes,
+            "missing_fund_codes": missing_fund_codes,
+            "source_files": source_files,
+            "files_downloaded": len(downloaded_files),
+            "files_processed": 0,
+            "rows_processed": 0,
+        }
 
     config_by_fund = {config.fund_code: config for config in selected_configs}
     frames = [
@@ -424,9 +487,18 @@ def run_nav_positions(
 
     return {
         "target_table": TARGET_TABLE_FQN,
-        "fund_codes": [config.fund_code for config in selected_configs],
+        "fund_codes": expected_fund_codes,
         "lookback_days": lookback_days,
         "local_root": str(local_root),
+        "target_nav_date": (
+            normalized_target_nav_date.isoformat()
+            if normalized_target_nav_date is not None
+            else None
+        ),
+        "target_file_found": target_file_found,
+        "loaded_fund_codes": downloaded_fund_codes,
+        "missing_fund_codes": missing_fund_codes,
+        "source_files": source_files,
         "files_downloaded": len(downloaded_files),
         "files_processed": len(frames),
         "rows_processed": rows_processed,
@@ -494,6 +566,13 @@ def _matching_remote_attrs(
     )
 
 
+def _remote_filename_nav_date(filename: str) -> date | None:
+    match = REMOTE_FILENAME_RE.match(filename)
+    if not match:
+        return None
+    return datetime.strptime(match.group("nav_date"), "%Y%m%d").date()
+
+
 def _downloaded_filename(
     *,
     filename: str,
@@ -502,6 +581,16 @@ def _downloaded_filename(
     path = Path(filename)
     timestamp = pd.Timestamp(upload_timestamp).strftime("%Y%m%d_%H%M%S")
     return f"{path.stem}.{timestamp}.xlsx"
+
+
+def _downloaded_file_summary(downloaded: DownloadedNavFile) -> dict[str, object]:
+    return {
+        "fund_code": downloaded.fund_code,
+        "remote_filename": downloaded.remote_filename,
+        "local_filename": downloaded.local_path.name,
+        "local_path": str(downloaded.local_path),
+        "sftp_upload_timestamp": downloaded.sftp_upload_timestamp.to_pydatetime(),
+    }
 
 
 def _normalize_report_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:

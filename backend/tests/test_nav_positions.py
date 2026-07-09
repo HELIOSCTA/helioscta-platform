@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -196,10 +197,23 @@ def test_run_nav_positions_downloads_parses_and_upserts(monkeypatch, tmp_path):
 
     assert captured["pull"]["lookback_days"] == 1
     assert captured["pull"]["fund_configs"][0].fund_code == "pnt"
+    assert captured["pull"]["target_nav_date"] is None
     assert captured["upsert"]["database"] == "stage_db"
     assert len(captured["upsert"]["df"]) == 1
     assert summary["files_downloaded"] == 1
     assert summary["rows_processed"] == 1
+    assert summary["source_files"] == [
+        {
+            "fund_code": "pnt",
+            "remote_filename": "Position Valuation Detail Report_20260205_PNT Trading, LLC.XLSX",
+            "local_filename": filepath.name,
+            "local_path": str(filepath),
+            "sftp_upload_timestamp": pd.Timestamp(
+                "2026-02-06 05:40:37+0000",
+                tz="UTC",
+            ).to_pydatetime(),
+        }
+    ]
 
 
 def test_backfill_position_normalization_is_disabled():
@@ -321,6 +335,58 @@ def test_pull_recent_position_files_preserves_existing_cached_file(monkeypatch, 
     assert cached_path.read_bytes() == b"preserved"
 
 
+def test_run_nav_positions_waits_for_complete_target_before_upsert(
+    monkeypatch,
+    tmp_path,
+):
+    captured: dict[str, object] = {}
+
+    def fake_pull_recent_position_files(**kwargs):
+        captured["pull"] = kwargs
+        return [
+            positions.DownloadedNavFile(
+                fund_code="pnt",
+                remote_filename="Position Valuation Detail Report_20260205_PNT Trading, LLC.XLSX",
+                local_path=tmp_path / "missing-but-not-parsed.xlsx",
+                sftp_upload_timestamp=pd.Timestamp(
+                    "2026-02-06 05:40:37+0000",
+                    tz="UTC",
+                ),
+            )
+        ]
+
+    monkeypatch.setattr(
+        positions,
+        "pull_recent_position_files",
+        fake_pull_recent_position_files,
+    )
+    monkeypatch.setattr(
+        positions,
+        "parse_position_file",
+        lambda *args, **kwargs: pytest.fail("should not parse partial target"),
+    )
+    monkeypatch.setattr(
+        positions,
+        "_upsert_positions",
+        lambda *args, **kwargs: pytest.fail("should not upsert partial target"),
+    )
+
+    summary = positions.run_nav_positions(
+        lookback_days=1,
+        fund_codes=("agr", "pnt"),
+        local_dir=tmp_path,
+        target_nav_date="2026-02-05",
+        require_complete_target=True,
+    )
+
+    assert captured["pull"]["target_nav_date"].isoformat() == "2026-02-05"
+    assert summary["target_file_found"] is False
+    assert summary["loaded_fund_codes"] == ["pnt"]
+    assert summary["missing_fund_codes"] == ["agr"]
+    assert summary["files_processed"] == 0
+    assert summary["rows_processed"] == 0
+
+
 def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
@@ -347,6 +413,7 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
         lookback_days=1,
         fund_codes=("pnt",),
         database="stage_db",
+        send_email=False,
     )
 
     assert exit_code == 0
@@ -362,19 +429,47 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
 
 def test_scheduled_main_emits_scheduled_telemetry(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
+    calls: list[dict[str, object]] = []
+    current_time = datetime(2026, 7, 9, 6, 0, tzinfo=timezone.utc)
+
+    def fake_run_nav_positions(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {
+                "target_table": "nav.positions",
+                "fund_codes": ["pnt"],
+                "lookback_days": kwargs["lookback_days"],
+                "target_nav_date": "2026-07-08",
+                "target_file_found": False,
+                "loaded_fund_codes": [],
+                "missing_fund_codes": ["pnt"],
+                "files_downloaded": 0,
+                "files_processed": 0,
+                "rows_processed": 0,
+            }
+        return {
+            "target_table": "nav.positions",
+            "fund_codes": ["pnt"],
+            "lookback_days": kwargs["lookback_days"],
+            "target_nav_date": "2026-07-08",
+            "target_file_found": True,
+            "loaded_fund_codes": ["pnt"],
+            "missing_fund_codes": [],
+            "files_downloaded": 1,
+            "files_processed": 1,
+            "rows_processed": 3,
+        }
+
+    def sleep_fn(seconds):
+        nonlocal current_time
+        current_time += timedelta(seconds=seconds)
+
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
     monkeypatch.setattr(
         orchestration.scrape,
         "run_nav_positions",
-        lambda **kwargs: {
-            "target_table": "nav.positions",
-            "fund_codes": ["pnt"],
-            "lookback_days": kwargs["lookback_days"],
-            "files_downloaded": 1,
-            "files_processed": 1,
-            "rows_processed": 3,
-        },
+        fake_run_nav_positions,
     )
     monkeypatch.setattr(
         orchestration,
@@ -386,33 +481,132 @@ def test_scheduled_main_emits_scheduled_telemetry(monkeypatch, tmp_path):
         lookback_days=1,
         fund_codes=("pnt",),
         database="stage_db",
+        target_nav_date="2026-07-08",
+        poll_wait_seconds=60,
+        poll_window_minutes=10,
+        poll_deadline_hour=None,
+        now_fn=lambda: current_time,
+        sleep_fn=sleep_fn,
+        send_email=False,
     )
 
     assert exit_code == 0
+    assert len(calls) == 2
+    assert calls[0]["target_nav_date"].isoformat() == "2026-07-08"
+    assert calls[0]["require_complete_target"] is True
     assert len(telemetry) == 1
     assert telemetry[0]["operation_name"] == "nav_positions_scheduled"
     assert telemetry[0]["status"] == "success"
     assert telemetry[0]["database"] == "stage_db"
     assert telemetry[0]["metadata"]["run_mode"] == "scheduler"
     assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"
-    assert telemetry[0]["metadata"]["require_rows"] is True
+    assert telemetry[0]["metadata"]["poll_count"] == 2
+    assert telemetry[0]["metadata"]["target_nav_date"] == "2026-07-08"
+    assert telemetry[0]["metadata"]["target_file_found"] is True
+    assert telemetry[0]["metadata"]["email_notifications_enabled"] is False
+    assert telemetry[0]["metadata"]["emails_queued"] == 0
 
 
-def test_scheduled_main_fails_when_no_rows(monkeypatch, tmp_path):
+def test_nav_positions_email_success_queues_workbooks(monkeypatch, tmp_path):
+    workbook = (
+        tmp_path
+        / "Position Valuation Detail Report_20260708_PNT Trading, LLC.20260709_125500.xlsx"
+    )
+    workbook.write_text("xlsx", encoding="utf-8")
+    email_calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        orchestration.email_notifications.credentials,
+        "HELIOS_EMAIL_RECIPIENTS",
+        ["ops@example.test"],
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "build_nav_positions_file_email",
+        lambda **kwargs: {
+            "notification_key": "nav-positions:email:file",
+            "recipient_email": kwargs["recipient_email"],
+            "subject": "NAV positions loaded",
+            "body_text": "Attached.",
+            "body_html": None,
+            "dataset": "nav_positions",
+            "source_event_key": "nav-positions",
+            "source_event_id": None,
+            "payload": {
+                "attachment_paths": [str(path) for path in kwargs["attachment_paths"]]
+            },
+        },
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "enqueue_email_notification",
+        lambda **kwargs: email_calls.append(kwargs) or {"created": True},
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "notifications_enabled",
+        lambda: False,
+    )
+
+    queued = orchestration._notify_nav_positions_email_success(
+        summary={
+            "target_nav_date": "2026-07-08",
+            "rows_processed": 3,
+            "source_files": [
+                {
+                    "fund_code": "pnt",
+                    "local_path": str(workbook),
+                    "local_filename": workbook.name,
+                    "remote_filename": (
+                        "Position Valuation Detail Report_20260708_PNT Trading, LLC.XLSX"
+                    ),
+                }
+            ],
+        },
+        database="stage_db",
+        run_logger=SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    assert queued == 1
+    assert email_calls[0]["database"] == "stage_db"
+    assert email_calls[0]["recipient_email"] == "ops@example.test"
+    assert email_calls[0]["payload"]["attachment_paths"] == [str(workbook)]
+
+
+def test_scheduled_main_returns_failure_when_target_window_expires(
+    monkeypatch,
+    tmp_path,
+):
     telemetry: list[dict[str, object]] = []
+    current_time = datetime(2026, 7, 9, 6, 0, tzinfo=timezone.utc)
+
+    def fake_run_nav_positions(**kwargs):
+        return {
+            "target_table": "nav.positions",
+            "fund_codes": ["pnt"],
+            "lookback_days": kwargs["lookback_days"],
+            "target_nav_date": "2026-07-08",
+            "target_file_found": False,
+            "loaded_fund_codes": [],
+            "missing_fund_codes": ["pnt"],
+            "files_downloaded": 0,
+            "files_processed": 0,
+            "rows_processed": 0,
+        }
+
+    def sleep_fn(seconds):
+        nonlocal current_time
+        current_time += timedelta(seconds=seconds)
+
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
     monkeypatch.setattr(
         orchestration.scrape,
         "run_nav_positions",
-        lambda **kwargs: {
-            "target_table": "nav.positions",
-            "fund_codes": ["pnt"],
-            "lookback_days": kwargs["lookback_days"],
-            "files_downloaded": 0,
-            "files_processed": 0,
-            "rows_processed": 0,
-        },
+        fake_run_nav_positions,
     )
     monkeypatch.setattr(
         orchestration,
@@ -420,16 +614,24 @@ def test_scheduled_main_fails_when_no_rows(monkeypatch, tmp_path):
         lambda **kwargs: telemetry.append(kwargs),
     )
 
-    with pytest.raises(orchestration.DataNotAvailable):
-        orchestration.scheduled_main(
-            lookback_days=1,
-            fund_codes=("pnt",),
-            database="stage_db",
-        )
+    exit_code = orchestration.scheduled_main(
+        lookback_days=1,
+        fund_codes=("pnt",),
+        database="stage_db",
+        target_nav_date="2026-07-08",
+        poll_wait_seconds=60,
+        poll_window_minutes=1,
+        poll_deadline_hour=None,
+        now_fn=lambda: current_time,
+        sleep_fn=sleep_fn,
+    )
 
+    assert exit_code == 1
     assert len(telemetry) == 1
     assert telemetry[0]["operation_name"] == "nav_positions_scheduled"
     assert telemetry[0]["status"] == "failure"
     assert telemetry[0]["error_type"] == "DataNotAvailable"
     assert telemetry[0]["rows_written"] == 0
     assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"
+    assert telemetry[0]["metadata"]["poll_count"] == 1
+    assert telemetry[0]["metadata"]["target_file_found"] is False

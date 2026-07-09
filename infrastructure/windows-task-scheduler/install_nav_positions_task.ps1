@@ -1,8 +1,8 @@
 # Installs or updates the local NAV positions Task Scheduler job.
 #
-# Task Scheduler starts one process daily. The Python orchestration downloads
-# recent NAV position valuation workbooks, upserts nav.positions, and writes
-# ops.api_fetch_log telemetry.
+# Task Scheduler starts one process daily. The Python orchestration polls for
+# the target NAV position valuation workbooks, upserts nav.positions after all
+# selected funds are available, and writes ops.api_fetch_log telemetry.
 
 param(
     [string]$RepoRoot = $(if ($env:HELIOS_NAV_POSITIONS_REPO_ROOT) { $env:HELIOS_NAV_POSITIONS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
@@ -10,10 +10,13 @@ param(
     [string]$TaskName = "HeliosCTA NAV Positions",
     [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
-    [int]$RunHour = 6,
+    [int]$RunHour = 4,
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
-    [int]$LookbackDays = 5,
-    [int]$ExecutionTimeLimitHours = 2,
+    [int]$LookbackDays = 1,
+    [int]$PollWaitSeconds = 300,
+    [int]$PollWindowMinutes = 420,
+    [int]$PollDeadlineHour = 11,
+    [int]$ExecutionTimeLimitHours = 8,
     [switch]$InstallDependencies,
     [switch]$RunImportSmoke
 )
@@ -202,6 +205,15 @@ if ($RunHour -lt 0 -or $RunHour -gt 23) {
 if ($LookbackDays -lt 1) {
     throw "LookbackDays must be at least 1."
 }
+if ($PollWaitSeconds -lt 1) {
+    throw "PollWaitSeconds must be at least 1."
+}
+if ($PollWindowMinutes -lt 1) {
+    throw "PollWindowMinutes must be at least 1."
+}
+if ($PollDeadlineHour -lt 0 -or $PollDeadlineHour -gt 23) {
+    throw "PollDeadlineHour must be between 0 and 23."
+}
 
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
@@ -217,6 +229,9 @@ Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
 Write-Host "RunHour: $RunHour"
 Write-Host "LookbackDays: $LookbackDays"
+Write-Host "PollWaitSeconds: $PollWaitSeconds"
+Write-Host "PollWindowMinutes: $PollWindowMinutes"
+Write-Host "PollDeadlineHour: $PollDeadlineHour"
 
 Assert-Config -RepoRoot $resolvedRepoRoot
 
@@ -260,7 +275,13 @@ $actionArguments = @(
     "-LogDir",
     (Quote-TaskArgument $LogDir),
     "-LookbackDays",
-    [string]$LookbackDays
+    [string]$LookbackDays,
+    "-PollWaitSeconds",
+    [string]$PollWaitSeconds,
+    "-PollWindowMinutes",
+    [string]$PollWindowMinutes,
+    "-PollDeadlineHour",
+    [string]$PollDeadlineHour
 ) -join " "
 
 $action = New-ScheduledTaskAction `
@@ -286,7 +307,7 @@ $task = New-ScheduledTask `
     -Trigger $trigger `
     -Settings $settings `
     -Principal $principal `
-    -Description "Loads recent NAV position valuation workbooks daily."
+    -Description "Polls for daily NAV position valuation workbooks."
 
 Register-ScheduledTask `
     -TaskName $TaskName `

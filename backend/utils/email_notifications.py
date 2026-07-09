@@ -25,6 +25,8 @@ DEFAULT_PJM_DA_HRL_LMP_COMPONENT = "all"
 MAX_ERROR_MESSAGE_LENGTH = 2000
 CLEAR_STREET_EOD_TRANSACTIONS_DATASET = "clear_street_eod_transactions"
 CLEAR_STREET_MUFG_UPLOAD_DATASET = "clear_street_trades_mufg_upload"
+NAV_POSITIONS_DATASET = "nav_positions"
+NAV_TRADE_BREAKS_DATASET = "nav_trade_breaks"
 
 
 def notifications_enabled() -> bool:
@@ -296,6 +298,188 @@ def build_clear_street_mufg_upload_success_email(
             "warnings": warning_lines,
             "product_code_null_check": summary.get("product_code_null_check", {}),
             "trade_status_counts": summary.get("trade_status_counts", {}),
+        },
+    }
+
+
+def build_nav_positions_file_email(
+    *,
+    summary: dict[str, Any],
+    recipient_email: str,
+    attachment_paths: list[str | Path] | tuple[str | Path, ...],
+) -> dict[str, Any]:
+    """Build an internal email alert for loaded NAV position workbooks."""
+    source_files = _nav_positions_source_files(summary)
+    nav_date = _nav_positions_nav_date(summary, source_files)
+    latest_upload = _latest_nav_positions_upload_timestamp(summary, source_files)
+    upload_display = (
+        _format_machine_local_datetime(latest_upload) if latest_upload else "unknown"
+    )
+    upload_key = latest_upload.strftime("%Y%m%dT%H%M%SZ") if latest_upload else "unknown"
+    rows_processed = int(summary.get("rows_processed", 0) or 0)
+    loaded_funds = _coerce_string_list(
+        summary.get("loaded_fund_codes") or summary.get("fund_codes")
+    )
+    attachment_strings = [str(Path(path)) for path in attachment_paths]
+    attachment_names = [Path(path).name for path in attachment_strings]
+    source_names = _nav_positions_source_names(source_files, attachment_names)
+    event_key = f"{NAV_POSITIONS_DATASET}:data_ready:{nav_date}:{upload_key}"
+    fund_label = ", ".join(loaded_funds) if loaded_funds else "not supplied"
+    attachment_label = ", ".join(attachment_names)
+    source_label = ", ".join(source_names)
+    subject = _subject_with_tags(
+        f"NAV positions ready for review for {_subject_date_label(nav_date)}",
+        ["HeliosCTA", "NAV", "Positions"],
+    )
+    body_text = (
+        "NAV position valuation workbooks were loaded and are ready for "
+        f"review for {nav_date}.\n\n"
+        f"Attached workbooks: {attachment_label}\n"
+        f"Source files: {source_label}\n"
+        "Source system: NAV SFTP\n"
+        f"Funds loaded: {fund_label}\n"
+        f"Rows loaded: {rows_processed:,}\n"
+        f"Latest SFTP upload: {upload_display}\n"
+        "\nReview notes: The raw NAV workbooks are attached to this email. "
+        "The database load completed successfully.\n"
+    )
+    body_html = email_templates.render_email(
+        title="NAV Positions Ready for Review",
+        preheader=(
+            "NAV position valuation workbooks were loaded and are ready "
+            f"for review for {nav_date}."
+        ),
+        status_label="Loaded",
+        status_tone="success",
+        intro=(
+            "NAV position valuation workbooks were loaded and are attached "
+            f"for review for {nav_date}."
+        ),
+        facts=[
+            ("NAV date", nav_date),
+            ("Funds loaded", fund_label),
+            ("Rows loaded", f"{rows_processed:,}"),
+            ("Workbooks", f"{len(attachment_names):,}"),
+            ("Latest SFTP upload", upload_display),
+            ("Source system", "NAV SFTP"),
+        ],
+        sections=[
+            email_templates.bullet_section(
+                "Attachments",
+                attachment_names,
+                tone="success",
+            ),
+            email_templates.bullet_section(
+                "Source Files",
+                source_names,
+            ),
+            email_templates.text_section(
+                "Review Notes",
+                "The raw NAV workbooks are attached to this email. "
+                "The database load completed successfully.",
+            ),
+        ],
+    )
+    return {
+        "notification_key": f"{event_key}:email:file_available",
+        "recipient_email": recipient_email,
+        "dataset": NAV_POSITIONS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+        "payload": {
+            "nav_date": nav_date,
+            "source_filenames": source_names,
+            "attachment_paths": attachment_strings,
+            "rows_processed": rows_processed,
+            "loaded_fund_codes": loaded_funds,
+            "latest_sftp_upload_timestamp": (
+                latest_upload.isoformat() if latest_upload else None
+            ),
+        },
+    }
+
+
+def build_nav_trade_breaks_file_email(
+    *,
+    summary: dict[str, Any],
+    recipient_email: str,
+    attachment_path: str | Path,
+) -> dict[str, Any]:
+    """Build an internal email alert for a NAV trade breaks workbook."""
+    nav_date = _format_yyyymmdd_date(summary.get("nav_date"))
+    upload_timestamp = _coerce_utc_datetime(summary.get("sftp_upload_timestamp"))
+    upload_display = _format_machine_local_datetime(upload_timestamp)
+    upload_key = upload_timestamp.strftime("%Y%m%dT%H%M%SZ")
+    attachment = str(Path(attachment_path))
+    attachment_name = Path(attachment).name
+    source_filename = str(
+        summary.get("source_filename")
+        or summary.get("downloaded_filename")
+        or attachment_name
+    )
+    rows_processed = int(summary.get("rows_processed", 0) or 0)
+    add_del_counts = summary.get("by_add_del")
+    add_del_label = _format_counts(add_del_counts)
+    event_key = f"{NAV_TRADE_BREAKS_DATASET}:data_ready:{nav_date}:{upload_key}"
+    subject = _subject_with_tags(
+        f"NAV trade breaks ready for review for {_subject_date_label(nav_date)}",
+        ["HeliosCTA", "NAV", "Trade Breaks"],
+    )
+    body_text = (
+        f"NAV trade breaks are ready for review for {nav_date}.\n\n"
+        f"Attached workbook: {attachment_name}\n"
+        f"Source file: {source_filename}\n"
+        "Source system: NAV SFTP\n"
+        f"Rows detected: {rows_processed:,}\n"
+        f"Add/Del counts: {add_del_label}\n"
+        f"SFTP upload: {upload_display}\n"
+    )
+    body_html = email_templates.render_email(
+        title="NAV Trade Breaks Ready for Review",
+        preheader=f"NAV trade breaks are ready for review for {nav_date}.",
+        status_label="Ready for review",
+        status_tone="success",
+        intro=(
+            "NAV trade breaks are ready for review and the source workbook "
+            f"is attached for {nav_date}."
+        ),
+        facts=[
+            ("NAV date", nav_date),
+            ("Rows detected", f"{rows_processed:,}"),
+            ("Add/Del counts", add_del_label),
+            ("Source file", source_filename),
+            ("Attached workbook", attachment_name),
+            ("SFTP upload", upload_display),
+            ("Source system", "NAV SFTP"),
+        ],
+        sections=[
+            email_templates.text_section(
+                "Review Notes",
+                "The raw NAV trade breaks workbook is attached to this email. "
+                "No trade break rows are written to a database table.",
+            )
+        ],
+    )
+    return {
+        "notification_key": f"{event_key}:email:file_available",
+        "recipient_email": recipient_email,
+        "dataset": NAV_TRADE_BREAKS_DATASET,
+        "source_event_key": event_key,
+        "source_event_id": None,
+        "subject": subject,
+        "body_text": body_text,
+        "body_html": body_html,
+        "payload": {
+            "nav_date": nav_date,
+            "source_filename": source_filename,
+            "downloaded_filename": attachment_name,
+            "attachment_paths": [attachment],
+            "rows_processed": rows_processed,
+            "add_del_counts": add_del_counts if isinstance(add_del_counts, dict) else {},
+            "sftp_upload_timestamp": upload_timestamp.isoformat(),
         },
     }
 
@@ -703,6 +887,61 @@ def _latest_clear_street_trade_file(summary: dict[str, Any]) -> dict[str, Any]:
     if isinstance(latest, dict):
         return latest
     return {}
+
+
+def _nav_positions_source_files(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    raw_files = summary.get("source_files")
+    if not isinstance(raw_files, list):
+        return []
+    return [item for item in raw_files if isinstance(item, dict)]
+
+
+def _nav_positions_nav_date(
+    summary: dict[str, Any],
+    source_files: list[dict[str, Any]],
+) -> str:
+    value = summary.get("target_nav_date")
+    if value:
+        return _format_yyyymmdd_date(value)
+
+    for source_file in source_files:
+        for key in ("remote_filename", "local_filename"):
+            filename = source_file.get(key)
+            if not filename:
+                continue
+            match = str(filename).split("_")
+            if len(match) >= 2 and len(match[1]) == 8 and match[1].isdigit():
+                return _format_yyyymmdd_date(match[1])
+
+    raise ValueError("NAV positions email summary is missing target_nav_date.")
+
+
+def _latest_nav_positions_upload_timestamp(
+    summary: dict[str, Any],
+    source_files: list[dict[str, Any]],
+) -> datetime | None:
+    values = [
+        source_file.get("sftp_upload_timestamp")
+        for source_file in source_files
+        if source_file.get("sftp_upload_timestamp") is not None
+    ]
+    if not values and summary.get("latest_sftp_upload_timestamp") is not None:
+        values.append(summary["latest_sftp_upload_timestamp"])
+    if not values:
+        return None
+    return max(_coerce_utc_datetime(value) for value in values)
+
+
+def _nav_positions_source_names(
+    source_files: list[dict[str, Any]],
+    fallback_names: list[str],
+) -> list[str]:
+    names = [
+        str(source_file.get("remote_filename") or source_file.get("local_filename"))
+        for source_file in source_files
+        if source_file.get("remote_filename") or source_file.get("local_filename")
+    ]
+    return names or fallback_names
 
 
 def _subject_with_tags(subject: str, tags: list[str]) -> str:

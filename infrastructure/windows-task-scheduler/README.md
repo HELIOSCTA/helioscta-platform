@@ -285,19 +285,26 @@ Task Scheduler runs one daily task:
 \HeliosCTA\Positions And Trades\HeliosCTA NAV Positions
 ```
 
-The task starts daily at local hour `06` by default. Each launch calls:
+The task starts daily at local hour `04` by default and polls every five
+minutes until `11:00` local time. Each launch calls:
 
 ```powershell
-python -c "from backend.orchestration.nav import positions; raise SystemExit(positions.scheduled_main(lookback_days=5))"
+python -c "from backend.orchestration.nav import positions; raise SystemExit(positions.scheduled_main(lookback_days=1, poll_wait_seconds=300, poll_window_minutes=420, poll_deadline_hour=11))"
 ```
 
-The Python orchestration downloads the latest matching NAV `Position Valuation
-Detail Report` workbooks for `agr`, `moross`, `pnt`, and `titan`, caches them
-under `backend\scrapes\nav\downloads\<fund>\`, parses the raw workbook rows,
-and upserts `nav.positions`. The scheduled path writes one
-`ops.api_fetch_log` row with `operation_name = 'nav_positions_scheduled'` and
-`run_mode = 'scheduler'` in metadata. It exits nonzero if the scheduled pull
-processes no source rows.
+The Python orchestration targets the previous business NAV date by default,
+downloads matching NAV `Position Valuation Detail Report` workbooks for `agr`,
+`moross`, `pnt`, and `titan`, and caches arrivals under
+`backend\scrapes\nav\downloads\<fund>\`. It waits to parse and upsert
+`nav.positions` until every selected fund has the target NAV date. The
+scheduled path writes one resolved `ops.api_fetch_log` row with
+`operation_name = 'nav_positions_scheduled'`, `run_mode = 'scheduler'`,
+`poll_count`, `poll_wait_seconds`, `poll_deadline_hour`, `target_nav_date`, and
+missing-fund metadata. It exits nonzero if the target files miss the polling
+window. When the scheduled load succeeds, it enqueues one duplicate-safe
+ready-for-review email per `HELIOS_EMAIL_RECIPIENTS` recipient with the cached
+NAV workbooks attached; actual Microsoft Graph delivery still depends on
+`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and the email outbox sender.
 
 Run from the production clone in PowerShell:
 

@@ -256,10 +256,15 @@ add NAV systemd units unless the workflow is explicitly promoted to the Linux
 VM. Downloaded raw NAV workbooks are cached under
 `backend/scrapes/nav/downloads/` by default and that folder is gitignored. The
 downloader preserves already-cached workbooks instead of overwriting them,
-because NAV source files can expire upstream. The scheduled path runs daily at
-local hour `06` by default, uses a five-file lookback per fund, writes
-`operation_name = 'nav_positions_scheduled'` telemetry to `ops.api_fetch_log`,
-and exits nonzero if no source rows are processed.
+because NAV source files can expire upstream. The scheduled path starts daily
+at local hour `04` by default, targets the previous business NAV date, polls
+SFTP every five minutes until `11:00` local time, waits for all selected funds
+before upserting, writes `operation_name = 'nav_positions_scheduled'`
+telemetry to `ops.api_fetch_log`, and exits nonzero if the target files miss
+the polling window. Successful scheduled loads also enqueue an internal
+ready-for-review email to `HELIOS_EMAIL_RECIPIENTS` with the cached NAV
+workbooks attached; delivery depends on
+`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and Microsoft Graph credentials.
 
 NAV trade break helpers are local SFTP/email workflows. They live under
 `backend.scrapes.nav.trade_breaks` and
