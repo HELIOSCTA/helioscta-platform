@@ -273,9 +273,12 @@ and `AZURE_OUTLOOK_*` variables, and do not upsert trade break rows to a
 database table. The manual local run is
 `python -m backend.orchestration.nav.trade_breaks_email`; it downloads the
 latest matching NAV Trade Breaks workbook into
-`backend/scrapes/nav/downloads/trade_breaks/`, sends that workbook as an email
-attachment to `HELIOS_EMAIL_RECIPIENTS`, and writes one failure-visibility row
-to `ops.api_fetch_log` with target `nav_email.nav_trade_breaks`.
+`backend/scrapes/nav/downloads/trade_breaks/`, enqueues a templated internal
+email with that workbook attached for `HELIOS_EMAIL_RECIPIENTS`, and writes one
+failure-visibility row to `ops.api_fetch_log` with target
+`nav_email.nav_trade_breaks`. Delivery uses `ops.email_notification_outbox` and
+depends on `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and Microsoft Graph
+credentials.
 
 Clear Street end-of-day transaction helpers are local SFTP workflows. They live
 under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,

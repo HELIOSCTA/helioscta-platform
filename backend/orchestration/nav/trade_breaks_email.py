@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.scrapes.nav import trade_breaks as scrape
-from backend.utils import script_logging
+from backend.utils import email_notifications, script_logging
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
@@ -43,15 +43,23 @@ def main(
         run_logger.info(f"Run mode: {run_mode}")
         run_logger.info(f"Lookback days: {lookback_days}")
 
-        summary = scrape.run_nav_trade_breaks_email(
+        summary = scrape.run_nav_trade_breaks(
             lookback_days=lookback_days,
             local_dir=local_dir,
         )
-        emails_sent = int(summary.get("emails_sent", 0))
+        email_summary = _notify_nav_trade_breaks_email_success(
+            summary=summary,
+            database=database,
+            run_logger=run_logger,
+        )
+        summary.update(email_summary)
+        emails_queued = int(summary.get("emails_queued", 0))
+        emails_processed = int(summary.get("emails_processed", 0))
         rows_processed = int(summary.get("rows_processed", 0))
         run_logger.success(
             f"{PIPELINE_NAME} completed; {rows_processed:,} rows summarized "
-            f"and {emails_sent:,} emails sent."
+            f"with {emails_queued:,} emails queued and "
+            f"{emails_processed:,} outbox rows processed."
         )
         return 0
     except Exception as exc:
@@ -75,6 +83,76 @@ def main(
             local_dir=local_dir,
         )
         script_logging.close_logging()
+
+
+def _notify_nav_trade_breaks_email_success(
+    *,
+    summary: dict[str, object],
+    database: str | None,
+    run_logger: Any,
+) -> dict[str, object]:
+    attachment_path = _source_summary_file_path(summary)
+    recipients: list[str] = []
+    queued = 0
+    email_subject: str | None = None
+
+    for recipient_email in email_notifications.credentials.HELIOS_EMAIL_RECIPIENTS:
+        recipient_email = recipient_email.strip().lower()
+        if not recipient_email:
+            continue
+        recipients.append(recipient_email)
+        message = email_notifications.build_nav_trade_breaks_file_email(
+            summary=summary,
+            recipient_email=recipient_email,
+            attachment_path=attachment_path,
+        )
+        email_subject = str(message["subject"])
+        enqueued = email_notifications.enqueue_email_notification(
+            database=database,
+            **message,
+        )
+        queued += 1 if enqueued.get("created") else 0
+
+    if not recipients:
+        raise ValueError("At least one NAV trade breaks email recipient is required.")
+
+    notifications_enabled = email_notifications.notifications_enabled()
+    processed_count = 0
+    if notifications_enabled:
+        processed = email_notifications.send_due_email_notifications(
+            limit=20,
+            database=database,
+        )
+        processed_count = len(processed)
+        run_logger.info(
+            "NAV trade breaks email notification "
+            f"queued={queued}, processed={processed_count}."
+        )
+    else:
+        run_logger.info(
+            f"NAV trade breaks email notification queued={queued}; "
+            "sending is disabled."
+        )
+
+    return {
+        "email_notifications_enabled": notifications_enabled,
+        "emails_queued": queued,
+        "emails_processed": processed_count,
+        "email_subject": email_subject,
+        "recipient_count": len(recipients),
+        "recipient_emails": recipients,
+        "attachment_paths": [str(attachment_path)],
+    }
+
+
+def _source_summary_file_path(summary: dict[str, object]) -> Path:
+    local_path = summary.get("source_file_path")
+    if not local_path:
+        raise FileNotFoundError("NAV trade breaks summary has no source_file_path.")
+    path = Path(str(local_path))
+    if not path.exists():
+        raise FileNotFoundError(f"NAV trade breaks workbook not found: {path}")
+    return path
 
 
 def _log_fetch(
@@ -115,7 +193,7 @@ def _log_fetch(
             int(summary.get("rows_processed", 0)) if summary else None
         ),
         rows_written=(
-            int(summary.get("emails_sent", 0)) if summary else None
+            int(summary.get("emails_queued", 0)) if summary else None
         ),
         error_type=error_type,
         error_message=error_message,

@@ -149,13 +149,12 @@ def test_pull_recent_trade_break_files_downloads_and_preserves_cache(
     assert downloaded_again[0].local_path == downloaded[0].local_path
 
 
-def test_run_nav_trade_breaks_email_sends_latest_workbook(monkeypatch, tmp_path):
+def test_run_nav_trade_breaks_prepares_latest_workbook_summary(monkeypatch, tmp_path):
     filepath = (
         tmp_path
         / "Trade Breaks Detail Report_20260224_HELIOS COMMODITY ADVISORS LTD.20260225_123456.xlsx"
     )
     _write_trade_break_workbook(filepath)
-    calls: list[dict[str, object]] = []
 
     monkeypatch.setattr(
         trade_breaks,
@@ -172,34 +171,33 @@ def test_run_nav_trade_breaks_email_sends_latest_workbook(monkeypatch, tmp_path)
             )
         ],
     )
-    monkeypatch.setattr(
-        trade_breaks.email_notifications,
-        "send_email_via_graph",
-        lambda **kwargs: calls.append(kwargs),
-    )
 
-    summary = trade_breaks.run_nav_trade_breaks_email(
+    summary = trade_breaks.run_nav_trade_breaks(
         local_dir=tmp_path,
-        sender_email="admin@helioscta.com",
-        recipient_emails=["ops@example.test", "trades@example.test"],
     )
 
-    assert summary["emails_sent"] == 2
     assert summary["rows_processed"] == 1
     assert summary["by_add_del"] == {"ADD": 1}
-    assert summary["email_subject"] == "NAV Trade Breaks - Tue Feb-24 2026"
-    assert [call["recipient_email"] for call in calls] == [
-        "ops@example.test",
-        "trades@example.test",
-    ]
-    assert calls[0]["sender_email"] == "admin@helioscta.com"
-    assert calls[0]["attachments"] == [filepath]
+    assert summary["source_file_path"] == str(filepath)
+    assert summary["source_filename"] == (
+        "Trade Breaks Detail Report_20260224_"
+        "HELIOS COMMODITY ADVISORS LTD.XLSX"
+    )
+    assert summary["attachments"] == [filepath.name]
 
 
 def test_nav_trade_breaks_orchestration_logs_success(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
+    enqueued: list[dict[str, object]] = []
+    drained: list[dict[str, object]] = []
+    attachment = (
+        tmp_path
+        / "Trade Breaks Detail Report_20260224_HELIOS COMMODITY ADVISORS LTD.20260225_123456.xlsx"
+    )
+    attachment.write_text("xlsx", encoding="utf-8")
     summary = {
         "target_table": trade_breaks.TARGET_NAME,
+        "source_file_path": str(attachment),
         "source_filename": (
             "Trade Breaks Detail Report_20260224_"
             "HELIOS COMMODITY ADVISORS LTD.XLSX"
@@ -209,17 +207,37 @@ def test_nav_trade_breaks_orchestration_logs_success(monkeypatch, tmp_path):
             "HELIOS COMMODITY ADVISORS LTD.20260225_123456.xlsx"
         ),
         "nav_date": "2026-02-24",
+        "sftp_upload_timestamp": "2026-02-25T12:34:56+00:00",
         "rows_processed": 3,
-        "emails_sent": 1,
-        "sender_email": "admin@helioscta.com",
+        "by_add_del": {"ADD": 2, "DEL": 1},
     }
 
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
     monkeypatch.setattr(
         orchestration.scrape,
-        "run_nav_trade_breaks_email",
+        "run_nav_trade_breaks",
         lambda **kwargs: summary,
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications.credentials,
+        "HELIOS_EMAIL_RECIPIENTS",
+        ["Ops@Example.Test"],
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "notifications_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "enqueue_email_notification",
+        lambda **kwargs: enqueued.append(kwargs) or {"created": True},
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "send_due_email_notifications",
+        lambda **kwargs: drained.append(kwargs) or [{"status": "sent"}],
     )
     monkeypatch.setattr(
         orchestration,
@@ -243,7 +261,90 @@ def test_nav_trade_breaks_orchestration_logs_success(monkeypatch, tmp_path):
     assert telemetry[0]["rows_returned"] == 3
     assert telemetry[0]["rows_written"] == 1
     assert telemetry[0]["metadata"]["nav_date"] == "2026-02-24"
+    assert telemetry[0]["metadata"]["emails_queued"] == 1
+    assert telemetry[0]["metadata"]["emails_processed"] == 1
+    assert telemetry[0]["metadata"]["email_notifications_enabled"] is True
+    assert telemetry[0]["metadata"]["recipient_emails"] == ["ops@example.test"]
     assert telemetry[0]["database"] == "stage_db"
+    assert len(enqueued) == 1
+    assert enqueued[0]["recipient_email"] == "ops@example.test"
+    assert enqueued[0]["dataset"] == "nav_trade_breaks"
+    assert enqueued[0]["payload"]["attachment_paths"] == [str(attachment)]
+    assert drained[0]["database"] == "stage_db"
+
+
+def test_nav_trade_breaks_orchestration_queues_without_drain_when_disabled(
+    monkeypatch,
+    tmp_path,
+):
+    telemetry: list[dict[str, object]] = []
+    enqueued: list[dict[str, object]] = []
+    attachment = (
+        tmp_path
+        / "Trade Breaks Detail Report_20260224_HELIOS COMMODITY ADVISORS LTD.20260225_123456.xlsx"
+    )
+    attachment.write_text("xlsx", encoding="utf-8")
+    summary = {
+        "target_table": trade_breaks.TARGET_NAME,
+        "source_file_path": str(attachment),
+        "source_filename": (
+            "Trade Breaks Detail Report_20260224_"
+            "HELIOS COMMODITY ADVISORS LTD.XLSX"
+        ),
+        "downloaded_filename": attachment.name,
+        "nav_date": "2026-02-24",
+        "sftp_upload_timestamp": "2026-02-25T12:34:56+00:00",
+        "rows_processed": 0,
+        "by_add_del": {},
+    }
+
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_nav_trade_breaks",
+        lambda **kwargs: summary,
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications.credentials,
+        "HELIOS_EMAIL_RECIPIENTS",
+        ["ops@example.test"],
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "notifications_enabled",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "enqueue_email_notification",
+        lambda **kwargs: enqueued.append(kwargs) or {"created": True},
+    )
+    monkeypatch.setattr(
+        orchestration.email_notifications,
+        "send_due_email_notifications",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("disabled email notifications should not drain")
+        ),
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    exit_code = orchestration.main(
+        lookback_days=1,
+        local_dir=tmp_path,
+        database="stage_db",
+    )
+
+    assert exit_code == 0
+    assert len(enqueued) == 1
+    assert telemetry[0]["rows_returned"] == 0
+    assert telemetry[0]["rows_written"] == 1
+    assert telemetry[0]["metadata"]["emails_queued"] == 1
+    assert telemetry[0]["metadata"]["emails_processed"] == 0
+    assert telemetry[0]["metadata"]["email_notifications_enabled"] is False
 
 
 def test_nav_trade_breaks_orchestration_logs_failure(monkeypatch, tmp_path):
@@ -252,8 +353,8 @@ def test_nav_trade_breaks_orchestration_logs_failure(monkeypatch, tmp_path):
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setattr(
         orchestration.scrape,
-        "run_nav_trade_breaks_email",
-        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("Graph down")),
+        "run_nav_trade_breaks",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("SFTP down")),
     )
     monkeypatch.setattr(
         orchestration,
@@ -261,7 +362,7 @@ def test_nav_trade_breaks_orchestration_logs_failure(monkeypatch, tmp_path):
         lambda **kwargs: telemetry.append(kwargs),
     )
 
-    with pytest.raises(RuntimeError, match="Graph down"):
+    with pytest.raises(RuntimeError, match="SFTP down"):
         orchestration.main(
             lookback_days=1,
             local_dir=tmp_path,

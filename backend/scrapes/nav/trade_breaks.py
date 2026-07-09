@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fnmatch
-import os
 import posixpath
 import re
 from collections.abc import Iterable
@@ -16,7 +15,6 @@ import pandas as pd
 import paramiko
 
 from backend import credentials
-from backend.utils import email_notifications
 
 API_SCRAPE_NAME = "nav_trade_breaks_email"
 SOURCE_SYSTEM = "nav_sftp"
@@ -28,7 +26,6 @@ DEFAULT_LOCAL_DIR = Path(__file__).resolve().parent / "downloads" / "trade_break
 DEFAULT_REMOTE_PATTERN = (
     "Trade Breaks Detail Report_*_HELIOS COMMODITY ADVISORS LTD.XLSX"
 )
-DEFAULT_EMAIL_SUBJECT_PREFIX = "NAV Trade Breaks"
 NO_TRADE_BREAK_PHRASES = (
     "No Trade Break found in Reconciliation",
     "Color Scheme & Notation reference",
@@ -54,21 +51,18 @@ class DownloadedNavTradeBreakFile:
     sftp_upload_timestamp: pd.Timestamp
 
 
-def run_nav_trade_breaks_email(
+def run_nav_trade_breaks(
     *,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     local_dir: str | Path | None = None,
-    sender_email: str | None = None,
-    recipient_emails: list[str] | tuple[str, ...] | None = None,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
     sftp_password: str | None = None,
     sftp_remote_dir: str | None = None,
     trade_file_pattern: str = DEFAULT_REMOTE_PATTERN,
-    email_subject_prefix: str = DEFAULT_EMAIL_SUBJECT_PREFIX,
 ) -> dict[str, object]:
-    """Download recent NAV trade break workbooks and email the latest one."""
+    """Download recent NAV trade break workbooks and summarize the latest one."""
     downloaded_files = pull_recent_trade_break_files(
         lookback_days=lookback_days,
         local_dir=local_dir,
@@ -90,34 +84,6 @@ def run_nav_trade_breaks_email(
         key=lambda item: (item.nav_date, item.sftp_upload_timestamp, item.local_path.name),
     )
     summary = summarize_trade_break_file(latest.local_path)
-    recipients = _resolve_recipient_emails(recipient_emails)
-    sender = sender_email or credentials.AZURE_OUTLOOK_SENDER
-    if not sender:
-        raise RuntimeError("Missing NAV trade breaks email sender.")
-
-    subject = (
-        f"{email_subject_prefix} - "
-        f"{latest.nav_date.strftime('%a %b-%d %Y')}"
-    )
-    add_del_text = _format_add_del_counts(summary["by_add_del"])
-    body_text = (
-        "Attached is the NAV Trade Breaks workbook for "
-        f"{latest.nav_date.isoformat()}.\n\n"
-        f"Rows detected: {summary['rows_processed']}\n"
-        f"Add/Del counts: {add_del_text}\n"
-        f"Source file: {latest.remote_filename}\n"
-        f"Downloaded file: {latest.local_path.name}"
-    )
-
-    for recipient_email in recipients:
-        email_notifications.send_email_via_graph(
-            sender_email=sender,
-            recipient_email=recipient_email,
-            subject=subject,
-            body_text=body_text,
-            attachments=[latest.local_path],
-        )
-
     return {
         "target_table": TARGET_NAME,
         "source_system": SOURCE_SYSTEM,
@@ -128,17 +94,39 @@ def run_nav_trade_breaks_email(
         "nav_date": latest.nav_date.isoformat(),
         "nav_date_from_sftp": latest.nav_date.strftime("%Y%m%d"),
         "sftp_upload_timestamp": latest.sftp_upload_timestamp.isoformat(),
-        "email_subject": subject,
-        "sender_email": sender,
-        "recipient_count": len(recipients),
-        "recipient_emails": recipients,
         "attachments": [latest.local_path.name],
-        "emails_sent": len(recipients),
         "files_downloaded": len(downloaded_files),
         "rows_processed": summary["rows_processed"],
         "by_add_del": summary["by_add_del"],
         "local_dir": str(resolve_local_dir(local_dir)),
     }
+
+
+def run_nav_trade_breaks_email(
+    *,
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS,
+    local_dir: str | Path | None = None,
+    sender_email: str | None = None,
+    recipient_emails: list[str] | tuple[str, ...] | None = None,
+    sftp_host: str | None = None,
+    sftp_port: int | None = None,
+    sftp_user: str | None = None,
+    sftp_password: str | None = None,
+    sftp_remote_dir: str | None = None,
+    trade_file_pattern: str = DEFAULT_REMOTE_PATTERN,
+) -> dict[str, object]:
+    """Backward-compatible wrapper for preparing NAV trade break emails."""
+    _ = (sender_email, recipient_emails)
+    return run_nav_trade_breaks(
+        lookback_days=lookback_days,
+        local_dir=local_dir,
+        sftp_host=sftp_host,
+        sftp_port=sftp_port,
+        sftp_user=sftp_user,
+        sftp_password=sftp_password,
+        sftp_remote_dir=sftp_remote_dir,
+        trade_file_pattern=trade_file_pattern,
+    )
 
 
 def pull_recent_trade_break_files(
@@ -357,23 +345,3 @@ def _normalize_column_name(column: object) -> str:
     text = text.replace("\n", " ")
     text = re.sub(r"[^0-9A-Za-z]+", "_", text)
     return re.sub(r"_+", "_", text).strip("_").lower()
-
-
-def _resolve_recipient_emails(
-    recipient_emails: list[str] | tuple[str, ...] | None,
-) -> list[str]:
-    recipients = list(
-        recipient_emails
-        if recipient_emails is not None
-        else credentials.HELIOS_EMAIL_RECIPIENTS
-    )
-    resolved = [recipient.strip() for recipient in recipients if recipient.strip()]
-    if not resolved:
-        raise ValueError("At least one NAV trade breaks email recipient is required.")
-    return resolved
-
-
-def _format_add_del_counts(value: object) -> str:
-    if not isinstance(value, dict) or not value:
-        return "none"
-    return ", ".join(f"{key or 'blank'}={count}" for key, count in sorted(value.items()))

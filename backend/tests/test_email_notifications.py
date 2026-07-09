@@ -217,6 +217,59 @@ def test_nav_positions_file_email_includes_workbook_attachments(tmp_path):
     assert message["payload"]["loaded_fund_codes"] == ["agr", "pnt"]
 
 
+def test_nav_trade_breaks_file_email_includes_workbook_attachment(tmp_path):
+    attachment = (
+        tmp_path
+        / "Trade Breaks Detail Report_20260224_HELIOS COMMODITY ADVISORS LTD.20260225_123456.xlsx"
+    )
+    attachment.write_text("xlsx", encoding="utf-8")
+
+    message = email_notifications.build_nav_trade_breaks_file_email(
+        summary={
+            "target_table": "nav_email.nav_trade_breaks",
+            "source_filename": (
+                "Trade Breaks Detail Report_20260224_"
+                "HELIOS COMMODITY ADVISORS LTD.XLSX"
+            ),
+            "downloaded_filename": attachment.name,
+            "source_file_path": str(attachment),
+            "nav_date": "2026-02-24",
+            "sftp_upload_timestamp": datetime(
+                2026,
+                2,
+                25,
+                12,
+                34,
+                56,
+                tzinfo=timezone.utc,
+            ),
+            "rows_processed": 3,
+            "by_add_del": {"ADD": 2, "DEL": 1},
+        },
+        recipient_email="ops@example.test",
+        attachment_path=attachment,
+    )
+
+    assert message["notification_key"] == (
+        "nav_trade_breaks:data_ready:2026-02-24:"
+        "20260225T123456Z:email:file_available"
+    )
+    assert message["recipient_email"] == "ops@example.test"
+    assert message["subject"] == (
+        "NAV trade breaks ready for review for Tue Feb-24 | "
+        "HeliosCTA | NAV | Trade Breaks"
+    )
+    assert "Attached workbook" in message["body_text"]
+    assert "Source system: NAV SFTP" in message["body_text"]
+    assert "ADD=2, DEL=1" in message["body_text"]
+    assert "HeliosCTA Alerts" in message["body_html"]
+    assert "NAV Trade Breaks Ready for Review" in message["body_html"]
+    assert "Review Notes" in message["body_html"]
+    assert "<table role=\"presentation\"" in message["body_html"]
+    assert message["payload"]["attachment_paths"] == [str(attachment)]
+    assert message["payload"]["add_del_counts"] == {"ADD": 2, "DEL": 1}
+
+
 def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_path):
     attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
     attachment.write_text("record_id\n1\n", encoding="utf-8")
