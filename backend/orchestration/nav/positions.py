@@ -15,6 +15,12 @@ from backend.utils.ops_logging import log_api_fetch, redact_secrets
 PIPELINE_NAME = "nav_positions"
 PROVIDER = "nav_sftp"
 DEFAULT_LOOKBACK_DAYS = scrape.DEFAULT_LOOKBACK_DAYS
+DEFAULT_SCHEDULED_LOOKBACK_DAYS = scrape.DEFAULT_LOOKBACK_DAYS
+SCHEDULED_OPERATION_NAME = f"{PIPELINE_NAME}_scheduled"
+
+
+class DataNotAvailable(RuntimeError):
+    """Raised when a scheduled NAV pull cannot load any source rows."""
 
 
 def main(
@@ -25,6 +31,8 @@ def main(
     database: str | None = None,
     run_mode: str = "manual",
     metadata: dict[str, Any] | None = None,
+    operation_name: str = PIPELINE_NAME,
+    require_rows: bool = False,
 ) -> int:
     """Run the local NAV position scrape and write one telemetry row."""
     run_logger = script_logging.init_logging(
@@ -53,6 +61,10 @@ def main(
             database=database,
         )
         rows_processed = int(summary.get("rows_processed", 0))
+        if require_rows and rows_processed <= 0:
+            raise DataNotAvailable(
+                "NAV positions scheduled pull completed without source rows."
+            )
         run_logger.success(
             f"{PIPELINE_NAME} completed; {rows_processed:,} rows processed."
         )
@@ -75,8 +87,36 @@ def main(
             lookback_days=lookback_days,
             metadata=metadata,
             database=database,
+            operation_name=operation_name,
         )
         script_logging.close_logging()
+
+
+def scheduled_main(
+    *,
+    lookback_days: int = DEFAULT_SCHEDULED_LOOKBACK_DAYS,
+    fund_codes: Sequence[str] | None = None,
+    local_dir: str | Path | None = None,
+    database: str | None = None,
+    run_mode: str = "scheduler",
+    metadata: dict[str, Any] | None = None,
+) -> int:
+    """Run the NAV positions scheduled path and require a non-empty source load."""
+    scheduled_metadata = {
+        "scheduler": "windows_task_scheduler",
+        "require_rows": True,
+        **(metadata or {}),
+    }
+    return main(
+        lookback_days=lookback_days,
+        fund_codes=fund_codes,
+        local_dir=local_dir,
+        database=database,
+        run_mode=run_mode,
+        metadata=scheduled_metadata,
+        operation_name=SCHEDULED_OPERATION_NAME,
+        require_rows=True,
+    )
 
 
 def _log_fetch(
@@ -90,6 +130,7 @@ def _log_fetch(
     lookback_days: int,
     metadata: dict[str, Any] | None,
     database: str | None,
+    operation_name: str = PIPELINE_NAME,
 ) -> None:
     rows_processed = int(summary.get("rows_processed", 0)) if summary else None
     telemetry_metadata: dict[str, Any] = {
@@ -104,7 +145,7 @@ def _log_fetch(
         actor_type="backend",
         provider=PROVIDER,
         pipeline_name=PIPELINE_NAME,
-        operation_name=PIPELINE_NAME,
+        operation_name=operation_name,
         target_table=scrape.TARGET_TABLE_FQN,
         method="SFTP",
         target_host=os.environ.get("NAV_SFTP_HOST") or "nav-sftp",

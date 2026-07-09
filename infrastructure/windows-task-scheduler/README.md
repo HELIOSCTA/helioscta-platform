@@ -263,6 +263,93 @@ ORDER BY trade_date_from_sftp DESC
 LIMIT 10;
 ```
 
+## NAV Positions
+
+Task Scheduler runs one daily task:
+
+```text
+\HeliosCTA\Positions And Trades\HeliosCTA NAV Positions
+```
+
+The task starts daily at local hour `06` by default. Each launch calls:
+
+```powershell
+python -c "from backend.orchestration.nav import positions; raise SystemExit(positions.scheduled_main(lookback_days=5))"
+```
+
+The Python orchestration downloads the latest matching NAV `Position Valuation
+Detail Report` workbooks for `agr`, `moross`, `pnt`, and `titan`, caches them
+under `backend\scrapes\nav\downloads\<fund>\`, parses the raw workbook rows,
+and upserts `nav.positions`. The scheduled path writes one
+`ops.api_fetch_log` row with `operation_name = 'nav_positions_scheduled'` and
+`run_mode = 'scheduler'` in metadata. It exits nonzero if the scheduled pull
+processes no source rows.
+
+Run from the production clone in PowerShell:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_nav_positions_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+The installer verifies writer credentials plus `NAV_SFTP_HOST`,
+`NAV_SFTP_USER`, and `NAV_SFTP_PASSWORD` from machine/user environment
+variables or the untracked `backend\.env` in the production clone.
+`NAV_SFTP_PORT` defaults to `22`, and `NAV_SFTP_REMOTE_DIR` defaults to `/`.
+
+Manual smoke:
+
+```powershell
+.\infrastructure\windows-task-scheduler\run_nav_positions_once.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs
+```
+
+Inspect task status and logs:
+
+```powershell
+Get-ScheduledTask `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA NAV Positions"
+
+Get-ScheduledTaskInfo `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA NAV Positions"
+
+Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\nav-positions-task-scheduler.log -Tail 100
+```
+
+Verify data and telemetry with read-only SQL:
+
+```sql
+SELECT
+    created_at,
+    operation_name,
+    status,
+    rows_written,
+    error_type,
+    error_message,
+    metadata
+FROM ops.api_fetch_log
+WHERE provider = 'nav_sftp'
+ORDER BY created_at DESC
+LIMIT 20;
+
+SELECT
+    fund_code,
+    COUNT(*) AS row_count,
+    MAX(nav_date) AS latest_nav_date,
+    MAX(sftp_upload_timestamp) AS latest_upload
+FROM nav.positions
+GROUP BY fund_code
+ORDER BY fund_code;
+```
+
 ## Cutover From Legacy Tasks
 
 Before enabling this coordinator, stop or disable old ICE Task Scheduler entries

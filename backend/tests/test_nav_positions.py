@@ -358,3 +358,78 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
     assert telemetry[0]["rows_written"] == 3
     assert telemetry[0]["database"] == "stage_db"
     assert telemetry[0]["metadata"]["fund_codes"] == ["pnt"]
+
+
+def test_scheduled_main_emits_scheduled_telemetry(monkeypatch, tmp_path):
+    telemetry: list[dict[str, object]] = []
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_nav_positions",
+        lambda **kwargs: {
+            "target_table": "nav.positions",
+            "fund_codes": ["pnt"],
+            "lookback_days": kwargs["lookback_days"],
+            "files_downloaded": 1,
+            "files_processed": 1,
+            "rows_processed": 3,
+        },
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    exit_code = orchestration.scheduled_main(
+        lookback_days=1,
+        fund_codes=("pnt",),
+        database="stage_db",
+    )
+
+    assert exit_code == 0
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == "nav_positions_scheduled"
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["database"] == "stage_db"
+    assert telemetry[0]["metadata"]["run_mode"] == "scheduler"
+    assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"
+    assert telemetry[0]["metadata"]["require_rows"] is True
+
+
+def test_scheduled_main_fails_when_no_rows(monkeypatch, tmp_path):
+    telemetry: list[dict[str, object]] = []
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_nav_positions",
+        lambda **kwargs: {
+            "target_table": "nav.positions",
+            "fund_codes": ["pnt"],
+            "lookback_days": kwargs["lookback_days"],
+            "files_downloaded": 0,
+            "files_processed": 0,
+            "rows_processed": 0,
+        },
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    with pytest.raises(orchestration.DataNotAvailable):
+        orchestration.scheduled_main(
+            lookback_days=1,
+            fund_codes=("pnt",),
+            database="stage_db",
+        )
+
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == "nav_positions_scheduled"
+    assert telemetry[0]["status"] == "failure"
+    assert telemetry[0]["error_type"] == "DataNotAvailable"
+    assert telemetry[0]["rows_written"] == 0
+    assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"

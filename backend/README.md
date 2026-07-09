@@ -250,13 +250,17 @@ valuation snapshots to `nav.positions`, and use the existing `NAV_SFTP_*`
 environment variables. `nav.positions` stores the source workbook fields plus
 file/fund metadata only. Product-code, product-group, contract,
 instrument-type, and normalization-status fields are derived by read-only SQL
-at query time, not persisted in the source table. The v1 activation path is a
-manual local run with
-`python -m backend.orchestration.nav.positions`; do not add NAV systemd units
-unless the workflow is explicitly promoted to the Linux VM. Downloaded raw NAV
-workbooks are cached under `backend/scrapes/nav/downloads/` by default and that
-folder is gitignored. The downloader preserves already-cached workbooks instead
-of overwriting them, because NAV source files can expire upstream.
+at query time, not persisted in the source table. The active runtime is the
+local Windows Task Scheduler job installed from
+`infrastructure/windows-task-scheduler/install_nav_positions_task.ps1`; do not
+add NAV systemd units unless the workflow is explicitly promoted to the Linux
+VM. Downloaded raw NAV workbooks are cached under
+`backend/scrapes/nav/downloads/` by default and that folder is gitignored. The
+downloader preserves already-cached workbooks instead of overwriting them,
+because NAV source files can expire upstream. The scheduled path runs daily at
+local hour `06` by default, uses a five-file lookback per fund, writes
+`operation_name = 'nav_positions_scheduled'` telemetry to `ops.api_fetch_log`,
+and exits nonzero if no source rows are processed.
 
 Clear Street end-of-day transaction helpers are local SFTP workflows. They live
 under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,
@@ -376,6 +380,12 @@ For local SFTP runs only:
 ```powershell
 python -m pip install -r backend\requirements-local-sftp.txt -e backend
 python -m backend.orchestration.nav.positions
+.\infrastructure\windows-task-scheduler\install_nav_positions_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
 python -m backend.orchestration.clear_street.transactions
 .\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
