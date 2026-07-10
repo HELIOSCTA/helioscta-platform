@@ -3,6 +3,7 @@
 from importlib import import_module
 
 _GENERATOR_EXPORTS = {
+    "build_clear_street_trades_mufg_all_history_sql",
     "build_clear_street_trades_mufg_latest_sql",
     "build_nav_positions_account_breakout_sql",
     "build_nav_positions_grouped_latest_sql",
@@ -16,6 +17,7 @@ _GENERATOR_EXPORTS = {
 
 __all__ = [
     "generator",
+    "build_clear_street_trades_mufg_all_history_sql",
     "build_clear_street_trades_mufg_latest_sql",
     "build_nav_positions_account_breakout_sql",
     "build_nav_positions_grouped_latest_sql",

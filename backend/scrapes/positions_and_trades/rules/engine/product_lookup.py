@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-RULES_ROOT = Path(__file__).resolve().parents[1] / "data"
-PRODUCT_DEFINITIONS_PATH = RULES_ROOT / "product_definitions.json"
-PRODUCT_ALIASES_PATH = RULES_ROOT / "product_aliases.json"
+from backend.scrapes.positions_and_trades.rules.data.product_alias_catalog import (
+    product_alias_rows,
+)
+from backend.scrapes.positions_and_trades.rules.data.product_definition_catalog import (
+    product_definition_rows,
+)
 
 PRODUCT_RULE_GROUPS = {"Gas", "Power", "Basis"}
 PRODUCT_ALIAS_SOURCES = {"nav", "marex", "clear_street", "any"}
@@ -92,18 +93,15 @@ class ProductRuleSet:
         )
 
 
-def load_rule_set(
-    product_definitions_path: str | Path = PRODUCT_DEFINITIONS_PATH,
-    product_aliases_path: str | Path = PRODUCT_ALIASES_PATH,
-) -> ProductRuleSet:
-    """Load and validate product definitions and alias rules from JSON files."""
+def load_rule_set() -> ProductRuleSet:
+    """Load and validate product definitions and alias rules."""
     definitions = tuple(
         ProductDefinition.from_json(row)
-        for row in _load_json_rows(Path(product_definitions_path))
+        for row in product_definition_rows()
     )
     aliases = tuple(
         ProductAliasRule.from_json(row)
-        for row in _load_json_rows(Path(product_aliases_path))
+        for row in product_alias_rows()
     )
     rule_set = ProductRuleSet(
         product_definitions=definitions,
@@ -230,6 +228,14 @@ def resolve_product_lookup(
     if explicit_definition is not None:
         return ProductLookupMatch(definition=explicit_definition, alias=None)
 
+    if source == "clear_street" and not is_option:
+        prefix_definition = get_product_definition(
+            _clear_street_product_prefix(product_name),
+            rule_set=selected_rule_set,
+        )
+        if prefix_definition is not None:
+            return ProductLookupMatch(definition=prefix_definition, alias=None)
+
     alias = find_product_alias(
         source,
         product_name,
@@ -241,15 +247,6 @@ def resolve_product_lookup(
 
     definition = get_product_definition(alias.exchange_code, rule_set=selected_rule_set)
     return ProductLookupMatch(definition=definition, alias=alias) if definition else None
-
-
-def _load_json_rows(path: Path) -> list[dict[str, Any]]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, list):
-        raise ValueError(f"Expected {path} to contain a JSON array.")
-    if not all(isinstance(row, dict) for row in payload):
-        raise ValueError(f"Expected every row in {path} to be a JSON object.")
-    return payload
 
 
 def _required_text(row: dict[str, Any], key: str) -> str:
@@ -271,6 +268,14 @@ def _optional_text(value: Any) -> str | None:
 def _optional_upper_text(value: Any) -> str | None:
     text = _optional_text(value)
     return text.upper() if text else None
+
+
+def _clear_street_product_prefix(product_name: str | None) -> str | None:
+    normalized_product = normalize_product_text(product_name)
+    if normalized_product is None:
+        return None
+    match = re.match(r"^([A-Z0-9]{1,10})-", normalized_product)
+    return match.group(1) if match else None
 
 
 def _alias_source_matches(alias: ProductAliasRule, source: str) -> bool:

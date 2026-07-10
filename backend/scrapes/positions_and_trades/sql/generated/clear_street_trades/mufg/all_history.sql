@@ -2,13 +2,13 @@
 -- Source of truth: backend/scrapes/positions_and_trades/rules/data/*.py.
 -- Do not edit directly. Update the Python rule catalogues and regenerate this file.
 --
--- Purpose: read-only latest MUFG Clear Street trade extract.
+-- Purpose: read-only all-history MUFG Clear Street trade extract.
 -- How to read: CTEs are numbered in dependency order; the final SELECT keeps
 -- the legacy export shape.
 -- Debugging tip: replace the final SELECT with SELECT * FROM any named CTE to
 -- inspect that stage in a SQL editor.
 -- Persistence: this script does not create, update, insert, or delete rows.
--- File: clear_street_trades/mufg/latest.sql
+-- File: clear_street_trades/mufg/all_history.sql
 
 with
 -- -----------------------------------------------------------------------------
@@ -475,15 +475,8 @@ trades_with_export_codes as (
     from trades_with_export_base
 ),
 -- -----------------------------------------------------------------------------
--- CTE 13 - latest_sftp_date
--- Finds the newest available Clear Street SFTP trade date after the optional params filter.
-latest_sftp_date as (
-    select max(trade_date_from_sftp) as trade_date_from_sftp
-    from source_trades
-),
--- -----------------------------------------------------------------------------
--- CTE 14 - final
--- Keeps the raw Clear Street columns first, then appends generated fields needed by the outbound file.
+-- CTE 13 - final
+-- Keeps the same columns and MUFG give-in/out filter as latest.sql, but does not restrict results to the latest SFTP trade date.
 final as (
 select
     -- Raw Clear Street transaction columns, kept in legacy extract order.
@@ -591,8 +584,6 @@ select
     cme_product_code,
     bbg_product_code
 from trades_with_export_codes
-join latest_sftp_date
-    on latest_sftp_date.trade_date_from_sftp = trades_with_export_codes.trade_date_from_sftp
 -- MUFG give-in/out firms from the legacy extract.
 where give_in_out_firm_num in ('ADU', '905')
 order by
