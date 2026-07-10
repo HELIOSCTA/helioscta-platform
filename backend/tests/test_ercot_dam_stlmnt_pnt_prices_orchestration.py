@@ -90,6 +90,93 @@ def test_ercot_dam_spp_skips_readiness_event_for_incomplete_rows(monkeypatch):
     assert captured == []
 
 
+def test_ercot_dam_release_email_notifications_are_idempotent_and_sent(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**kwargs):
+        calls.append(kwargs)
+        return [{"created": True, "notification_key": "email-key"}]
+
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices.email_notifications,
+        "enqueue_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices.email_notifications,
+        "notifications_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices.email_notifications,
+        "send_due_email_notifications",
+        lambda **kwargs: [{"status": "sent", **kwargs}],
+    )
+
+    queued = dam_stlmnt_pnt_prices._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": "ercot_dam_stlmnt_pnt_prices:data_ready:2026-07-02:hub",
+            }
+        ],
+        run_mode="scheduled",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 1
+    assert calls[0]["iso"] == "ercot"
+    assert calls[0]["event"]["event_key"] == (
+        "ercot_dam_stlmnt_pnt_prices:data_ready:2026-07-02:hub"
+    )
+    assert calls[0]["database"] == "stage_db"
+
+
+def test_ercot_dam_release_email_notifications_skip_outside_scheduled(monkeypatch):
+    called = False
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**_kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices.email_notifications,
+        "enqueue_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+
+    queued = dam_stlmnt_pnt_prices._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": "ercot_dam_stlmnt_pnt_prices:data_ready:2026-07-02:hub",
+            }
+        ],
+        run_mode="backfill",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 0
+    assert called is False
+
+
 def _dam_spp_availability_frame(hours: int) -> pd.DataFrame:
     settlement_points = (
         "HB_NORTH",

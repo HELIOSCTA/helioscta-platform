@@ -14,7 +14,7 @@ from dateutil.relativedelta import relativedelta
 
 from backend import credentials
 from backend.scrapes.power.ercot import dam_stlmnt_pnt_prices as scrape
-from backend.utils import script_logging
+from backend.utils import email_notifications, script_logging
 from backend.utils.data_availability import emit_data_availability_event
 from backend.utils.ops_logging import redact_secrets
 
@@ -115,6 +115,14 @@ def main(
                 "no data availability event emitted."
             )
 
+        run_logger.section("Handling release email notification(s) ...")
+        _notify_da_email_release_events(
+            events=events,
+            run_mode=run_mode,
+            database=database,
+            run_logger=run_logger,
+        )
+
         run_logger.success(
             f"{API_SCRAPE_NAME} completed; {rows_processed} rows processed."
         )
@@ -127,6 +135,53 @@ def main(
         script_logging.close_logging()
 
     return combined_df if not combined_df.empty else None
+
+
+def _notify_da_email_release_events(
+    *,
+    events: list[dict[str, Any]],
+    run_mode: str,
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    if run_mode != "scheduled":
+        run_logger.info("Skipping ERCOT DAM release emails outside scheduled mode.")
+        return 0
+    if not events:
+        return 0
+
+    queued = 0
+    try:
+        for event in events:
+            enqueued_rows = email_notifications.enqueue_da_lmp_release_notifications(
+                iso="ercot",
+                event=event,
+                database=database,
+            )
+            queued += sum(1 for row in enqueued_rows if row.get("created"))
+
+        if not email_notifications.notifications_enabled():
+            run_logger.info(
+                "ERCOT DAM release email notifications "
+                f"queued={queued}; sending is disabled."
+            )
+            return queued
+
+        processed = email_notifications.send_due_email_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            "ERCOT DAM release email notifications "
+            f"queued={queued}, processed={len(processed)}."
+        )
+    except Exception:
+        run_logger.exception(
+            "ERCOT DAM release email notification handling failed; "
+            "scrape data and readiness events remain committed."
+        )
+
+    return queued
 
 
 def _emit_data_availability_events(

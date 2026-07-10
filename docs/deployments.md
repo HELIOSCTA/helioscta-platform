@@ -51,7 +51,11 @@ boundary, or log path changes.
 - Destination table: `pjm.da_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
-- Release notification output: `ops.slack_notification_outbox`.
+- Release notification output: `ops.email_notification_outbox` and
+  `ops.slack_notification_outbox` during the email transition.
+- Email body: backend-rendered inline DA LMP snapshot with hub summary rows,
+  all configured PJM hub hourly component tables, and a Vercel single-day report
+  link.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-pjm-da-hrl-lmps.timer`
@@ -94,6 +98,23 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+Verification SQL for email release notifications:
+
+```sql
+SELECT
+    notification_key,
+    recipient_email,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.email_notification_outbox
+WHERE dataset = 'pjm_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 Verification SQL for Slack release notifications:
 
 ```sql
@@ -115,9 +136,9 @@ LIMIT 10;
 ## helios-email-notification-outbox
 
 - Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; disabled on
-  `2026-07-01` while release alerts are Slack-only. Microsoft Graph
-  credentials were configured, and a manual smoke email was sent before
-  disabling the sender.
+  `2026-07-01` while production email release delivery remains opt-in.
+  Microsoft Graph credentials were configured, and a manual smoke email was
+  sent before disabling the sender.
 - Workflow: durable email notification retry sender.
 - Runtime module: `backend.orchestration.notifications.email_outbox`.
 - Destination table: updates `ops.email_notification_outbox`.
@@ -333,6 +354,9 @@ Operational notes:
 - Destination table: `ercot.dam_stlmnt_pnt_prices`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
+- Release notification output: `ops.email_notification_outbox`.
+- Email body: backend-rendered inline ERCOT DAM LMP snapshot with hub summary
+  rows, hourly total-price tables, and a Vercel single-day report link.
 - Unit files:
   - `infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service`
   - `infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.timer`
@@ -382,6 +406,23 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+Verification SQL for email release notifications:
+
+```sql
+SELECT
+    notification_key,
+    recipient_email,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.email_notification_outbox
+WHERE dataset = 'ercot_dam_stlmnt_pnt_prices'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
 ## helios-isone-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest VM run succeeded.
@@ -392,6 +433,9 @@ LIMIT 10;
 - Destination table: `isone.da_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
+- Release notification output: `ops.email_notification_outbox`.
+- Email body: backend-rendered inline NEPOOL DA LMP snapshot with hub summary
+  rows, hourly component tables, and a Vercel single-day report link.
 - Unit files:
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.timer`
@@ -430,6 +474,23 @@ SELECT
     period_count,
     created_at
 FROM ops.data_availability_events
+WHERE dataset = 'isone_da_hrl_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
+```
+
+Verification SQL for email release notifications:
+
+```sql
+SELECT
+    notification_key,
+    recipient_email,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.email_notification_outbox
 WHERE dataset = 'isone_da_hrl_lmps'
 ORDER BY created_at DESC
 LIMIT 10;

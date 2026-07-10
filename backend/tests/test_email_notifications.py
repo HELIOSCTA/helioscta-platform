@@ -7,6 +7,22 @@ from pathlib import Path
 from backend.utils import email_notifications
 
 
+def _da_lmp_rows(hub: str, *, total_offset: float = 0.0):
+    return [
+        {
+            "hub": hub,
+            "hour_ending": hour,
+            "datetime_beginning": f"2026-07-01T{hour - 1:02d}:00:00",
+            "system_energy": 20.0 + hour,
+            "total": 30.0 + hour + total_offset,
+            "congestion": 2.0,
+            "marginal_loss": 1.0,
+            "updated_at": "2026-07-01T12:10:00",
+        }
+        for hour in range(1, 25)
+    ]
+
+
 def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
     monkeypatch.setattr(
         email_notifications.credentials,
@@ -14,12 +30,20 @@ def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
         "https://frontend-helioscta.vercel.app",
     )
 
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="pjm",
+        rows=_da_lmp_rows("WESTERN HUB"),
+        target_date="2026-07-01",
+        latest_date="2026-07-01",
+        hubs=["WESTERN HUB"],
+    )
     message = email_notifications.build_pjm_da_hrl_lmp_release_email(
         event={
             "id": 10,
             "event_key": "pjm_da_hrl_lmps:data_ready:2026-07-01:hub",
         },
         recipient_email="aidan.keaveny@helioscta.com",
+        snapshot=snapshot,
     )
 
     assert message["notification_key"] == (
@@ -28,18 +52,105 @@ def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
     assert message["recipient_email"] == "aidan.keaveny@helioscta.com"
     assert message["source_event_id"] == 10
     assert message["subject"] == (
-        "PJM DA HRL LMPs released for Wed Jul-01 | "
-        "HeliosCTA | PJM | DA HRL LMPs | Posted"
+        "PJM DA LMPs released for Wed Jul-01 | "
+        "HeliosCTA | PJM | DA LMPs | Posted"
     )
+    assert "PJM DA LMPs Available" in message["body_html"]
+    assert "Open PJM DA LMP report" in message["body_html"]
+    assert "Market date" in message["body_html"]
+    assert "pjm_da_hrl_lmps" in message["body_html"]
+    assert "Hub Summary" in message["body_html"]
+    assert "All Hubs Hourly Tables" in message["body_html"]
+    assert "WESTERN HUB" in message["body_html"]
+    assert "HE24" in message["body_html"]
+    assert "Congestion" in message["body_html"]
     report_url = message["payload"]["report_url"]
     assert report_url.startswith("https://frontend-helioscta.vercel.app/?")
     assert "section=pjm-da-lmps" in report_url
     assert "view=single-day" in report_url
     assert "product=da" in report_url
+    assert "iso=pjm" in report_url
     assert "date=2026-07-01" in report_url
     assert "hub=WESTERN+HUB" in report_url
     assert "component=all" in report_url
     assert "refresh=1" in report_url
+
+
+def test_da_lmp_release_email_template_supports_ercot_total_only():
+    rows = [
+        {
+            "hub": "HB_NORTH",
+            "hour_ending": hour,
+            "datetime_beginning": f"2026-07-01T{hour - 1:02d}:00:00",
+            "system_energy": None,
+            "total": 40.0 + hour,
+            "congestion": None,
+            "marginal_loss": None,
+            "updated_at": "2026-07-01T13:10:00",
+        }
+        for hour in range(1, 25)
+    ]
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="ercot",
+        rows=rows,
+        target_date="2026-07-01",
+        latest_date="2026-07-01",
+        hubs=["HB_NORTH"],
+    )
+
+    message = email_notifications.build_da_lmp_release_email(
+        iso="ercot",
+        event={
+            "id": 11,
+            "event_key": "ercot_dam_stlmnt_pnt_prices:data_ready:2026-07-01:hub",
+        },
+        recipient_email="ops@example.test",
+        snapshot=snapshot,
+    )
+
+    assert message["dataset"] == "ercot_dam_stlmnt_pnt_prices"
+    assert message["subject"] == (
+        "ERCOT DA LMPs released for Wed Jul-01 | "
+        "HeliosCTA | ERCOT | DA LMPs | Posted"
+    )
+    assert "ERCOT DA LMPs Available" in message["body_html"]
+    assert "HB_NORTH" in message["body_html"]
+    assert "HE24" in message["body_html"]
+    assert "Total" in message["body_html"]
+    assert "Energy" not in message["body_html"]
+    assert "iso=ercot" in message["payload"]["report_url"]
+
+
+def test_da_lmp_release_email_template_supports_nepool_components():
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="isone",
+        rows=_da_lmp_rows(".H.INTERNAL_HUB"),
+        target_date="2026-07-01",
+        latest_date="2026-07-01",
+        hubs=[".H.INTERNAL_HUB"],
+    )
+
+    message = email_notifications.build_da_lmp_release_email(
+        iso="isone",
+        event={
+            "id": 12,
+            "event_key": "isone_da_hrl_lmps:data_ready:2026-07-01:all_locations",
+        },
+        recipient_email="ops@example.test",
+        snapshot=snapshot,
+    )
+
+    assert message["dataset"] == "isone_da_hrl_lmps"
+    assert message["subject"] == (
+        "NEPOOL DA LMPs released for Wed Jul-01 | "
+        "HeliosCTA | NEPOOL | DA LMPs | Posted"
+    )
+    assert "NEPOOL DA LMPs Available" in message["body_html"]
+    assert ".H.INTERNAL_HUB" in message["body_html"]
+    assert "Energy" in message["body_html"]
+    assert "Congestion" in message["body_html"]
+    assert "Loss" in message["body_html"]
+    assert "iso=isone" in message["payload"]["report_url"]
 
 
 def test_enqueue_email_notification_is_idempotent(monkeypatch):

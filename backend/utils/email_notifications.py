@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 import logging
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,55 @@ GRAPH_SEND_MAIL_URL_TEMPLATE = "https://graph.microsoft.com/v1.0/users/{sender}/
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 DEFAULT_PJM_DA_HRL_LMP_HUB = "WESTERN HUB"
 DEFAULT_PJM_DA_HRL_LMP_COMPONENT = "all"
+DA_LMP_COMPONENTS = [
+    ("energy", "Energy", "system_energy"),
+    ("congestion", "Congestion", "congestion"),
+    ("loss", "Loss", "marginal_loss"),
+    ("total", "Total", "total"),
+]
+DA_LMP_TOTAL_COMPONENT = [("total", "Total", "total")]
+DA_LMP_ONPEAK_START = 8
+DA_LMP_ONPEAK_END = 23
+DA_LMP_HOURS = list(range(1, 25))
+DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
+    "pjm": {
+        "label": "PJM",
+        "dataset": "pjm_da_hrl_lmps",
+        "source": "pjm.da_hrl_lmps",
+        "default_hub": DEFAULT_PJM_DA_HRL_LMP_HUB,
+        "hubs": [
+            "WESTERN HUB",
+            "EASTERN HUB",
+            "AEP-DAYTON HUB",
+            "DOMINION HUB",
+            "NEW JERSEY HUB",
+            "CHICAGO HUB",
+            "OHIO HUB",
+            "N ILLINOIS HUB",
+            "AEP GEN HUB",
+            "ATSI GEN HUB",
+            "CHICAGO GEN HUB",
+            "WEST INT HUB",
+        ],
+        "components": DA_LMP_COMPONENTS,
+    },
+    "isone": {
+        "label": "NEPOOL",
+        "dataset": "isone_da_hrl_lmps",
+        "source": "isone.da_hrl_lmps",
+        "default_hub": ".H.INTERNAL_HUB",
+        "hubs": [".H.INTERNAL_HUB"],
+        "components": DA_LMP_COMPONENTS,
+    },
+    "ercot": {
+        "label": "ERCOT",
+        "dataset": "ercot_dam_stlmnt_pnt_prices",
+        "source": "ercot.dam_stlmnt_pnt_prices",
+        "default_hub": "HB_NORTH",
+        "hubs": ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"],
+        "components": DA_LMP_TOTAL_COMPONENT,
+    },
+}
 MAX_ERROR_MESSAGE_LENGTH = 2000
 CLEAR_STREET_EOD_TRANSACTIONS_DATASET = "clear_street_eod_transactions"
 CLEAR_STREET_MUFG_UPLOAD_DATASET = "clear_street_trades_mufg_upload"
@@ -33,20 +84,24 @@ def notifications_enabled() -> bool:
     return credentials.HELIOS_EMAIL_NOTIFICATIONS_ENABLED
 
 
-def build_pjm_da_hrl_lmp_report_url(
+def build_da_lmp_report_url(
     *,
     business_date: str,
-    hub: str = DEFAULT_PJM_DA_HRL_LMP_HUB,
+    iso: str = "pjm",
+    hub: str | None = None,
     component: str = DEFAULT_PJM_DA_HRL_LMP_COMPONENT,
     base_url: str | None = None,
 ) -> str:
+    iso = str(iso).strip().lower()
+    config = _da_lmp_email_config(iso)
     params = urlencode(
         {
             "section": "pjm-da-lmps",
             "view": "single-day",
             "product": "da",
+            "iso": iso,
             "date": business_date,
-            "hub": hub,
+            "hub": hub or config["default_hub"],
             "component": component,
             "refresh": "1",
         }
@@ -55,53 +110,141 @@ def build_pjm_da_hrl_lmp_report_url(
     return f"{root}/?{params}"
 
 
-def build_pjm_da_hrl_lmp_release_email(
+def build_pjm_da_hrl_lmp_report_url(
     *,
+    business_date: str,
+    hub: str = DEFAULT_PJM_DA_HRL_LMP_HUB,
+    component: str = DEFAULT_PJM_DA_HRL_LMP_COMPONENT,
+    base_url: str | None = None,
+) -> str:
+    return build_da_lmp_report_url(
+        business_date=business_date,
+        iso="pjm",
+        hub=hub,
+        component=component,
+        base_url=base_url,
+    )
+
+
+def fetch_da_lmp_email_snapshot(
+    *,
+    iso: str,
+    business_date: str,
+    database: str | None = None,
+    hubs: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    """Load the normalized DA LMP hub/hour shape used by inline email tables."""
+    iso = str(iso).strip().lower()
+    config = _da_lmp_email_config(iso)
+    report_hubs = list(hubs or config["hubs"])
+    latest_sql, latest_params = _da_lmp_latest_query(
+        iso=iso,
+        hubs=report_hubs,
+    )
+    rows_sql, rows_params = _da_lmp_rows_query(
+        iso=iso,
+        business_date=business_date,
+        hubs=report_hubs,
+    )
+    latest_rows = db.execute_sql(
+        latest_sql,
+        params=latest_params,
+        database=database,
+        fetch=True,
+    )
+    rows = db.execute_sql(
+        rows_sql,
+        params=rows_params,
+        database=database,
+        fetch=True,
+    )
+    return _build_da_lmp_snapshot(
+        iso=iso,
+        rows=rows or [],
+        target_date=business_date,
+        latest_date=(latest_rows or [{}])[0].get("latest_date"),
+        hubs=report_hubs,
+    )
+
+
+def fetch_pjm_da_hrl_lmp_email_snapshot(
+    *,
+    business_date: str,
+    database: str | None = None,
+    hubs: list[str] | tuple[str, ...] | None = None,
+) -> dict[str, Any]:
+    return fetch_da_lmp_email_snapshot(
+        iso="pjm",
+        business_date=business_date,
+        database=database,
+        hubs=hubs,
+    )
+
+
+def build_da_lmp_release_email(
+    *,
+    iso: str,
     event: dict[str, Any],
     recipient_email: str,
     base_url: str | None = None,
-    hub: str = DEFAULT_PJM_DA_HRL_LMP_HUB,
+    hub: str | None = None,
+    snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    iso = str(iso).strip().lower()
+    config = _da_lmp_email_config(iso)
+    iso_label = str(config["label"])
+    dataset = str(config["dataset"])
+    source = str(config["source"])
+    selected_hub = hub or str(config["default_hub"])
     event_key = str(event["event_key"])
     business_date = _business_date_from_event(event)
-    report_url = build_pjm_da_hrl_lmp_report_url(
+    report_url = build_da_lmp_report_url(
         business_date=business_date,
-        hub=hub,
+        iso=iso,
+        hub=selected_hub,
         base_url=base_url,
     )
     subject = _subject_with_tags(
-        f"PJM DA HRL LMPs released for {_subject_date_label(business_date)}",
-        ["HeliosCTA", "PJM", "DA HRL LMPs", "Posted"],
+        f"{iso_label} DA LMPs released for {_subject_date_label(business_date)}",
+        ["HeliosCTA", iso_label, "DA LMPs", "Posted"],
     )
     body_text = (
-        f"PJM DA HRL LMPs are available for {business_date}.\n\n"
+        f"{iso_label} DA LMPs are available for {business_date}.\n\n"
+        f"Email snapshot: {_da_lmp_snapshot_text_summary(snapshot)}\n"
         f"Report: {report_url}\n\n"
         f"Source event: {event_key}"
     )
+    sections = [
+        email_templates.link_section(
+            "Report",
+            label=f"Open {iso_label} DA LMP report",
+            url=report_url,
+        )
+    ]
+    sections.extend(_da_lmp_snapshot_sections(snapshot))
     body_html = email_templates.render_email(
-        title="PJM DA HRL LMPs Available",
-        preheader=f"PJM DA hourly LMPs are available for {business_date}.",
+        title=f"{iso_label} DA LMPs Available",
+        preheader=f"{iso_label} day-ahead LMPs are available for {business_date}.",
         status_label="Posted",
         status_tone="success",
-        intro=f"PJM DA hourly LMPs are available for {business_date}.",
+        intro=(
+            f"{iso_label} day-ahead LMPs have posted. The inline snapshot "
+            "below includes the configured hub summary and hourly tables."
+        ),
         facts=[
-            ("Business date", business_date),
-            ("Hub", hub),
+            ("Market date", business_date),
+            ("Dataset", dataset),
+            ("Source", source),
+            ("Hub", selected_hub),
             ("Component", DEFAULT_PJM_DA_HRL_LMP_COMPONENT),
             ("Source event", event_key),
         ],
-        sections=[
-            email_templates.link_section(
-                "Report",
-                label="Open single-day report",
-                url=report_url,
-            )
-        ],
+        sections=sections,
     )
     return {
         "notification_key": f"{event_key}:email:release",
         "recipient_email": recipient_email,
-        "dataset": "pjm_da_hrl_lmps",
+        "dataset": dataset,
         "source_event_key": event_key,
         "source_event_id": event.get("id"),
         "subject": subject,
@@ -110,10 +253,30 @@ def build_pjm_da_hrl_lmp_release_email(
         "payload": {
             "business_date": business_date,
             "report_url": report_url,
-            "hub": hub,
+            "iso": iso,
+            "hub": selected_hub,
             "component": DEFAULT_PJM_DA_HRL_LMP_COMPONENT,
+            "snapshot_hubs": len(snapshot.get("hubs", [])) if snapshot else 0,
         },
     }
+
+
+def build_pjm_da_hrl_lmp_release_email(
+    *,
+    event: dict[str, Any],
+    recipient_email: str,
+    base_url: str | None = None,
+    hub: str = DEFAULT_PJM_DA_HRL_LMP_HUB,
+    snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return build_da_lmp_release_email(
+        iso="pjm",
+        event=event,
+        recipient_email=recipient_email,
+        base_url=base_url,
+        hub=hub,
+        snapshot=snapshot,
+    )
 
 
 def build_clear_street_eod_transactions_file_email(
@@ -618,14 +781,35 @@ def enqueue_pjm_da_hrl_lmp_release_notifications(
     event: dict[str, Any],
     database: str | None = None,
 ) -> list[dict[str, Any]]:
+    return enqueue_da_lmp_release_notifications(
+        iso="pjm",
+        event=event,
+        database=database,
+    )
+
+
+def enqueue_da_lmp_release_notifications(
+    *,
+    iso: str,
+    event: dict[str, Any],
+    database: str | None = None,
+) -> list[dict[str, Any]]:
+    iso = str(iso).strip().lower()
     enqueued = []
+    snapshot = fetch_da_lmp_email_snapshot(
+        iso=iso,
+        business_date=_business_date_from_event(event),
+        database=database,
+    )
     for recipient_email in credentials.HELIOS_EMAIL_RECIPIENTS:
         recipient_email = recipient_email.strip().lower()
         if not recipient_email:
             continue
-        message = build_pjm_da_hrl_lmp_release_email(
+        message = build_da_lmp_release_email(
+            iso=iso,
             event=event,
             recipient_email=recipient_email,
+            snapshot=snapshot,
         )
         enqueued.append(enqueue_email_notification(database=database, **message))
     return enqueued
@@ -918,6 +1102,430 @@ def _graph_file_attachment(file_path: str | Path) -> dict[str, str]:
         "name": path.name,
         "contentBytes": base64.b64encode(path.read_bytes()).decode("utf-8"),
     }
+
+
+def _da_lmp_email_config(iso: str) -> dict[str, Any]:
+    key = str(iso).strip().lower()
+    if key not in DA_LMP_EMAIL_CONFIGS:
+        raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
+    return DA_LMP_EMAIL_CONFIGS[key]
+
+
+def _da_lmp_latest_query(
+    *,
+    iso: str,
+    hubs: list[str],
+) -> tuple[str, tuple[Any, ...]]:
+    if iso == "pjm":
+        return (
+            """
+            SELECT MAX(datetime_beginning_ept::date)::text AS latest_date
+            FROM pjm.da_hrl_lmps
+            WHERE row_is_current = TRUE
+              AND pnode_name = ANY(%s::text[]);
+            """,
+            (hubs,),
+        )
+    if iso == "isone":
+        return (
+            """
+            SELECT MAX(date)::text AS latest_date
+            FROM isone.da_hrl_lmps
+            WHERE location_name = ANY(%s::text[])
+              AND location_type = 'HUB';
+            """,
+            (hubs,),
+        )
+    if iso == "ercot":
+        return (
+            """
+            SELECT MAX(deliverydate)::text AS latest_date
+            FROM ercot.dam_stlmnt_pnt_prices
+            WHERE settlementpoint = ANY(%s::text[]);
+            """,
+            (hubs,),
+        )
+    raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
+
+
+def _da_lmp_rows_query(
+    *,
+    iso: str,
+    business_date: str,
+    hubs: list[str],
+) -> tuple[str, tuple[Any, ...]]:
+    if iso == "pjm":
+        return (
+            """
+            WITH params AS (
+                SELECT
+                    %s::date::timestamp AS start_datetime_ept,
+                    (%s::date::timestamp + INTERVAL '1 day') AS end_datetime_ept
+            )
+            SELECT
+                to_char(lmps.datetime_beginning_ept, 'YYYY-MM-DD"T"HH24:MI:SS')
+                    AS datetime_beginning,
+                lmps.pnode_name AS hub,
+                (EXTRACT(HOUR FROM lmps.datetime_beginning_ept)::int + 1)
+                    AS hour_ending,
+                lmps.system_energy_price_da AS system_energy,
+                lmps.total_lmp_da AS total,
+                lmps.congestion_price_da AS congestion,
+                lmps.marginal_loss_price_da AS marginal_loss,
+                to_char(lmps.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
+            FROM pjm.da_hrl_lmps AS lmps
+            CROSS JOIN params
+            WHERE lmps.datetime_beginning_ept >= params.start_datetime_ept
+              AND lmps.datetime_beginning_ept < params.end_datetime_ept
+              AND lmps.pnode_name = ANY(%s::text[])
+              AND lmps.row_is_current = TRUE
+            ORDER BY array_position(%s::text[], lmps.pnode_name),
+                lmps.datetime_beginning_ept;
+            """,
+            (business_date, business_date, hubs, hubs),
+        )
+    if iso == "isone":
+        return (
+            """
+            SELECT
+                to_char(
+                    lmps.date::timestamp + ((lmps.hour_ending - 1) * INTERVAL '1 hour'),
+                    'YYYY-MM-DD"T"HH24:MI:SS'
+                ) AS datetime_beginning,
+                lmps.location_name AS hub,
+                lmps.hour_ending,
+                lmps.energy_component AS system_energy,
+                lmps.locational_marginal_price AS total,
+                lmps.congestion_component AS congestion,
+                lmps.marginal_loss_component AS marginal_loss,
+                to_char(lmps.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
+            FROM isone.da_hrl_lmps AS lmps
+            WHERE lmps.location_name = ANY(%s::text[])
+              AND lmps.location_type = 'HUB'
+              AND lmps.date = %s::date
+            ORDER BY array_position(%s::text[], lmps.location_name),
+                lmps.hour_ending;
+            """,
+            (hubs, business_date, hubs),
+        )
+    if iso == "ercot":
+        return (
+            """
+            SELECT
+                to_char(
+                    spp.deliverydate::timestamp + ((spp.hourending - 1) * INTERVAL '1 hour'),
+                    'YYYY-MM-DD"T"HH24:MI:SS'
+                ) AS datetime_beginning,
+                spp.settlementpoint AS hub,
+                spp.hourending AS hour_ending,
+                NULL::double precision AS system_energy,
+                spp.settlementpointprice AS total,
+                NULL::double precision AS congestion,
+                NULL::double precision AS marginal_loss,
+                to_char(spp.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
+            FROM ercot.dam_stlmnt_pnt_prices AS spp
+            WHERE spp.settlementpoint = ANY(%s::text[])
+              AND spp.deliverydate = %s::date
+            ORDER BY array_position(%s::text[], spp.settlementpoint),
+                spp.hourending;
+            """,
+            (hubs, business_date, hubs),
+        )
+    raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
+
+
+def _build_da_lmp_snapshot(
+    *,
+    iso: str,
+    rows: list[dict[str, Any]],
+    target_date: str,
+    latest_date: str | None,
+    hubs: list[str],
+) -> dict[str, Any]:
+    config = _da_lmp_email_config(iso)
+    as_of = None
+    for row in rows:
+        updated_at = row.get("updated_at")
+        if updated_at and (as_of is None or str(updated_at) > as_of):
+            as_of = str(updated_at)
+
+    rows_by_hub: dict[str, list[dict[str, Any]]] = {hub: [] for hub in hubs}
+    for row in rows:
+        hub = str(row.get("hub") or "")
+        if hub not in rows_by_hub:
+            continue
+        rows_by_hub[hub].append(_da_lmp_hourly_row(row))
+
+    return {
+        "iso": iso,
+        "iso_label": config["label"],
+        "target_date": target_date,
+        "latest_date": latest_date,
+        "as_of": as_of,
+        "source": config["source"],
+        "components": config["components"],
+        "hubs": [
+            _summarize_da_lmp_hub(hub=hub, hourly=rows_by_hub.get(hub, []))
+            for hub in hubs
+        ],
+    }
+
+
+def _da_lmp_hourly_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "hour_ending": int(row["hour_ending"]),
+        "datetime_beginning": row.get("datetime_beginning"),
+        "system_energy": _to_float(row.get("system_energy")),
+        "total": _to_float(row.get("total")),
+        "congestion": _to_float(row.get("congestion")),
+        "marginal_loss": _to_float(row.get("marginal_loss")),
+    }
+
+
+def _summarize_da_lmp_hub(
+    *,
+    hub: str,
+    hourly: list[dict[str, Any]],
+) -> dict[str, Any]:
+    hourly = sorted(hourly, key=lambda row: int(row["hour_ending"]))
+    onpeak = [
+        row["total"]
+        for row in hourly
+        if DA_LMP_ONPEAK_START <= int(row["hour_ending"]) <= DA_LMP_ONPEAK_END
+    ]
+    offpeak = [
+        row["total"]
+        for row in hourly
+        if int(row["hour_ending"]) < DA_LMP_ONPEAK_START
+        or int(row["hour_ending"]) > DA_LMP_ONPEAK_END
+    ]
+    peak = None
+    for row in hourly:
+        if row["total"] is None:
+            continue
+        if peak is None or row["total"] > peak["total"]:
+            peak = row
+    return {
+        "hub": hub,
+        "hours": len(hourly),
+        "on_peak_avg": _avg(onpeak),
+        "off_peak_avg": _avg(offpeak),
+        "flat_avg": _avg(row["total"] for row in hourly),
+        "peak_hour": peak["hour_ending"] if peak else None,
+        "peak_price": peak["total"] if peak else None,
+        "hourly": hourly,
+    }
+
+
+def _da_lmp_snapshot_sections(snapshot: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not snapshot:
+        return [
+            email_templates.text_section(
+                "Inline Snapshot",
+                "No inline DA LMP snapshot was supplied for this notification.",
+            )
+        ]
+    return [
+        {
+            "title": "Hub Summary",
+            "html": _render_da_lmp_summary_table(snapshot),
+        },
+        {
+            "title": "All Hubs Hourly Tables",
+            "html": _render_da_lmp_hourly_tables(snapshot),
+        },
+    ]
+
+
+def _render_da_lmp_summary_table(snapshot: dict[str, Any]) -> str:
+    meta = (
+        f"<p style=\"margin:0 0 8px 0; color:#6b7280; font-size:12px; "
+        f"line-height:18px;\">"
+        f"Target date: {_html(snapshot.get('target_date'))} | "
+        f"Latest date: {_html(snapshot.get('latest_date') or '-')} | "
+        f"As of: {_html(snapshot.get('as_of') or '-')}"
+        "</p>"
+    )
+    rows = []
+    for index, hub in enumerate(snapshot.get("hubs", [])):
+        background = "#ffffff" if index % 2 == 0 else "#f9fafb"
+        rows.append(
+            f"<tr style=\"background-color:{background};\">"
+            f"{_td(hub['hub'], align='left', bold=True)}"
+            f"{_td(hub['hours'], align='right')}"
+            f"{_td(_format_price(hub['on_peak_avg']), align='right')}"
+            f"{_td(_format_price(hub['off_peak_avg']), align='right')}"
+            f"{_td(_format_price(hub['flat_avg']), align='right')}"
+            f"{_td(hub['peak_hour'] or '-', align='right')}"
+            f"{_td(_format_price(hub['peak_price']), align='right')}"
+            "</tr>"
+        )
+    if not rows:
+        rows.append(f"<tr>{_td('No hub rows found.', colspan=7)}</tr>")
+    return (
+        meta
+        + "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+        "cellpadding=\"0\" border=\"0\" style=\"border:1px solid #e5e7eb; "
+        "border-collapse:collapse;\">"
+        "<tr>"
+        f"{_th('Hub', align='left')}"
+        f"{_th('Hours')}"
+        f"{_th('OnPeak')}"
+        f"{_th('OffPeak')}"
+        f"{_th('Flat')}"
+        f"{_th('Peak HE')}"
+        f"{_th('Peak Price')}"
+        "</tr>"
+        + "".join(rows)
+        + "</table>"
+    )
+
+
+def _render_da_lmp_hourly_tables(snapshot: dict[str, Any]) -> str:
+    blocks = []
+    for hub in snapshot.get("hubs", []):
+        blocks.append(
+            f"<h3 style=\"margin:16px 0 6px 0; color:#111827; "
+            f"font-size:13px; line-height:18px;\">{_html(hub['hub'])}</h3>"
+        )
+        if not hub.get("hourly"):
+            blocks.append(
+                "<p style=\"margin:0 0 10px 0; color:#6b7280; "
+                "font-size:12px; line-height:18px;\">No hourly rows found.</p>"
+            )
+            continue
+        blocks.append(_render_da_lmp_hub_component_table(snapshot, hub))
+    return "".join(blocks)
+
+
+def _render_da_lmp_hub_component_table(
+    snapshot: dict[str, Any],
+    hub: dict[str, Any],
+) -> str:
+    components = snapshot.get("components") or DA_LMP_COMPONENTS
+    hourly_by_hour = {int(row["hour_ending"]): row for row in hub.get("hourly", [])}
+    rows = []
+    for index, component in enumerate(components):
+        _key, label, value_key = component
+        values = [
+            (hourly_by_hour.get(hour) or {}).get(value_key)
+            for hour in DA_LMP_HOURS
+        ]
+        onpeak = [
+            value
+            for hour, value in zip(DA_LMP_HOURS, values)
+            if DA_LMP_ONPEAK_START <= hour <= DA_LMP_ONPEAK_END
+        ]
+        offpeak = [
+            value
+            for hour, value in zip(DA_LMP_HOURS, values)
+            if hour < DA_LMP_ONPEAK_START or hour > DA_LMP_ONPEAK_END
+        ]
+        background = "#ffffff" if index % 2 == 0 else "#f9fafb"
+        cells = [
+            _td(snapshot.get("target_date"), align="left"),
+            _td(label, align="left", bold=True),
+            _td(_format_price(_avg(onpeak)), align="right"),
+            _td(_format_price(_avg(offpeak)), align="right"),
+            _td(_format_price(_avg(values)), align="right"),
+        ]
+        cells.extend(_td(_format_price(value), align="right") for value in values)
+        rows.append(
+            f"<tr style=\"background-color:{background};\">" + "".join(cells) + "</tr>"
+        )
+    hour_headers = "".join(_th(f"HE{hour}") for hour in DA_LMP_HOURS)
+    return (
+        "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" "
+        "cellpadding=\"0\" border=\"0\" style=\"border:1px solid #e5e7eb; "
+        "border-collapse:collapse; margin-bottom:12px;\">"
+        "<tr>"
+        f"{_th('Date', align='left')}"
+        f"{_th('Component', align='left')}"
+        f"{_th('OnPeak')}"
+        f"{_th('OffPeak')}"
+        f"{_th('Flat')}"
+        f"{hour_headers}"
+        "</tr>"
+        + "".join(rows)
+        + "</table>"
+    )
+
+
+def _da_lmp_snapshot_text_summary(snapshot: dict[str, Any] | None) -> str:
+    if not snapshot:
+        return "not supplied"
+    hubs = snapshot.get("hubs") or []
+    populated = sum(1 for hub in hubs if int(hub.get("hours") or 0) > 0)
+    return (
+        f"{snapshot.get('iso_label')} {snapshot.get('target_date')} "
+        f"{populated}/{len(hubs)} hubs populated; as of "
+        f"{snapshot.get('as_of') or 'unknown'}"
+    )
+
+
+def _avg(values: Any) -> float | None:
+    numbers = [value for value in values if value is not None]
+    if not numbers:
+        return None
+    return sum(numbers) / len(numbers)
+
+
+def _to_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _format_price(value: Any) -> str:
+    number = _to_float(value)
+    if number is None:
+        return "-"
+    if number < 0:
+        return f"-${abs(number):,.2f}"
+    return f"${number:,.2f}"
+
+
+def _th(value: Any, *, align: str = "right") -> str:
+    return (
+        f"<th align=\"{align}\" style=\"padding:5px 6px; "
+        "background-color:#f3f4f6; border-bottom:1px solid #d1d5db; "
+        f"text-align:{align}; color:#4b5563; font-size:10px; "
+        f"line-height:14px; white-space:nowrap;\">{_html(value)}</th>"
+    )
+
+
+def _td(
+    value: Any,
+    *,
+    align: str = "left",
+    bold: bool = False,
+    colspan: int | None = None,
+) -> str:
+    colspan_attr = f" colspan=\"{colspan}\"" if colspan else ""
+    weight = "700" if bold else "400"
+    return (
+        f"<td{colspan_attr} align=\"{align}\" style=\"padding:5px 6px; "
+        "border-bottom:1px solid #e5e7eb; "
+        f"text-align:{align}; color:#111827; font-size:10px; "
+        f"line-height:14px; font-weight:{weight}; white-space:nowrap;\">"
+        f"{_html(value)}</td>"
+    )
+
+
+def _html(value: Any) -> str:
+    if value is None:
+        return ""
+    return html.escape(str(value), quote=True)
 
 
 def _latest_clear_street_trade_file(summary: dict[str, Any]) -> dict[str, Any]:
