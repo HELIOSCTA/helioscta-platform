@@ -25,9 +25,42 @@ persists once-per-hour or once-per-day state, prevents overlap with a local lock
 file, launches each ICE job in a child Python process, applies hard timeouts,
 and writes durable telemetry to `ops.api_fetch_log`.
 
+Routine scheduled task actions launch PowerShell with `-WindowStyle Hidden` so
+normal scheduler ticks do not open console windows on the Windows desktop.
+
 This is intentionally one scheduled task, not one Task Scheduler entry per ICE
 feed. Running each feed as a separate task can overload the local ICE runtime
 and recreate the hung-process behavior this promoted path avoids.
+
+## Manual Visible Tasks
+
+Each installer also registers a no-trigger, on-demand manual task under:
+
+```text
+\HeliosCTA\Manual\
+```
+
+These manual tasks call the same checked-in run wrappers without
+`-WindowStyle Hidden`, so a manual start opens a visible PowerShell window while
+routine scheduled runs stay hidden.
+
+Manual task names:
+
+- `\HeliosCTA\Manual\ICE Python\HeliosCTA ICE Python Coordinator (Manual Visible)`
+- `\HeliosCTA\Manual\Positions And Trades\HeliosCTA Clear Street EOD Transactions (Manual Visible)`
+- `\HeliosCTA\Manual\Positions And Trades\HeliosCTA NAV Positions (Manual Visible)`
+- `\HeliosCTA\Manual\Positions And Trades\HeliosCTA NAV Trade Breaks (Manual Visible)`
+
+Start a visible manual run from Task Scheduler or PowerShell:
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath "\HeliosCTA\Manual\ICE Python\" `
+  -TaskName "HeliosCTA ICE Python Coordinator (Manual Visible)"
+```
+
+Starting the routine scheduled task manually still uses its hidden action; use
+the manual folder when you want to watch the run.
 
 ## Runtime Setup
 
@@ -78,7 +111,8 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one coordinator task under the current Windows user.
+- registers or updates one hidden scheduled coordinator task and one visible
+  manual task under the current Windows user.
 
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
@@ -97,12 +131,12 @@ Run one coordinator tick directly:
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
 ```
 
-Start the scheduled task manually:
+Start the visible manual task:
 
 ```powershell
 Start-ScheduledTask `
-  -TaskPath "\HeliosCTA\ICE Python\" `
-  -TaskName "HeliosCTA ICE Python Coordinator"
+  -TaskPath "\HeliosCTA\Manual\ICE Python\" `
+  -TaskName "HeliosCTA ICE Python Coordinator (Manual Visible)"
 ```
 
 Inspect task status and logs:
@@ -117,6 +151,15 @@ Get-ScheduledTaskInfo `
   -TaskName "HeliosCTA ICE Python Coordinator"
 
 Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
+```
+
+If a historical log opens in VS Code with red `NUL` markers, strip NUL
+characters while viewing it:
+
+```powershell
+(Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Raw) `
+  -replace "`0", "" |
+  Set-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.clean.log
 ```
 
 Per-pull application logs still live under

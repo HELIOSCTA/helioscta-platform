@@ -32,6 +32,12 @@ function Resolve-CommandPath {
     throw "Could not resolve executable: $Executable"
 }
 
+function Remove-LogNullCharacters {
+    process {
+        [string]$_ -replace "`0", ""
+    }
+}
+
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 
@@ -53,7 +59,9 @@ Add-Content -Path $coordinatorLog -Value (
 Push-Location $resolvedRepoRoot
 try {
     $pythonSnippet = "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=$PollWaitSeconds))"
-    & $resolvedPythonExe -c $pythonSnippet 2>&1 | Tee-Object -FilePath $coordinatorLog -Append
+    & $resolvedPythonExe -c $pythonSnippet 2>&1 |
+        Remove-LogNullCharacters |
+        Tee-Object -FilePath $coordinatorLog -Append
     $exitCode = $LASTEXITCODE
 }
 finally {

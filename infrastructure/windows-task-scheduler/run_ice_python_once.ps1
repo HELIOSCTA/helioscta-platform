@@ -32,6 +32,12 @@ function Resolve-CommandPath {
     throw "Could not resolve executable: $Executable"
 }
 
+function Remove-LogNullCharacters {
+    process {
+        [string]$_ -replace "`0", ""
+    }
+}
+
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 
@@ -56,7 +62,9 @@ Add-Content -Path $coordinatorLog -Value (
 Push-Location $resolvedRepoRoot
 try {
     $pythonSnippet = "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
-    & $resolvedPythonExe -c $pythonSnippet 2>&1 | Tee-Object -FilePath $coordinatorLog -Append
+    & $resolvedPythonExe -c $pythonSnippet 2>&1 |
+        Remove-LogNullCharacters |
+        Tee-Object -FilePath $coordinatorLog -Append
     $exitCode = $LASTEXITCODE
 }
 finally {

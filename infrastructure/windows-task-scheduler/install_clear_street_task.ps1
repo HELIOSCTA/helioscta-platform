@@ -9,6 +9,8 @@ param(
     [string]$PythonExe = $(if ($env:HELIOS_CLEAR_STREET_PYTHON_EXE) { $env:HELIOS_CLEAR_STREET_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA Clear Street EOD Transactions",
     [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
+    [string]$ManualTaskName = "HeliosCTA Clear Street EOD Transactions (Manual Visible)",
+    [string]$ManualTaskPath = "\HeliosCTA\Manual\Positions And Trades\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
     [int]$RunHour = 19,
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
@@ -275,6 +277,8 @@ Ensure-TaskFolder -FolderPath $TaskPath
 
 $actionArguments = @(
     "-NoProfile",
+    "-WindowStyle",
+    "Hidden",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
@@ -294,6 +298,29 @@ $actionArguments = @(
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument $actionArguments `
+    -WorkingDirectory $resolvedRepoRoot
+
+$manualActionArguments = @(
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    (Quote-TaskArgument $runScript),
+    "-RepoRoot",
+    (Quote-TaskArgument $resolvedRepoRoot),
+    "-PythonExe",
+    (Quote-TaskArgument $resolvedPythonExe),
+    "-LogDir",
+    (Quote-TaskArgument $LogDir),
+    "-StateDir",
+    (Quote-TaskArgument $StateDir),
+    "-PollWaitSeconds",
+    [string]$PollWaitSeconds
+) -join " "
+
+$manualAction = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument $manualActionArguments `
     -WorkingDirectory $resolvedRepoRoot
 
 $trigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($RunHour))
@@ -323,9 +350,25 @@ Register-ScheduledTask `
     -Force `
     -ErrorAction Stop | Out-Null
 
+Ensure-TaskFolder -FolderPath $ManualTaskPath
+
+$manualTask = New-ScheduledTask `
+    -Action $manualAction `
+    -Settings $settings `
+    -Principal $principal `
+    -Description "Runs the Clear Street EOD transaction poll visibly on demand."
+
+Register-ScheduledTask `
+    -TaskName $ManualTaskName `
+    -TaskPath $ManualTaskPath `
+    -InputObject $manualTask `
+    -Force `
+    -ErrorAction Stop | Out-Null
+
 Get-ScheduledTask `
     -TaskName $TaskName `
     -TaskPath $TaskPath `
     -ErrorAction Stop | Format-List TaskName,TaskPath,State
 Write-Host "Installed or updated Task Scheduler job: $TaskPath$TaskName"
+Write-Host "Installed or updated visible manual task: $ManualTaskPath$ManualTaskName"
 Write-Host "Coordinator log: $(Join-Path $LogDir 'clear-street-task-scheduler.log')"
