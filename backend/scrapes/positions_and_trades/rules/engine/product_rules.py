@@ -136,6 +136,7 @@ SHORT_TERM_POWER_RT_CODES = {"PDP", "PWA", "DDP"}
 CME_GAS_FUTURE_CODES = {"HP", "PHH", "HH", "H", "NG"}
 CME_GAS_OPTION_CODES = {"LN", "PHE"}
 CME_WEEKLY_OPTION_CODES = {"LN1", "LN2", "LN3", "LN4", "LN5"}
+CME_DAILY_OPTION_CODES = {"JN1", "KN2", "KN3", "KN4"}
 CME_CAL_SPREAD_CODES = {"G3", "G4"}
 
 
@@ -576,11 +577,14 @@ def _build_cme_excel_symbol(
     if exchange_code in CME_GAS_OPTION_CODES:
         return f"1|G|XNYM:O:LN:{contract_yyyymm}:{put_call}:{strike}"
 
-    if exchange_code in CME_WEEKLY_OPTION_CODES or exchange_code == "KN4":
+    if exchange_code in CME_WEEKLY_OPTION_CODES:
         return (
             f"1|G|XNYM:O:KN{exchange_code[2:]}:"
             f"{contract_yyyymm}:{put_call}:{strike}"
         )
+
+    if exchange_code in CME_DAILY_OPTION_CODES:
+        return f"1|G|XNYM:O:{exchange_code}:{contract_yyyymm}:{put_call}:{strike}"
 
     if exchange_code in CME_CAL_SPREAD_CODES:
         return "CAL_SPREAD_CME_EXCEL_CODE"
@@ -656,7 +660,12 @@ def _build_trade_bloomberg_symbol(
             f"{exchange_code[2:]} {strike} COMB"
         )
 
-    if exchange_code == "KN4" and futures_month_code_yy and put_call and strike:
+    if (
+        exchange_code in CME_DAILY_OPTION_CODES
+        and futures_month_code_yy
+        and put_call
+        and strike
+    ):
         return (
             f"{bbg_exchange_code}{futures_month_code_yy}{put_call}"
             f"{exchange_code[2:]} {strike} Comdty"

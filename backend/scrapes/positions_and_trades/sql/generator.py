@@ -287,14 +287,18 @@ trades_with_export_codes as (
                 and strike_price_normalized is not null
             then '1|G|XNYM:O:LN:' || contract_yyyymm || ':' || put_call_code || ':' || strike_text
             when
-                (
-                    product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
-                    or product_code = 'KN4'
-                )
+                product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
                 and contract_yyyymm is not null
                 and put_call_code is not null
                 and strike_price_normalized is not null
             then '1|G|XNYM:O:KN' || substring(product_code from 3) || ':'
+                || contract_yyyymm || ':' || put_call_code || ':' || strike_text
+            when
+                product_code in ('JN1', 'KN2', 'KN3', 'KN4')
+                and contract_yyyymm is not null
+                and put_call_code is not null
+                and strike_price_normalized is not null
+            then '1|G|XNYM:O:' || product_code || ':'
                 || contract_yyyymm || ':' || put_call_code || ':' || strike_text
             when product_code in ('G3', 'G4')
             then 'CAL_SPREAD_CME_EXCEL_CODE'
@@ -322,7 +326,7 @@ trades_with_export_codes as (
             then bbg_exchange_code || futures_month_code_yy || put_call_code
                 || substring(product_code from 3) || ' ' || strike_text || ' COMB'
             when
-                product_code = 'KN4'
+                product_code in ('JN1', 'KN2', 'KN3', 'KN4')
                 and futures_month_code_yy is not null
                 and put_call_code is not null
                 and strike_text is not null
@@ -1587,10 +1591,22 @@ normalized_base as (
             upper(regexp_replace(coalesce(p.rule_product, ''), '[[:space:]]+', ' ', 'g')),
             ''
         ) as rule_product_norm,
-        upper(
-            coalesce(
-                nullif(trim(p.futures_code), ''),
-                nullif(trim(p.exch_comm_cd), '')
+        coalesce(
+            (
+                select pc.product_code
+                from product_catalog as pc
+                where pc.product_code = upper(nullif(trim(p.futures_code), ''))
+            ),
+            (
+                select pc.product_code
+                from product_catalog as pc
+                where pc.product_code = upper(nullif(trim(p.exch_comm_cd), ''))
+            ),
+            upper(
+                coalesce(
+                    nullif(trim(p.futures_code), ''),
+                    nullif(trim(p.exch_comm_cd), '')
+                )
             )
         ) as rule_exchange_code,
         case

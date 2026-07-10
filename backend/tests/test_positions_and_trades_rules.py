@@ -259,6 +259,48 @@ def test_clear_street_aliases_match_source_descriptions_for_options():
     assert option_alias is not None
     assert option_alias.exchange_code == "P1X"
 
+    p1x_variant = find_product_alias(
+        "clear_street",
+        "P1X-OPTION ON PJM WH REAL-TIME PEAK CAL 1X FIXED PRICE FUTURE",
+        is_option=True,
+    )
+
+    assert p1x_variant is not None
+    assert p1x_variant.exchange_code == "P1X"
+
+    wed_weekly = find_product_alias(
+        "clear_street",
+        "NATURAL GAS WED WEEKLY FIN OPT",
+        is_option=True,
+    )
+
+    assert wed_weekly is not None
+    assert wed_weekly.exchange_code == "JN1"
+
+
+@pytest.mark.parametrize("exchange_code", ["JN1", "KN2", "KN3", "KN4"])
+def test_clear_street_daily_gas_options_resolve_from_exchange_code(exchange_code):
+    result = normalize_position_product(
+        {
+            "source": "clear_street",
+            "product": "NATURAL GAS THU WEEKLY FIN OPT",
+            "exchangeCode": exchange_code,
+            "exchangeName": "NYM",
+            "type": "OPTION",
+            "contractYyyymm": "202607",
+            "callPut": "C",
+            "strikePrice": 3.2,
+        }
+    )
+
+    assert result.exchange_code == exchange_code
+    assert result.rule_group == "Gas"
+    assert result.rule_region == "Henry Hub"
+    assert result.product_code_underlying == "NG"
+    assert result.cme_excel_symbol == (
+        f"1|G|XNYM:O:{exchange_code}:202607:C:3.2"
+    )
+
 
 def test_clear_street_algonquin_alias_handles_source_futures_code():
     result = normalize_position_product(
@@ -355,7 +397,11 @@ def test_generated_clear_street_mufg_sql_contains_legacy_extract_shape():
     assert "cme_product_code" in sql
     assert "bbg_product_code" in sql
     assert "then 'prefix'" in sql
+    assert "where pc.product_code = upper(nullif(trim(p.futures_code), ''))" in sql
+    assert "where pc.product_code = upper(nullif(trim(p.exch_comm_cd), ''))" in sql
+    assert "'JN1', 'KN2', 'KN3', 'KN4'" in sql
     assert "'PMI-OPTION ON PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE'" in sql
+    assert "'P1X-OPTION ON PJM WH REAL-TIME PEAK CAL 1X FIXED PRICE FUTURE'" in sql
     assert "'PMI-PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE'" not in sql
     assert "'unresolved_product'" in sql
     assert "'missing_contract_yyyymm'" in sql

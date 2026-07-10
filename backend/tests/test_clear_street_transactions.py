@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from backend.backfills.clear_street import eod_transactions_from_cache as backfill
 from backend.orchestration.clear_street import transactions as orchestration
 from backend.scrapes.clear_street import transactions
 
@@ -815,3 +816,91 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
     assert len(slack_calls) == 1
     assert slack_calls[0]["database"] == "stage_db"
     assert slack_calls[0]["notification_key"] == "clear-street:slack:release"
+
+
+def test_cache_backfill_dry_run_parses_matching_files_without_upsert(
+    monkeypatch,
+    tmp_path,
+):
+    first = tmp_path / "Helios_Transactions_20260106.20260107_021837.csv"
+    second = tmp_path / "Helios_Transactions_20260107.20260108_023356.csv"
+    ignored = tmp_path / "ignore.csv"
+    _write_csv(first, [_sample_row()])
+    _write_csv(second, [_sample_row()])
+    ignored.write_text("RECORD_ID\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        backfill.source,
+        "_upsert_transactions",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("dry_run should not upsert")
+        ),
+    )
+    monkeypatch.setattr(
+        backfill,
+        "log_api_fetch",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("dry_run should not write telemetry")
+        ),
+    )
+
+    result = backfill.main(
+        local_dir=tmp_path,
+        start_trade_date="2026-01-07",
+        end_trade_date="2026-01-07",
+        dry_run=True,
+        database="stage_db",
+    )
+
+    assert result.status == "dry_run"
+    assert result.files_processed == 1
+    assert result.rows_processed == 1
+    assert result.rows_written == 0
+    assert result.min_trade_date_from_sftp == "20260107"
+    assert result.max_trade_date_from_sftp == "20260107"
+    assert result.first_file == second.name
+    assert result.last_file == second.name
+
+
+def test_cache_backfill_upserts_batches_and_logs_telemetry(monkeypatch, tmp_path):
+    first = tmp_path / "Helios_Transactions_20260106.20260107_021837.csv"
+    second = tmp_path / "Helios_Transactions_20260107.20260108_023356.csv"
+    _write_csv(first, [_sample_row()])
+    _write_csv(second, [_sample_row()])
+    upsert_calls: list[dict[str, object]] = []
+    telemetry: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        backfill.source,
+        "_upsert_transactions",
+        lambda **kwargs: upsert_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        backfill,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    result = backfill.main(
+        local_dir=tmp_path,
+        batch_size=1,
+        database="stage_db",
+    )
+
+    assert result.status == "success"
+    assert result.files_processed == 2
+    assert result.rows_processed == 2
+    assert result.rows_written == 2
+    assert [call["database"] for call in upsert_calls] == ["stage_db", "stage_db"]
+    assert [len(call["df"]) for call in upsert_calls] == [1, 1]
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == (
+        "clear_street_eod_transactions_local_cache_backfill"
+    )
+    assert telemetry[0]["method"] == "LOCAL_FILE"
+    assert telemetry[0]["rows_returned"] == 2
+    assert telemetry[0]["rows_written"] == 2
+    assert telemetry[0]["database"] == "stage_db"
+    assert telemetry[0]["metadata"]["files_processed"] == 2
+    assert telemetry[0]["metadata"]["first_file"] == first.name
+    assert telemetry[0]["metadata"]["last_file"] == second.name

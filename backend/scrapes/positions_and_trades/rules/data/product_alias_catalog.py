@@ -70,6 +70,11 @@ GAS_ALIASES = (
         "PHE",
         option_type="option",
     ),
+    clear_street(
+        "NATURAL GAS WED WEEKLY FIN OPT",
+        "JN1",
+        option_type="option",
+    ),
     nav("NYM EUR NATURAL GAS", "LN", option_type="option"),
     nav("NATURAL GAS CLEARPORT", "LN", option_type="option"),
     nav("NATURAL GAS FINANCIAL WEEK 1", "LN1", option_type="option"),
@@ -95,6 +100,11 @@ POWER_ALIASES = (
     nav("ICE PJM WHRT PEAK OPT_4096", "P1X", option_type="option"),
     clear_street(
         "PMI-OPTION ON PJM WESTERN HUB REAL-TIME PEAK MINI FIXED PRICE FUTURE",
+        "P1X",
+        option_type="option",
+    ),
+    clear_street(
+        "P1X-OPTION ON PJM WH REAL-TIME PEAK CAL 1X FIXED PRICE FUTURE",
         "P1X",
         option_type="option",
     ),
