@@ -81,6 +81,9 @@ boundary, or log path changes.
 - Last manual verification: `2026-06-12 20:31:09 UTC`; emitted
   `pjm_da_hrl_lmps:data_ready:2026-06-13:hub`.
 - First scheduled run observed: `2026-06-13 16:00:00 UTC`.
+- Email deployment update: VM fast-forwarded to commit `e46a1d0` on
+  `2026-07-10`; scheduled PJM DA readiness now queues inline DA LMP release
+  emails through `ops.email_notification_outbox`.
 
 Verification SQL for API telemetry:
 
@@ -135,10 +138,9 @@ LIMIT 10;
 
 ## helios-email-notification-outbox
 
-- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; disabled on
-  `2026-07-01` while production email release delivery remains opt-in.
-  Microsoft Graph credentials were configured, and a manual smoke email was
-  sent before disabling the sender.
+- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; re-enabled on
+  `2026-07-10` for DA LMP release emails after Microsoft Graph credentials,
+  sender, and recipients were verified as configured.
 - Workflow: durable email notification retry sender.
 - Runtime module: `backend.orchestration.notifications.email_outbox`.
 - Destination table: updates `ops.email_notification_outbox`.
@@ -150,9 +152,12 @@ LIMIT 10;
 - Recipient scope: defaults to `aidan.keaveny@helioscta.com`; production should
   keep `HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com` until the recipient
   list is explicitly expanded.
-- Send status: disabled in `/etc/helioscta/backend.env` with
-  `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false`; the timer should remain disabled
-  unless email workflows are explicitly re-enabled.
+- Send status: enabled in `/etc/helioscta/backend.env` with
+  `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true`; the
+  `helios-email-notification-outbox.timer` is enabled and active.
+- Re-enable verification: `helios-email-notification-outbox.service` exited
+  `status=0/SUCCESS` at `2026-07-10 17:25 UTC`; the outbox had no pending
+  backlog before the first enabled timer tick.
 - Smoke verification: `manual_email_smoke:20260630T202529Z` was marked `sent`
   at `2026-06-30 20:23:06 UTC` on attempt `1`.
 - Duplicate suppression: unique outbox key on `(notification_key,
@@ -384,6 +389,9 @@ Operational notes:
   and observed existing readiness event
   `ercot_dam_stlmnt_pnt_prices:data_ready:2026-06-13:hub`.
 - Next scheduled run observed: `2026-06-14 16:15:08 UTC`.
+- Email deployment update: VM fast-forwarded to commit `e46a1d0` on
+  `2026-07-10`; scheduled ERCOT DAM readiness now queues inline DA LMP release
+  emails through `ops.email_notification_outbox`.
 
 Verification SQL for data-availability events:
 
@@ -457,6 +465,9 @@ LIMIT 10;
   and observed existing readiness event
   `isone_da_hrl_lmps:data_ready:2026-06-13:all_locations`.
 - Next scheduled run observed: `2026-06-14 17:10:45 UTC`.
+- Email deployment update: VM fast-forwarded to commit `e46a1d0` on
+  `2026-07-10`; scheduled NEPOOL DA readiness now queues inline DA LMP release
+  emails through `ops.email_notification_outbox`.
 
 Verification SQL for data-availability events:
 
