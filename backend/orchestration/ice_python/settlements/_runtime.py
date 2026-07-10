@@ -174,6 +174,17 @@ def _metadata_from_summary(
         if key in summary:
             metadata[key] = summary[key]
 
+    contract_dates_required = summary.get("contract_dates_required")
+    if isinstance(contract_dates_required, bool):
+        metadata["contract_dates_required"] = contract_dates_required
+
+    for step_name in ("contract_dates", "settlements"):
+        step_summary = summary.get(step_name)
+        if isinstance(step_summary, dict):
+            rows_processed = step_summary.get("rows_processed")
+            if isinstance(rows_processed, int):
+                metadata[f"{step_name}_rows_processed"] = rows_processed
+
     symbols_requested = _symbols_requested(summary)
     if symbols_requested is not None:
         metadata["symbols_requested"] = symbols_requested

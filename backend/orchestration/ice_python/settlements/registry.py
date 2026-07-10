@@ -103,6 +103,7 @@ def run_registry_settlements(
     pull_contract_dates_enabled: bool = True,
     pull_settlements_enabled: bool = True,
     require_rows: bool = True,
+    require_contract_date_rows: bool = True,
     max_missing_symbol_ratio: float | None = DEFAULT_MAX_MISSING_SYMBOL_RATIO,
     max_retries: int = 3,
     log_file_path: str | Path | None = None,
@@ -135,7 +136,7 @@ def run_registry_settlements(
     logger.info(
         "Starting %s: registry=%s start_date=%s end_date=%s lookback_days=%s "
         "contract_dates=%s settlements=%s require_rows=%s "
-        "max_missing_symbol_ratio=%s max_retries=%s",
+        "require_contract_date_rows=%s max_missing_symbol_ratio=%s max_retries=%s",
         pipeline_name,
         registry_label,
         resolved_start_date.isoformat(),
@@ -144,6 +145,7 @@ def run_registry_settlements(
         pull_contract_dates_enabled,
         pull_settlements_enabled,
         require_rows,
+        require_contract_date_rows,
         max_missing_symbol_ratio,
         max_retries,
     )
@@ -169,17 +171,26 @@ def run_registry_settlements(
             database=database,
         )
         _log_step_summary("contract_dates", contract_dates_summary)
+        contract_dates_required = require_rows and require_contract_date_rows
         _validate_rows(
             summary=contract_dates_summary,
             step_name="contract_dates",
-            require_rows=require_rows,
+            require_rows=contract_dates_required,
         )
         _validate_symbol_coverage(
             summary=contract_dates_summary,
             step_name="contract_dates",
-            require_rows=require_rows,
+            require_rows=contract_dates_required,
             max_missing_symbol_ratio=max_missing_symbol_ratio,
         )
+        if (
+            not contract_dates_required
+            and int(contract_dates_summary.get("rows_processed", 0)) <= 0
+        ):
+            logger.warning(
+                "contract_dates returned zero rows but this registry treats the "
+                "contract-date refresh as non-fatal; continuing to settlement pull."
+            )
 
     settlements_summary: dict[str, object] = {
         "skipped": True,
@@ -219,5 +230,6 @@ def run_registry_settlements(
         "fields": selected_fields,
         "contract_dates": contract_dates_summary,
         "settlements": settlements_summary,
+        "contract_dates_required": require_rows and require_contract_date_rows,
         "rows_processed": rows_processed,
     }

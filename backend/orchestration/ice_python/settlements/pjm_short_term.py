@@ -51,6 +51,7 @@ def run(
             end_date=end_date,
             lookback_days=lookback_days,
             require_rows=require_rows,
+            require_contract_date_rows=False,
             log_file_path=log_file_path,
             database=database,
         )
