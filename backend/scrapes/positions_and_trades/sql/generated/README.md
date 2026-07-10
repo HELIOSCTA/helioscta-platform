@@ -17,10 +17,11 @@ Generated artifacts:
   returns the CSV-shaped extract columns.
 - `clear_street_trades/mufg/all_history.sql` uses the same extract shape and
   MUFG firm filter as `latest.sql`, but returns all loaded SFTP trade dates.
-- `nav_positions/` contains read-only NAV grouped marts, checks, and drilldowns
-  over raw `nav.positions`. These SQL files derive product code, product
-  family, market, contract, option, strike, and rule-status fields at query
-  time instead of persisting them to the NAV source table.
+- `nav_positions/latest.sql` reads raw `nav.positions`, applies the NAV product
+  rules inline, keeps each fund's latest available NAV date and latest SFTP
+  upload, and returns raw NAV columns followed by generated rule fields.
+- `nav_positions/all_history.sql` uses the same row-level extract shape as
+  `latest.sql`, but includes every loaded NAV row.
 
 The Clear Street file is also the packaged runtime input for the Clear Street
 to MUFG upload workflow. All files remain read-only: they do not create,

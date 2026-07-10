@@ -4,11 +4,11 @@
 --
 -- Purpose: read-only NAV position query shaping and validation.
 -- How to read: CTEs are numbered in dependency order; the final SELECT keeps
--- one operator-friendly mart, check, or drilldown shape.
+-- one operator-friendly latest or all-history row-level extract shape.
 -- Debugging tip: replace the final SELECT with SELECT * FROM any named CTE to
 -- inspect that stage in a SQL editor.
 -- Persistence: this script does not create, update, insert, or delete rows.
--- File: nav_positions/drilldowns/raw_rows_for_group.sql
+-- File: nav_positions/all_history.sql
 
 with
 -- -----------------------------------------------------------------------------
@@ -50,6 +50,9 @@ product_catalog(
         ('LN3', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
         ('LN4', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
         ('LN5', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
+        ('JN1', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
+        ('KN2', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
+        ('KN3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
         ('KN4', 'Gas', 'Henry Hub', 'NG', 'HZI', 'NYME'),
         ('G3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
         ('G4', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
@@ -64,6 +67,7 @@ product_catalog(
         ('ODP', 'Power', 'PJM', null, null, 'IFED'),
         ('ERA', 'Power', 'ERCOT', null, null, 'IFED'),
         ('ERN', 'Power', 'ERCOT', null, null, 'IFED'),
+        ('END', 'Power', 'ERCOT', null, null, 'IFED'),
         ('ECI', 'Power', 'ERCOT', null, null, 'IFED'),
         ('NEZ', 'Power', 'NEPOOL', null, null, 'IFED'),
         ('NEP', 'Power', 'NEPOOL', null, null, 'IFED'),
@@ -122,28 +126,31 @@ product_aliases(
         (25, 'nav', 'exact', 'ICE PWA', 'PWA', null),
         (26, 'nav', 'exact', 'ICE PJMWHPKDAY', 'PDA', null),
         (27, 'nav', 'exact', 'ICE PJL', 'PJL', null),
-        (28, 'nav', 'regex', '^ICE (PJM MINI|MINIPJMRT|PJM WHREAL TYM PK MINI)([-_][0-9]+)?$', 'PMI', null),
-        (29, 'nav', 'exact', 'ICE PJM WHRT PEAK OPT_4096', 'P1X', 'option'),
-        (30, 'nav', 'regex', '^ICE PJM OFF PK[-_][0-9]+$', 'OPJ', null),
-        (31, 'nav', 'exact', 'ICE ERA', 'ERA', null),
-        (32, 'nav', 'exact', 'ERCOT N 345 KV RT PEAK DLY', 'ERN', null),
-        (33, 'nav', 'regex', '^ICE ERCOT NORTH 345KV 7X8[-_][0-9]+$', 'ECI', null),
-        (34, 'nav', 'regex', '^(ISO ENG MASS HUB D-PK-[0-9]+|ICE NEPOOL PK MNTH-[0-9]+)$', 'NEP', null),
-        (35, 'nav', 'regex', '^ICE SP 15 PEAK([_-][0-9]+)?$', 'SPM', null),
-        (36, 'nav', 'regex', '^ICE NP 15 PEAK([_-][0-9]+)?$', 'NPM', null),
-        (37, 'nav', 'regex', '^ICE MID-C PEAK([_-][0-9]+)?$', 'MDC', null),
-        (38, 'nav', 'exact', 'AB NIT BASIS FUTURE', 'AEC', null),
-        (39, 'nav', 'exact', 'ICE ALQCTYGTSW', 'ALQ', null),
-        (40, 'nav', 'exact', 'ICE CIG ROCKIES BASIS', 'CRI', null),
-        (41, 'nav', 'exact', 'ICE CHICAGO BASIS FUT', 'DGD', null),
-        (42, 'nav', 'exact', 'ICE EASTERN GAS SOUTH BASIS FU', 'DOM', null),
-        (43, 'nav', 'exact', 'ICE HSC BASIS', 'HXS', null),
-        (44, 'nav', 'exact', 'NGPL TXOK BASIS FUTURE', 'NTO', null),
-        (45, 'nav', 'exact', 'ICE NGAS NYM NWP RK', 'NWR', null),
-        (46, 'nav', 'exact', 'ICE NGAS NYM PG&E', 'PGE', null),
-        (47, 'nav', 'exact', 'ICE TETCO SWP', 'TMT', null),
-        (48, 'nav', 'exact', 'ICE TRANSCO STATION 85 ZONE 4', 'TRZ', null),
-        (49, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null)
+        (28, 'nav', 'exact', 'ICE PDA', 'PDA', null),
+        (29, 'nav', 'exact', 'ICE PJL DAILY', 'PJL', null),
+        (30, 'nav', 'regex', '^ICE (PJM MINI|MINIPJMRT|PJM WHREAL TYM PK MINI)([-_][0-9]+)?$', 'PMI', null),
+        (31, 'nav', 'exact', 'ICE PJM WHRT PEAK OPT_4096', 'P1X', 'option'),
+        (32, 'nav', 'regex', '^ICE PJM OFF PK[-_][0-9]+$', 'OPJ', null),
+        (33, 'nav', 'exact', 'ICE ERA', 'ERA', null),
+        (34, 'nav', 'exact', 'ERCOT N 345 KV RT PEAK DLY', 'ERN', null),
+        (35, 'nav', 'exact', 'ICE END', 'END', null),
+        (36, 'nav', 'regex', '^ICE ERCOT NORTH 345KV 7X8[-_][0-9]+$', 'ECI', null),
+        (37, 'nav', 'regex', '^(ISO ENG MASS HUB D-PK-[0-9]+|ICE NEPOOL PK MNTH-[0-9]+)$', 'NEP', null),
+        (38, 'nav', 'regex', '^ICE SP 15 PEAK([_-][0-9]+)?$', 'SPM', null),
+        (39, 'nav', 'regex', '^ICE NP 15 PEAK([_-][0-9]+)?$', 'NPM', null),
+        (40, 'nav', 'regex', '^ICE MID-C PEAK([_-][0-9]+)?$', 'MDC', null),
+        (41, 'nav', 'exact', 'AB NIT BASIS FUTURE', 'AEC', null),
+        (42, 'nav', 'exact', 'ICE ALQCTYGTSW', 'ALQ', null),
+        (43, 'nav', 'exact', 'ICE CIG ROCKIES BASIS', 'CRI', null),
+        (44, 'nav', 'exact', 'ICE CHICAGO BASIS FUT', 'DGD', null),
+        (45, 'nav', 'exact', 'ICE EASTERN GAS SOUTH BASIS FU', 'DOM', null),
+        (46, 'nav', 'exact', 'ICE HSC BASIS', 'HXS', null),
+        (47, 'nav', 'exact', 'NGPL TXOK BASIS FUTURE', 'NTO', null),
+        (48, 'nav', 'exact', 'ICE NGAS NYM NWP RK', 'NWR', null),
+        (49, 'nav', 'exact', 'ICE NGAS NYM PG&E', 'PGE', null),
+        (50, 'nav', 'exact', 'ICE TETCO SWP', 'TMT', null),
+        (51, 'nav', 'exact', 'ICE TRANSCO STATION 85 ZONE 4', 'TRZ', null),
+        (52, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null)
 ),
 -- -----------------------------------------------------------------------------
 -- CTE 04 - source_positions
@@ -156,72 +163,44 @@ source_positions as (
       and (params.requested_nav_date is null or p.nav_date = params.requested_nav_date)
 ),
 -- -----------------------------------------------------------------------------
--- CTE 05 - latest_nav_by_fund
--- Selects the requested NAV date or each fund's latest available date.
-latest_nav_by_fund as (
-    select
-        source_positions.fund_code,
-        coalesce((select requested_nav_date from params), max(source_positions.nav_date)) as nav_date
-    from source_positions
-    group by source_positions.fund_code
-),
--- -----------------------------------------------------------------------------
--- CTE 06 - latest_upload_by_fund
--- Keeps the latest SFTP upload for the selected NAV date per fund.
-latest_upload_by_fund as (
-    select
-        source_positions.fund_code,
-        source_positions.nav_date,
-        max(source_positions.sftp_upload_timestamp) as sftp_upload_timestamp
-    from source_positions
-    inner join latest_nav_by_fund latest
-        on latest.fund_code = source_positions.fund_code
-       and latest.nav_date = source_positions.nav_date
-    group by source_positions.fund_code, source_positions.nav_date
-),
--- -----------------------------------------------------------------------------
--- CTE 07 - latest_positions
--- Limits source rows to the selected latest fund uploads.
-latest_positions as (
+-- CTE 05 - selected_positions
+-- Keeps every source NAV row after optional params filters.
+selected_positions as (
     select source_positions.*
     from source_positions
-    inner join latest_upload_by_fund latest
-        on latest.fund_code = source_positions.fund_code
-       and latest.nav_date = source_positions.nav_date
-       and latest.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
 ),
 -- -----------------------------------------------------------------------------
--- CTE 08 - normalized_positions
+-- CTE 06 - normalized_positions
 -- Normalizes product text, option side, contract month, and daily contract fields.
 normalized_positions as (
     select
-        latest_positions.*,
-        upper(regexp_replace(coalesce(latest_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
+        selected_positions.*,
+        upper(regexp_replace(coalesce(selected_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
         (
-            upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
-            or upper(coalesce(latest_positions.type, '')) like '%OPTION%'
+            upper(coalesce(selected_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
+            or upper(coalesce(selected_positions.type, '')) like '%OPTION%'
         ) as is_option,
         case
-            when upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'C') then 'C'
-            when upper(coalesce(latest_positions.call_put, '')) in ('PUT', 'P') then 'P'
+            when upper(coalesce(selected_positions.call_put, '')) in ('CALL', 'C') then 'C'
+            when upper(coalesce(selected_positions.call_put, '')) in ('PUT', 'P') then 'P'
             else null
         end as put_call,
         case
-            when latest_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
-            then to_char(to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
-            when upper(trim(coalesce(latest_positions.month_year, ''))) ~ '^[A-Z]{3}\d{2}$'
-            then to_char(to_date(upper(trim(latest_positions.month_year)), 'MONYY'), 'YYYYMM')
+            when selected_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
+            then to_char(to_date(trim(selected_positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
+            when upper(trim(coalesce(selected_positions.month_year, ''))) ~ '^[A-Z]{3}\d{2}$'
+            then to_char(to_date(upper(trim(selected_positions.month_year)), 'MONYY'), 'YYYYMM')
             else null
         end as contract_yyyymm,
         case
-            when latest_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
-            then extract(day from to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'))::integer
+            when selected_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
+            then extract(day from to_date(trim(selected_positions.month_year), 'MM/DD/YYYY'))::integer
             else null
         end as contract_day
-    from latest_positions
+    from selected_positions
 ),
 -- -----------------------------------------------------------------------------
--- CTE 09 - rule_matches
+-- CTE 07 - rule_matches
 -- Finds the first source-specific product alias for each NAV row.
 rule_matches as (
     select
@@ -253,7 +232,7 @@ rule_matches as (
     ) matched_alias on true
 ),
 -- -----------------------------------------------------------------------------
--- CTE 10 - positions_with_rules
+-- CTE 08 - positions_with_rules
 -- Adds derived product, contract, option, and rule-status fields.
 positions_with_rules as (
     select
@@ -328,7 +307,7 @@ positions_with_rules as (
         on catalog.product_code = rule_matches.matched_product_code
 ),
 -- -----------------------------------------------------------------------------
--- CTE 11 - filtered_positions
+-- CTE 09 - filtered_positions
 -- Applies optional product, market, account, status, and search filters.
 filtered_positions as (
     select positions_with_rules.*
@@ -353,10 +332,11 @@ filtered_positions as (
         )
 ),
 -- -----------------------------------------------------------------------------
--- Final select - NAV raw rows for group
--- Keeps raw rows with derived product fields for drilldown review.
+-- CTE 10 - final
+-- Keeps the raw NAV columns first, then appends generated rule fields for every loaded NAV row.
 final as (
     select
+        -- Raw NAV position columns, kept first and in source-table order.
         fund_code,
         source_legal_entity,
         source_file_name,
@@ -382,17 +362,32 @@ final as (
         ccy2_quantity_2,
         trade_price,
         multiplier_and_tick_value,
+        cost_in_native_currency,
+        open_exchange_rate,
         cost_in_base_currency,
         market_settlement_price,
+        market_value_in_native_currency,
+        close_exchange_rate,
         market_value_in_base_currency,
+        sector,
+        sub_sector,
+        country,
         exchange_name,
         source_1_symbol,
         source_3_symbol,
+        one_chicago_symbol,
+        fas_level,
         option_style,
+        created_at,
+        updated_at,
+
+        -- Generated NAV rule fields.
         product_code,
         product_family,
         market_name,
         underlying_product_code,
+        bbg_exchange_code,
+        default_exchange_name,
         contract_yyyymm,
         contract_day,
         put_call,
@@ -402,5 +397,14 @@ final as (
         rule_match_type,
         rule_pattern
     from filtered_positions
+    order by
+        nav_date desc,
+        sftp_upload_timestamp desc,
+        fund_code,
+        account_group,
+        account,
+        product_code,
+        contract_yyyymm,
+        contract_day
 )
 select * from final;

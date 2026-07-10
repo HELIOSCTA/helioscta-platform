@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
+from backend.backfills.nav import positions_from_legacy_cache as legacy_backfill
 from backend.orchestration.nav import positions as orchestration
 from backend.scrapes.nav import positions
 
@@ -219,6 +220,120 @@ def test_run_nav_positions_downloads_parses_and_upserts(monkeypatch, tmp_path):
 def test_backfill_position_normalization_is_disabled():
     with pytest.raises(RuntimeError, match="raw-only"):
         positions.backfill_position_normalization(database="stage_db")
+
+
+def test_legacy_cache_backfill_dry_run_parses_without_copy_or_upsert(
+    monkeypatch,
+    tmp_path,
+):
+    source_root = tmp_path / "legacy"
+    source_file = (
+        source_root
+        / "pnt"
+        / "Position Valuation Detail Report_20260205_PNT Trading, LLC.20260206_054037.xlsx"
+    )
+    source_file.parent.mkdir(parents=True)
+    _write_nav_workbook(source_file)
+    local_root = tmp_path / "downloads"
+
+    monkeypatch.setattr(
+        legacy_backfill.source,
+        "_upsert_positions",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("dry_run should not upsert")
+        ),
+    )
+    monkeypatch.setattr(
+        legacy_backfill,
+        "log_api_fetch",
+        lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("dry_run should not write telemetry")
+        ),
+    )
+
+    result = legacy_backfill.main(
+        source_dir=source_root,
+        local_dir=local_root,
+        fund_codes=("pnt",),
+        dry_run=True,
+        database="stage_db",
+    )
+
+    assert result.status == "dry_run"
+    assert result.files_discovered == 1
+    assert result.files_copied == 0
+    assert result.files_processed == 1
+    assert result.rows_processed == 1
+    assert result.rows_written == 0
+    assert result.min_nav_date == "2026-02-05"
+    assert result.max_nav_date == "2026-02-05"
+    assert not (local_root / "pnt" / source_file.name).exists()
+    assert source_file.exists()
+
+
+def test_legacy_cache_backfill_copies_batches_upserts_and_logs(
+    monkeypatch,
+    tmp_path,
+):
+    source_root = tmp_path / "legacy"
+    first = (
+        source_root
+        / "pnt"
+        / "Position Valuation Detail Report_20260205_PNT Trading, LLC.20260206_054037.xlsx"
+    )
+    second = (
+        source_root
+        / "pnt"
+        / "Position Valuation Detail Report_20260206_PNT Trading, LLC.20260209_054037.xlsx"
+    )
+    first.parent.mkdir(parents=True)
+    _write_nav_workbook(first)
+    _write_nav_workbook(second)
+    local_root = tmp_path / "downloads"
+    upsert_calls: list[dict[str, object]] = []
+    telemetry: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        legacy_backfill.source,
+        "_upsert_positions",
+        lambda **kwargs: upsert_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        legacy_backfill,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    result = legacy_backfill.main(
+        source_dir=source_root,
+        local_dir=local_root,
+        fund_codes=("pnt",),
+        batch_size=1,
+        database="stage_db",
+    )
+
+    assert result.status == "success"
+    assert result.files_discovered == 2
+    assert result.files_copied == 2
+    assert result.files_skipped_existing == 0
+    assert result.files_processed == 2
+    assert result.rows_processed == 2
+    assert result.rows_written == 2
+    assert first.exists()
+    assert second.exists()
+    assert (local_root / "pnt" / first.name).exists()
+    assert (local_root / "pnt" / second.name).exists()
+    assert [call["database"] for call in upsert_calls] == ["stage_db", "stage_db"]
+    assert [len(call["df"]) for call in upsert_calls] == [1, 1]
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == "nav_positions_legacy_cache_backfill"
+    assert telemetry[0]["provider"] == "nav_sftp"
+    assert telemetry[0]["method"] == "LOCAL_FILE"
+    assert telemetry[0]["rows_returned"] == 2
+    assert telemetry[0]["rows_written"] == 2
+    assert telemetry[0]["database"] == "stage_db"
+    assert telemetry[0]["metadata"]["files_copied"] == 2
+    assert telemetry[0]["metadata"]["fund_codes"] == ["pnt"]
 
 
 def test_resolve_local_root_defaults_to_nav_downloads(monkeypatch):

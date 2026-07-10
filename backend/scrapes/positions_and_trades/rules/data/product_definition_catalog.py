@@ -78,6 +78,7 @@ POWER_PRODUCTS = (
     product("ODP", "Power", "PJM", exchange="IFED"),
     product("ERA", "Power", "ERCOT", exchange="IFED"),
     product("ERN", "Power", "ERCOT", exchange="IFED"),
+    product("END", "Power", "ERCOT", exchange="IFED"),
     product("ECI", "Power", "ERCOT", exchange="IFED"),
     product("NEZ", "Power", "NEPOOL", exchange="IFED"),
     product("NEP", "Power", "NEPOOL", exchange="IFED"),

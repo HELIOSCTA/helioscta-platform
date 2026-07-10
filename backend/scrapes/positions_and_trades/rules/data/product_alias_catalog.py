@@ -92,6 +92,8 @@ POWER_ALIASES = (
     nav("ICE PWA", "PWA"),
     nav("ICE PJMWHPKDAY", "PDA"),
     nav("ICE PJL", "PJL"),
+    nav("ICE PDA", "PDA"),
+    nav("ICE PJL DAILY", "PJL"),
     nav(
         "^ICE (PJM MINI|MINIPJMRT|PJM WHREAL TYM PK MINI)([-_][0-9]+)?$",
         "PMI",
@@ -111,6 +113,7 @@ POWER_ALIASES = (
     nav("^ICE PJM OFF PK[-_][0-9]+$", "OPJ", match_type="regex"),
     nav("ICE ERA", "ERA"),
     nav("ERCOT N 345 KV RT PEAK DLY", "ERN"),
+    nav("ICE END", "END"),
     nav("^ICE ERCOT NORTH 345KV 7X8[-_][0-9]+$", "ECI", match_type="regex"),
     nav(
         "^(ISO ENG MASS HUB D-PK-[0-9]+|ICE NEPOOL PK MNTH-[0-9]+)$",

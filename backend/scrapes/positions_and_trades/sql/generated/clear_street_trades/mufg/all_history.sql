@@ -62,6 +62,7 @@ product_catalog(
         ('ODP', 'Power', 'PJM', null, null, 'IFED'),
         ('ERA', 'Power', 'ERCOT', null, null, 'IFED'),
         ('ERN', 'Power', 'ERCOT', null, null, 'IFED'),
+        ('END', 'Power', 'ERCOT', null, null, 'IFED'),
         ('ECI', 'Power', 'ERCOT', null, null, 'IFED'),
         ('NEZ', 'Power', 'NEPOOL', null, null, 'IFED'),
         ('NEP', 'Power', 'NEPOOL', null, null, 'IFED'),

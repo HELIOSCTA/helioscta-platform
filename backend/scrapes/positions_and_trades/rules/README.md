@@ -1,9 +1,9 @@
 # Position And Trade Product Rules
 
-The `data/product_definition_catalog.py` and
-`data/product_alias_catalog.py` modules are the backend source for product
-lookup and normalization rules used by `backend.scrapes.positions_and_trades`.
-The `engine/` package contains the Python code that interprets those rule
+The `data/product_definition_catalog.py`, `data/product_alias_catalog.py`, and
+`data/account_catalog.py` modules are the backend source for product and
+account lookup rules used by `backend.scrapes.positions_and_trades`. The
+`engine/` package contains the Python code that interprets those rule
 catalogues.
 
 They do not create database objects and are not written back to source tables.
@@ -25,3 +25,8 @@ Clear Street futures whose security description starts with a canonical
 `source: "clear_street"` aliases for descriptions that cannot be inferred from
 the prefix, such as option descriptions whose source prefix differs from the
 canonical option product code.
+
+Account lookup rules are source-specific too. Keep supported production sources
+under `source: "nav"` and `source: "clear_street"`. Legacy Marex rows from old
+dbt lookup SQL should not be reintroduced unless a current Marex runtime path is
+promoted into this repo.

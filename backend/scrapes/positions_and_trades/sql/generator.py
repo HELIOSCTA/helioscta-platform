@@ -46,7 +46,7 @@ NAV_GENERATED_HEADER = """\
 --
 -- Purpose: read-only NAV position query shaping and validation.
 -- How to read: CTEs are numbered in dependency order; the final SELECT keeps
--- one operator-friendly mart, check, or drilldown shape.
+-- one operator-friendly latest or all-history row-level extract shape.
 -- Debugging tip: replace the final SELECT with SELECT * FROM any named CTE to
 -- inspect that stage in a SQL editor.
 -- Persistence: this script does not create, update, insert, or delete rows.
@@ -122,80 +122,28 @@ def build_clear_street_trades_mufg_all_history_sql(
     )
 
 
-def build_nav_positions_grouped_latest_sql(
+def build_nav_positions_latest_sql(
     source_table: str = DEFAULT_NAV_SOURCE_TABLE,
     alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
     rule_set: ProductRuleSet = DEFAULT_RULE_SET,
 ) -> str:
     """Return grouped latest NAV positions with product-rule fields."""
     return _with_header(
-        "nav_positions/marts/grouped_latest.sql",
-        _nav_grouped_latest_query(source_table, alias_source, rule_set),
+        "nav_positions/latest.sql",
+        _nav_positions_latest_query(source_table, alias_source, rule_set),
         NAV_GENERATED_HEADER,
     )
 
 
-def build_nav_positions_grouped_with_raw_examples_sql(
+def build_nav_positions_all_history_sql(
     source_table: str = DEFAULT_NAV_SOURCE_TABLE,
     alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
     rule_set: ProductRuleSet = DEFAULT_RULE_SET,
 ) -> str:
-    """Return grouped latest NAV positions with raw source examples."""
+    """Return grouped all-history NAV positions with product-rule fields."""
     return _with_header(
-        "nav_positions/marts/grouped_with_raw_examples.sql",
-        _nav_grouped_with_raw_examples_query(source_table, alias_source, rule_set),
-        NAV_GENERATED_HEADER,
-    )
-
-
-def build_nav_positions_account_breakout_sql(
-    source_table: str = DEFAULT_NAV_SOURCE_TABLE,
-    alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
-    rule_set: ProductRuleSet = DEFAULT_RULE_SET,
-) -> str:
-    """Return account-level NAV position breakout query SQL."""
-    return _with_header(
-        "nav_positions/marts/account_breakout.sql",
-        _nav_account_breakout_query(source_table, alias_source, rule_set),
-        NAV_GENERATED_HEADER,
-    )
-
-
-def build_nav_positions_rule_exceptions_sql(
-    source_table: str = DEFAULT_NAV_SOURCE_TABLE,
-    alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
-    rule_set: ProductRuleSet = DEFAULT_RULE_SET,
-) -> str:
-    """Return NAV position product-rule exception query SQL."""
-    return _with_header(
-        "nav_positions/checks/rule_exceptions.sql",
-        _nav_rule_exceptions_query(source_table, alias_source, rule_set),
-        NAV_GENERATED_HEADER,
-    )
-
-
-def build_nav_positions_grouped_vs_raw_totals_sql(
-    source_table: str = DEFAULT_NAV_SOURCE_TABLE,
-    alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
-    rule_set: ProductRuleSet = DEFAULT_RULE_SET,
-) -> str:
-    """Return NAV grouped-vs-raw total reconciliation SQL."""
-    return _with_header(
-        "nav_positions/checks/grouped_vs_raw_totals.sql",
-        _nav_grouped_vs_raw_totals_query(source_table, alias_source, rule_set),
-        NAV_GENERATED_HEADER,
-    )
-
-
-def build_nav_positions_raw_rows_for_group_sql(
-    source_table: str = DEFAULT_NAV_SOURCE_TABLE,
-    alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
-    rule_set: ProductRuleSet = DEFAULT_RULE_SET,
-) -> str:
-    """Return raw NAV position drilldown query SQL."""
-    return _with_header(
-        "nav_positions/drilldowns/raw_rows_for_group.sql",
-        _nav_raw_rows_for_group_query(source_table, alias_source, rule_set),
+        "nav_positions/all_history.sql",
+        _nav_positions_all_history_query(source_table, alias_source, rule_set),
         NAV_GENERATED_HEADER,
     )
 
@@ -508,53 +456,137 @@ select * from final;
     ).strip()
 
 
+def _nav_positions_latest_query(
+    source_table: str,
+    alias_source: str,
+    rule_set: ProductRuleSet,
+) -> str:
+    return _nav_positions_summary_query(
+        source_table,
+        alias_source,
+        rule_set,
+        latest_only=True,
+    )
+
+
+def _nav_positions_all_history_query(
+    source_table: str,
+    alias_source: str,
+    rule_set: ProductRuleSet,
+) -> str:
+    return _nav_positions_summary_query(
+        source_table,
+        alias_source,
+        rule_set,
+        latest_only=False,
+    )
+
+
+def _nav_positions_summary_query(
+    source_table: str,
+    alias_source: str,
+    rule_set: ProductRuleSet,
+    *,
+    latest_only: bool,
+) -> str:
+    final_cte_number = "CTE 12" if latest_only else "CTE 10"
+    description = (
+        "Keeps the raw NAV columns first, then appends generated rule fields "
+        "for the latest selected upload."
+        if latest_only
+        else "Keeps the raw NAV columns first, then appends generated rule "
+        "fields for every loaded NAV row."
+    )
+
+    return f"""{_nav_positions_with_rules_ctes(
+        source_table,
+        alias_source,
+        rule_set,
+        latest_only=latest_only,
+)},
+{_sql_comment(f"{final_cte_number} - final", description)}
+final as (
+    select
+        -- Raw NAV position columns, kept first and in source-table order.
+        fund_code,
+        source_legal_entity,
+        source_file_name,
+        source_file_row_number,
+        nav_date,
+        sftp_upload_timestamp,
+        broker_name,
+        account_group,
+        account,
+        trade_date,
+        product_id_internal,
+        product,
+        type,
+        month_year,
+        client_symbol,
+        strike_price,
+        call_put,
+        product_currency_1,
+        long_short,
+        quantity_1,
+        counter_currency_ccy2,
+        ccy2_long_short,
+        ccy2_quantity_2,
+        trade_price,
+        multiplier_and_tick_value,
+        cost_in_native_currency,
+        open_exchange_rate,
+        cost_in_base_currency,
+        market_settlement_price,
+        market_value_in_native_currency,
+        close_exchange_rate,
+        market_value_in_base_currency,
+        sector,
+        sub_sector,
+        country,
+        exchange_name,
+        source_1_symbol,
+        source_3_symbol,
+        one_chicago_symbol,
+        fas_level,
+        option_style,
+        created_at,
+        updated_at,
+
+        -- Generated NAV rule fields.
+        product_code,
+        product_family,
+        market_name,
+        underlying_product_code,
+        bbg_exchange_code,
+        default_exchange_name,
+        contract_yyyymm,
+        contract_day,
+        put_call,
+        strike_price_normalized,
+        rule_status,
+        rule_priority,
+        rule_match_type,
+        rule_pattern
+    from filtered_positions
+    order by
+        nav_date desc,
+        sftp_upload_timestamp desc,
+        fund_code,
+        account_group,
+        account,
+        product_code,
+        contract_yyyymm,
+        contract_day
+)
+select * from final;"""
+
+
 def _nav_grouped_latest_query(
     source_table: str,
     alias_source: str,
     rule_set: ProductRuleSet,
 ) -> str:
-    group_cols = _nav_group_by_grouping_columns()
-    return f"""{_nav_positions_with_rules_ctes(source_table, alias_source, rule_set)},
-{_sql_comment(
-    "Final select - grouped latest NAV positions",
-    "Groups the latest NAV upload by product, contract, option, and strike.",
-)}
-final as (
-    select
-        max(nav_date) as nav_date,
-        max(sftp_upload_timestamp)::text as latest_upload_at,
-        {group_cols},
-        string_agg(distinct fund_code, ', ' order by fund_code) as fund_codes,
-        string_agg(distinct account_group, ', ' order by account_group) filter (
-            where account_group is not null and account_group <> ''
-        ) as account_groups,
-        count(distinct fund_code)::integer as fund_count,
-        count(distinct account_group)::integer as account_group_count,
-        count(distinct account)::integer as account_count,
-        count(*)::integer as row_count,
-        sum(coalesce(quantity_1, 0))::double precision as qty_total,
-        sum(case when lower(coalesce(fund_code, '')) = 'agr' then coalesce(quantity_1, 0) else 0 end)::double precision as qty_agr,
-        sum(case when lower(coalesce(fund_code, '')) = 'moross' then coalesce(quantity_1, 0) else 0 end)::double precision as qty_moross,
-        sum(case when lower(coalesce(fund_code, '')) = 'pnt' then coalesce(quantity_1, 0) else 0 end)::double precision as qty_pnt,
-        sum(case when lower(coalesce(fund_code, '')) = 'titan' then coalesce(quantity_1, 0) else 0 end)::double precision as qty_titan,
-        sum(coalesce(quantity_1, 0))::double precision as net_quantity,
-        sum(abs(coalesce(quantity_1, 0)))::double precision as gross_quantity,
-        sum(coalesce(cost_in_base_currency, 0))::double precision as cost_base,
-        sum(coalesce(market_value_in_base_currency, 0))::double precision as market_value_base,
-        sum(coalesce(market_value_in_base_currency, 0) - coalesce(cost_in_base_currency, 0))::double precision as unrealized_pnl_base,
-        (
-            sum(case when trade_price is not null then trade_price * abs(coalesce(quantity_1, 0)) else 0 end)
-            / nullif(sum(case when trade_price is not null then abs(coalesce(quantity_1, 0)) else 0 end), 0)
-        )::double precision as avg_trade_price,
-        (
-            sum(case when market_settlement_price is not null then market_settlement_price * abs(coalesce(quantity_1, 0)) else 0 end)
-            / nullif(sum(case when market_settlement_price is not null then abs(coalesce(quantity_1, 0)) else 0 end), 0)
-        )::double precision as avg_settlement_price
-    from filtered_positions
-    group by
-        {group_cols}
-)
-select * from final;"""
+    return _nav_positions_latest_query(source_table, alias_source, rule_set)
 
 
 def _nav_grouped_with_raw_examples_query(
@@ -872,8 +904,39 @@ def _nav_positions_with_rules_ctes(
     source_table: str,
     alias_source: str,
     rule_set: ProductRuleSet,
+    *,
+    latest_only: bool = True,
 ) -> str:
     validated_source_table = _validate_source_table(source_table)
+    selection_ctes: tuple[SqlCte, ...]
+    if latest_only:
+        selection_ctes = (
+            (
+                "CTE 05 - latest_nav_by_fund",
+                "Selects the requested NAV date or each fund's latest available date.",
+                _nav_latest_nav_by_fund_cte(),
+            ),
+            (
+                "CTE 06 - latest_upload_by_fund",
+                "Keeps the latest SFTP upload for the selected NAV date per fund.",
+                _nav_latest_upload_by_fund_cte(),
+            ),
+            (
+                "CTE 07 - selected_positions",
+                "Limits source rows to the selected latest fund uploads.",
+                _nav_latest_selected_positions_cte(),
+            ),
+        )
+        downstream_start = 8
+    else:
+        selection_ctes = (
+            (
+                "CTE 05 - selected_positions",
+                "Keeps every source NAV row after optional params filters.",
+                _nav_all_history_selected_positions_cte(),
+            ),
+        )
+        downstream_start = 6
 
     return _join_ctes(
         (
@@ -899,39 +962,25 @@ def _nav_positions_with_rules_ctes(
             "Raw NAV rows with optional fund and NAV-date filters applied.",
             _nav_source_positions_cte(validated_source_table),
         ),
+        *selection_ctes,
         (
-            "CTE 05 - latest_nav_by_fund",
-            "Selects the requested NAV date or each fund's latest available date.",
-            _nav_latest_nav_by_fund_cte(),
-        ),
-        (
-            "CTE 06 - latest_upload_by_fund",
-            "Keeps the latest SFTP upload for the selected NAV date per fund.",
-            _nav_latest_upload_by_fund_cte(),
-        ),
-        (
-            "CTE 07 - latest_positions",
-            "Limits source rows to the selected latest fund uploads.",
-            _nav_latest_positions_cte(),
-        ),
-        (
-            "CTE 08 - normalized_positions",
+            f"CTE {downstream_start:02d} - normalized_positions",
             "Normalizes product text, option side, contract month, and "
             "daily contract fields.",
             _nav_normalized_positions_cte(),
         ),
         (
-            "CTE 09 - rule_matches",
+            f"CTE {downstream_start + 1:02d} - rule_matches",
             "Finds the first source-specific product alias for each NAV row.",
             _nav_rule_matches_cte(),
         ),
         (
-            "CTE 10 - positions_with_rules",
+            f"CTE {downstream_start + 2:02d} - positions_with_rules",
             "Adds derived product, contract, option, and rule-status fields.",
             _nav_positions_with_rules_cte(),
         ),
         (
-            "CTE 11 - filtered_positions",
+            f"CTE {downstream_start + 3:02d} - filtered_positions",
             "Applies optional product, market, account, status, and search filters.",
             _nav_filtered_positions_cte(),
         ),
@@ -998,10 +1047,10 @@ latest_upload_by_fund as (
     )
 
 
-def _nav_latest_positions_cte() -> str:
+def _nav_latest_selected_positions_cte() -> str:
     return dedent(
         """\
-latest_positions as (
+selected_positions as (
     select source_positions.*
     from source_positions
     inner join latest_upload_by_fund latest
@@ -1012,35 +1061,45 @@ latest_positions as (
     )
 
 
+def _nav_all_history_selected_positions_cte() -> str:
+    return dedent(
+        """\
+selected_positions as (
+    select source_positions.*
+    from source_positions
+)"""
+    )
+
+
 def _nav_normalized_positions_cte() -> str:
     return dedent(
         """\
 normalized_positions as (
     select
-        latest_positions.*,
-        upper(regexp_replace(coalesce(latest_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
+        selected_positions.*,
+        upper(regexp_replace(coalesce(selected_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
         (
-            upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
-            or upper(coalesce(latest_positions.type, '')) like '%OPTION%'
+            upper(coalesce(selected_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
+            or upper(coalesce(selected_positions.type, '')) like '%OPTION%'
         ) as is_option,
         case
-            when upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'C') then 'C'
-            when upper(coalesce(latest_positions.call_put, '')) in ('PUT', 'P') then 'P'
+            when upper(coalesce(selected_positions.call_put, '')) in ('CALL', 'C') then 'C'
+            when upper(coalesce(selected_positions.call_put, '')) in ('PUT', 'P') then 'P'
             else null
         end as put_call,
         case
-            when latest_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
-            then to_char(to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
-            when upper(trim(coalesce(latest_positions.month_year, ''))) ~ '^[A-Z]{3}\\d{2}$'
-            then to_char(to_date(upper(trim(latest_positions.month_year)), 'MONYY'), 'YYYYMM')
+            when selected_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
+            then to_char(to_date(trim(selected_positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
+            when upper(trim(coalesce(selected_positions.month_year, ''))) ~ '^[A-Z]{3}\\d{2}$'
+            then to_char(to_date(upper(trim(selected_positions.month_year)), 'MONYY'), 'YYYYMM')
             else null
         end as contract_yyyymm,
         case
-            when latest_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
-            then extract(day from to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'))::integer
+            when selected_positions.month_year ~ '^\\s*\\d{1,2}/\\d{1,2}/\\d{4}\\s*$'
+            then extract(day from to_date(trim(selected_positions.month_year), 'MM/DD/YYYY'))::integer
             else null
         end as contract_day
-    from latest_positions
+    from selected_positions
 )"""
     )
 
@@ -1229,52 +1288,15 @@ def generated_files(
                 rule_set,
             )
         ),
-        resolved_output_dir / "nav_positions" / "marts" / "grouped_latest.sql": (
-            build_nav_positions_grouped_latest_sql(
+        resolved_output_dir / "nav_positions" / "latest.sql": (
+            build_nav_positions_latest_sql(
                 nav_source_table,
                 nav_alias_source,
                 rule_set,
             )
         ),
-        resolved_output_dir
-        / "nav_positions"
-        / "marts"
-        / "grouped_with_raw_examples.sql": (
-            build_nav_positions_grouped_with_raw_examples_sql(
-                nav_source_table,
-                nav_alias_source,
-                rule_set,
-            )
-        ),
-        resolved_output_dir / "nav_positions" / "marts" / "account_breakout.sql": (
-            build_nav_positions_account_breakout_sql(
-                nav_source_table,
-                nav_alias_source,
-                rule_set,
-            )
-        ),
-        resolved_output_dir / "nav_positions" / "checks" / "rule_exceptions.sql": (
-            build_nav_positions_rule_exceptions_sql(
-                nav_source_table,
-                nav_alias_source,
-                rule_set,
-            )
-        ),
-        resolved_output_dir
-        / "nav_positions"
-        / "checks"
-        / "grouped_vs_raw_totals.sql": (
-            build_nav_positions_grouped_vs_raw_totals_sql(
-                nav_source_table,
-                nav_alias_source,
-                rule_set,
-            )
-        ),
-        resolved_output_dir
-        / "nav_positions"
-        / "drilldowns"
-        / "raw_rows_for_group.sql": (
-            build_nav_positions_raw_rows_for_group_sql(
+        resolved_output_dir / "nav_positions" / "all_history.sql": (
+            build_nav_positions_all_history_sql(
                 nav_source_table,
                 nav_alias_source,
                 rule_set,
@@ -1939,7 +1961,7 @@ def _log_compile_summary(
     )
     nav_sql_path = resolved_output_dir / "nav_positions"
     LOGGER.info(
-        "Run SQL under %s in a SQL editor to inspect NAV grouped/check/drilldown views.",
+        "Run SQL under %s in a SQL editor to inspect NAV latest/all-history views.",
         nav_sql_path,
     )
 
