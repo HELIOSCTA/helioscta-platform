@@ -264,10 +264,58 @@ def test_nav_trade_breaks_file_email_includes_workbook_attachment(tmp_path):
     assert "ADD=2, DEL=1" in message["body_text"]
     assert "HeliosCTA Alerts" in message["body_html"]
     assert "NAV Trade Breaks Ready for Review" in message["body_html"]
+    assert "Attachments" in message["body_html"]
+    assert "Source Files" in message["body_html"]
     assert "Review Notes" in message["body_html"]
     assert "<table role=\"presentation\"" in message["body_html"]
     assert message["payload"]["attachment_paths"] == [str(attachment)]
     assert message["payload"]["add_del_counts"] == {"ADD": 2, "DEL": 1}
+
+
+def test_nav_trade_breaks_file_email_states_when_no_breaks_found(tmp_path):
+    attachment = (
+        tmp_path
+        / "Trade Breaks Detail Report_20260708_HELIOS COMMODITY ADVISORS LTD.20260709_091643.xlsx"
+    )
+    attachment.write_text("xlsx", encoding="utf-8")
+
+    message = email_notifications.build_nav_trade_breaks_file_email(
+        summary={
+            "target_table": "nav_email.nav_trade_breaks",
+            "source_filename": (
+                "Trade Breaks Detail Report_20260708_"
+                "HELIOS COMMODITY ADVISORS LTD.XLSX"
+            ),
+            "downloaded_filename": attachment.name,
+            "source_file_path": str(attachment),
+            "nav_date": "2026-07-08",
+            "sftp_upload_timestamp": datetime(
+                2026,
+                7,
+                9,
+                9,
+                16,
+                43,
+                tzinfo=timezone.utc,
+            ),
+            "rows_processed": 0,
+            "by_add_del": {},
+        },
+        recipient_email="ops@example.test",
+        attachment_path=attachment,
+    )
+
+    assert message["subject"] == (
+        "No NAV trade breaks found for Wed Jul-08 | "
+        "HeliosCTA | NAV | Trade Breaks"
+    )
+    assert "No NAV trade breaks were found for 2026-07-08." in message["body_text"]
+    assert "No NAV Trade Breaks Found" in message["body_html"]
+    assert "No trade breaks found" in message["body_html"]
+    assert "Attachments" in message["body_html"]
+    assert "Source Files" in message["body_html"]
+    assert "NAV reported no trade break detail rows" in message["body_html"]
+    assert message["payload"]["rows_processed"] == 0
 
 
 def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_path):

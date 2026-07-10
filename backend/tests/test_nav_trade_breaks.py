@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -186,6 +187,26 @@ def test_run_nav_trade_breaks_prepares_latest_workbook_summary(monkeypatch, tmp_
     assert summary["attachments"] == [filepath.name]
 
 
+def test_run_nav_trade_breaks_returns_missing_target_summary(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        trade_breaks,
+        "pull_recent_trade_break_files",
+        lambda **kwargs: [],
+    )
+
+    summary = trade_breaks.run_nav_trade_breaks(
+        local_dir=tmp_path,
+        target_nav_date="2026-02-24",
+        require_target_file=True,
+    )
+
+    assert summary["target_file_found"] is False
+    assert summary["target_nav_date"] == "2026-02-24"
+    assert summary["rows_processed"] == 0
+    assert summary["files_downloaded"] == 0
+    assert summary["attachments"] == []
+
+
 def test_nav_trade_breaks_orchestration_logs_success(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
     enqueued: list[dict[str, object]] = []
@@ -345,6 +366,157 @@ def test_nav_trade_breaks_orchestration_queues_without_drain_when_disabled(
     assert telemetry[0]["metadata"]["emails_queued"] == 1
     assert telemetry[0]["metadata"]["emails_processed"] == 0
     assert telemetry[0]["metadata"]["email_notifications_enabled"] is False
+
+
+def test_nav_trade_breaks_scheduled_main_polls_until_target_file(
+    monkeypatch,
+    tmp_path,
+):
+    telemetry: list[dict[str, object]] = []
+    calls: list[dict[str, object]] = []
+    current_time = datetime(2026, 7, 9, 6, 0, tzinfo=timezone.utc)
+    attachment = (
+        tmp_path
+        / "Trade Breaks Detail Report_20260708_HELIOS COMMODITY ADVISORS LTD.20260709_091643.xlsx"
+    )
+    attachment.write_text("xlsx", encoding="utf-8")
+
+    def fake_run_nav_trade_breaks(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {
+                "target_table": trade_breaks.TARGET_NAME,
+                "lookback_days": kwargs["lookback_days"],
+                "target_nav_date": "2026-07-08",
+                "target_file_found": False,
+                "files_downloaded": 0,
+                "files_processed": 0,
+                "rows_processed": 0,
+                "by_add_del": {},
+            }
+        return {
+            "target_table": trade_breaks.TARGET_NAME,
+            "source_file_path": str(attachment),
+            "source_filename": (
+                "Trade Breaks Detail Report_20260708_"
+                "HELIOS COMMODITY ADVISORS LTD.XLSX"
+            ),
+            "downloaded_filename": attachment.name,
+            "lookback_days": kwargs["lookback_days"],
+            "target_nav_date": "2026-07-08",
+            "target_file_found": True,
+            "nav_date": "2026-07-08",
+            "sftp_upload_timestamp": "2026-07-09T09:16:43+00:00",
+            "files_downloaded": 1,
+            "files_processed": 1,
+            "rows_processed": 0,
+            "by_add_del": {},
+        }
+
+    def sleep_fn(seconds):
+        nonlocal current_time
+        current_time += timedelta(seconds=seconds)
+
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_nav_trade_breaks",
+        fake_run_nav_trade_breaks,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    exit_code = orchestration.scheduled_main(
+        lookback_days=1,
+        database="stage_db",
+        target_nav_date="2026-07-08",
+        poll_wait_seconds=60,
+        poll_window_minutes=10,
+        poll_deadline_hour=None,
+        now_fn=lambda: current_time,
+        sleep_fn=sleep_fn,
+        send_email=False,
+    )
+
+    assert exit_code == 0
+    assert len(calls) == 2
+    assert calls[0]["target_nav_date"].isoformat() == "2026-07-08"
+    assert calls[0]["require_target_file"] is True
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == "nav_trade_breaks_email_scheduled"
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["database"] == "stage_db"
+    assert telemetry[0]["metadata"]["run_mode"] == "scheduler"
+    assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"
+    assert telemetry[0]["metadata"]["poll_count"] == 2
+    assert telemetry[0]["metadata"]["target_nav_date"] == "2026-07-08"
+    assert telemetry[0]["metadata"]["target_file_found"] is True
+    assert telemetry[0]["metadata"]["poll_wait_seconds"] == 60
+    assert telemetry[0]["metadata"]["poll_deadline_hour"] is None
+    assert telemetry[0]["rows_returned"] == 0
+    assert telemetry[0]["rows_written"] == 0
+
+
+def test_nav_trade_breaks_scheduled_main_times_out(
+    monkeypatch,
+    tmp_path,
+):
+    telemetry: list[dict[str, object]] = []
+    current_time = datetime(2026, 7, 9, 6, 0, tzinfo=timezone.utc)
+
+    def fake_run_nav_trade_breaks(**kwargs):
+        return {
+            "target_table": trade_breaks.TARGET_NAME,
+            "lookback_days": kwargs["lookback_days"],
+            "target_nav_date": "2026-07-08",
+            "target_file_found": False,
+            "files_downloaded": 0,
+            "files_processed": 0,
+            "rows_processed": 0,
+            "by_add_del": {},
+        }
+
+    def sleep_fn(seconds):
+        nonlocal current_time
+        current_time += timedelta(seconds=seconds)
+
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setenv("NAV_SFTP_HOST", "sftp.example.test")
+    monkeypatch.setattr(
+        orchestration.scrape,
+        "run_nav_trade_breaks",
+        fake_run_nav_trade_breaks,
+    )
+    monkeypatch.setattr(
+        orchestration,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    exit_code = orchestration.scheduled_main(
+        lookback_days=1,
+        database="stage_db",
+        target_nav_date="2026-07-08",
+        poll_wait_seconds=60,
+        poll_window_minutes=1,
+        poll_deadline_hour=None,
+        now_fn=lambda: current_time,
+        sleep_fn=sleep_fn,
+    )
+
+    assert exit_code == 1
+    assert len(telemetry) == 1
+    assert telemetry[0]["operation_name"] == "nav_trade_breaks_email_scheduled"
+    assert telemetry[0]["status"] == "failure"
+    assert telemetry[0]["error_type"] == "DataNotAvailable"
+    assert telemetry[0]["rows_written"] == 0
+    assert telemetry[0]["metadata"]["scheduler"] == "windows_task_scheduler"
+    assert telemetry[0]["metadata"]["poll_count"] == 1
+    assert telemetry[0]["metadata"]["target_file_found"] is False
 
 
 def test_nav_trade_breaks_orchestration_logs_failure(monkeypatch, tmp_path):

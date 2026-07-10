@@ -278,7 +278,11 @@ email with that workbook attached for `HELIOS_EMAIL_RECIPIENTS`, and writes one
 failure-visibility row to `ops.api_fetch_log` with target
 `nav_email.nav_trade_breaks`. Delivery uses `ops.email_notification_outbox` and
 depends on `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and Microsoft Graph
-credentials.
+credentials. The scheduled path matches NAV positions: it starts daily at local
+hour `04` by default, targets the previous business NAV date, polls SFTP every
+five minutes until `11:00` local time, sends the workbook email when the target
+Trade Breaks workbook exists, and exits nonzero if the target file misses the
+polling window.
 
 Clear Street end-of-day transaction helpers are local SFTP workflows. They live
 under `backend.scrapes.clear_street` and `backend.orchestration.clear_street`,
@@ -418,6 +422,12 @@ python -m backend.orchestration.nav.positions
   -InstallDependencies `
   -RunImportSmoke
 python -m backend.orchestration.nav.trade_breaks_email
+.\infrastructure\windows-task-scheduler\install_nav_trade_breaks_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
 python -m backend.orchestration.clear_street.transactions
 .\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
@@ -444,6 +454,7 @@ python -m backend.backfills.power.pjm.hrl_load_metered
 python -m backend.backfills.power.pjm.hrl_load_prelim
 python -m backend.backfills.power.pjm.gen_outages_by_type
 python -m backend.backfills.weather.wsi.hourly_observed
+python -m backend.backfills.nav.positions_from_legacy_cache
 ```
 
 For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
@@ -454,6 +465,11 @@ WSI hourly observed backfills call the existing weather orchestration path, so
 successful runs also emit the current WSI freshness event. Use the read-only
 coverage SQL in `docs/operations/manual-backfills.md` before handing historical
 coverage to frontend consumers.
+
+The NAV positions legacy-cache backfill copies workbooks from the old local
+cache into `backend/scrapes/nav/downloads/` and then upserts parsed rows into
+`nav.positions` with the same primary key as the scheduled SFTP workflow. It
+does not move or delete legacy workbooks.
 
 ## Scheduled PJM Price Repair
 

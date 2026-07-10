@@ -345,6 +345,66 @@ Get-ScheduledTaskInfo `
 Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\nav-positions-task-scheduler.log -Tail 100
 ```
 
+## NAV Trade Breaks
+
+Task Scheduler runs one daily task:
+
+```text
+\HeliosCTA\Positions And Trades\HeliosCTA NAV Trade Breaks
+```
+
+The task starts daily at local hour `04` by default and polls every five
+minutes until `11:00` local time, matching NAV positions. Each launch calls:
+
+```powershell
+python -c "from backend.orchestration.nav import trade_breaks_email; raise SystemExit(trade_breaks_email.scheduled_main(lookback_days=1, poll_wait_seconds=300, poll_window_minutes=420, poll_deadline_hour=11))"
+```
+
+The Python orchestration targets the previous business NAV date by default,
+downloads the matching NAV `Trade Breaks Detail Report` workbook, and caches it
+under `backend\scrapes\nav\downloads\trade_breaks\`. A target workbook with
+zero parsed trade-break rows is still a successful arrival and sends a
+templated "No NAV trade breaks found" email with the workbook attached. The
+scheduled path writes one resolved `ops.api_fetch_log` row with
+`operation_name = 'nav_trade_breaks_email_scheduled'`, `run_mode =
+'scheduler'`, `poll_count`, `poll_wait_seconds`, `poll_deadline_hour`, and
+`target_nav_date`. It exits nonzero if the target Trade Breaks workbook misses
+the polling window.
+
+Run from the production clone in PowerShell:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_nav_trade_breaks_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+Manual smoke:
+
+```powershell
+.\infrastructure\windows-task-scheduler\run_nav_trade_breaks_once.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs
+```
+
+Inspect task status and logs:
+
+```powershell
+Get-ScheduledTask `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA NAV Trade Breaks"
+
+Get-ScheduledTaskInfo `
+  -TaskPath "\HeliosCTA\Positions And Trades\" `
+  -TaskName "HeliosCTA NAV Trade Breaks"
+
+Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\nav-trade-breaks-task-scheduler.log -Tail 100
+```
+
 Verify data and telemetry with read-only SQL:
 
 ```sql

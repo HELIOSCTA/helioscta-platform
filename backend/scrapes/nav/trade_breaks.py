@@ -41,6 +41,12 @@ SOURCE_FILENAME_RE = re.compile(
     r"(?P<upload_time>\d{6})\.xlsx$",
     re.IGNORECASE,
 )
+REMOTE_FILENAME_RE = re.compile(
+    r"^Trade Breaks Detail Report_"
+    r"(?P<nav_date>\d{8})_"
+    r"HELIOS COMMODITY ADVISORS LTD\.XLSX$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +61,8 @@ def run_nav_trade_breaks(
     *,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     local_dir: str | Path | None = None,
+    target_nav_date: str | date | datetime | pd.Timestamp | None = None,
+    require_target_file: bool = False,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
@@ -63,9 +71,13 @@ def run_nav_trade_breaks(
     trade_file_pattern: str = DEFAULT_REMOTE_PATTERN,
 ) -> dict[str, object]:
     """Download recent NAV trade break workbooks and summarize the latest one."""
+    normalized_target_nav_date = (
+        normalize_nav_date(target_nav_date) if target_nav_date is not None else None
+    )
     downloaded_files = pull_recent_trade_break_files(
         lookback_days=lookback_days,
         local_dir=local_dir,
+        target_nav_date=normalized_target_nav_date,
         sftp_host=sftp_host,
         sftp_port=sftp_port,
         sftp_user=sftp_user,
@@ -74,6 +86,26 @@ def run_nav_trade_breaks(
         trade_file_pattern=trade_file_pattern,
     )
     if not downloaded_files:
+        if normalized_target_nav_date is not None and require_target_file:
+            return {
+                "target_table": TARGET_NAME,
+                "source_system": SOURCE_SYSTEM,
+                "source_report_name": SOURCE_REPORT_NAME,
+                "lookback_days": lookback_days,
+                "local_dir": str(resolve_local_dir(local_dir)),
+                "target_nav_date": normalized_target_nav_date.isoformat(),
+                "target_file_found": False,
+                "source_file_path": None,
+                "source_filename": None,
+                "downloaded_filename": None,
+                "nav_date": normalized_target_nav_date.isoformat(),
+                "nav_date_from_sftp": normalized_target_nav_date.strftime("%Y%m%d"),
+                "attachments": [],
+                "files_downloaded": 0,
+                "files_processed": 0,
+                "rows_processed": 0,
+                "by_add_del": {},
+            }
         raise FileNotFoundError(
             "No NAV trade break files were downloaded from SFTP matching "
             f"{trade_file_pattern}"
@@ -88,14 +120,22 @@ def run_nav_trade_breaks(
         "target_table": TARGET_NAME,
         "source_system": SOURCE_SYSTEM,
         "source_report_name": SOURCE_REPORT_NAME,
+        "lookback_days": lookback_days,
         "source_file_path": str(latest.local_path),
         "source_filename": latest.remote_filename,
         "downloaded_filename": latest.local_path.name,
+        "target_nav_date": (
+            normalized_target_nav_date.isoformat()
+            if normalized_target_nav_date is not None
+            else None
+        ),
+        "target_file_found": True if normalized_target_nav_date is not None else None,
         "nav_date": latest.nav_date.isoformat(),
         "nav_date_from_sftp": latest.nav_date.strftime("%Y%m%d"),
         "sftp_upload_timestamp": latest.sftp_upload_timestamp.isoformat(),
         "attachments": [latest.local_path.name],
         "files_downloaded": len(downloaded_files),
+        "files_processed": 1,
         "rows_processed": summary["rows_processed"],
         "by_add_del": summary["by_add_del"],
         "local_dir": str(resolve_local_dir(local_dir)),
@@ -108,6 +148,8 @@ def run_nav_trade_breaks_email(
     local_dir: str | Path | None = None,
     sender_email: str | None = None,
     recipient_emails: list[str] | tuple[str, ...] | None = None,
+    target_nav_date: str | date | datetime | pd.Timestamp | None = None,
+    require_target_file: bool = False,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
@@ -120,6 +162,8 @@ def run_nav_trade_breaks_email(
     return run_nav_trade_breaks(
         lookback_days=lookback_days,
         local_dir=local_dir,
+        target_nav_date=target_nav_date,
+        require_target_file=require_target_file,
         sftp_host=sftp_host,
         sftp_port=sftp_port,
         sftp_user=sftp_user,
@@ -133,6 +177,7 @@ def pull_recent_trade_break_files(
     *,
     lookback_days: int = DEFAULT_LOOKBACK_DAYS,
     local_dir: str | Path | None = None,
+    target_nav_date: str | date | datetime | pd.Timestamp | None = None,
     sftp_host: str | None = None,
     sftp_port: int | None = None,
     sftp_user: str | None = None,
@@ -146,6 +191,9 @@ def pull_recent_trade_break_files(
 
     resolved_dir = resolve_local_dir(local_dir)
     resolved_dir.mkdir(parents=True, exist_ok=True)
+    normalized_target_nav_date = (
+        normalize_nav_date(target_nav_date) if target_nav_date is not None else None
+    )
     sftp_host = sftp_host or credentials.NAV_SFTP_HOST
     sftp_port = sftp_port or credentials.NAV_SFTP_PORT or DEFAULT_SFTP_PORT
     sftp_user = sftp_user or credentials.NAV_SFTP_USER
@@ -170,7 +218,15 @@ def pull_recent_trade_break_files(
         attrs = _matching_remote_attrs(
             attrs=sftp.listdir_attr(sftp_remote_dir),
             pattern=trade_file_pattern,
-        )[:lookback_days]
+        )
+        if normalized_target_nav_date is not None:
+            attrs = [
+                attr
+                for attr in attrs
+                if _remote_filename_nav_date(attr.filename)
+                == normalized_target_nav_date
+            ]
+        attrs = attrs[:lookback_days]
         downloaded: list[DownloadedNavTradeBreakFile] = []
         for attr in attrs:
             upload_timestamp = pd.Timestamp(
@@ -273,6 +329,20 @@ def parse_trade_break_filename(filename: str) -> dict[str, Any]:
     }
 
 
+def normalize_nav_date(value: str | date | datetime | pd.Timestamp) -> date:
+    """Normalize a NAV date input to a Python date."""
+    if isinstance(value, pd.Timestamp):
+        return value.date()
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()
+    if re.fullmatch(r"\d{8}", text):
+        return datetime.strptime(text, "%Y%m%d").date()
+    return datetime.strptime(text, "%Y-%m-%d").date()
+
+
 def resolve_local_dir(local_dir: str | Path | None = None) -> Path:
     """Resolve the ignored local NAV trade breaks workbook cache directory."""
     if local_dir is not None:
@@ -327,6 +397,13 @@ def _matching_remote_attrs(
         key=lambda attr: attr.filename,
         reverse=True,
     )
+
+
+def _remote_filename_nav_date(filename: str) -> date | None:
+    match = REMOTE_FILENAME_RE.match(filename)
+    if not match:
+        return None
+    return datetime.strptime(match.group("nav_date"), "%Y%m%d").date()
 
 
 def _downloaded_filename(

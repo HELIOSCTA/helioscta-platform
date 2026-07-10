@@ -424,12 +424,45 @@ def build_nav_trade_breaks_file_email(
     add_del_counts = summary.get("by_add_del")
     add_del_label = _format_counts(add_del_counts)
     event_key = f"{NAV_TRADE_BREAKS_DATASET}:data_ready:{nav_date}:{upload_key}"
+    no_trade_breaks = rows_processed == 0
+    subject_text = (
+        f"No NAV trade breaks found for {_subject_date_label(nav_date)}"
+        if no_trade_breaks
+        else f"NAV trade breaks ready for review for {_subject_date_label(nav_date)}"
+    )
+    title = (
+        "No NAV Trade Breaks Found"
+        if no_trade_breaks
+        else "NAV Trade Breaks Ready for Review"
+    )
+    status_label = (
+        "No trade breaks found" if no_trade_breaks else "Ready for review"
+    )
+    intro = (
+        "NAV reported no trade breaks in the attached source workbook "
+        f"for {nav_date}."
+        if no_trade_breaks
+        else "NAV trade breaks are ready for review and the source workbook "
+        f"is attached for {nav_date}."
+    )
+    first_line = (
+        f"No NAV trade breaks were found for {nav_date}."
+        if no_trade_breaks
+        else f"NAV trade breaks are ready for review for {nav_date}."
+    )
+    review_notes = (
+        "The raw NAV trade breaks workbook is attached to this email. "
+        "NAV reported no trade break detail rows after filtering the source workbook."
+        if no_trade_breaks
+        else "The raw NAV trade breaks workbook is attached to this email. "
+        "No trade break rows are written to a database table."
+    )
     subject = _subject_with_tags(
-        f"NAV trade breaks ready for review for {_subject_date_label(nav_date)}",
+        subject_text,
         ["HeliosCTA", "NAV", "Trade Breaks"],
     )
     body_text = (
-        f"NAV trade breaks are ready for review for {nav_date}.\n\n"
+        f"{first_line}\n\n"
         f"Attached workbook: {attachment_name}\n"
         f"Source file: {source_filename}\n"
         "Source system: NAV SFTP\n"
@@ -438,14 +471,11 @@ def build_nav_trade_breaks_file_email(
         f"SFTP upload: {upload_display}\n"
     )
     body_html = email_templates.render_email(
-        title="NAV Trade Breaks Ready for Review",
-        preheader=f"NAV trade breaks are ready for review for {nav_date}.",
-        status_label="Ready for review",
+        title=title,
+        preheader=first_line,
+        status_label=status_label,
         status_tone="success",
-        intro=(
-            "NAV trade breaks are ready for review and the source workbook "
-            f"is attached for {nav_date}."
-        ),
+        intro=intro,
         facts=[
             ("NAV date", nav_date),
             ("Rows detected", f"{rows_processed:,}"),
@@ -456,10 +486,18 @@ def build_nav_trade_breaks_file_email(
             ("Source system", "NAV SFTP"),
         ],
         sections=[
+            email_templates.bullet_section(
+                "Attachments",
+                [attachment_name],
+                tone="success",
+            ),
+            email_templates.bullet_section(
+                "Source Files",
+                [source_filename],
+            ),
             email_templates.text_section(
                 "Review Notes",
-                "The raw NAV trade breaks workbook is attached to this email. "
-                "No trade break rows are written to a database table.",
+                review_notes,
             )
         ],
     )
