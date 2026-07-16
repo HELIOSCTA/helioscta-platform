@@ -16,6 +16,7 @@ from backend.scrapes.ice_python.symbols import gas
 
 
 API_SCRAPE_NAME = "orchestration_ice_python_settlements_gas_futures"
+REGISTRY_LABEL = "gas_futures"
 DEFAULT_MONTHS_FORWARD = 36
 DEFAULT_LOOKBACK_DAYS = registry.DEFAULT_LOOKBACK_DAYS
 
@@ -33,6 +34,8 @@ def run(
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
     require_rows: bool = True,
     database: str | None = settings.TARGET_DATABASE,
+    pipeline_name: str = API_SCRAPE_NAME,
+    registry_label: str = REGISTRY_LABEL,
 ) -> dict[str, object]:
     """Run the bounded gas futures settlement scrape with retry policy."""
     futures_symbols = gas.get_futures_symbols_for_horizon(
@@ -61,8 +64,8 @@ def run(
             preview_values(futures_symbols),
         )
         return registry.run_registry_settlements(
-            pipeline_name=API_SCRAPE_NAME,
-            registry_label="gas_futures",
+            pipeline_name=pipeline_name,
+            registry_label=registry_label,
             symbols=futures_symbols,
             fields=fields,
             trade_date=trade_date,
@@ -74,7 +77,7 @@ def run(
         )
 
     return run_with_logging(
-        pipeline_name=API_SCRAPE_NAME,
+        pipeline_name=pipeline_name,
         log_dir=Path(__file__).parent / "logs",
         operation=operation,
         database=database,
@@ -91,6 +94,8 @@ def main(
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
     require_rows: bool = True,
     database: str | None = settings.TARGET_DATABASE,
+    pipeline_name: str = API_SCRAPE_NAME,
+    registry_label: str = REGISTRY_LABEL,
 ) -> int:
     try:
         run(
@@ -103,6 +108,8 @@ def main(
             lookback_days=lookback_days,
             require_rows=require_rows,
             database=database,
+            pipeline_name=pipeline_name,
+            registry_label=registry_label,
         )
         return 0
     except Exception:

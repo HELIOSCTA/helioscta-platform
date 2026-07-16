@@ -9,6 +9,10 @@ from types import SimpleNamespace
 import pytest
 
 from backend.orchestration.ice_python import job_runner
+from backend.orchestration.ice_python.settlements import gas_futures_core
+from backend.orchestration.ice_python.settlements import gas_futures_east
+from backend.orchestration.ice_python.settlements import gas_futures_gulf
+from backend.orchestration.ice_python.settlements import gas_futures_west
 from backend.orchestration.ice_python.settlements import gas_next_day
 from backend.orchestration.ice_python.settlements import pjm_short_term
 from backend.orchestration.ice_python.settlements import pjm_futures
@@ -146,6 +150,51 @@ def test_pjm_futures_wrapper_builds_bounded_horizon(monkeypatch):
 
     assert summary["registry"] == "pjm_futures"
     assert summary["symbols"] == ["PMI X26-IUS", "PMI Z26-IUS", "PMI F27-IUS"]
+    assert captured["fields"] == ["Settle"]
+    assert captured["require_rows"] is False
+
+
+@pytest.mark.parametrize(
+    ("module", "expected_registry", "expected_products"),
+    [
+        (gas_futures_core, "gas_futures_core", ["HNG", "PHE"]),
+        (
+            gas_futures_gulf,
+            "gas_futures_gulf",
+            ["TRZ", "TFL", "CGB", "CGM", "TWB", "HXS"],
+        ),
+        (gas_futures_west, "gas_futures_west", ["WAH", "NTO", "SCB", "PGE", "CRI"]),
+        (
+            gas_futures_east,
+            "gas_futures_east",
+            ["ALQ", "TMT", "T5B", "IZB", "TZS", "DOM"],
+        ),
+    ],
+)
+def test_split_gas_futures_wrappers_select_product_groups(
+    monkeypatch,
+    module,
+    expected_registry,
+    expected_products,
+):
+    captured: dict[str, object] = {}
+
+    def fake_run(**kwargs):
+        captured.update(kwargs)
+        return {
+            "registry": kwargs["registry_label"],
+            "products": kwargs["products"],
+            "rows_processed": 0,
+        }
+
+    monkeypatch.setattr(module.gas_futures, "run", fake_run)
+
+    summary = module.run(fields=["Settle"], require_rows=False)
+
+    assert summary["registry"] == expected_registry
+    assert summary["products"] == expected_products
+    assert captured["pipeline_name"] == module.API_SCRAPE_NAME
+    assert captured["registry_label"] == expected_registry
     assert captured["fields"] == ["Settle"]
     assert captured["require_rows"] is False
 

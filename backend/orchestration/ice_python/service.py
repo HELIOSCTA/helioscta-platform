@@ -118,11 +118,28 @@ DEFAULT_JOBS: tuple[ServiceJob, ...] = (
         windows=DEFAULT_HOURLY_WINDOWS,
     ),
     ServiceJob(
-        name="gas_futures",
+        name="gas_futures_core",
         cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_core",
         windows=DEFAULT_HOURLY_WINDOWS,
-        timeout_seconds=90 * 60,
+    ),
+    ServiceJob(
+        name="gas_futures_gulf",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_gulf",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures_west",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_west",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures_east",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_east",
+        windows=DEFAULT_HOURLY_WINDOWS,
     ),
 )
 

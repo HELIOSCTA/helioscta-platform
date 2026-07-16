@@ -158,27 +158,34 @@ def test_task_scheduler_tick_ignores_same_hour_failed_state():
     assert run_state[service.job_run_key(job, current_time)]["rows_processed"] == 9
 
 
-def test_task_scheduler_tick_includes_gas_futures_in_hourly_batch():
-    gas_futures = service.ServiceJob(
-        name="gas_futures",
-        cadence="hourly",
-        runner=lambda: {"rows_processed": 3},
-        windows=service.DEFAULT_HOURLY_WINDOWS,
-        timeout_seconds=90 * 60,
-    )
+def test_task_scheduler_tick_includes_split_gas_futures_in_hourly_batch():
+    gas_futures_jobs = [
+        service.ServiceJob(
+            name=name,
+            cadence="hourly",
+            runner=lambda: {"rows_processed": 3},
+            windows=service.DEFAULT_HOURLY_WINDOWS,
+        )
+        for name in [
+            "gas_futures_core",
+            "gas_futures_gulf",
+            "gas_futures_west",
+            "gas_futures_east",
+        ]
+    ]
 
     assert service.task_scheduler_tick_jobs(
         datetime(2026, 6, 18, 10, 0, tzinfo=LOCAL_TZ),
-        jobs=[gas_futures],
+        jobs=gas_futures_jobs,
     ) == []
     assert service.task_scheduler_tick_jobs(
         datetime(2026, 6, 18, 15, 30, tzinfo=LOCAL_TZ),
-        jobs=[gas_futures],
-    ) == [gas_futures]
+        jobs=gas_futures_jobs,
+    ) == gas_futures_jobs
     assert service.task_scheduler_tick_jobs(
         datetime(2026, 6, 18, 16, 0, tzinfo=LOCAL_TZ),
-        jobs=[gas_futures],
-    ) == [gas_futures]
+        jobs=gas_futures_jobs,
+    ) == gas_futures_jobs
 
 
 def test_latest_failed_job_attempts_skips_old_failures_after_success():

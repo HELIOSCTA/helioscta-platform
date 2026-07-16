@@ -13,8 +13,7 @@ Task Scheduler runs one coordinator task:
 \HeliosCTA\ICE Python\HeliosCTA ICE Python Coordinator
 ```
 
-The task runs at local hours `06`, `07`, `08`, `09`, `14`, `15`, `16`, `17`,
-and `18`. Each launch calls:
+The task runs hourly. Each launch calls:
 
 ```powershell
 python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
@@ -22,19 +21,20 @@ python -c "from backend.orchestration.ice_python import service; raise SystemExi
 
 Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
 the current ICE batch for that local-time window, even if a feed already failed
-earlier in the same hour. The hourly settlement batch, including `gas_futures`,
-runs in the `06:00-10:00` and `14:00-19:00` windows. The Python coordinator
-still persists per-window state for status, prevents overlap with a local lock
-file, launches each ICE job in a child Python process, applies hard timeouts,
-and writes durable telemetry to `ops.api_fetch_log`.
+earlier in the same hour. The hourly settlement batch, including the split
+`gas_futures_core`, `gas_futures_gulf`, `gas_futures_west`, and
+`gas_futures_east` feeds, runs in the `06:00-10:00` and `14:00-19:00`
+windows. The Python coordinator still persists per-window state for status,
+prevents same-feed overlap with local lock files, launches each ICE job in a
+child Python process, applies hard timeouts, and writes durable telemetry to
+`ops.api_fetch_log`.
 
-Routine scheduled task actions launch PowerShell visibly under the interactive
-Windows user. This keeps Task Scheduler as the single operator surface: start
-the normal scheduled task directly when you want to watch a run.
+Routine scheduled coordinator actions launch hidden under the interactive
+Windows user. Use the visible status task as the operator surface.
 
-This is intentionally one scheduled task, not one Task Scheduler entry per ICE
-feed. Running each feed as a separate task can overload the local ICE runtime
-and recreate the hung-process behavior this promoted path avoids.
+This is intentionally one scheduled coordinator task, not one Task Scheduler
+entry per ICE feed. Feed-level status and retries are handled inside the
+coordinator/status scripts.
 
 ## Runtime Setup
 

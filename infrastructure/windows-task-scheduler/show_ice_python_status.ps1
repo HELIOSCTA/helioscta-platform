@@ -22,7 +22,10 @@ $jobOrder = @(
     "east_power_futures",
     "gas_next_day",
     "gas_balmo",
-    "gas_futures"
+    "gas_futures_core",
+    "gas_futures_gulf",
+    "gas_futures_west",
+    "gas_futures_east"
 )
 
 function Resolve-StateFile {

@@ -51,6 +51,10 @@ python -m backend.orchestration.ice_python.settlements.east_power_futures
 python -m backend.orchestration.ice_python.settlements.gas_next_day
 python -m backend.orchestration.ice_python.settlements.gas_balmo
 python -m backend.orchestration.ice_python.settlements.gas_futures
+python -m backend.orchestration.ice_python.settlements.gas_futures_core
+python -m backend.orchestration.ice_python.settlements.gas_futures_gulf
+python -m backend.orchestration.ice_python.settlements.gas_futures_west
+python -m backend.orchestration.ice_python.settlements.gas_futures_east
 ```
 
 Production local Windows activation is one service runner:
@@ -65,7 +69,10 @@ systemd units for ICE Python.
 Each wrapper defaults to today's contract-date snapshot plus a 14-day inclusive
 settlement lookback window. Set `lookback_days=0` for single-date behavior.
 PJM, ERCOT, western power, eastern power, and gas futures wrappers default from
-the current month through 36 months forward.
+the current month through 36 months forward. The scheduled gas futures feed is
+split into core, Gulf, West, and East wrappers for clearer status and smaller
+reruns; the unsplit `gas_futures` wrapper remains available for manual backfill
+or broad ad hoc runs.
 
 The runtime writes to `ice_python.settlements` and
 `ice_python.settlement_contract_dates`. Those tables are operator-created from
