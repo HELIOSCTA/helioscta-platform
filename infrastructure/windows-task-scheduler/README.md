@@ -85,7 +85,7 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one visible scheduled coordinator task under the current
+- registers or updates one hidden scheduled coordinator task under the current
   Windows user.
 
 Install or update the visible status task:
@@ -125,7 +125,8 @@ Run one coordinator tick directly:
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
 ```
 
-Start the scheduled task manually:
+Start the scheduled coordinator manually. This runs quietly; open the status
+task to inspect latest results and feed history.
 
 ```powershell
 Start-ScheduledTask `
