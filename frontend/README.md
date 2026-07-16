@@ -70,6 +70,8 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 ```text
 GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
+GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
+GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
 GET /api/gas-daily-prices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/dev/nav-positions?fund=all&rawLimit=200
@@ -262,6 +264,32 @@ physical gas hub registry. Gas-day attribution is generated from the shared ICE
 physical gas trading calendar, so weekend and holiday strips use the same
 mapping as the standalone SQL verifier. It does not create a database model,
 frontend cache table, backend job, or new credential requirement.
+
+## Local DEV ICE Trade Blotter Settles Source Contract
+
+The ICE Trade Blotter Settles DEV view reads PJM short-term settlement marks
+with `helios_readonly` from PJM LMPs and `ice_python.settlements`, using the
+frontend trade-blotter product dictionary for the displayed contract catalog.
+It appears in the local `DEV` sidebar section at `/?section=ice-settlements`;
+Vercel builds hide the routes.
+
+Source systems: PJM hourly LMP tables and ICE Python / ICE XL local Windows
+settlement tables.
+
+Primary settle grain:
+`market_date x cc x hub x contract x settlement_source_key`.
+
+The PJM short-term scope is the default and only exposed UI scope for this
+page. It covers `PDP`, `PWA`, `PDA`, `PJL`, `PDO`, and `ODP` with daily,
+weekly, and weekend contract codes. The route
+`GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm` returns daily
+settle rows and metadata. The product dictionary route exposes the rules used
+for mapping trade-blotter product codes to settlement sources. The copied
+trade-level matching routes still expect the legacy
+`ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI
+until that source table is promoted into this database. This work does not
+create a database model, frontend cache table, backend job, or new credential
+requirement.
 
 ## Local DEV PJM Generation Source Contract
 

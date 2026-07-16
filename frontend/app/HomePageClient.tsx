@@ -8,6 +8,9 @@ import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
 import GasDailyPrices from "@/components/gas/GasDailyPrices";
+import IceTradeBlotter, {
+  type IceTradeBlotterFreshnessSummary,
+} from "@/components/positions/IceTradeBlotter";
 import NavPositions, {
   type NavPositionsFreshnessSummary,
 } from "@/components/nav/NavPositions";
@@ -181,6 +184,16 @@ const DEFAULT_CLEAR_STREET_TRADES_FRESHNESS: ClearStreetTradesFreshnessSummary =
   latestUpdateLabel: "--",
 };
 
+const DEFAULT_ICE_SETTLEMENTS_FRESHNESS: IceTradeBlotterFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "ICE trade blotter --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+  rowCountLabel: "--",
+};
+
 interface HomePageClientProps {
   showLocalDevFeatures: boolean;
 }
@@ -200,6 +213,9 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
+  }
+  if (showLocalDevFeatures && value === "ice-settlements") {
+    return "ice-settlements";
   }
   if (showLocalDevFeatures && value === "spark-spreads") {
     return "spark-spreads";
@@ -307,6 +323,7 @@ export default function HomePageClient({
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [navPositionsRefreshToken, setNavPositionsRefreshToken] = useState(0);
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
+  const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [pjmDaModelFreshnessOpen, setPjmDaModelFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
@@ -323,6 +340,8 @@ export default function HomePageClient({
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
   const [navPositionsFreshnessOpen, setNavPositionsFreshnessOpen] = useState(false);
   const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
+    useState(false);
+  const [iceSettlementsFreshnessOpen, setIceSettlementsFreshnessOpen] =
     useState(false);
   const [pjmDaLmpsFreshness, setPjmDaLmpsFreshness] =
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
@@ -359,6 +378,10 @@ export default function HomePageClient({
   const [clearStreetTradesFreshness, setClearStreetTradesFreshness] =
     useState<ClearStreetTradesFreshnessSummary>(
       DEFAULT_CLEAR_STREET_TRADES_FRESHNESS,
+    );
+  const [iceSettlementsFreshness, setIceSettlementsFreshness] =
+    useState<IceTradeBlotterFreshnessSummary>(
+      DEFAULT_ICE_SETTLEMENTS_FRESHNESS,
     );
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
@@ -429,6 +452,15 @@ export default function HomePageClient({
           "Local DEV Clear Street MUFG trades derived with frontend JSON and TypeScript product rules.",
         footer:
           "Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "ice-settlements") {
+      return {
+        title: "ICE Settles Workstation - PJM Short Term",
+        subtitle:
+          "PJM short-term settlement marks with source context.",
+        footer:
+          "ICE Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "spark-spreads") {
@@ -548,6 +580,8 @@ export default function HomePageClient({
   }, [activeSection, showLocalDevFeatures]);
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
+  const isIceSettlements = showLocalDevFeatures && activeSection === "ice-settlements";
+  const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
@@ -562,7 +596,7 @@ export default function HomePageClient({
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
             <div className="min-w-0 max-w-full">
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
-                {isHistoricalSettlements ? "Helios CTA | Power Markets" : "HeliosCTA"}
+                {usesPowerMarketEyebrow ? "Helios CTA | Power Markets" : "HeliosCTA"}
               </p>
               <h1 className="text-xl font-bold text-gray-100 sm:text-3xl">{meta.title}</h1>
               <p
@@ -731,6 +765,29 @@ export default function HomePageClient({
                 onToggle={() => setClearStreetTradesFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
                 onAction={() => setClearStreetTradesRefreshToken((value) => value + 1)}
+              />
+            )}
+
+            {showLocalDevFeatures && activeSection === "ice-settlements" && (
+              <FreshnessCard
+                statusLabel={iceSettlementsFreshness.status}
+                statusClass={iceSettlementsFreshness.statusClass}
+                summary={iceSettlementsFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: iceSettlementsFreshness.status,
+                    className: iceSettlementsFreshness.statusClass,
+                  },
+                  { label: "Selection", value: iceSettlementsFreshness.targetDateLabel },
+                  { label: "Latest Date", value: iceSettlementsFreshness.latestDateLabel },
+                  { label: "Source Update", value: iceSettlementsFreshness.latestUpdateLabel },
+                  { label: "Rows", value: iceSettlementsFreshness.rowCountLabel },
+                ]}
+                open={iceSettlementsFreshnessOpen}
+                onToggle={() => setIceSettlementsFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setIceSettlementsRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -932,6 +989,12 @@ export default function HomePageClient({
             <ClearStreetTrades
               refreshToken={clearStreetTradesRefreshToken}
               onFreshnessChange={setClearStreetTradesFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "ice-settlements" && (
+            <IceTradeBlotter
+              refreshToken={iceSettlementsRefreshToken}
+              onFreshnessChange={setIceSettlementsFreshness}
             />
           )}
           {showLocalDevFeatures && activeSection === "spark-spreads" && (

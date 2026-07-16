@@ -9,6 +9,7 @@ export type ActiveSection =
   | "pjm-historical-settlements"
   | "nav-positions"
   | "clear-street-trades"
+  | "ice-settlements"
   | "spark-spreads"
   | "gas-prices"
   | "pjm-price-duration-curves"
@@ -65,6 +66,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       navItems: [
         { id: "pjm-da-model", label: "DA Model" },
         { id: "pjm-price-view", label: "Price View" },
+        { id: "ice-settlements", label: "ICE Settles" },
         { id: "spark-spreads", label: "Sparks" },
         { id: "gas-prices", label: "Gas Prices" },
         { id: "nav-positions", label: "Positions" },
