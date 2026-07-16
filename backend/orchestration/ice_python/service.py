@@ -119,9 +119,9 @@ DEFAULT_JOBS: tuple[ServiceJob, ...] = (
     ),
     ServiceJob(
         name="gas_futures",
-        cadence="daily",
+        cadence="hourly",
         module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures",
-        daily_start=dt_time(15, 0),
+        windows=DEFAULT_HOURLY_WINDOWS,
         timeout_seconds=90 * 60,
     ),
 )

@@ -41,7 +41,7 @@ def test_hourly_job_is_not_due_outside_service_window():
 def test_daily_job_catches_up_after_daily_start_once():
     current_time = datetime(2026, 6, 18, 21, 30, tzinfo=LOCAL_TZ)
     run_state: dict[str, str] = {}
-    job = _job("gas_futures", cadence="daily")
+    job = _job("daily_archive", cadence="daily")
 
     assert service.is_job_due(job, current_time, run_state) is True
 
@@ -158,11 +158,17 @@ def test_task_scheduler_tick_ignores_same_hour_failed_state():
     assert run_state[service.job_run_key(job, current_time)]["rows_processed"] == 9
 
 
-def test_task_scheduler_tick_runs_daily_job_only_in_start_hour():
-    gas_futures = _job("gas_futures", cadence="daily")
+def test_task_scheduler_tick_includes_gas_futures_in_hourly_batch():
+    gas_futures = service.ServiceJob(
+        name="gas_futures",
+        cadence="hourly",
+        runner=lambda: {"rows_processed": 3},
+        windows=service.DEFAULT_HOURLY_WINDOWS,
+        timeout_seconds=90 * 60,
+    )
 
     assert service.task_scheduler_tick_jobs(
-        datetime(2026, 6, 18, 14, 59, tzinfo=LOCAL_TZ),
+        datetime(2026, 6, 18, 10, 0, tzinfo=LOCAL_TZ),
         jobs=[gas_futures],
     ) == []
     assert service.task_scheduler_tick_jobs(
@@ -172,7 +178,7 @@ def test_task_scheduler_tick_runs_daily_job_only_in_start_hour():
     assert service.task_scheduler_tick_jobs(
         datetime(2026, 6, 18, 16, 0, tzinfo=LOCAL_TZ),
         jobs=[gas_futures],
-    ) == []
+    ) == [gas_futures]
 
 
 def test_legacy_timestamp_state_is_attempted_not_succeeded(tmp_path):
