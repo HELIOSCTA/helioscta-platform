@@ -8,6 +8,7 @@ import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
 import GasDailyPrices from "@/components/gas/GasDailyPrices";
+import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
@@ -219,6 +220,9 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "spark-spreads") {
     return "spark-spreads";
+  }
+  if (showLocalDevFeatures && value === "ice-pmi-curve") {
+    return "ice-pmi-curve";
   }
   if (showLocalDevFeatures && value === "gas-prices") {
     return "gas-prices";
@@ -465,17 +469,25 @@ export default function HomePageClient({
     }
     if (showLocalDevFeatures && activeSection === "spark-spreads") {
       return {
-        title: "Sparks",
+        title: "Power Pricing Workstation",
         subtitle:
-          "ICE settlement-backed PJM Western Hub spark spread evolution by contract strip and year.",
-        footer: "Sparks | Source: ice_python.settlements / Azure PostgreSQL",
+          "Market-scalable spread evolution, heat-rate context, and contract history.",
+        footer: "Power Pricing | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {
+      return {
+        title: "ICE PMI",
+        subtitle:
+          "PMI monthly curve table with current marks, seven-day trends, Cal27/Cal28 values, and prior-year settlements.",
+        footer: "ICE PMI | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "gas-prices") {
       return {
-        title: "Gas Prices",
-        subtitle: "Daily ICE physical next-day gas WVAP Close by gas day, trade date, and hub.",
-        footer: "Gas Prices | WVAP Close",
+        title: "Gas Pricing Workstation",
+        subtitle: "ICE gas cash, BalMo, and active monthly curve snapshot by region and market.",
+        footer: "Gas Pricing | ICE physical next-day gas",
       };
     }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
@@ -581,6 +593,10 @@ export default function HomePageClient({
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIceSettlements = showLocalDevFeatures && activeSection === "ice-settlements";
+  const isCenteredWorkstation =
+    isHistoricalSettlements ||
+    activeSection === "spark-spreads" ||
+    activeSection === "gas-prices";
   const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
 
   return (
@@ -592,7 +608,7 @@ export default function HomePageClient({
       />
 
       <div className="min-w-0 flex-1 overflow-auto">
-        <main className={`w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${isHistoricalSettlements ? "mx-auto max-w-full md:max-w-7xl" : ""}`}>
+        <main className={`w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""}`}>
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
             <div className="min-w-0 max-w-full">
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
@@ -999,6 +1015,9 @@ export default function HomePageClient({
           )}
           {showLocalDevFeatures && activeSection === "spark-spreads" && (
             <SparkSpreadEvolution />
+          )}
+          {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (
+            <IcePmiCurveTable />
           )}
           {showLocalDevFeatures && activeSection === "gas-prices" && (
             <GasDailyPrices />

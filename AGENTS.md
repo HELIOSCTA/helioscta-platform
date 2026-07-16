@@ -13,6 +13,8 @@ Before editing, read the nearest relevant docs and contracts:
 - Azure Postgres setup and permissions: `infrastructure/azure-postgres/README.md`
 - Agent workflow: `.agents/context/one-shot-implementation-workflow.md`
 - Assumption challenge rules: `.agents/context/assumptions-audit.md`
+- Parallel frontend/worktree workflow:
+  `.agents/context/frontend-parallel-worktree-workflow.md`
 
 ## Assumption Audit
 
@@ -81,6 +83,14 @@ Choose the smallest meaningful checks for the change:
 
 If a check cannot run because credentials, services, or dependencies are
 missing, say exactly what was skipped and why.
+
+## Frontend Parallel Work
+
+When multiple agents may edit or inspect frontend pages concurrently, read
+`.agents/context/frontend-parallel-worktree-workflow.md` before starting,
+restarting, building, or clearing a frontend dev server. Do not run multiple
+`next dev` servers from the same `frontend/` directory. Keep port `3000` for the
+integration checkout unless the user explicitly asks otherwise.
 
 ## Final Response
 
