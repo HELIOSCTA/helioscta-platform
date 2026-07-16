@@ -85,8 +85,8 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one hidden scheduled coordinator task under the current
-  Windows user.
+- registers or updates one hidden hourly coordinator task under the current
+  Windows user. Python decides whether any ICE feeds are due for that hour.
 
 Install or update the visible status task:
 
