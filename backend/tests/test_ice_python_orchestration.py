@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import date
+import os
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -227,6 +230,66 @@ def test_run_with_logging_emits_ice_api_fetch_telemetry(monkeypatch, tmp_path):
     assert telemetry[0]["metadata"]["contract_dates_required"] is False
     assert telemetry[0]["metadata"]["contract_dates_rows_processed"] == 0
     assert telemetry[0]["metadata"]["settlements_rows_processed"] == 3
+    assert telemetry[0]["metadata"]["lock_file_path"].endswith(
+        "ice.orchestration_ice_python_test.lock"
+    )
+
+
+def test_ice_job_lock_scopes_by_pipeline_name(tmp_path):
+    base_lock_file = tmp_path / "ice.lock"
+
+    pjm_lock = _runtime.resolve_lock_file(
+        base_lock_file,
+        lock_scope="orchestration_ice_python_settlements_pjm_futures",
+    )
+    gas_lock = _runtime.resolve_lock_file(
+        base_lock_file,
+        lock_scope="orchestration_ice_python_settlements_gas_balmo",
+    )
+
+    assert pjm_lock.name == "ice.orchestration_ice_python_settlements_pjm_futures.lock"
+    assert gas_lock.name == "ice.orchestration_ice_python_settlements_gas_balmo.lock"
+
+    with _runtime.exclusive_job_lock(base_lock_file, lock_scope="pjm"):
+        with _runtime.exclusive_job_lock(base_lock_file, lock_scope="gas"):
+            assert True
+
+
+def test_ice_job_lock_blocks_same_pipeline_overlap(tmp_path):
+    base_lock_file = tmp_path / "ice.lock"
+    child_code = """
+import os
+import time
+from backend.orchestration.ice_python.settlements import _runtime
+
+with _runtime.exclusive_job_lock(
+    os.environ["ICE_TEST_LOCK_FILE"],
+    lock_scope=os.environ["ICE_TEST_LOCK_SCOPE"],
+):
+    print("locked", flush=True)
+    time.sleep(2)
+"""
+    env = os.environ.copy()
+    env["ICE_TEST_LOCK_FILE"] = str(base_lock_file)
+    env["ICE_TEST_LOCK_SCOPE"] = "gas_balmo"
+
+    first = subprocess.Popen(
+        [sys.executable, "-c", child_code],
+        cwd=os.getcwd(),
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert first.stdout is not None
+        assert first.stdout.readline().strip() == "locked"
+        with pytest.raises(RuntimeError, match="same lock scope"):
+            with _runtime.exclusive_job_lock(base_lock_file, lock_scope="gas_balmo"):
+                pass
+    finally:
+        first.terminate()
+        first.communicate(timeout=10)
 
 
 def test_registry_runner_can_tolerate_empty_contract_dates(monkeypatch):

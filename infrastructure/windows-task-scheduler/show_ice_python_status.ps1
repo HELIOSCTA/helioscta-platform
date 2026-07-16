@@ -3,8 +3,6 @@
 param(
     [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
     [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
-    [string]$CoordinatorTaskName = "HeliosCTA ICE Python Coordinator",
-    [string]$CoordinatorTaskPath = "\HeliosCTA\ICE Python\",
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
     [string]$StateFile = "",
@@ -178,19 +176,6 @@ function Invoke-FailedRerun {
         [Parameter(Mandatory = $true)]
         [string]$ResolvedStateFile
     )
-
-    $coordinatorTask = Get-ScheduledTask `
-        -TaskName $CoordinatorTaskName `
-        -TaskPath $CoordinatorTaskPath `
-        -ErrorAction SilentlyContinue
-    if ($null -ne $coordinatorTask -and $coordinatorTask.State -eq "Running") {
-        Write-Host ""
-        Write-Host (
-            "Coordinator task is currently Running. Wait for it to finish, " +
-            "or end it in Task Scheduler before rerunning failed feeds."
-        ) -ForegroundColor Yellow
-        return 2
-    }
 
     New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
     New-Item -ItemType Directory -Force -Path $StateDir | Out-Null

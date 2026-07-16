@@ -114,6 +114,10 @@ The status window shows an `ACTIONS` block. Press `R` to rerun only the latest
 failed or stale-running records, or press `Q`/Enter to close. Feeds with a newer
 successful record are skipped.
 
+ICE reruns use per-feed lock files. That means a failed `gas_balmo` retry can
+run while the coordinator is still working on `west_power_futures`, but a second
+`gas_balmo` run will be blocked until the first one exits.
+
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
 If you change the task user in the Task Scheduler UI, verify the selected user
