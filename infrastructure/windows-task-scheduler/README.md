@@ -20,10 +20,14 @@ and `18`. Each launch calls:
 python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
 ```
 
-The Python coordinator owns the real schedule policy. It only runs due jobs,
-persists once-per-hour or once-per-day state, prevents overlap with a local lock
-file, launches each ICE job in a child Python process, applies hard timeouts,
-and writes durable telemetry to `ops.api_fetch_log`.
+Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
+the current ICE batch for that local-time window, even if a feed already failed
+earlier in the same hour. Hourly settlement jobs run in the `06:00-10:00` and
+`14:00-19:00` windows. The daily `gas_futures` job runs during the `15:00`
+hour only. The Python coordinator still persists per-window state for status,
+prevents overlap with a local lock file, launches each ICE job in a child
+Python process, applies hard timeouts, and writes durable telemetry to
+`ops.api_fetch_log`.
 
 Routine scheduled task actions launch PowerShell visibly under the interactive
 Windows user. This keeps Task Scheduler as the single operator surface: start

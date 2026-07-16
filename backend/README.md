@@ -238,10 +238,12 @@ XL / ICE Python install on the Windows scheduler host. Do not install ICE
 dependencies from `backend/requirements-local-windows.txt` on the Linux VM,
 and do not add ICE systemd units under `infrastructure/systemd`.
 The local Windows Task Scheduler coordinator runs the ICE scheduler in
-`run_once` mode, launches due jobs in child Python processes with hard
-timeouts, prevents overlapping manual/scheduled pulls with a local lock file,
-persists per-window state with explicit success/failure/timeout statuses, and
-writes durable job telemetry to `ops.api_fetch_log`.
+`run_once` mode. Each Task Scheduler start runs the current local-time ICE
+batch instead of skipping jobs that already failed earlier in the same hour.
+It launches jobs in child Python processes with hard timeouts, prevents
+overlapping manual/scheduled pulls with a local lock file, persists per-window
+state with explicit success/failure/timeout statuses, and writes durable job
+telemetry to `ops.api_fetch_log`.
 
 NAV position helpers are local SFTP workflows. They live under
 `backend.scrapes.nav` and `backend.orchestration.nav`, write raw NAV position

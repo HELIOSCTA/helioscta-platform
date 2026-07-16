@@ -119,6 +119,62 @@ def test_run_due_jobs_records_failed_attempt_without_retrying_same_hour():
     assert service.due_jobs(current_time, run_state, jobs=[job]) == []
 
 
+def test_task_scheduler_tick_ignores_same_hour_failed_state():
+    current_time = datetime(2026, 6, 18, 14, 1, tzinfo=LOCAL_TZ)
+    calls: list[str] = []
+
+    def fake_runner() -> dict[str, object]:
+        calls.append("ran")
+        return {"rows_processed": 9}
+
+    job = service.ServiceJob(
+        name="ercot_futures",
+        runner=fake_runner,
+        cadence="hourly",
+        windows=service.DEFAULT_HOURLY_WINDOWS,
+    )
+    run_state = {
+        service.job_run_key(job, current_time): {
+            "status": "failed",
+            "finished_at": datetime(2026, 6, 18, 14, 0, tzinfo=LOCAL_TZ).isoformat(),
+        }
+    }
+
+    summary = service.run_due_jobs(
+        current_time=current_time,
+        run_state=run_state,
+        jobs=[job],
+        respect_run_state=False,
+    )
+
+    assert calls == ["ran"]
+    assert summary == {
+        "jobs_due": 1,
+        "jobs_succeeded": 1,
+        "jobs_failed": 0,
+        "jobs_timed_out": 0,
+    }
+    assert run_state[service.job_run_key(job, current_time)]["status"] == "succeeded"
+    assert run_state[service.job_run_key(job, current_time)]["rows_processed"] == 9
+
+
+def test_task_scheduler_tick_runs_daily_job_only_in_start_hour():
+    gas_futures = _job("gas_futures", cadence="daily")
+
+    assert service.task_scheduler_tick_jobs(
+        datetime(2026, 6, 18, 14, 59, tzinfo=LOCAL_TZ),
+        jobs=[gas_futures],
+    ) == []
+    assert service.task_scheduler_tick_jobs(
+        datetime(2026, 6, 18, 15, 30, tzinfo=LOCAL_TZ),
+        jobs=[gas_futures],
+    ) == [gas_futures]
+    assert service.task_scheduler_tick_jobs(
+        datetime(2026, 6, 18, 16, 0, tzinfo=LOCAL_TZ),
+        jobs=[gas_futures],
+    ) == []
+
+
 def test_legacy_timestamp_state_is_attempted_not_succeeded(tmp_path):
     state_file = tmp_path / "state.json"
     state_file.write_text(

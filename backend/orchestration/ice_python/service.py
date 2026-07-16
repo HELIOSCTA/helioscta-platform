@@ -244,6 +244,24 @@ def _scheduled_at_current_time(job: ServiceJob, current_time: datetime) -> bool:
     raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
 
 
+def _scheduled_for_task_scheduler_tick(
+    job: ServiceJob,
+    current_time: datetime,
+) -> bool:
+    """Return whether a visible Task Scheduler start should run this job."""
+    local_time = current_time.timetz().replace(tzinfo=None)
+    if job.cadence == "hourly":
+        return any(window.contains(local_time) for window in job.windows)
+    if job.cadence == "daily":
+        if job.daily_start is None:
+            raise ValueError(f"Daily job {job.name} is missing daily_start.")
+        return (
+            local_time.hour == job.daily_start.hour
+            and local_time >= job.daily_start
+        )
+    raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
+
+
 def _is_running_record_stale(
     job: ServiceJob,
     current_time: datetime,
@@ -293,6 +311,18 @@ def due_jobs(
 ) -> list[ServiceJob]:
     """Return the jobs due at current_time."""
     return [job for job in jobs if is_job_due(job, current_time, run_state)]
+
+
+def task_scheduler_tick_jobs(
+    current_time: datetime,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+) -> list[ServiceJob]:
+    """Return jobs for one Task Scheduler tick, ignoring persisted run state."""
+    return [
+        job
+        for job in jobs
+        if _scheduled_for_task_scheduler_tick(job, current_time)
+    ]
 
 
 def _tail_text(value: str | bytes | None, line_limit: int = PROCESS_LOG_TAIL_LINES) -> str:
@@ -501,10 +531,18 @@ def run_due_jobs(
     jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
     state_file: Path | None = None,
     logger: logging.Logger | None = None,
+    respect_run_state: bool = True,
 ) -> dict[str, int]:
     """Attempt due jobs and return a compact service-loop summary."""
     service_logger = logger or configure_service_logging()
-    selected_jobs = due_jobs(current_time=current_time, run_state=run_state, jobs=jobs)
+    if respect_run_state:
+        selected_jobs = due_jobs(
+            current_time=current_time,
+            run_state=run_state,
+            jobs=jobs,
+        )
+    else:
+        selected_jobs = task_scheduler_tick_jobs(current_time=current_time, jobs=jobs)
     succeeded = 0
     failed = 0
     timed_out = 0
@@ -630,6 +668,7 @@ def run_service_loop(
             jobs=jobs,
             state_file=resolved_state_file,
             logger=service_logger,
+            respect_run_state=not run_once,
         )
         if run_once:
             return 1 if summary["jobs_failed"] else 0
