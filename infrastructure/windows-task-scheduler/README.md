@@ -110,8 +110,9 @@ Start it from Task Scheduler when you want a visible status window. It reads
 success and failure times, prints recent history for each feed, and waits for
 input before closing.
 
-From the status window, press `R` and Enter to rerun only the latest failed or
-stale-running records. Feeds with a newer successful record are skipped.
+The status window shows an `ACTIONS` block. Press `R` to rerun only the latest
+failed or stale-running records, or press `Q`/Enter to close. Feeds with a newer
+successful record are skipped.
 
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
@@ -163,9 +164,9 @@ Start-ScheduledTask `
 
 In the status window:
 
-- press Enter to close;
-- press `R` and Enter to rerun latest unresolved failures, then review the
-  refreshed status table.
+- press `R` to rerun latest unresolved failures, then review the refreshed
+  status table;
+- press `Q` or Enter to close.
 
 If a historical log opens in VS Code with red `NUL` markers, strip NUL
 characters while viewing it:

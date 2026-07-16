@@ -232,6 +232,66 @@ function Invoke-FailedRerun {
     return $exitCode
 }
 
+function Get-FailedRerunCandidateNames {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResolvedRepoRoot,
+        [Parameter(Mandatory = $true)]
+        [string]$ResolvedPythonExe,
+        [Parameter(Mandatory = $true)]
+        [string]$ResolvedStateFile
+    )
+
+    $pythonSnippet = @"
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+from backend.orchestration.ice_python import service
+
+state = service.load_run_state(Path(r'$ResolvedStateFile'))
+now = datetime.now(ZoneInfo(service.DEFAULT_TIMEZONE))
+attempts = service.latest_failed_job_attempts(current_time=now, run_state=state)
+for job, _run_time in attempts:
+    print(job.name)
+"@
+
+    Push-Location $ResolvedRepoRoot
+    try {
+        $output = & $ResolvedPythonExe -c $pythonSnippet 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            return @()
+        }
+        return @($output | Where-Object { $_ })
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+function Read-StatusActionKey {
+    try {
+        return ([Console]::ReadKey($true)).Key
+    }
+    catch {
+        $choice = Read-Host "Action"
+        if ($choice -match "^[Rr]") {
+            return "R"
+        }
+        return "Enter"
+    }
+}
+
+function Wait-ForCloseKey {
+    Write-Host ""
+    Write-Host "Press any key to close."
+    try {
+        [Console]::ReadKey($true) | Out-Null
+    }
+    catch {
+        Read-Host "Press Enter to close" | Out-Null
+    }
+}
+
 function Write-IceStatusReport {
     param([object[]]$Rows)
 
@@ -345,8 +405,24 @@ Write-IceStatusReport -Rows $rows
 
 if (-not $NoPause) {
     Write-Host ""
-    $choice = Read-Host "Press R to rerun latest failed/stale feeds, or press Enter to close"
-    if ($choice -match "^[Rr]") {
+    Write-Host "ACTIONS"
+    Write-Host "======="
+    $candidateNames = Get-FailedRerunCandidateNames `
+        -ResolvedRepoRoot $resolvedRepoRoot `
+        -ResolvedPythonExe $resolvedPythonExe `
+        -ResolvedStateFile $resolvedStateFile
+    if ($candidateNames.Count -gt 0) {
+        Write-Host ("Retry candidates: {0}" -f ($candidateNames -join ", "))
+        Write-Host "R = retry failed feeds"
+        Write-Host "Q or Enter = close"
+    }
+    else {
+        Write-Host "No unresolved failed feeds."
+        Write-Host "Q or Enter = close"
+    }
+
+    $choice = Read-StatusActionKey
+    if ($candidateNames.Count -gt 0 -and $choice -eq "R") {
         Invoke-FailedRerun `
             -ResolvedRepoRoot $resolvedRepoRoot `
             -ResolvedPythonExe $resolvedPythonExe `
@@ -361,7 +437,6 @@ if (-not $NoPause) {
         catch {
             Write-Host "ERROR: $($_.Exception.Message)" -ForegroundColor Red
         }
-        Write-Host ""
-        Read-Host "Press Enter to close"
+        Wait-ForCloseKey
     }
 }
