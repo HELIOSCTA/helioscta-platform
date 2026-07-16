@@ -13,7 +13,8 @@ Task Scheduler runs one coordinator task:
 \HeliosCTA\ICE Python\HeliosCTA ICE Python Coordinator
 ```
 
-The task runs hourly. Each launch calls:
+The task runs hourly on weekdays at local hours `05` through `22`. Each launch
+calls:
 
 ```powershell
 python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
@@ -23,11 +24,11 @@ Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
 the current ICE batch for that local-time window, even if a feed already failed
 earlier in the same hour. The hourly settlement batch, including the split
 `gas_futures_core`, `gas_futures_gulf`, `gas_futures_west`, and
-`gas_futures_east` feeds, runs in the `06:00-10:00` and `14:00-19:00`
-windows. The Python coordinator still persists per-window state for status,
-prevents same-feed overlap with local lock files, launches each ICE job in a
-child Python process, applies hard timeouts, and writes durable telemetry to
-`ops.api_fetch_log`.
+`gas_futures_east` feeds, runs Monday-Friday during `[05:00, 23:00)`, which
+includes the `22:00` launch. The Python coordinator still persists per-window
+state for status, prevents same-feed overlap with local lock files, launches
+each ICE job in a child Python process, applies hard timeouts, and writes
+durable telemetry to `ops.api_fetch_log`.
 
 Routine scheduled coordinator actions launch hidden under the interactive
 Windows user. Use the visible status task as the operator surface.
@@ -85,8 +86,9 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one hidden hourly coordinator task under the current
-  Windows user. Python decides whether any ICE feeds are due for that hour.
+- registers or updates one hidden hourly weekday coordinator task under the
+  current Windows user for local hours `05` through `22`. Python also decides
+  whether any ICE feeds are due for that hour.
 
 Install or update the visible status task:
 

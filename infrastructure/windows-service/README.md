@@ -65,8 +65,8 @@ this repo.
 
 `backend.orchestration.ice_python.service` runs:
 
-- Hourly settlement jobs once per local hour during `[06:00, 10:00)` and
-  `[14:00, 19:00)`.
+- Hourly settlement jobs once per local hour Monday-Friday during
+  `[05:00, 23:00)`, which includes the `22:00` launch.
 - Split gas futures jobs (`gas_futures_core`, `gas_futures_gulf`,
   `gas_futures_west`, and `gas_futures_east`) run with the hourly settlement
   jobs.

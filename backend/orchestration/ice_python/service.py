@@ -62,8 +62,7 @@ class ServiceJob:
 
 
 DEFAULT_HOURLY_WINDOWS: tuple[TimeWindow, ...] = (
-    TimeWindow(start=dt_time(6, 0), end=dt_time(10, 0)),
-    TimeWindow(start=dt_time(14, 0), end=dt_time(19, 0)),
+    TimeWindow(start=dt_time(5, 0), end=dt_time(23, 0)),
 )
 
 SETTLEMENTS_MODULE_ROOT = "backend.orchestration.ice_python.settlements"
@@ -253,6 +252,8 @@ def job_run_key(job: ServiceJob, current_time: datetime) -> str:
 def _scheduled_at_current_time(job: ServiceJob, current_time: datetime) -> bool:
     local_time = current_time.timetz().replace(tzinfo=None)
     if job.cadence == "hourly":
+        if current_time.weekday() >= 5:
+            return False
         return any(window.contains(local_time) for window in job.windows)
     if job.cadence == "daily":
         if job.daily_start is None:

@@ -21,7 +21,7 @@ def _job(name: str, cadence: str = "hourly") -> service.ServiceJob:
 
 
 def test_hourly_job_is_due_once_inside_service_window():
-    current_time = datetime(2026, 6, 18, 6, 15, tzinfo=LOCAL_TZ)
+    current_time = datetime(2026, 6, 18, 5, 15, tzinfo=LOCAL_TZ)
     run_state: dict[str, str] = {}
     job = _job("pjm_short_term")
 
@@ -32,8 +32,14 @@ def test_hourly_job_is_due_once_inside_service_window():
     assert service.is_job_due(job, current_time, run_state) is False
 
 
-def test_hourly_job_is_not_due_outside_service_window():
-    current_time = datetime(2026, 6, 18, 10, 0, tzinfo=LOCAL_TZ)
+def test_hourly_job_is_not_due_after_weekday_service_window():
+    current_time = datetime(2026, 6, 18, 23, 0, tzinfo=LOCAL_TZ)
+
+    assert service.due_jobs(current_time, {}, jobs=[_job("pjm_short_term")]) == []
+
+
+def test_hourly_job_is_not_due_on_weekend():
+    current_time = datetime(2026, 6, 20, 10, 0, tzinfo=LOCAL_TZ)
 
     assert service.due_jobs(current_time, {}, jobs=[_job("pjm_short_term")]) == []
 
@@ -175,17 +181,21 @@ def test_task_scheduler_tick_includes_split_gas_futures_in_hourly_batch():
     ]
 
     assert service.task_scheduler_tick_jobs(
-        datetime(2026, 6, 18, 10, 0, tzinfo=LOCAL_TZ),
+        datetime(2026, 6, 18, 4, 0, tzinfo=LOCAL_TZ),
         jobs=gas_futures_jobs,
     ) == []
     assert service.task_scheduler_tick_jobs(
-        datetime(2026, 6, 18, 15, 30, tzinfo=LOCAL_TZ),
+        datetime(2026, 6, 18, 5, 0, tzinfo=LOCAL_TZ),
         jobs=gas_futures_jobs,
     ) == gas_futures_jobs
     assert service.task_scheduler_tick_jobs(
-        datetime(2026, 6, 18, 16, 0, tzinfo=LOCAL_TZ),
+        datetime(2026, 6, 18, 22, 0, tzinfo=LOCAL_TZ),
         jobs=gas_futures_jobs,
     ) == gas_futures_jobs
+    assert service.task_scheduler_tick_jobs(
+        datetime(2026, 6, 18, 23, 0, tzinfo=LOCAL_TZ),
+        jobs=gas_futures_jobs,
+    ) == []
 
 
 def test_latest_failed_job_attempts_skips_old_failures_after_success():

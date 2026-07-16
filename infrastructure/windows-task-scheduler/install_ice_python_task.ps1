@@ -1,8 +1,8 @@
 # Installs or updates the local-only ICE Python Windows Task Scheduler coordinator.
 #
-# The task runs a single coordinator process at scheduled local hours. The
-# coordinator uses backend.orchestration.ice_python.service in run_once mode so
-# due-job selection, lock handling, state persistence, child timeouts, and
+# The task runs a single coordinator process at scheduled weekday local hours.
+# The coordinator uses backend.orchestration.ice_python.service in run_once mode
+# so due-job selection, lock handling, state persistence, child timeouts, and
 # ops.api_fetch_log telemetry stay in Python.
 
 param(
@@ -11,7 +11,8 @@ param(
     [string]$TaskName = "HeliosCTA ICE Python Coordinator",
     [string]$TaskPath = "\HeliosCTA\ICE Python\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
-    [int[]]$RunHours = @(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23),
+    [int[]]$RunHours = @(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22),
+    [string[]]$RunDays = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
     [int]$JobTimeoutSeconds = 2700,
@@ -265,6 +266,7 @@ Write-Host "Python: $resolvedPythonExe"
 Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
 Write-Host "RunHours: $($RunHours -join ', ')"
+Write-Host "RunDays: $($RunDays -join ', ')"
 
 if ($PullLatest) {
     $dirty = Get-GitOutput -Arguments @("-C", $resolvedRepoRoot, "status", "--porcelain")
@@ -363,7 +365,10 @@ foreach ($hour in ($RunHours | Sort-Object -Unique)) {
     if ($hour -lt 0 -or $hour -gt 23) {
         throw "RunHours entries must be between 0 and 23."
     }
-    $triggers += New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($hour))
+    $triggers += New-ScheduledTaskTrigger `
+        -Weekly `
+        -DaysOfWeek $RunDays `
+        -At ([datetime]::Today.AddHours($hour))
 }
 
 $settings = New-ScheduledTaskSettingsSet `
@@ -382,7 +387,7 @@ $task = New-ScheduledTask `
     -Trigger $triggers `
     -Settings $settings `
     -Principal $principal `
-    -Description "Runs one HeliosCTA ICE Python scheduler tick at promoted settlement windows."
+    -Description "Runs one HeliosCTA ICE Python scheduler tick hourly on weekdays from 05:00 through 22:00 local time."
 
 Register-ScheduledTask `
     -TaskName $TaskName `
