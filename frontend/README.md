@@ -56,6 +56,8 @@ GET /api/cache/warm-forecasts
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
+GET /api/ice-pmi-curve?currentYear=2026&endYear=2028&tradingDays=7&priorYears=5
+GET /api/ice-pmi-curve/contract?symbol=PMI%20Q27-IUS
 ```
 
 Email/report links can open the PJM DA LMP page directly into the single-day
@@ -70,9 +72,9 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 ```text
 GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
-GET /api/gas-daily-prices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+GET /api/gas-daily-prices?basis=settlement
 GET /api/dev/nav-positions?fund=all&rawLimit=200
-GET /api/dev/clear-street-trades?limit=500
+GET /api/dev/clear-street-trades?tradeDate=YYYY-MM-DD
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
@@ -154,6 +156,25 @@ embedded Term Bible view reuses `GET /api/pjm-term-bible`, renders tables only,
 and suppresses the daily plot. Legacy links with `?section=pjm-term-bible` open
 the Historical Settlements page on the Term Bible tab.
 
+## ICE PMI Source Contract
+
+The ICE PMI view reads non-option PJM Western Hub real-time peak mini futures
+settlement marks with `helios_readonly` from `ice_python.settlements`.
+
+Source system: ICE Python / ICE XL local Windows runtime.
+
+Promoted table grain: `trade_date x symbol`, with primary key
+`(trade_date, symbol)` and freshness field `updated_at`.
+
+The route `GET /api/ice-pmi-curve` returns a month-by-contract-year matrix for
+PMI monthly futures plus prior-year settled contracts. The route
+`GET /api/ice-pmi-curve/contract` accepts a bounded PMI symbol such as
+`PMI Q27-IUS` and returns full settlement, volume, and open-interest history,
+latest moves, window high/low, average volume, and source freshness for the
+clicked heat-map cell.
+The view does not create a database model, frontend cache table, backend job, or
+new credential requirement.
+
 ## Local DEV Positions Source Contract
 
 The Positions DEV view reads NAV position valuation snapshots with
@@ -182,18 +203,28 @@ frontend cache table.
 
 ## Local DEV Clear Street Trades Source Contract
 
-The Trades DEV view reads latest raw Clear Street MUFG rows with
-`helios_readonly` from `clear_street.eod_transactions` and derives product and
-export fields from `frontend/lib/positionsAndTrades/rules/*.json` through
-`frontend/lib/positionsAndTrades/productRules.ts`. It is local-only and appears
-in the local `DEV` sidebar section at `/?section=clear-street-trades`; Vercel
-builds hide the page and return `404` from
-`GET /api/dev/clear-street-trades`.
+The Trades DEV view reads selected Clear Street SFTP trade-date rows across
+accounts with `helios_readonly` from `clear_street.eod_transactions` and derives
+product, account, contract, and export fields from
+`frontend/sql/clear-street-trades/marts/eod_all_history.sql`. That SQL is copied
+from
+`dbt/azure_postgres/reference_sql/ddl/clear_street/eod_transactions/target/cs_65_eod_all_history.sql`.
+It is local-only and appears in the local `DEV` sidebar section at
+`/?section=clear-street-trades`; Vercel builds hide the page and return `404`
+from `GET /api/dev/clear-street-trades`.
 
-The route accepts bounded params `limit=25..2000` and optional `search`. The
-SQL only selects the latest SFTP date and MUFG firm rows. The frontend route
-applies the row cap, search filter, and JSON/TypeScript product rules for
-review. It does not read generated SQL, mutate data, or create a cache table.
+The frontend exposes only a trade-date selector for this view. The local route
+accepts `tradeDate=YYYY-MM-DD`; without it, it selects the latest available
+`trade_date_from_sftp` from the Clear Street rows. For the selected SFTP trade
+date, the route displays only the latest `sftp_upload_timestamp` trade file,
+applies a 10,000-row safety cap, and wraps the copied all-history SQL for the
+curated review/export fields. It does not mutate data or create a cache table.
+
+Clear Street account names are derived in the copied SQL from
+`give_in_out_firm_num` using the same account lookup contract embedded in the
+dbt target SQL. NAV account names are still derived from `nav.positions.account`
+using `backend/scrapes/positions_and_trades/rules/data/account_catalog.py`
+synced into `frontend/lib/positionsAndTrades/rules/account_lookups.json`.
 
 ## Local DEV Sparks Source Contract
 
@@ -228,12 +259,24 @@ Source system: ICE Python / ICE XL local Windows runtime.
 Promoted table grain: `trade_date x symbol`, with primary key
 `(trade_date, symbol)` and freshness field `updated_at`.
 
-The route `GET /api/gas-daily-prices` accepts bounded gas-day params
-`startDate=YYYY-MM-DD` and `endDate=YYYY-MM-DD`, with a maximum range of 120 gas
-days. The response returns a daily WVAP Close matrix over the promoted next-day
-physical gas hub registry. Gas-day attribution is generated from the shared ICE
-physical gas trading calendar, so weekend and holiday strips use the same
-mapping as the standalone SQL verifier. It does not create a database model,
+The route `GET /api/gas-daily-prices` accepts an optional price `basis` field.
+The page calls it without a trade-date selector and displays the latest ICE
+trade date available across the gas registry. Gas market rows are generated
+from the backend ICE registry by running
+`python frontend/scripts/sync-ice-gas-registry.py`, which writes
+`frontend/lib/gasPricing/ice_gas_registry.json` from
+`backend.scrapes.ice_python.symbols.gas`. The response returns one
+curve-snapshot matrix with `Region` and `Market` rows and `Cash`, `BalMo`, plus
+12 active monthly contract columns labeled by actual strip month, such as
+`Aug 26` through `Jul 27` when the latest ICE trade date is in July 2026. The
+current calendar contract month is treated as expired for this matrix; active
+curve months must be strictly after the latest ICE trade date's calendar month.
+For non-Henry markets, monthly curve cells are all-in local gas
+prices built from Henry monthly fixed price plus that market's basis future
+when both legs are available. Registry rows without a matching BalMo or monthly
+future stay visible and return null cells for missing legs instead of being
+silently dropped. Matrix cells open a local detail popup with the source
+symbol/formula and update timestamp. It does not create a database model,
 frontend cache table, backend job, or new credential requirement.
 
 ## Local DEV PJM Generation Source Contract

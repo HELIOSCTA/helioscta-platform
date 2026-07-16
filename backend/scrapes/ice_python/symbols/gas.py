@@ -8,8 +8,10 @@ ICE product metadata reviewed on 2026-06-01:
 - BALMO gas rows use ICE swing future symbols with the `B0-IUS` tenor.
 - Monthly gas futures use product prefixes and generated
   `{product} {MONTH_CODE}{YY}-IUS` symbols.
-- These rows are registry metadata only; no gas settlement orchestration is
-  enabled here.
+- Gas settlement orchestration is enabled by the local ICE Python service.
+  Cash physical symbols are not interchangeable with financial fixed-price
+  futures; verified fixed-price products are tracked separately as curve
+  candidates until the market mapping is approved.
 """
 from __future__ import annotations
 
@@ -37,6 +39,11 @@ STRIP_MAPPING: dict[int, str] = {
     12: "Z",
 }
 VALID_STRIPS = set(STRIP_MAPPING.values())
+
+ROLE_CASH_PHYSICAL = "cash_physical"
+ROLE_BALMO_SWING = "balmo_swing"
+ROLE_BASIS_FUTURE = "basis_future"
+ROLE_FIXED_PRICE_FUTURE = "fixed_price_future"
 
 
 def _ice_product_url(product_id: str | None) -> str | None:
@@ -84,10 +91,12 @@ def _common_metadata(entry: dict[str, object], family: str) -> dict[str, object]
         "settlement_source_key": entry.get("settlement_source_key", "ice_settlement"),
         "settlement_priority": 2,
         "source_table": "ice_python.settlements",
+        "instrument_role": entry.get("instrument_role", family),
+        "review_status": entry.get("review_status"),
         "metadata_status": (
             "ice_product_url_verified" if product_id else "unverified_legacy_symbol"
         ),
-        "active": True,
+        "active": entry.get("active", True),
     }
     enriched["notes"] = _metadata_note(enriched)
     return enriched
@@ -227,6 +236,12 @@ GAS_FUTURES_PRODUCTS: list[dict] = [
     {"product": "SCB", "ice_product_id": "6590151", "product_name": "Socal Citygate Basis Future", "description": "SoCal Citygate Basis", "region": "southwest"},
     {"product": "PGE", "ice_product_id": "6590150", "product_name": "PG&E Citygate Basis Future", "description": "PG&E Citygate Basis", "region": "southwest"},
     {"product": "CRI", "ice_product_id": "6590129", "product_name": "CIG Rockies Basis Future", "description": "CIG Mainline Basis", "region": "rockies_northwest"},
+    {"product": "ALG", "ice_product_id": "71085626", "product_name": "Algonquin Citygates Fixed Price Future", "description": "Algonquin Citygates Fixed Price", "region": "northeast", "candidate_for_market": "Algonquin Citygates", "review_status": "candidate_verified_not_mapped"},
+    {"product": "TZ5", "ice_product_id": "83048643", "product_name": "Transco Zone 5 Fixed Price", "description": "Transco Zone 5 Fixed Price", "region": "northeast", "candidate_for_market": "Transco Zone 5 North", "review_status": "candidate_verified_not_mapped"},
+    {"product": "IZP", "ice_product_id": "83048605", "product_name": "Iroquois-Z2 (Platts) Fixed Price", "description": "Iroquois Zone 2 Fixed Price", "region": "northeast", "candidate_for_market": "Iroquois Zone 2", "review_status": "candidate_verified_not_mapped"},
+    {"product": "TN4", "ice_product_id": "83048637", "product_name": "Tennessee Zone 4 200L Fixed Price", "description": "Tennessee Zone 4 200L Fixed Price", "region": "northeast", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": "candidate_verified_not_mapped"},
+    {"product": "DM9", "ice_product_id": "83048638", "product_name": "Tennessee Zone 4 300L Fixed Price Future", "description": "Tennessee Zone 4 300L Fixed Price", "region": "northeast", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": "candidate_verified_not_mapped"},
+    {"product": "CRA", "ice_product_id": "71085627", "product_name": "CIG Rockies Fixed Price Future", "description": "CIG Rockies Fixed Price", "region": "rockies_northwest", "candidate_for_market": "CIG Mainline", "review_status": "candidate_verified_not_mapped"},
 ]
 
 
@@ -250,6 +265,12 @@ def _build_next_day_entries() -> list[dict]:
                     "ice_contract_symbol": cc,
                     "market": "Physical Gas",
                     "shape": "Firm Physical Fixed Price",
+                    "instrument_role": ROLE_CASH_PHYSICAL,
+                    "review_status": (
+                        "verified_cash"
+                        if product_id
+                        else "legacy_cash_requires_business_mapping_review"
+                    ),
                     "contract_size": "100 MMBtus per lot",
                     "settlement_source_key": "ice_next_day_gas",
                 },
@@ -279,6 +300,8 @@ def _build_balmo_entries() -> list[dict]:
                     "ice_contract_symbol": cc,
                     "market": "Financial Gas",
                     "shape": "Swing Daily",
+                    "instrument_role": ROLE_BALMO_SWING,
+                    "review_status": "verified_balmo",
                     "contract_size": "2500 MMBtus",
                     "settlement_source_key": "ice_balmo_gas",
                 },
@@ -294,6 +317,7 @@ def _build_gas_futures_entries() -> list[dict]:
         product = str(entry["product"])
         product_name = str(entry["product_name"])
         is_basis = "Basis" in product_name
+        is_candidate = str(entry.get("review_status") or "").startswith("candidate")
         entries.append(
             _common_metadata(
                 {
@@ -309,6 +333,14 @@ def _build_gas_futures_entries() -> list[dict]:
                     "ice_contract_symbol": product,
                     "market": "Financial Gas",
                     "shape": "Basis" if is_basis else "Fixed Price",
+                    "instrument_role": (
+                        ROLE_BASIS_FUTURE if is_basis else ROLE_FIXED_PRICE_FUTURE
+                    ),
+                    "review_status": (
+                        entry.get("review_status")
+                        or ("verified_basis_curve" if is_basis else "verified_fixed_price_curve")
+                    ),
+                    "active": not is_candidate,
                     "contract_size": "2500 MMBtus",
                     "settlement_source_key": "ice_gas_futures",
                 },
@@ -353,7 +385,21 @@ def get_gas_futures_products() -> list[dict]:
 def get_gas_futures_product_codes(product_entries: list[dict] | None = None) -> list[str]:
     """Return gas futures product prefix strings."""
     entries = product_entries or GAS_FUTURES_PRODUCTS
-    return [entry["product"] for entry in entries]
+    return [
+        entry["product"]
+        for entry in entries
+        if entry.get("active", True)
+        and entry.get("review_status") != "candidate_verified_not_mapped"
+    ]
+
+
+def get_gas_futures_candidate_products() -> list[dict]:
+    """Return verified fixed-price gas products that still need market approval."""
+    return [
+        entry
+        for entry in GAS_FUTURES_PRODUCTS
+        if entry.get("review_status") == "candidate_verified_not_mapped"
+    ]
 
 
 def get_unverified_symbol_codes() -> list[str]:

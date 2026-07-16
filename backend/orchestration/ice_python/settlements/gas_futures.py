@@ -18,6 +18,7 @@ from backend.scrapes.ice_python.symbols import gas
 API_SCRAPE_NAME = "orchestration_ice_python_settlements_gas_futures"
 DEFAULT_MONTHS_FORWARD = 36
 DEFAULT_LOOKBACK_DAYS = registry.DEFAULT_LOOKBACK_DAYS
+DEFAULT_MAX_MISSING_SYMBOL_RATIO = 0.0
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,7 @@ def run(
     end_date: date | None = None,
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
     require_rows: bool = True,
+    max_missing_symbol_ratio: float | None = DEFAULT_MAX_MISSING_SYMBOL_RATIO,
     database: str | None = settings.TARGET_DATABASE,
 ) -> dict[str, object]:
     """Run the bounded gas futures settlement scrape with retry policy."""
@@ -69,6 +71,7 @@ def run(
             end_date=end_date,
             lookback_days=lookback_days,
             require_rows=require_rows,
+            max_missing_symbol_ratio=max_missing_symbol_ratio,
             log_file_path=log_file_path,
             database=database,
         )
@@ -90,6 +93,7 @@ def main(
     end_date: date | None = None,
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
     require_rows: bool = True,
+    max_missing_symbol_ratio: float | None = DEFAULT_MAX_MISSING_SYMBOL_RATIO,
     database: str | None = settings.TARGET_DATABASE,
 ) -> int:
     try:
@@ -102,6 +106,7 @@ def main(
             end_date=end_date,
             lookback_days=lookback_days,
             require_rows=require_rows,
+            max_missing_symbol_ratio=max_missing_symbol_ratio,
             database=database,
         )
         return 0
