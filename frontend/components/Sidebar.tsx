@@ -10,6 +10,7 @@ export type ActiveSection =
   | "nav-positions"
   | "clear-street-trades"
   | "spark-spreads"
+  | "ice-pmi-curve"
   | "gas-prices"
   | "pjm-generation"
   | "pjm-ops-summary"
@@ -60,8 +61,9 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       label: "DEV",
       navItems: [
         { id: "pjm-da-model", label: "DA Model" },
-        { id: "spark-spreads", label: "Sparks" },
-        { id: "gas-prices", label: "Gas Prices" },
+        { id: "spark-spreads", label: "Power Pricing" },
+        { id: "ice-pmi-curve", label: "ICE PMI" },
+        { id: "gas-prices", label: "Gas Pricing" },
         { id: "nav-positions", label: "Positions" },
         { id: "clear-street-trades", label: "Trades" },
         { id: "pjm-generation", label: "Generation" },
@@ -92,12 +94,15 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-gray-800 bg-[#0b0d14] md:w-[280px] md:border-b-0 md:border-r">
+    <aside className="flex w-full shrink-0 flex-col border-b border-gray-800 bg-[#0b0d14] md:w-[208px] md:border-b-0 md:border-r">
       {/* Header */}
       <div className="flex items-center justify-between px-4 pt-5 pb-4">
         <div>
-          <p className="text-sm font-bold tracking-[0.18em] text-gray-100">
-            HELIOSCTA
+          <p className="text-sm font-bold tracking-[0.12em] text-gray-100">
+            HELIOS CTA
+          </p>
+          <p className="mt-1 text-[11px] font-medium text-gray-500">
+            Energy Markets
           </p>
         </div>
       </div>
