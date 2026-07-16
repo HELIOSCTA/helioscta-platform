@@ -9,6 +9,8 @@
     "ice_product_id": "1156",
     "ice_product_url": "https://www.ice.com/products/1156",
     "product_name": "Henry Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -23,6 +25,8 @@
     "ice_product_id": "3306646",
     "ice_product_url": "https://www.ice.com/products/3306646",
     "product_name": "Transco Station 85 (Zone 4) Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -37,6 +41,8 @@
     "ice_product_id": "1318",
     "ice_product_url": "https://www.ice.com/products/1318",
     "product_name": "TGP 500L Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -51,6 +57,8 @@
     "ice_product_id": "69138045",
     "ice_product_url": "https://www.ice.com/products/69138045",
     "product_name": "Florida Gas Zone 3 Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -65,6 +73,8 @@
     "ice_product_id": "1306",
     "ice_product_url": "https://www.ice.com/products/1306",
     "product_name": "CG Mainline Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -79,6 +89,8 @@
     "ice_product_id": "3306641",
     "ice_product_url": "https://www.ice.com/products/3306641",
     "product_name": "ANR SE (Louisiana) Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -93,6 +105,8 @@
     "ice_product_id": "72764821",
     "ice_product_url": "https://www.ice.com/products/72764821",
     "product_name": "Pine Prairie Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -107,6 +121,8 @@
     "ice_product_id": "3306648",
     "ice_product_url": "https://www.ice.com/products/3306648",
     "product_name": "TETCO WLA Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -121,6 +137,8 @@
     "ice_product_id": "3306663",
     "ice_product_url": "https://www.ice.com/products/3306663",
     "product_name": "HSC HPL Pool Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -135,6 +153,8 @@
     "ice_product_id": "34598274",
     "ice_product_url": "https://www.ice.com/products/34598274",
     "product_name": "Waha Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -149,6 +169,8 @@
     "ice_product_id": "1162",
     "ice_product_url": "https://www.ice.com/products/1162",
     "product_name": "NGPL TXOK Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -163,6 +185,8 @@
     "ice_product_id": "",
     "ice_product_url": "",
     "product_name": "Algonquin Citygates (non-G)",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
     "review_status": "legacy_cash_requires_business_mapping_review"
@@ -177,6 +201,8 @@
     "ice_product_id": "26209306",
     "ice_product_url": "https://www.ice.com/products/26209306",
     "product_name": "TETCO M3 Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -191,6 +217,8 @@
     "ice_product_id": "60045058",
     "ice_product_url": "https://www.ice.com/products/60045058",
     "product_name": "Transco Z5 South Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -205,6 +233,8 @@
     "ice_product_id": "",
     "ice_product_url": "",
     "product_name": "Transco Zone 5 North",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
     "review_status": "legacy_cash_requires_business_mapping_review"
@@ -219,6 +249,8 @@
     "ice_product_id": "",
     "ice_product_url": "",
     "product_name": "Iroquois Zone 2",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
     "review_status": "legacy_cash_requires_business_mapping_review"
@@ -233,6 +265,8 @@
     "ice_product_id": "26209312",
     "ice_product_url": "https://www.ice.com/products/26209312",
     "product_name": "Transco Z6 (NY) Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -247,6 +281,8 @@
     "ice_product_id": "1155",
     "ice_product_url": "https://www.ice.com/products/1155",
     "product_name": "Eastern Gas-South Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -261,6 +297,8 @@
     "ice_product_id": "1161",
     "ice_product_url": "https://www.ice.com/products/1161",
     "product_name": "TCO Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -275,6 +313,8 @@
     "ice_product_id": "42944123",
     "ice_product_url": "https://www.ice.com/products/42944123",
     "product_name": "TETCO M2 (Receipt) Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -289,6 +329,8 @@
     "ice_product_id": "",
     "ice_product_url": "",
     "product_name": "Tennessee Z4 (Marcellus)",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
     "review_status": "legacy_cash_requires_business_mapping_review"
@@ -303,6 +345,8 @@
     "ice_product_id": "70466407",
     "ice_product_url": "https://www.ice.com/products/70466407",
     "product_name": "Leidy-Transco Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -317,6 +361,8 @@
     "ice_product_id": "3306642",
     "ice_product_url": "https://www.ice.com/products/3306642",
     "product_name": "NNG Ventura Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -331,6 +377,8 @@
     "ice_product_id": "65657575",
     "ice_product_url": "https://www.ice.com/products/65657575",
     "product_name": "NGPL Nicor Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -345,6 +393,8 @@
     "ice_product_id": "3306638",
     "ice_product_url": "https://www.ice.com/products/3306638",
     "product_name": "Socal Citygate Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -359,6 +409,8 @@
     "ice_product_id": "1160",
     "ice_product_url": "https://www.ice.com/products/1160",
     "product_name": "PG&E Citygate Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -373,6 +425,8 @@
     "ice_product_id": "",
     "ice_product_url": "",
     "product_name": "CIG Mainline",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
     "review_status": "legacy_cash_requires_business_mapping_review"
@@ -387,6 +441,8 @@
     "ice_product_id": "1158",
     "ice_product_url": "https://www.ice.com/products/1158",
     "product_name": "NGPL Midcont Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -401,6 +457,8 @@
     "ice_product_id": "3306637",
     "ice_product_url": "https://www.ice.com/products/3306637",
     "product_name": "Michcon Physical Fixed Price Spot",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_cash"
@@ -415,6 +473,8 @@
     "ice_product_id": "6590229",
     "ice_product_url": "https://www.ice.com/products/6590229",
     "product_name": "Henry Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -429,6 +489,8 @@
     "ice_product_id": "6590252",
     "ice_product_url": "https://www.ice.com/products/6590252",
     "product_name": "Transco Station 85 (Zone 4) Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -443,6 +505,8 @@
     "ice_product_id": "6590228",
     "ice_product_url": "https://www.ice.com/products/6590228",
     "product_name": "Florida Gas Zone 3 Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -457,6 +521,8 @@
     "ice_product_id": "6590221",
     "ice_product_url": "https://www.ice.com/products/6590221",
     "product_name": "CG-Mainline Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -471,6 +537,8 @@
     "ice_product_id": "6590219",
     "ice_product_url": "https://www.ice.com/products/6590219",
     "product_name": "ANR SE (Louisiana) Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -485,6 +553,8 @@
     "ice_product_id": "71544009",
     "ice_product_url": "https://www.ice.com/products/71544009",
     "product_name": "Pine Prairie Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -499,6 +569,8 @@
     "ice_product_id": "71544034",
     "ice_product_url": "https://www.ice.com/products/71544034",
     "product_name": "TETCO WLA Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -513,6 +585,8 @@
     "ice_product_id": "6590255",
     "ice_product_url": "https://www.ice.com/products/6590255",
     "product_name": "HSC Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -527,6 +601,8 @@
     "ice_product_id": "6590256",
     "ice_product_url": "https://www.ice.com/products/6590256",
     "product_name": "Waha Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -541,6 +617,8 @@
     "ice_product_id": "6590236",
     "ice_product_url": "https://www.ice.com/products/6590236",
     "product_name": "NGPL TXOK Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -555,6 +633,8 @@
     "ice_product_id": "6590217",
     "ice_product_url": "https://www.ice.com/products/6590217",
     "product_name": "Algonquin Citygates Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -569,6 +649,8 @@
     "ice_product_id": "6590253",
     "ice_product_url": "https://www.ice.com/products/6590253",
     "product_name": "TETCO M3 Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -583,6 +665,8 @@
     "ice_product_id": "42944092",
     "ice_product_url": "https://www.ice.com/products/42944092",
     "product_name": "Transco Zone 5 Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -597,6 +681,8 @@
     "ice_product_id": "82270890",
     "ice_product_url": "https://www.ice.com/products/82270890",
     "product_name": "Transco Zone 5 South Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -611,6 +697,8 @@
     "ice_product_id": "21592921",
     "ice_product_url": "https://www.ice.com/products/21592921",
     "product_name": "Iroquois-Z2 Swing (Platts) Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -625,6 +713,8 @@
     "ice_product_id": "6590257",
     "ice_product_url": "https://www.ice.com/products/6590257",
     "product_name": "Transco Zone 6 (NY) Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -639,6 +729,8 @@
     "ice_product_id": "6590227",
     "ice_product_url": "https://www.ice.com/products/6590227",
     "product_name": "Eastern Gas South Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -653,6 +745,8 @@
     "ice_product_id": "6590244",
     "ice_product_url": "https://www.ice.com/products/6590244",
     "product_name": "Socal Citygate Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -667,6 +761,8 @@
     "ice_product_id": "6590241",
     "ice_product_url": "https://www.ice.com/products/6590241",
     "product_name": "PG&E Citygate Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -681,6 +777,8 @@
     "ice_product_id": "6590223",
     "ice_product_url": "https://www.ice.com/products/6590223",
     "product_name": "CIG Rockies Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -695,6 +793,8 @@
     "ice_product_id": "6590232",
     "ice_product_url": "https://www.ice.com/products/6590232",
     "product_name": "NGPL Midcont Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -709,6 +809,8 @@
     "ice_product_id": "6590233",
     "ice_product_url": "https://www.ice.com/products/6590233",
     "product_name": "Michcon Swing Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_balmo"
@@ -723,6 +825,8 @@
     "ice_product_id": "6590258",
     "ice_product_url": "https://www.ice.com/products/6590258",
     "product_name": "Henry LD1 Fixed Price Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_fixed_price_curve"
@@ -737,6 +841,8 @@
     "ice_product_id": "6590264",
     "ice_product_url": "https://www.ice.com/products/6590264",
     "product_name": "Henry Penultimate Fixed Price Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_fixed_price_curve"
@@ -751,6 +857,8 @@
     "ice_product_id": "6590165",
     "ice_product_url": "https://www.ice.com/products/6590165",
     "product_name": "Transco Station 85 (Zone 4) Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -765,6 +873,8 @@
     "ice_product_id": "6590159",
     "ice_product_url": "https://www.ice.com/products/6590159",
     "product_name": "Tennessee 500L Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -779,6 +889,8 @@
     "ice_product_id": "6590126",
     "ice_product_url": "https://www.ice.com/products/6590126",
     "product_name": "CG-Mainline Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -793,6 +905,8 @@
     "ice_product_id": "6590127",
     "ice_product_url": "https://www.ice.com/products/6590127",
     "product_name": "ANR SE (Louisiana) Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -807,6 +921,8 @@
     "ice_product_id": "6590168",
     "ice_product_url": "https://www.ice.com/products/6590168",
     "product_name": "TETCO WLA Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -821,6 +937,8 @@
     "ice_product_id": "6590137",
     "ice_product_url": "https://www.ice.com/products/6590137",
     "product_name": "HSC Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -835,6 +953,8 @@
     "ice_product_id": "6590171",
     "ice_product_url": "https://www.ice.com/products/6590171",
     "product_name": "Waha Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -849,6 +969,8 @@
     "ice_product_id": "6590143",
     "ice_product_url": "https://www.ice.com/products/6590143",
     "product_name": "NGPL TXOK Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -863,6 +985,8 @@
     "ice_product_id": "6590124",
     "ice_product_url": "https://www.ice.com/products/6590124",
     "product_name": "Algonquin Citygates Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -877,6 +1001,8 @@
     "ice_product_id": "6590161",
     "ice_product_url": "https://www.ice.com/products/6590161",
     "product_name": "TETCO M3 Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -891,6 +1017,8 @@
     "ice_product_id": "82270888",
     "ice_product_url": "https://www.ice.com/products/82270888",
     "product_name": "Transco Zone 5 South Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -905,6 +1033,8 @@
     "ice_product_id": "21587547",
     "ice_product_url": "https://www.ice.com/products/21587547",
     "product_name": "Iroquois-Z2 Basis (Platts) Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -919,6 +1049,8 @@
     "ice_product_id": "6590169",
     "ice_product_url": "https://www.ice.com/products/6590169",
     "product_name": "Transco Zone 6 (NY) Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -933,6 +1065,8 @@
     "ice_product_id": "6590133",
     "ice_product_url": "https://www.ice.com/products/6590133",
     "product_name": "Eastern Gas South Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -947,6 +1081,8 @@
     "ice_product_id": "6590151",
     "ice_product_url": "https://www.ice.com/products/6590151",
     "product_name": "Socal Citygate Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -961,6 +1097,8 @@
     "ice_product_id": "6590150",
     "ice_product_url": "https://www.ice.com/products/6590150",
     "product_name": "PG&E Citygate Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -975,6 +1113,8 @@
     "ice_product_id": "6590129",
     "ice_product_url": "https://www.ice.com/products/6590129",
     "product_name": "CIG Rockies Basis Future",
+    "active": "True",
+    "candidate_for_market": "",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "verified_basis_curve"
@@ -989,6 +1129,8 @@
     "ice_product_id": "71085626",
     "ice_product_url": "https://www.ice.com/products/71085626",
     "product_name": "Algonquin Citygates Fixed Price Future",
+    "active": "False",
+    "candidate_for_market": "Algonquin Citygates",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"
@@ -1003,6 +1145,8 @@
     "ice_product_id": "83048643",
     "ice_product_url": "https://www.ice.com/products/83048643",
     "product_name": "Transco Zone 5 Fixed Price",
+    "active": "False",
+    "candidate_for_market": "Transco Zone 5 North",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"
@@ -1017,6 +1161,8 @@
     "ice_product_id": "83048605",
     "ice_product_url": "https://www.ice.com/products/83048605",
     "product_name": "Iroquois-Z2 (Platts) Fixed Price",
+    "active": "False",
+    "candidate_for_market": "Iroquois Zone 2",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"
@@ -1031,6 +1177,8 @@
     "ice_product_id": "83048637",
     "ice_product_url": "https://www.ice.com/products/83048637",
     "product_name": "Tennessee Zone 4 200L Fixed Price",
+    "active": "False",
+    "candidate_for_market": "Tennessee Z4 (Marcellus)",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"
@@ -1045,6 +1193,8 @@
     "ice_product_id": "83048638",
     "ice_product_url": "https://www.ice.com/products/83048638",
     "product_name": "Tennessee Zone 4 300L Fixed Price Future",
+    "active": "False",
+    "candidate_for_market": "Tennessee Z4 (Marcellus)",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"
@@ -1059,6 +1209,8 @@
     "ice_product_id": "71085627",
     "ice_product_url": "https://www.ice.com/products/71085627",
     "product_name": "CIG Rockies Fixed Price Future",
+    "active": "False",
+    "candidate_for_market": "CIG Mainline",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
     "review_status": "candidate_verified_not_mapped"

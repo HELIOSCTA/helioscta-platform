@@ -8,6 +8,10 @@ from backend.orchestration.ice_python import service
 
 
 LOCAL_TZ = ZoneInfo("America/Denver")
+HOURLY_WINDOWS_UNDER_TEST = (
+    service.TimeWindow(start=dt_time(6, 0), end=dt_time(10, 0)),
+    service.TimeWindow(start=dt_time(14, 0), end=dt_time(19, 0)),
+)
 
 
 def _job(name: str, cadence: str = "hourly") -> service.ServiceJob:
@@ -15,7 +19,7 @@ def _job(name: str, cadence: str = "hourly") -> service.ServiceJob:
         name=name,
         cadence=cadence,
         runner=lambda: {"rows_processed": 3},
-        windows=service.DEFAULT_HOURLY_WINDOWS if cadence == "hourly" else (),
+        windows=HOURLY_WINDOWS_UNDER_TEST if cadence == "hourly" else (),
         daily_start=dt_time(15, 0) if cadence == "daily" else None,
     )
 
@@ -63,7 +67,7 @@ def test_run_due_jobs_persists_success_state_after_runner_call(tmp_path):
         name="gas_balmo",
         runner=fake_runner,
         cadence="hourly",
-        windows=service.DEFAULT_HOURLY_WINDOWS,
+        windows=HOURLY_WINDOWS_UNDER_TEST,
     )
     run_state: dict[str, str] = {}
 
@@ -97,7 +101,7 @@ def test_run_due_jobs_records_failed_attempt_without_retrying_same_hour():
         name="ercot_futures",
         runner=failing_runner,
         cadence="hourly",
-        windows=service.DEFAULT_HOURLY_WINDOWS,
+        windows=HOURLY_WINDOWS_UNDER_TEST,
     )
     run_state: dict[str, str] = {}
 
@@ -142,7 +146,7 @@ def test_stale_running_state_is_due_after_timeout():
         name="west_power_futures",
         cadence="hourly",
         runner=lambda: {"rows_processed": 3},
-        windows=service.DEFAULT_HOURLY_WINDOWS,
+        windows=HOURLY_WINDOWS_UNDER_TEST,
         timeout_seconds=60,
     )
     run_state = {

@@ -17,6 +17,10 @@ export interface IceGasRegistryEntry {
   ice_trading_screen_product_name?: string | null;
   product_name?: string | null;
   notes?: string | null;
+  active?: boolean | null;
+  candidate_for_market?: string | null;
+  instrument_role?: string | null;
+  review_status?: string | null;
   source_table: "ice_python.settlements";
   metadata_status: string;
 }
