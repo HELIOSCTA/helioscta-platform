@@ -968,6 +968,7 @@ export async function GET(request: Request) {
   const requestedEndDate = searchParams.get("end");
   const scope = parseIceTradeProductScope(searchParams.get("scope"));
   const refresh = searchParams.get("refresh") === "1";
+  let cacheKey: string | null = null;
 
   try {
     const latestDateResult =
@@ -978,7 +979,7 @@ export async function GET(request: Request) {
     const defaultStart = dateMode === "historical" ? dateDaysBefore(defaultEnd, 30) : defaultEnd;
     const startDate = parseDate(requestedStartDate, defaultStart);
     const endDate = parseDate(requestedEndDate, defaultEnd);
-    const cacheKey = [
+    cacheKey = [
       "ice-trade-blotter-daily-settlements",
       dateMode,
       startDate,
@@ -1019,7 +1020,7 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error("[ice-trade-blotter-daily-settlements] DB query failed:", error);
-    const stale = RESPONSE_CACHE.get(cacheKey);
+    const stale = cacheKey ? RESPONSE_CACHE.get(cacheKey) : undefined;
     if (stale) {
       return NextResponse.json(stale.payload, {
         headers: {

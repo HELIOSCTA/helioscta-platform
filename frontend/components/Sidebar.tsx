@@ -11,6 +11,7 @@ export type ActiveSection =
   | "clear-street-trades"
   | "ice-settlements"
   | "spark-spreads"
+  | "ice-pmi-curve"
   | "gas-prices"
   | "pjm-price-duration-curves"
   | "pjm-price-view"
