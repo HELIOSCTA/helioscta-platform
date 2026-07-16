@@ -88,6 +88,26 @@ The installer:
 - registers or updates one visible scheduled coordinator task under the current
   Windows user.
 
+Install or update the visible status task:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_ice_python_status_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -HistoryPerFeed 5
+```
+
+This registers one no-trigger Task Scheduler task:
+
+```text
+\HeliosCTA\ICE Python\HeliosCTA ICE Python Status
+```
+
+Start it from Task Scheduler when you want a visible status window. It reads
+`ice_python_service_state.json`, prints a latest summary table with last
+success and failure times, prints recent history for each feed, and waits for
+Enter before closing.
+
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
 If you change the task user in the Task Scheduler UI, verify the selected user
@@ -125,6 +145,14 @@ Get-ScheduledTaskInfo `
   -TaskName "HeliosCTA ICE Python Coordinator"
 
 Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
+```
+
+Open the status window from PowerShell:
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath "\HeliosCTA\ICE Python\" `
+  -TaskName "HeliosCTA ICE Python Status"
 ```
 
 If a historical log opens in VS Code with red `NUL` markers, strip NUL
