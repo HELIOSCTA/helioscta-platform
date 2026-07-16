@@ -93,6 +93,8 @@ Install or update the visible status task:
 ```powershell
 .\infrastructure\windows-task-scheduler\install_ice_python_status_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
   -HistoryPerFeed 5
 ```
@@ -106,7 +108,10 @@ This registers one no-trigger Task Scheduler task:
 Start it from Task Scheduler when you want a visible status window. It reads
 `ice_python_service_state.json`, prints a latest summary table with last
 success and failure times, prints recent history for each feed, and waits for
-Enter before closing.
+input before closing.
+
+From the status window, press `R` and Enter to rerun only the latest failed or
+stale-running records. Feeds with a newer successful record are skipped.
 
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
@@ -155,6 +160,12 @@ Start-ScheduledTask `
   -TaskPath "\HeliosCTA\ICE Python\" `
   -TaskName "HeliosCTA ICE Python Status"
 ```
+
+In the status window:
+
+- press Enter to close;
+- press `R` and Enter to rerun latest unresolved failures, then review the
+  refreshed status table.
 
 If a historical log opens in VS Code with red `NUL` markers, strip NUL
 characters while viewing it:

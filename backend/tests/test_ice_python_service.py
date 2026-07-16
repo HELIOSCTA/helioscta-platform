@@ -181,6 +181,75 @@ def test_task_scheduler_tick_includes_gas_futures_in_hourly_batch():
     ) == [gas_futures]
 
 
+def test_latest_failed_job_attempts_skips_old_failures_after_success():
+    current_time = datetime(2026, 6, 18, 9, 30, tzinfo=LOCAL_TZ)
+    pjm = _job("pjm_futures")
+    gas = _job("gas_balmo")
+    run_state = {
+        "pjm_futures:2026-06-18T08": {
+            "status": "failed",
+            "finished_at": datetime(2026, 6, 18, 8, 30, tzinfo=LOCAL_TZ).isoformat(),
+        },
+        "pjm_futures:2026-06-18T09": {
+            "status": "succeeded",
+            "finished_at": datetime(2026, 6, 18, 9, 5, tzinfo=LOCAL_TZ).isoformat(),
+        },
+        "gas_balmo:2026-06-18T08": {
+            "status": "failed",
+            "finished_at": datetime(2026, 6, 18, 8, 30, tzinfo=LOCAL_TZ).isoformat(),
+        },
+    }
+
+    attempts = service.latest_failed_job_attempts(
+        current_time=current_time,
+        run_state=run_state,
+        jobs=[pjm, gas],
+    )
+
+    assert attempts == [(gas, datetime(2026, 6, 18, 8, tzinfo=LOCAL_TZ))]
+
+
+def test_run_failed_jobs_replays_latest_failed_window(tmp_path):
+    current_time = datetime(2026, 6, 18, 9, 30, tzinfo=LOCAL_TZ)
+    state_file = tmp_path / "state.json"
+    calls: list[str] = []
+
+    def fake_runner() -> dict[str, object]:
+        calls.append("ran")
+        return {"rows_processed": 11}
+
+    job = service.ServiceJob(
+        name="gas_next_day",
+        runner=fake_runner,
+        cadence="hourly",
+        windows=service.DEFAULT_HOURLY_WINDOWS,
+    )
+    run_state = {
+        "gas_next_day:2026-06-18T08": {
+            "status": "failed",
+            "finished_at": datetime(2026, 6, 18, 8, 30, tzinfo=LOCAL_TZ).isoformat(),
+        },
+    }
+
+    summary = service.run_failed_jobs(
+        current_time=current_time,
+        run_state=run_state,
+        jobs=[job],
+        state_file=state_file,
+    )
+
+    assert calls == ["ran"]
+    assert summary == {
+        "jobs_due": 1,
+        "jobs_succeeded": 1,
+        "jobs_failed": 0,
+        "jobs_timed_out": 0,
+    }
+    assert run_state["gas_next_day:2026-06-18T08"]["status"] == "succeeded"
+    assert run_state["gas_next_day:2026-06-18T08"]["rows_processed"] == 11
+    assert service.load_run_state(state_file) == run_state
+
+
 def test_legacy_timestamp_state_is_attempted_not_succeeded(tmp_path):
     state_file = tmp_path / "state.json"
     state_file.write_text(

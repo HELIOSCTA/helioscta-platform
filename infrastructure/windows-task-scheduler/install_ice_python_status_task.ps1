@@ -2,10 +2,13 @@
 
 param(
     [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
+    [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA ICE Python Status",
     [string]$TaskPath = "\HeliosCTA\ICE Python\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
+    [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
+    [int]$JobTimeoutSeconds = 2700,
     [int]$HistoryPerFeed = 5,
     [int]$ExecutionTimeLimitMinutes = 30
 )
@@ -39,6 +42,24 @@ function Ensure-TaskFolder {
     }
 }
 
+function Resolve-CommandPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Executable
+    )
+
+    if (Test-Path -Path $Executable) {
+        return (Resolve-Path -Path $Executable).Path
+    }
+
+    $command = Get-Command $Executable -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+
+    throw "Could not resolve executable: $Executable"
+}
+
 function Quote-TaskArgument {
     param(
         [Parameter(Mandatory = $true)]
@@ -53,6 +74,7 @@ if ($HistoryPerFeed -lt 1) {
 }
 
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
+$resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 if (-not (Test-Path -Path (Join-Path $resolvedRepoRoot ".git"))) {
     throw "RepoRoot is not a git checkout: $resolvedRepoRoot"
 }
@@ -64,9 +86,12 @@ if (-not (Test-Path -Path $statusScript)) {
 
 Write-Host "Installing ICE Python status Task Scheduler task"
 Write-Host "RepoRoot: $resolvedRepoRoot"
+Write-Host "Python: $resolvedPythonExe"
 Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
+Write-Host "LogDir: $LogDir"
 Write-Host "StateDir: $StateDir"
+Write-Host "JobTimeoutSeconds: $JobTimeoutSeconds"
 Write-Host "HistoryPerFeed: $HistoryPerFeed"
 
 Ensure-TaskFolder -FolderPath $TaskPath
@@ -77,8 +102,16 @@ $actionArguments = @(
     "Bypass",
     "-File",
     (Quote-TaskArgument $statusScript),
+    "-RepoRoot",
+    (Quote-TaskArgument $resolvedRepoRoot),
+    "-PythonExe",
+    (Quote-TaskArgument $resolvedPythonExe),
+    "-LogDir",
+    (Quote-TaskArgument $LogDir),
     "-StateDir",
     (Quote-TaskArgument $StateDir),
+    "-JobTimeoutSeconds",
+    [string]$JobTimeoutSeconds,
     "-HistoryPerFeed",
     [string]$HistoryPerFeed
 ) -join " "
