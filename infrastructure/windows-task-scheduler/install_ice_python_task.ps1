@@ -10,8 +10,6 @@ param(
     [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA ICE Python Coordinator",
     [string]$TaskPath = "\HeliosCTA\ICE Python\",
-    [string]$ManualTaskName = "HeliosCTA ICE Python Coordinator (Manual Visible)",
-    [string]$ManualTaskPath = "\HeliosCTA\Manual\ICE Python\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
     [int[]]$RunHours = @(6, 7, 8, 9, 14, 15, 16, 17, 18),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
@@ -337,8 +335,6 @@ Ensure-TaskFolder -FolderPath $TaskPath
 
 $actionArguments = @(
     "-NoProfile",
-    "-WindowStyle",
-    "Hidden",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
@@ -358,29 +354,6 @@ $actionArguments = @(
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument $actionArguments `
-    -WorkingDirectory $resolvedRepoRoot
-
-$manualActionArguments = @(
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    (Quote-TaskArgument $runScript),
-    "-RepoRoot",
-    (Quote-TaskArgument $resolvedRepoRoot),
-    "-PythonExe",
-    (Quote-TaskArgument $resolvedPythonExe),
-    "-LogDir",
-    (Quote-TaskArgument $LogDir),
-    "-StateDir",
-    (Quote-TaskArgument $StateDir),
-    "-JobTimeoutSeconds",
-    [string]$JobTimeoutSeconds
-) -join " "
-
-$manualAction = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument $manualActionArguments `
     -WorkingDirectory $resolvedRepoRoot
 
 $triggers = @()
@@ -416,25 +389,9 @@ Register-ScheduledTask `
     -Force `
     -ErrorAction Stop | Out-Null
 
-Ensure-TaskFolder -FolderPath $ManualTaskPath
-
-$manualTask = New-ScheduledTask `
-    -Action $manualAction `
-    -Settings $settings `
-    -Principal $principal `
-    -Description "Runs one visible HeliosCTA ICE Python scheduler tick on demand."
-
-Register-ScheduledTask `
-    -TaskName $ManualTaskName `
-    -TaskPath $ManualTaskPath `
-    -InputObject $manualTask `
-    -Force `
-    -ErrorAction Stop | Out-Null
-
 Get-ScheduledTask `
     -TaskName $TaskName `
     -TaskPath $TaskPath `
     -ErrorAction Stop | Format-List TaskName,TaskPath,State
 Write-Host "Installed or updated Task Scheduler coordinator: $TaskPath$TaskName"
-Write-Host "Installed or updated visible manual task: $ManualTaskPath$ManualTaskName"
 Write-Host "Coordinator log: $(Join-Path $LogDir 'ice-python-task-scheduler.log')"

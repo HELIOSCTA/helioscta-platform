@@ -9,8 +9,6 @@ param(
     [string]$PythonExe = $(if ($env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE) { $env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA NAV Trade Breaks",
     [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
-    [string]$ManualTaskName = "HeliosCTA NAV Trade Breaks (Manual Visible)",
-    [string]$ManualTaskPath = "\HeliosCTA\Manual\Positions And Trades\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
     [int]$RunHour = 4,
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
@@ -266,8 +264,6 @@ Ensure-TaskFolder -FolderPath $TaskPath
 
 $actionArguments = @(
     "-NoProfile",
-    "-WindowStyle",
-    "Hidden",
     "-ExecutionPolicy",
     "Bypass",
     "-File",
@@ -291,33 +287,6 @@ $actionArguments = @(
 $action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument $actionArguments `
-    -WorkingDirectory $resolvedRepoRoot
-
-$manualActionArguments = @(
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    (Quote-TaskArgument $runScript),
-    "-RepoRoot",
-    (Quote-TaskArgument $resolvedRepoRoot),
-    "-PythonExe",
-    (Quote-TaskArgument $resolvedPythonExe),
-    "-LogDir",
-    (Quote-TaskArgument $LogDir),
-    "-LookbackDays",
-    [string]$LookbackDays,
-    "-PollWaitSeconds",
-    [string]$PollWaitSeconds,
-    "-PollWindowMinutes",
-    [string]$PollWindowMinutes,
-    "-PollDeadlineHour",
-    [string]$PollDeadlineHour
-) -join " "
-
-$manualAction = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument $manualActionArguments `
     -WorkingDirectory $resolvedRepoRoot
 
 $trigger = New-ScheduledTaskTrigger -Daily -At ([datetime]::Today.AddHours($RunHour))
@@ -347,25 +316,9 @@ Register-ScheduledTask `
     -Force `
     -ErrorAction Stop | Out-Null
 
-Ensure-TaskFolder -FolderPath $ManualTaskPath
-
-$manualTask = New-ScheduledTask `
-    -Action $manualAction `
-    -Settings $settings `
-    -Principal $principal `
-    -Description "Runs the NAV trade-breaks poll visibly on demand."
-
-Register-ScheduledTask `
-    -TaskName $ManualTaskName `
-    -TaskPath $ManualTaskPath `
-    -InputObject $manualTask `
-    -Force `
-    -ErrorAction Stop | Out-Null
-
 Get-ScheduledTask `
     -TaskName $TaskName `
     -TaskPath $TaskPath `
     -ErrorAction Stop | Format-List TaskName,TaskPath,State
 Write-Host "Installed or updated Task Scheduler job: $TaskPath$TaskName"
-Write-Host "Installed or updated visible manual task: $ManualTaskPath$ManualTaskName"
 Write-Host "Coordinator log: $(Join-Path $LogDir 'nav-trade-breaks-task-scheduler.log')"
