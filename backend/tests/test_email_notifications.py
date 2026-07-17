@@ -43,6 +43,12 @@ def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
         latest_date="2026-07-01",
         hubs=["WESTERN HUB"],
     )
+    assert snapshot["peak_start_he"] == 8
+    assert snapshot["peak_end_he"] == 23
+    assert snapshot["peak_label"] == "Peak HE8-23"
+    assert snapshot["off_peak_label"] == "OffPeak HE1-7,24"
+    assert snapshot["hubs"][0]["on_peak_avg"] == 45.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 36.5
     message = email_notifications.build_pjm_da_hrl_lmp_release_email(
         event={
             "id": 10,
@@ -68,6 +74,8 @@ def test_pjm_da_release_email_targets_single_day_report(monkeypatch):
     assert "Hub Summary" in message["body_html"]
     assert "All Hubs Hourly Tables" in message["body_html"]
     assert "WESTERN HUB" in message["body_html"]
+    assert "Peak HE8-23" in message["body_html"]
+    assert "OffPeak HE1-7,24" in message["body_html"]
     assert "HE24" in message["body_html"]
     assert "Congestion" in message["body_html"]
     report_url = message["payload"]["report_url"]
@@ -103,6 +111,12 @@ def test_da_lmp_release_email_template_supports_ercot_total_only():
         latest_date="2026-07-01",
         hubs=["HB_NORTH"],
     )
+    assert snapshot["peak_start_he"] == 7
+    assert snapshot["peak_end_he"] == 22
+    assert snapshot["peak_label"] == "Peak HE7-22"
+    assert snapshot["off_peak_label"] == "OffPeak HE1-6,23-24"
+    assert snapshot["hubs"][0]["on_peak_avg"] == 54.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 48.5
 
     message = email_notifications.build_da_lmp_release_email(
         iso="ercot",
@@ -121,6 +135,8 @@ def test_da_lmp_release_email_template_supports_ercot_total_only():
     )
     assert "ERCOT DA LMPs Available" in message["body_html"]
     assert "HB_NORTH" in message["body_html"]
+    assert "Peak HE7-22" in message["body_html"]
+    assert "OffPeak HE1-6,23-24" in message["body_html"]
     assert "HE24" in message["body_html"]
     assert "Total" in message["body_html"]
     assert "Energy" not in message["body_html"]
@@ -135,6 +151,10 @@ def test_da_lmp_release_email_template_supports_nepool_components():
         latest_date="2026-07-01",
         hubs=[".H.INTERNAL_HUB"],
     )
+    assert snapshot["peak_start_he"] == 8
+    assert snapshot["peak_end_he"] == 23
+    assert snapshot["hubs"][0]["on_peak_avg"] == 45.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 36.5
 
     message = email_notifications.build_da_lmp_release_email(
         iso="isone",
@@ -153,6 +173,8 @@ def test_da_lmp_release_email_template_supports_nepool_components():
     )
     assert "NEPOOL DA LMPs Available" in message["body_html"]
     assert ".H.INTERNAL_HUB" in message["body_html"]
+    assert "Peak HE8-23" in message["body_html"]
+    assert "OffPeak HE1-7,24" in message["body_html"]
     assert "Energy" in message["body_html"]
     assert "Congestion" in message["body_html"]
     assert "Loss" in message["body_html"]
@@ -167,6 +189,10 @@ def test_da_lmp_release_email_template_supports_caiso_components():
         latest_date="2026-07-18",
         hubs=["TH_SP15_GEN-APND"],
     )
+    assert snapshot["peak_start_he"] == 7
+    assert snapshot["peak_end_he"] == 22
+    assert snapshot["hubs"][0]["on_peak_avg"] == 44.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 38.5
 
     message = email_notifications.build_da_lmp_release_email(
         iso="caiso",
@@ -188,7 +214,11 @@ def test_da_lmp_release_email_template_supports_caiso_components():
     )
     assert "CAISO DA LMPs Available" in message["body_html"]
     assert "TH_SP15_GEN-APND" in message["body_html"]
+    assert "Peak HE7-22" in message["body_html"]
+    assert "OffPeak HE1-6,23-24" in message["body_html"]
     assert "Energy" in message["body_html"]
+    assert "$34.50" in message["body_html"]
+    assert "$28.50" in message["body_html"]
     assert "Congestion" in message["body_html"]
     assert "Loss" in message["body_html"]
     assert "GHG" in message["body_html"]
