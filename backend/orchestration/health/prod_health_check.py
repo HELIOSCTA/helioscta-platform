@@ -38,6 +38,7 @@ SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-ercot-renewables-batch.service",
     "helios-ercot-renewables-5min-batch.service",
     "helios-ercot-outage-capacity-batch.service",
+    "helios-ercot-price-adders-batch.service",
 )
 KNOWN_TIMERS: tuple[str, ...] = (
     "helios-lmp-price-backfill-7-day.timer",
@@ -61,6 +62,7 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-ercot-renewables-batch.timer",
     "helios-ercot-renewables-5min-batch.timer",
     "helios-ercot-outage-capacity-batch.timer",
+    "helios-ercot-price-adders-batch.timer",
     "helios-isone-da-hrl-lmps.timer",
     "helios-isone-rt-hrl-lmps-prelim.timer",
     "helios-isone-rt-hrl-lmps-final.timer",
