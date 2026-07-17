@@ -32,6 +32,7 @@ TARGET_SCHEMA = "isone"
 TARGET_TABLE = API_SCRAPE_NAME
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 PRIMARY_KEY = ["date", "hour_ending", "location"]
+INTERNAL_HUB_LOCATION = ".H.INTERNAL_HUB"
 DEFAULT_DELTA = relativedelta(days=1)
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,9 @@ def _format(df: pd.DataFrame) -> pd.DataFrame:
     df = df[~df["hour_ending"].str.endswith("X")].copy()
     df["hour_ending"] = pd.to_numeric(df["hour_ending"], errors="raise").astype(int)
     df["location"] = df["location"].astype(str).str.strip()
+    df = df.loc[df["location"] == INTERNAL_HUB_LOCATION].copy()
+    if df.empty:
+        return df
 
     for col in ["lmp", "energy", "congestion", "loss"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")

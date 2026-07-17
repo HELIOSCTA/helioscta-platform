@@ -26,7 +26,7 @@ TARGET_TABLE_FQN = scrape.TARGET_TABLE_FQN
 DATASET_NAME = "isone_rt_hrl_lmps_prelim"
 DATA_SOURCE_SYSTEM = "isone"
 DATA_AVAILABILITY_TYPE = "data_ready"
-DATA_SCOPE = "all_locations"
+DATA_SCOPE = "internal_hub"
 DATA_GRAIN = "date_hour_location"
 LOCAL_MARKET_TIMEZONE = "America/New_York"
 DEFAULT_DELTA = relativedelta(days=1)

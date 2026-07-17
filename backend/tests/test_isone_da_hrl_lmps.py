@@ -62,6 +62,18 @@ def test_isone_da_hrl_lmps_format_filters_header_rows_and_duplicate_keys():
                 {
                     "H": "D",
                     "Date": "06/13/2026",
+                    "Hour Ending": "1",
+                    "Location ID": "4001",
+                    "Location Name": ".H.OTHER_HUB",
+                    "Location Type": "HUB",
+                    "Locational Marginal Price": "99.5",
+                    "Energy Component": "98.0",
+                    "Congestion Component": "1.0",
+                    "Marginal Loss Component": "0.5",
+                },
+                {
+                    "H": "D",
+                    "Date": "06/13/2026",
                     "Hour Ending": "2X",
                     "Location ID": "4000",
                     "Location Name": ".H.INTERNAL_HUB",

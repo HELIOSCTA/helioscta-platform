@@ -38,6 +38,9 @@ PRIMARY_KEY = [
     "location_name",
     "location_type",
 ]
+INTERNAL_HUB_LOCATION_ID = 4000
+INTERNAL_HUB_LOCATION_NAME = ".H.INTERNAL_HUB"
+INTERNAL_HUB_LOCATION_TYPE = "HUB"
 DEFAULT_DELTA = relativedelta(days=1)
 DEFAULT_LOOKBACK_DAYS = 2
 
@@ -127,6 +130,14 @@ def _format(df: pd.DataFrame) -> pd.DataFrame:
 
     for col in ["location_name", "location_type"]:
         df[col] = df[col].astype(str).str.strip()
+
+    df = df.loc[
+        (df["location_id"] == INTERNAL_HUB_LOCATION_ID)
+        & (df["location_name"] == INTERNAL_HUB_LOCATION_NAME)
+        & (df["location_type"] == INTERNAL_HUB_LOCATION_TYPE)
+    ].copy()
+    if df.empty:
+        return df
 
     for col in [
         "locational_marginal_price",

@@ -16,7 +16,7 @@ def test_isone_rt_hrl_lmps_final_expected_period_count_handles_normal_and_dst_da
 def test_isone_rt_hrl_lmps_final_event_key():
     assert (
         rt_hrl_lmps_final._data_availability_event_key(date(2026, 6, 11))
-        == "isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations"
+        == "isone_rt_hrl_lmps_final:data_ready:2026-06-11:internal_hub"
     )
 
 
@@ -34,7 +34,7 @@ def test_isone_rt_hrl_lmps_final_emits_readiness_event_for_complete_rows(monkeyp
     )
 
     events = rt_hrl_lmps_final._emit_data_availability_events(
-        df=_availability_frame(hours=24, locations=(4000, 4001)),
+        df=_availability_frame(hours=24, locations=(4000,)),
         run_id="run-1",
         database="stage_db",
     )
@@ -42,7 +42,7 @@ def test_isone_rt_hrl_lmps_final_emits_readiness_event_for_complete_rows(monkeyp
     assert events == [
         {
             "id": 1,
-            "event_key": "isone_rt_hrl_lmps_final:data_ready:2026-06-11:all_locations",
+            "event_key": "isone_rt_hrl_lmps_final:data_ready:2026-06-11:internal_hub",
             "created": True,
         }
     ]
@@ -51,11 +51,11 @@ def test_isone_rt_hrl_lmps_final_emits_readiness_event_for_complete_rows(monkeyp
     assert event["source_system"] == "isone"
     assert event["availability_type"] == "data_ready"
     assert event["business_date"] == date(2026, 6, 11)
-    assert event["scope"] == "all_locations"
+    assert event["scope"] == "internal_hub"
     assert event["grain"] == "date_hour_location"
     assert event["source_table"] == "isone.rt_hrl_lmps_final"
-    assert event["row_count"] == 48
-    assert event["entity_count"] == 2
+    assert event["row_count"] == 24
+    assert event["entity_count"] == 1
     assert event["period_count"] == 24
     assert event["completeness_status"] == "complete"
     assert event["run_id"] == "run-1"

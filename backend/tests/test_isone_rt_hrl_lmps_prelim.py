@@ -50,6 +50,16 @@ def test_isone_rt_hrl_lmps_prelim_format_filters_rows_and_duplicates():
                 {
                     "H": "D",
                     "Date": "06/13/2026",
+                    "Hour Ending": "1",
+                    "Location": "A",
+                    "LMP": "99.5",
+                    "Energy": "98.0",
+                    "Congestion": "1.0",
+                    "Loss": "0.5",
+                },
+                {
+                    "H": "D",
+                    "Date": "06/13/2026",
                     "Hour Ending": "2X",
                     "Location": ".H.INTERNAL_HUB",
                     "LMP": "23.5",

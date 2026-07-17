@@ -60,6 +60,18 @@ def test_isone_rt_hrl_lmps_final_format_filters_header_rows_and_duplicate_keys()
                     "Congestion Component": "1.0",
                     "Marginal Loss Component": "0.5",
                 },
+                {
+                    "H": "D",
+                    "Date": "06/11/2026",
+                    "Hour Ending": "1",
+                    "Location ID": "4001",
+                    "Location Name": ".H.OTHER_HUB",
+                    "Location Type": "HUB",
+                    "Locational Marginal Price": "99.5",
+                    "Energy Component": "98.0",
+                    "Congestion Component": "1.0",
+                    "Marginal Loss Component": "0.5",
+                },
             ]
         )
     )

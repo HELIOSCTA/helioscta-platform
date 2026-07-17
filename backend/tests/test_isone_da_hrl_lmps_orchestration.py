@@ -16,7 +16,7 @@ def test_isone_da_hrl_lmps_expected_period_count_handles_normal_and_dst_days():
 def test_isone_da_hrl_lmps_event_key():
     assert (
         da_hrl_lmps._data_availability_event_key(date(2026, 6, 13))
-        == "isone_da_hrl_lmps:data_ready:2026-06-13:all_locations"
+        == "isone_da_hrl_lmps:data_ready:2026-06-13:internal_hub"
     )
 
 
@@ -34,7 +34,7 @@ def test_isone_da_hrl_lmps_emits_readiness_event_for_complete_rows(monkeypatch):
     )
 
     events = da_hrl_lmps._emit_data_availability_events(
-        df=_availability_frame(hours=24, locations=(4000, 4001)),
+        df=_availability_frame(hours=24, locations=(4000,)),
         run_id="run-1",
         database="stage_db",
     )
@@ -42,7 +42,7 @@ def test_isone_da_hrl_lmps_emits_readiness_event_for_complete_rows(monkeypatch):
     assert events == [
         {
             "id": 1,
-            "event_key": "isone_da_hrl_lmps:data_ready:2026-06-13:all_locations",
+            "event_key": "isone_da_hrl_lmps:data_ready:2026-06-13:internal_hub",
             "created": True,
         }
     ]
@@ -51,17 +51,17 @@ def test_isone_da_hrl_lmps_emits_readiness_event_for_complete_rows(monkeypatch):
     assert event["source_system"] == "isone"
     assert event["availability_type"] == "data_ready"
     assert event["business_date"] == date(2026, 6, 13)
-    assert event["scope"] == "all_locations"
+    assert event["scope"] == "internal_hub"
     assert event["grain"] == "date_hour_location"
     assert event["source_table"] == "isone.da_hrl_lmps"
-    assert event["row_count"] == 48
-    assert event["entity_count"] == 2
+    assert event["row_count"] == 24
+    assert event["entity_count"] == 1
     assert event["period_count"] == 24
     assert event["completeness_status"] == "complete"
     assert event["run_id"] == "run-1"
     assert event["database"] == "stage_db"
     assert event["payload"]["expected_period_count"] == 24
-    assert event["payload"]["expected_row_count"] == 48
+    assert event["payload"]["expected_row_count"] == 24
 
 
 def test_isone_da_hrl_lmps_skips_readiness_event_for_incomplete_rows(monkeypatch):
@@ -117,7 +117,7 @@ def test_isone_da_release_email_notifications_are_idempotent_and_sent(monkeypatc
         events=[
             {
                 "id": 1,
-                "event_key": "isone_da_hrl_lmps:data_ready:2026-07-02:all_locations",
+                "event_key": "isone_da_hrl_lmps:data_ready:2026-07-02:internal_hub",
             }
         ],
         run_mode="scheduled",
@@ -128,7 +128,7 @@ def test_isone_da_release_email_notifications_are_idempotent_and_sent(monkeypatc
     assert queued == 1
     assert calls[0]["iso"] == "isone"
     assert calls[0]["event"]["event_key"] == (
-        "isone_da_hrl_lmps:data_ready:2026-07-02:all_locations"
+        "isone_da_hrl_lmps:data_ready:2026-07-02:internal_hub"
     )
     assert calls[0]["database"] == "stage_db"
 
@@ -158,7 +158,7 @@ def test_isone_da_release_email_notifications_skip_outside_scheduled(monkeypatch
         events=[
             {
                 "id": 1,
-                "event_key": "isone_da_hrl_lmps:data_ready:2026-07-02:all_locations",
+                "event_key": "isone_da_hrl_lmps:data_ready:2026-07-02:internal_hub",
             }
         ],
         run_mode="backfill",

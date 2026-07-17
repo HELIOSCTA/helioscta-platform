@@ -369,22 +369,23 @@ helios-isone-external-interface-metered-data.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
-current Eastern operating-date ISO Express hourly day-ahead LMP CSV rows into `isone.da_hrl_lmps`,
+current Eastern operating-date ISO Express hourly day-ahead `.H.INTERNAL_HUB`
+LMP CSV rows into `isone.da_hrl_lmps`,
 writes API telemetry to `ops.api_fetch_log`, and emits complete-date readiness
-events when all hourly location rows are present. The timer runs daily at
+events when all 24 hourly hub rows are present. The timer runs daily at
 `17:10 UTC` with `Persistent=true` and `RandomizedDelaySec=5min`.
 
 The final RT workflow runs
 `backend.orchestration.power.isone.rt_hrl_lmps_final`, upserts finalized
-hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_final`, and emits the
-same complete-date readiness signal. Its scheduled default pulls two days back
+hourly real-time `.H.INTERNAL_HUB` LMP CSV rows into `isone.rt_hrl_lmps_final`,
+and emits the same complete-date readiness signal. Its scheduled default pulls two days back
 to avoid ISO-NE's finalization lag. The timer runs daily at `20:10 UTC` with
 `Persistent=true` and `RandomizedDelaySec=5min`.
 
 The preliminary RT workflow runs
 `backend.orchestration.power.isone.rt_hrl_lmps_prelim`, upserts preliminary
-hourly real-time LMP CSV rows into `isone.rt_hrl_lmps_prelim`, and emits the
-same complete-date readiness signal. The timer runs daily at `01:10 UTC` with
+hourly real-time `.H.INTERNAL_HUB` LMP CSV rows into `isone.rt_hrl_lmps_prelim`,
+and emits the same complete-date readiness signal. The timer runs daily at `01:10 UTC` with
 `Persistent=true` and `RandomizedDelaySec=5min`.
 
 The hourly system demand workflow runs

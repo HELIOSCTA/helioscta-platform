@@ -9,9 +9,9 @@ credential boundary from `/etc/helioscta/backend.env`.
 
 | Feed | Source | Runtime module | Destination | Grain |
 | --- | --- | --- | --- | --- |
-| `da_hrl_lmps` | Hourly Day-Ahead LMPs | `backend.orchestration.power.isone.da_hrl_lmps` | `isone.da_hrl_lmps` | operating date x hour ending x location |
-| `rt_hrl_lmps_final` | Final Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_final` | `isone.rt_hrl_lmps_final` | operating date x hour ending x location |
-| `rt_hrl_lmps_prelim` | Preliminary Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_prelim` | `isone.rt_hrl_lmps_prelim` | operating date x hour ending x location |
+| `da_hrl_lmps` | Hourly Day-Ahead LMPs | `backend.orchestration.power.isone.da_hrl_lmps` | `isone.da_hrl_lmps` | operating date x hour ending x `.H.INTERNAL_HUB` |
+| `rt_hrl_lmps_final` | Final Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_final` | `isone.rt_hrl_lmps_final` | operating date x hour ending x `.H.INTERNAL_HUB` |
+| `rt_hrl_lmps_prelim` | Preliminary Real-Time Hourly LMPs | `backend.orchestration.power.isone.rt_hrl_lmps_prelim` | `isone.rt_hrl_lmps_prelim` | operating date x hour ending x `.H.INTERNAL_HUB` |
 | `hourly_system_demand` | Real-Time Hourly System Load Report | `backend.orchestration.power.isone.hourly_system_demand` | `isone.hourly_system_demand` | operating date x hour ending |
 | `da_hrl_cleared_demand` | Day-Ahead Hourly Cleared Demand Report | `backend.orchestration.power.isone.da_hrl_cleared_demand` | `isone.da_hrl_cleared_demand` | operating date x hour ending |
 | `three_day_reliability_region_demand_forecast` | Three-Day Reliability Region Demand Forecast | `backend.orchestration.power.isone.forecast_batch` | `isone.three_day_reliability_region_demand_forecast` | published timestamp x forecast date x hour ending x reliability region |
@@ -28,6 +28,8 @@ credential boundary from `/etc/helioscta/backend.env`.
   `https://www.iso-ne.com/static-transform/csv/histRpts/da-lmp/WW_DALMP_ISO_YYYYMMDD.csv`
 - Primary key:
   `date, hour_ending, location_id, location_name, location_type`
+- Stored location: `location_id = 4000`, `location_name = '.H.INTERNAL_HUB'`,
+  `location_type = 'HUB'`.
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
 - Validation: run read-only primary-key and freshness checks against the destination table.
@@ -40,6 +42,8 @@ credential boundary from `/etc/helioscta/backend.env`.
   `https://www.iso-ne.com/static-transform/csv/histRpts/rt-lmp/lmp_rt_final_YYYYMMDD.csv`
 - Primary key:
   `date, hour_ending, location_id, location_name, location_type`
+- Stored location: `location_id = 4000`, `location_name = '.H.INTERNAL_HUB'`,
+  `location_type = 'HUB'`.
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
 - Validation: run read-only primary-key and freshness checks against the destination table.
@@ -51,6 +55,7 @@ credential boundary from `/etc/helioscta/backend.env`.
 - Static CSV pattern:
   `https://www.iso-ne.com/static-transform/csv/histRpts/rt-lmp/lmp_rt_prelim_YYYYMMDD.csv`
 - Primary key: `date, hour_ending, location`
+- Stored location: `.H.INTERNAL_HUB`.
 - Freshness field: `date`
 - Safe rerun story: upsert by the primary key.
 - Validation: run read-only primary-key and freshness checks against the destination table.

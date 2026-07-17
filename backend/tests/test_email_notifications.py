@@ -140,7 +140,7 @@ def test_da_lmp_release_email_template_supports_nepool_components():
         iso="isone",
         event={
             "id": 12,
-            "event_key": "isone_da_hrl_lmps:data_ready:2026-07-01:all_locations",
+            "event_key": "isone_da_hrl_lmps:data_ready:2026-07-01:internal_hub",
         },
         recipient_email="ops@example.test",
         snapshot=snapshot,
