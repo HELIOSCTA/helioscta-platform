@@ -366,11 +366,12 @@ human-readable message first, format visible subject dates as `DDD MMM-DD`, and
 append Outlook organization tags with pipe separators, for example
 `Clear Street MUFG upload complete for Wed Jul-08 | HeliosCTA | Clear Street |
 MUFG Upload | Warning`. DA LMP release emails use one inline snapshot template
-for PJM, NEPOOL, and ERCOT hub reports: hub summary rows plus hourly component
-tables in the email body, with a Vercel single-day report link as the live
-fallback. The PJM DA HRL LMP, ISO-NE DA HRL LMP, and ERCOT DAM SPP scheduled
-workflows enqueue one release email per configured `HELIOS_EMAIL_RECIPIENTS`
-recipient after complete-day readiness. The Clear Street source and MUFG
+for PJM, NEPOOL, ERCOT, and CAISO hub reports: hub summary rows plus hourly
+component tables in the email body, with a Vercel single-day report link as
+the live fallback. The PJM DA HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, and
+CAISO DA LMP scheduled workflows enqueue one release email per configured
+`HELIOS_EMAIL_RECIPIENTS` recipient after complete-day readiness. The Clear
+Street source and MUFG
 handoff paths do enqueue internal emails with CSV attachments to
 `HELIOS_EMAIL_RECIPIENTS` when email notifications are enabled.
 

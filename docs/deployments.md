@@ -478,6 +478,10 @@ LIMIT 10;
 - Destination table: `caiso.da_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
+- Release notification output: `ops.email_notification_outbox`.
+- Email body: backend-rendered inline CAISO DA LMP snapshot with NP15/SP15 hub
+  summary rows, hourly component tables including GHG, and a Vercel single-day
+  report link.
 - Scope: trading hubs `TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`.
 - Unit files:
   - `infrastructure/systemd/helios-caiso-da-lmps.service`
@@ -560,6 +564,23 @@ WHERE provider = 'caiso'
   AND target_table = 'caiso.da_lmps'
 ORDER BY created_at DESC
 LIMIT 20;
+```
+
+Verification SQL for CAISO DA LMP email release notifications:
+
+```sql
+SELECT
+    notification_key,
+    recipient_email,
+    status,
+    attempts,
+    next_attempt_at,
+    sent_at,
+    created_at
+FROM ops.email_notification_outbox
+WHERE dataset = 'caiso_da_lmps'
+ORDER BY created_at DESC
+LIMIT 10;
 ```
 
 ## helios-isone-da-hrl-lmps

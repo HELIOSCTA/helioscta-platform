@@ -23,11 +23,19 @@ GRAPH_TOKEN_URL_TEMPLATE = (
 GRAPH_SEND_MAIL_URL_TEMPLATE = "https://graph.microsoft.com/v1.0/users/{sender}/sendMail"
 GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 DEFAULT_PJM_DA_HRL_LMP_HUB = "WESTERN HUB"
+DEFAULT_CAISO_DA_LMP_HUB = "TH_SP15_GEN-APND"
 DEFAULT_PJM_DA_HRL_LMP_COMPONENT = "all"
 DA_LMP_COMPONENTS = [
     ("energy", "Energy", "system_energy"),
     ("congestion", "Congestion", "congestion"),
     ("loss", "Loss", "marginal_loss"),
+    ("total", "Total", "total"),
+]
+CAISO_DA_LMP_COMPONENTS = [
+    ("energy", "Energy", "system_energy"),
+    ("congestion", "Congestion", "congestion"),
+    ("loss", "Loss", "marginal_loss"),
+    ("ghg", "GHG", "greenhouse_gas"),
     ("total", "Total", "total"),
 ]
 DA_LMP_TOTAL_COMPONENT = [("total", "Total", "total")]
@@ -71,6 +79,14 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
         "default_hub": "HB_NORTH",
         "hubs": ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"],
         "components": DA_LMP_TOTAL_COMPONENT,
+    },
+    "caiso": {
+        "label": "CAISO",
+        "dataset": "caiso_da_lmps",
+        "source": "caiso.da_lmps",
+        "default_hub": DEFAULT_CAISO_DA_LMP_HUB,
+        "hubs": ["TH_NP15_GEN-APND", "TH_SP15_GEN-APND"],
+        "components": CAISO_DA_LMP_COMPONENTS,
     },
 }
 MAX_ERROR_MESSAGE_LENGTH = 2000
@@ -788,6 +804,18 @@ def enqueue_pjm_da_hrl_lmp_release_notifications(
     )
 
 
+def enqueue_caiso_da_lmp_release_notifications(
+    *,
+    event: dict[str, Any],
+    database: str | None = None,
+) -> list[dict[str, Any]]:
+    return enqueue_da_lmp_release_notifications(
+        iso="caiso",
+        event=event,
+        database=database,
+    )
+
+
 def enqueue_da_lmp_release_notifications(
     *,
     iso: str,
@@ -1145,6 +1173,16 @@ def _da_lmp_latest_query(
             """,
             (hubs,),
         )
+    if iso == "caiso":
+        return (
+            """
+            SELECT MAX(operating_date)::text AS latest_date
+            FROM caiso.da_lmps
+            WHERE node_id = ANY(%s::text[])
+              AND market_run_id = 'DAM';
+            """,
+            (hubs,),
+        )
     raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
 
 
@@ -1231,6 +1269,32 @@ def _da_lmp_rows_query(
             """,
             (hubs, business_date, hubs),
         )
+    if iso == "caiso":
+        return (
+            """
+            SELECT
+                to_char(
+                    lmps.interval_start_time_utc AT TIME ZONE 'America/Los_Angeles',
+                    'YYYY-MM-DD"T"HH24:MI:SS'
+                ) AS datetime_beginning,
+                lmps.node_id AS hub,
+                lmps.operating_hour AS hour_ending,
+                lmps.energy_component AS system_energy,
+                lmps.locational_marginal_price AS total,
+                lmps.congestion_component AS congestion,
+                lmps.loss_component AS marginal_loss,
+                lmps.greenhouse_gas_component AS greenhouse_gas,
+                to_char(lmps.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
+            FROM caiso.da_lmps AS lmps
+            WHERE lmps.node_id = ANY(%s::text[])
+              AND lmps.operating_date = %s::date
+              AND lmps.market_run_id = 'DAM'
+            ORDER BY array_position(%s::text[], lmps.node_id),
+                lmps.operating_hour,
+                lmps.interval_start_time_utc;
+            """,
+            (hubs, business_date, hubs),
+        )
     raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
 
 
@@ -1279,6 +1343,7 @@ def _da_lmp_hourly_row(row: dict[str, Any]) -> dict[str, Any]:
         "total": _to_float(row.get("total")),
         "congestion": _to_float(row.get("congestion")),
         "marginal_loss": _to_float(row.get("marginal_loss")),
+        "greenhouse_gas": _to_float(row.get("greenhouse_gas")),
     }
 
 

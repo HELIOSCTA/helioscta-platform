@@ -201,6 +201,98 @@ def test_caiso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
     assert log["metadata"]["entity_count"] == 2
 
 
+def test_caiso_da_release_email_notifications_are_idempotent_and_sent(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**kwargs):
+        calls.append(kwargs)
+        return [{"created": True, "notification_key": "email-key"}]
+
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "enqueue_caiso_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "notifications_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "send_due_email_notifications",
+        lambda **kwargs: [{"status": "sent", **kwargs}],
+    )
+
+    queued = da_lmps._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": (
+                    "caiso_da_lmps:data_ready:2026-07-18:"
+                    "trading_hubs_np15_sp15"
+                ),
+            }
+        ],
+        run_mode="scheduled",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 1
+    assert calls[0]["event"]["event_key"] == (
+        "caiso_da_lmps:data_ready:2026-07-18:trading_hubs_np15_sp15"
+    )
+    assert calls[0]["database"] == "stage_db"
+
+
+def test_caiso_da_release_email_notifications_skip_outside_scheduled(monkeypatch):
+    called = False
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**_kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "enqueue_caiso_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+
+    queued = da_lmps._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": (
+                    "caiso_da_lmps:data_ready:2026-07-18:"
+                    "trading_hubs_np15_sp15"
+                ),
+            }
+        ],
+        run_mode="backfill",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 0
+    assert called is False
+
+
 def _availability_frame(
     *,
     business_date: date,

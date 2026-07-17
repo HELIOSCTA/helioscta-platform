@@ -65,12 +65,15 @@ python -m backend.backfills.power.caiso.da_lmps
 The scheduled DA orchestration starts before the CAISO 1:00 p.m. Pacific
 day-ahead publication window and polls OASIS until the complete next trading
 date is available. It logs one resolved `ops.api_fetch_log` row for the polling
-outcome and then emits complete-day readiness events.
+outcome, emits complete-day readiness events, and queues one inline DA LMP
+release email per configured `HELIOS_EMAIL_RECIPIENTS` recipient through
+`ops.email_notification_outbox`.
 
 The backfill wrapper calls the DA orchestration path with `run_mode=backfill`,
 so it writes the same `caiso.da_lmps` rows, `ops.api_fetch_log` metadata, and
-complete-day readiness events as the scheduled job. Multi-day backfills include
-an inter-day request delay to avoid CAISO OASIS throttling.
+complete-day readiness events as the scheduled job. Backfills do not enqueue
+release emails. Multi-day backfills include an inter-day request delay to avoid
+CAISO OASIS throttling.
 
 ## Reference DDL
 

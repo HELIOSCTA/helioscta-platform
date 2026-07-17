@@ -7,7 +7,12 @@ from pathlib import Path
 from backend.utils import email_notifications
 
 
-def _da_lmp_rows(hub: str, *, total_offset: float = 0.0):
+def _da_lmp_rows(
+    hub: str,
+    *,
+    total_offset: float = 0.0,
+    greenhouse_gas: float | None = None,
+):
     return [
         {
             "hub": hub,
@@ -17,6 +22,7 @@ def _da_lmp_rows(hub: str, *, total_offset: float = 0.0):
             "total": 30.0 + hour + total_offset,
             "congestion": 2.0,
             "marginal_loss": 1.0,
+            "greenhouse_gas": greenhouse_gas,
             "updated_at": "2026-07-01T12:10:00",
         }
         for hour in range(1, 25)
@@ -151,6 +157,96 @@ def test_da_lmp_release_email_template_supports_nepool_components():
     assert "Congestion" in message["body_html"]
     assert "Loss" in message["body_html"]
     assert "iso=isone" in message["payload"]["report_url"]
+
+
+def test_da_lmp_release_email_template_supports_caiso_components():
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="caiso",
+        rows=_da_lmp_rows("TH_SP15_GEN-APND", greenhouse_gas=0.75),
+        target_date="2026-07-18",
+        latest_date="2026-07-18",
+        hubs=["TH_SP15_GEN-APND"],
+    )
+
+    message = email_notifications.build_da_lmp_release_email(
+        iso="caiso",
+        event={
+            "id": 13,
+            "event_key": (
+                "caiso_da_lmps:data_ready:2026-07-18:"
+                "trading_hubs_np15_sp15"
+            ),
+        },
+        recipient_email="ops@example.test",
+        snapshot=snapshot,
+    )
+
+    assert message["dataset"] == "caiso_da_lmps"
+    assert message["subject"] == (
+        "CAISO DA LMPs released for Sat Jul-18 | "
+        "HeliosCTA | CAISO | DA LMPs | Posted"
+    )
+    assert "CAISO DA LMPs Available" in message["body_html"]
+    assert "TH_SP15_GEN-APND" in message["body_html"]
+    assert "Energy" in message["body_html"]
+    assert "Congestion" in message["body_html"]
+    assert "Loss" in message["body_html"]
+    assert "GHG" in message["body_html"]
+    assert "Total" in message["body_html"]
+    assert message["payload"]["iso"] == "caiso"
+    assert "iso=caiso" in message["payload"]["report_url"]
+
+
+def test_fetch_da_lmp_email_snapshot_supports_caiso_sql(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_execute_sql(query, params=None, database=None, fetch=False):
+        calls.append(
+            {
+                "query": query,
+                "params": params,
+                "database": database,
+                "fetch": fetch,
+            }
+        )
+        if "MAX(operating_date)" in query:
+            return [{"latest_date": "2026-07-18"}]
+        assert "greenhouse_gas_component AS greenhouse_gas" in query
+        return [
+            {
+                "hub": "TH_NP15_GEN-APND",
+                "hour_ending": 1,
+                "datetime_beginning": "2026-07-18T00:00:00",
+                "system_energy": 41.0,
+                "total": 44.5,
+                "congestion": 1.5,
+                "marginal_loss": 1.5,
+                "greenhouse_gas": 0.5,
+                "updated_at": "2026-07-17T13:05:00",
+            }
+        ]
+
+    monkeypatch.setattr(email_notifications.db, "execute_sql", fake_execute_sql)
+
+    snapshot = email_notifications.fetch_da_lmp_email_snapshot(
+        iso="caiso",
+        business_date="2026-07-18",
+        database="stage_db",
+        hubs=["TH_NP15_GEN-APND"],
+    )
+
+    assert calls[0]["params"] == (["TH_NP15_GEN-APND"],)
+    assert calls[1]["params"] == (
+        ["TH_NP15_GEN-APND"],
+        "2026-07-18",
+        ["TH_NP15_GEN-APND"],
+    )
+    assert all(call["database"] == "stage_db" for call in calls)
+    assert snapshot["iso"] == "caiso"
+    assert snapshot["latest_date"] == "2026-07-18"
+    assert snapshot["hubs"][0]["hub"] == "TH_NP15_GEN-APND"
+    assert snapshot["hubs"][0]["hours"] == 1
+    assert snapshot["hubs"][0]["hourly"][0]["greenhouse_gas"] == 0.5
 
 
 def test_enqueue_email_notification_is_idempotent(monkeypatch):
