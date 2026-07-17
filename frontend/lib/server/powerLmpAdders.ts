@@ -2,13 +2,10 @@ import "server-only";
 
 import { query } from "@/lib/server/db";
 
-export type PowerLmpAdderIso = "pjm" | "ercot" | "isone";
+export type PowerLmpAdderIso = "pjm";
 export type PowerLmpAdderDataset =
   | "pjm-da-reserve-mcp"
-  | "pjm-rt-reserve-mcp"
-  | "ercot-rt-price-adders"
-  | "ercot-historical-rt-price-adders"
-  | "isone-lmp-components";
+  | "pjm-rt-reserve-mcp";
 
 type DatasetStatus = "live" | "pending" | "reference";
 
@@ -109,14 +106,6 @@ const PJM_RT_RESERVE_METRICS: MetricColumn[] = [
   { key: "reg_pcp", label: "Reg PCP", sourceField: "reg_pcp" },
 ];
 
-const ERCOT_ADDER_METRICS: MetricColumn[] = [
-  { key: "price_adder", label: "Price Adder", sourceField: null },
-];
-
-const ISONE_COMPONENT_METRICS: MetricColumn[] = [
-  { key: "component_value", label: "Component Value", sourceField: null },
-];
-
 const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
   "pjm-da-reserve-mcp": {
     dataset: "pjm-da-reserve-mcp",
@@ -187,112 +176,15 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     metricColumns: PJM_RT_RESERVE_METRICS,
     defaultColumnFilters: { metric: ["MCP"] },
   },
-  "ercot-rt-price-adders": {
-    dataset: "ercot-rt-price-adders",
-    iso: "ercot",
-    isoLabel: "ERCOT",
-    market: "rt",
-    label: "RT Price Adders",
-    valueLabel: "RT price adder",
-    sourceLabel: "ERCOT NP6-323-CD",
-    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=np6-323-cd",
-    sourceTable: null,
-    status: "pending",
-    description:
-      "ERCOT Real-Time Price Adders by SCED interval. Awaiting promoted table contract.",
-    contract: {
-      grain: "SCED interval x adder type",
-      timeBasis: "ERCOT Central Prevailing Time, interval data",
-      valueField: "pending source contract",
-      aggregation: "expected interval-to-hour rollup before daily blocks; do not use PJM reserve logic",
-      peakBlock: "ERCOT block: HE7-HE22",
-      refresh: "Pending scrape promotion for ERCOT NP6-323-CD",
-      dimensions: ["SCED interval", "adder type"],
-      fields: ["pending promoted table", "SCED interval", "price adder"],
-      notes: [
-        "ERCOT adders are interval price components, not reserve locale/service market results.",
-        "The page intentionally shows no numeric rows until the source table and rollup contract are promoted.",
-      ],
-    },
-    dimensionColumns: [{ key: "adderType", label: "Adder Type", sourceField: null }],
-    metricColumns: ERCOT_ADDER_METRICS,
-  },
-  "ercot-historical-rt-price-adders": {
-    dataset: "ercot-historical-rt-price-adders",
-    iso: "ercot",
-    isoLabel: "ERCOT",
-    market: "rt",
-    label: "Historical RT Adders",
-    valueLabel: "Historical RT price adder",
-    sourceLabel: "ERCOT NP6-793-ER",
-    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-793-ER",
-    sourceTable: null,
-    status: "pending",
-    description:
-      "ERCOT Historical Real-Time Price Adders for settlement intervals. Awaiting promoted table contract.",
-    contract: {
-      grain: "settlement interval x adder type",
-      timeBasis: "ERCOT Central Prevailing Time, 15-minute settlement intervals",
-      valueField: "pending source contract",
-      aggregation: "expected interval-to-hour rollup before daily blocks; do not use PJM reserve logic",
-      peakBlock: "ERCOT block: HE7-HE22",
-      refresh: "Pending scrape promotion for ERCOT NP6-793-ER",
-      dimensions: ["settlement interval", "adder type"],
-      fields: ["pending promoted table", "settlement interval", "price adder"],
-      notes: [
-        "This historical source is separate from the current SCED adder feed.",
-        "Hourly and daily values should only render after the 15-minute rollup rule is explicit.",
-      ],
-    },
-    dimensionColumns: [{ key: "adderType", label: "Adder Type", sourceField: null }],
-    metricColumns: ERCOT_ADDER_METRICS,
-  },
-  "isone-lmp-components": {
-    dataset: "isone-lmp-components",
-    iso: "isone",
-    isoLabel: "ISO-NE",
-    market: "reference",
-    label: "LMP Components",
-    valueLabel: "Component value",
-    sourceLabel: "ISO-NE hourly LMP component feeds",
-    sourceUrl: "https://www.iso-ne.com/isoexpress/web/reports/pricing",
-    sourceTable: "isone.da_hrl_lmps, isone.rt_hrl_lmps_final, isone.rt_hrl_lmps_prelim",
-    status: "reference",
-    description:
-      "ISO-NE energy, congestion, and loss are LMP components on the LMP page, not a separate adder table.",
-    contract: {
-      grain: "market hour x pricing location",
-      timeBasis: "ISO-NE Eastern Prevailing Time, hourly",
-      valueField: "lmp component fields",
-      aggregation: "handled on the LMP page by component selection rather than this reserve/adders grid",
-      peakBlock: "ISO-NE block: HE8-HE23",
-      refresh: "Reference only; DA and RT LMP component feeds are promoted separately",
-      dimensions: ["location", "market"],
-      fields: ["lmp", "energy", "congestion", "loss"],
-      notes: [
-        "ISO-NE does not map cleanly to the PJM reserve or ERCOT adder views in this page.",
-        "Use this tab as a source contract reminder; component analytics stay on the LMP page.",
-      ],
-    },
-    dimensionColumns: [
-      { key: "market", label: "Market", sourceField: null },
-      { key: "component", label: "Component", sourceField: null },
-    ],
-    metricColumns: ISONE_COMPONENT_METRICS,
-  },
 };
 
 const DATASETS_BY_ISO: Record<PowerLmpAdderIso, PowerLmpAdderDataset[]> = {
   pjm: ["pjm-da-reserve-mcp", "pjm-rt-reserve-mcp"],
-  ercot: ["ercot-rt-price-adders", "ercot-historical-rt-price-adders"],
-  isone: ["isone-lmp-components"],
 };
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
 const PEAK_WINDOW_BY_ISO: Record<PowerLmpAdderIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
-  ercot: { start: 7, end: 22 },
-  isone: { start: 8, end: 23 },
 };
 
 function onPeakHoursForIso(iso: PowerLmpAdderIso): number[] {
@@ -305,8 +197,7 @@ function offPeakHoursForIso(iso: PowerLmpAdderIso): number[] {
   return HOURS.filter((hour) => hour < window.start || hour > window.end);
 }
 
-export function parsePowerLmpAdderIso(raw: string | null): PowerLmpAdderIso {
-  if (raw === "ercot" || raw === "isone") return raw;
+export function parsePowerLmpAdderIso(): PowerLmpAdderIso {
   return "pjm";
 }
 

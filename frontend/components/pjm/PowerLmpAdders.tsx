@@ -13,14 +13,11 @@ import LmpColumnFilterMenu, {
 } from "@/components/pjm/LmpColumnFilterMenu";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type PowerIso = "pjm" | "ercot" | "isone";
+type PowerIso = "pjm";
 type DatasetStatus = "live" | "pending" | "reference";
 type LmpAdderDataset =
   | "pjm-da-reserve-mcp"
-  | "pjm-rt-reserve-mcp"
-  | "ercot-rt-price-adders"
-  | "ercot-historical-rt-price-adders"
-  | "isone-lmp-components";
+  | "pjm-rt-reserve-mcp";
 type LmpAdderView = "daily-settles";
 
 interface DatasetContract {
@@ -118,14 +115,10 @@ type AdderFilterKey = "date" | "onPeakAvg" | "offPeakAvg" | `dimension:${string}
 
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
-  ercot: { start: 7, end: 22 },
-  isone: { start: 8, end: 23 },
 };
 
 const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
   { value: "pjm", label: "PJM" },
-  { value: "ercot", label: "ERCOT" },
-  { value: "isone", label: "ISO-NE" },
 ];
 
 const DATASET_TABS_BY_ISO: Record<PowerIso, Array<DashboardTabOption<LmpAdderDataset>>> = {
@@ -133,17 +126,10 @@ const DATASET_TABS_BY_ISO: Record<PowerIso, Array<DashboardTabOption<LmpAdderDat
     { value: "pjm-da-reserve-mcp", label: "DA Reserves" },
     { value: "pjm-rt-reserve-mcp", label: "RT Reserves" },
   ],
-  ercot: [
-    { value: "ercot-rt-price-adders", label: "RT Adders" },
-    { value: "ercot-historical-rt-price-adders", label: "Historical Adders" },
-  ],
-  isone: [{ value: "isone-lmp-components", label: "Components" }],
 };
 
 const DEFAULT_DATASET_BY_ISO: Record<PowerIso, LmpAdderDataset> = {
   pjm: "pjm-da-reserve-mcp",
-  ercot: "ercot-rt-price-adders",
-  isone: "isone-lmp-components",
 };
 
 const VIEW_TABS: Array<DashboardTabOption<LmpAdderView>> = [
@@ -158,6 +144,26 @@ function fmtPrice(value: number | null): string {
 function fmtStamp(value: string | null): string {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
+}
+
+function heatStyle(value: number | null, min: number, max: number): React.CSSProperties {
+  if (value === null || min === max) return {};
+  const midpoint = (min + max) / 2;
+  const spread = Math.max(Math.abs(max - midpoint), Math.abs(midpoint - min));
+  if (spread === 0) return {};
+
+  const neutralBand = 0.14;
+  const distance = Math.min(Math.abs(value - midpoint) / spread, 1);
+  if (distance < neutralBand) return {};
+
+  const intensity = (distance - neutralBand) / (1 - neutralBand);
+  const alpha = 0.04 + intensity * 0.16;
+  const [r, g, b] = value >= midpoint ? [22, 163, 74] : [220, 38, 38];
+  return {
+    backgroundColor: `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(2)})`,
+    boxShadow: `inset 2px 0 0 rgba(${r}, ${g}, ${b}, ${(alpha + 0.14).toFixed(2)})`,
+    color: "#e5e7eb",
+  };
 }
 
 function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
@@ -254,6 +260,33 @@ function SectionCard({
       </div>
       {children}
     </section>
+  );
+}
+
+function TableHeatmapToggle({
+  enabled,
+  onToggle,
+}: {
+  enabled: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={enabled}
+      onClick={onToggle}
+      className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+        enabled
+          ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+      }`}
+    >
+      <span
+        className={`h-2 w-2 rounded-full ${enabled ? "bg-emerald-300" : "bg-gray-600"}`}
+        aria-hidden="true"
+      />
+      Heatmap
+    </button>
   );
 }
 
@@ -577,6 +610,7 @@ export default function PowerLmpAdders({
   const [sourceLinksOpen, setSourceLinksOpen] = useState(false);
   const [sourceDetailsOpen, setSourceDetailsOpen] = useState(false);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters<AdderFilterKey>>({});
+  const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const rangeSeededRef = useRef(false);
   const effectiveRefreshToken = refreshToken + latestRefreshToken;
 
@@ -712,6 +746,15 @@ export default function PowerLmpAdders({
       )
     );
   }, [columnFilters, data]);
+  const heatRange = useMemo(() => {
+    const values = filteredRows
+      .flatMap((row) => [row.onPeakAvg, row.offPeakAvg, ...row.hourly])
+      .filter((value): value is number => value !== null && Number.isFinite(value));
+    return {
+      min: values.length > 0 ? Math.min(...values) : 0,
+      max: values.length > 0 ? Math.max(...values) : 0,
+    };
+  }, [filteredRows]);
 
   return (
     <div className="space-y-4">
@@ -810,18 +853,24 @@ export default function PowerLmpAdders({
           title="Daily Settles"
           subtitle={`${filteredRows.length.toLocaleString()} of ${data.rows.length.toLocaleString()} rows | ${data.datasetLabel}: ${data.description}`}
           action={
-            <button
-              type="button"
-              onClick={() => setColumnFilters({})}
-              disabled={!hasColumnFilters}
-              className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                hasColumnFilters
-                  ? "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-white"
-                  : "cursor-not-allowed border-gray-800 bg-gray-950/40 text-gray-600"
-              }`}
-            >
-              Clear Filters
-            </button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setColumnFilters({})}
+                disabled={!hasColumnFilters}
+                className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                  hasColumnFilters
+                    ? "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-white"
+                    : "cursor-not-allowed border-gray-800 bg-gray-950/40 text-gray-600"
+                }`}
+              >
+                Clear Filters
+              </button>
+              <TableHeatmapToggle
+                enabled={tableHeatmapEnabled}
+                onToggle={() => setTableHeatmapEnabled((enabled) => !enabled)}
+              />
+            </div>
           }
           bodyClassName="bg-[#0d1119]"
         >
@@ -918,10 +967,24 @@ export default function PowerLmpAdders({
                       {row.dimensions[column.key] ?? "-"}
                     </td>
                   ))}
-                  <td className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100">
+                  <td
+                    className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                    style={
+                      tableHeatmapEnabled
+                        ? heatStyle(row.onPeakAvg, heatRange.min, heatRange.max)
+                        : undefined
+                    }
+                  >
                     {fmtPrice(row.onPeakAvg)}
                   </td>
-                  <td className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100">
+                  <td
+                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                    style={
+                      tableHeatmapEnabled
+                        ? heatStyle(row.offPeakAvg, heatRange.min, heatRange.max)
+                        : undefined
+                    }
+                  >
                     {fmtPrice(row.offPeakAvg)}
                   </td>
                   {HOURS.map((hour) => (
@@ -934,6 +997,11 @@ export default function PowerLmpAdders({
                       } ${
                         hour === tablePeakWindow.end ? "border-r border-dotted border-sky-700/70" : ""
                       }`}
+                      style={
+                        tableHeatmapEnabled
+                          ? heatStyle(row.hourly[hour - 1] ?? null, heatRange.min, heatRange.max)
+                          : undefined
+                      }
                     >
                       {fmtPrice(row.hourly[hour - 1] ?? null)}
                     </td>
