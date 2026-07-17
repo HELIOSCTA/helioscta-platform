@@ -20,6 +20,8 @@ def test_default_workflows_cover_promoted_lmp_sources():
         "ercot_settlement_point_prices",
         "ercot_rt_price_adders_sced",
         "ercot_rt_price_adders_15min",
+        "caiso_da_lmps",
+        "caiso_rt_lmps",
     ]
 
 
@@ -245,6 +247,58 @@ def test_pjm_main_backfill_calls_scrape_main_with_backfill_metadata():
     assert calls[0]["run_mode"] == "backfill"
     assert calls[0]["metadata"]["repair_family"] == "lmp_price_backfill_7_day"
     assert calls[0]["metadata"]["backfill_business_date"] == "2026-07-09"
+
+
+def test_caiso_scrape_backfill_calls_pull_and_upsert_with_metadata():
+    calls: list[dict[str, object]] = []
+
+    class FakeCaisoScrape:
+        API_SCRAPE_NAME = "fake_caiso_source"
+        DEFAULT_NODES = ("TH_NP15_GEN-APND", "TH_SP15_GEN-APND")
+
+        @staticmethod
+        def _pull(**kwargs):
+            calls.append({"method": "pull", **kwargs})
+            return pd.DataFrame({"row_id": [1, 2]})
+
+        @staticmethod
+        def _upsert(df, database=None):
+            calls.append({"method": "upsert", "df": df, "database": database})
+
+    result = lmp_price_backfill_7_day._run_caiso_scrape_backfill(
+        module=FakeCaisoScrape,
+        workflow_name="fake_caiso_source",
+        start_date=date(2026, 7, 9),
+        end_date=date(2026, 7, 10),
+        database="stage_db",
+        request_delay_seconds=0,
+    )
+
+    assert result == lmp_price_backfill_7_day.BackfillResult(
+        pipeline_name="fake_caiso_source",
+        start_date=date(2026, 7, 9),
+        end_date=date(2026, 7, 10),
+        days_requested=2,
+        rows_processed=4,
+        status="success",
+    )
+    assert calls[0]["method"] == "pull"
+    assert calls[0]["trading_date"] == date(2026, 7, 9)
+    assert calls[0]["nodes"] == ("TH_NP15_GEN-APND", "TH_SP15_GEN-APND")
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["metadata"] == {
+        "run_mode": "backfill",
+        "backfill_workflow": "fake_caiso_source",
+        "backfill_start_date": "2026-07-09",
+        "backfill_end_date": "2026-07-10",
+        "repair_family": "lmp_price_backfill_7_day",
+        "backfill_business_date": "2026-07-09",
+    }
+    assert calls[1]["method"] == "upsert"
+    assert calls[1]["database"] == "stage_db"
+    assert calls[2]["trading_date"] == date(2026, 7, 10)
+    assert calls[2]["metadata"]["backfill_business_date"] == "2026-07-10"
+    assert calls[3]["method"] == "upsert"
 
 
 def test_ercot_public_report_main_backfill_calls_scrape_main_with_backfill_metadata():

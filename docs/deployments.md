@@ -1147,10 +1147,10 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed on `helioscta-prod-vm-01`; global timer enabled and older
   PJM-only `helios-pjm-hourly-price-backfill-7-day.timer` disabled.
-- Workflow: PJM, ISO-NE, and ERCOT LMP price seven-day backfill repair.
+- Workflow: PJM, ISO-NE, ERCOT, and CAISO LMP price seven-day backfill repair.
 - Runtime module: `backend.backfills.power.lmp_price_backfill_7_day`.
-- Source systems: PJM Data Miner 2, ISO-NE ISO Express CSV reports, and ERCOT
-  public reports.
+- Source systems: PJM Data Miner 2, ISO-NE ISO Express CSV reports, ERCOT
+  public reports, and CAISO OASIS.
 - Destination tables:
   - `pjm.da_hrl_lmps`
   - `pjm.rt_hrl_lmps`
@@ -1163,6 +1163,8 @@ FROM isone.seven_day_solar_forecast;
   - `ercot.settlement_point_prices`
   - `ercot.rt_price_adders_sced`
   - `ercot.rt_price_adders_15min`
+  - `caiso.da_lmps`
+  - `caiso.rt_lmps`
 - API telemetry: `ops.api_fetch_log` with `run_mode=backfill`,
   `backfill_workflow`, backfill window fields, and
   `repair_family=lmp_price_backfill_7_day` metadata.
@@ -1224,6 +1226,9 @@ FROM isone.seven_day_solar_forecast;
     days back.
   - ERCOT RT price adders by 15-minute settlement interval: prior market date
     through seven days back.
+  - CAISO DA hourly LMPs: current OASIS trading date through six days back.
+  - CAISO RT five-minute LMPs: prior OASIS trading date through seven days
+    back.
 
 ## helios-pjm-hourly-price-backfill-7-day
 

@@ -6,7 +6,7 @@ import traceback
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from time import perf_counter
+from time import perf_counter, sleep
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -15,6 +15,8 @@ import pandas as pd
 from dateutil.relativedelta import relativedelta
 
 from backend import credentials
+from backend.scrapes.power.caiso import da_lmps as caiso_da_lmps
+from backend.scrapes.power.caiso import rt_lmps as caiso_rt_lmps
 from backend.scrapes.power.ercot import (
     dam_stlmnt_pnt_prices as ercot_dam_stlmnt_pnt_prices,
 )
@@ -323,6 +325,58 @@ def _run_isone_ercot_scrape_backfill(
     )
 
 
+def _run_caiso_scrape_backfill(
+    *,
+    module: Any,
+    workflow_name: str,
+    start_date: date,
+    end_date: date,
+    dry_run: bool = False,
+    database: str | None = None,
+    request_delay_seconds: float = 8.0,
+) -> BackfillResult:
+    if dry_run:
+        return _dry_run_result(
+            pipeline_name=workflow_name,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    run_id = str(uuid4())
+    total_rows = 0
+    current_date = start_date
+    while current_date <= end_date:
+        metadata = _backfill_metadata(
+            start_date=start_date,
+            end_date=end_date,
+            workflow=workflow_name,
+            business_date=current_date,
+        )
+        df = module._pull(
+            trading_date=current_date,
+            nodes=module.DEFAULT_NODES,
+            run_id=run_id,
+            database=database,
+            metadata=metadata,
+        )
+        if not df.empty:
+            module._upsert(df=df, database=database)
+            total_rows += int(len(df))
+
+        current_date += timedelta(days=1)
+        if current_date <= end_date and request_delay_seconds > 0:
+            sleep(request_delay_seconds)
+
+    return BackfillResult(
+        pipeline_name=workflow_name,
+        start_date=start_date,
+        end_date=end_date,
+        days_requested=(end_date - start_date).days + 1,
+        rows_processed=total_rows,
+        status="success",
+    )
+
+
 def _run_pjm_da_hrl_lmps_backfill(**kwargs: Any) -> BackfillResult:
     return _run_pjm_main_scrape_backfill(module=pjm_da_hrl_lmps, **kwargs)
 
@@ -388,6 +442,22 @@ def _run_ercot_rt_price_adders_15min_backfill(**kwargs: Any) -> BackfillResult:
     )
 
 
+def _run_caiso_da_lmps_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_caiso_scrape_backfill(
+        module=caiso_da_lmps,
+        workflow_name="caiso_da_lmps",
+        **kwargs,
+    )
+
+
+def _run_caiso_rt_lmps_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_caiso_scrape_backfill(
+        module=caiso_rt_lmps,
+        workflow_name="caiso_rt_lmps",
+        **kwargs,
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="pjm_da_hrl_lmps",
@@ -442,6 +512,16 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="ercot_rt_price_adders_15min",
         runner=_run_ercot_rt_price_adders_15min_backfill,
+        end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="caiso_da_lmps",
+        runner=_run_caiso_da_lmps_backfill,
+        end_lag_days=0,
+    ),
+    PriceBackfillWorkflow(
+        name="caiso_rt_lmps",
+        runner=_run_caiso_rt_lmps_backfill,
         end_lag_days=1,
     ),
 )

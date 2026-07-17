@@ -11,6 +11,8 @@ Covered workflows:
 - `backend.backfills.power.pjm.da_hrl_lmps`
 - `backend.backfills.power.pjm.rt_hrl_lmps`
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- `backend.backfills.power.caiso.da_lmps`
+- `backend.backfills.power.caiso.rt_lmps`
 - `backend.backfills.power.lmp_price_backfill_7_day`
 - `backend.backfills.power.pjm.hrl_load_metered`
 - `backend.backfills.power.pjm.hrl_load_prelim`
@@ -30,6 +32,8 @@ Destination tables:
 - `isone.rt_hrl_lmps_prelim`
 - `ercot.dam_stlmnt_pnt_prices`
 - `ercot.settlement_point_prices`
+- `caiso.da_lmps`
+- `caiso.rt_lmps`
 - `pjm.hrl_load_metered`
 - `pjm.hrl_load_prelim`
 - `pjm.gen_outages_by_type`
@@ -39,8 +43,11 @@ Backfill runs add `run_mode=backfill`, `backfill_workflow`,
 `backfill_start_date`, and `backfill_end_date` to `ops.api_fetch_log.metadata`
 for the API requests they issue. PJM backfill entry points call lower-level
 scrape modules; scheduled PJM orchestrators remain responsible for polling and
-data-readiness events. WSI hourly observed backfills call the existing WSI
-orchestration path and emit the same weather freshness event as scheduled runs.
+data-readiness events. CAISO dedicated backfills call the existing CAISO
+orchestration paths and emit complete-day readiness events while suppressing
+scheduled-only release emails. WSI hourly observed backfills call the existing
+WSI orchestration path and emit the same weather freshness event as scheduled
+runs.
 
 ## Scheduled Price Repair
 
@@ -60,6 +67,8 @@ replays seven market dates per promoted LMP feed:
 - ERCOT RT price adders by SCED interval through the prior market date.
 - ERCOT RT price adders by 15-minute settlement interval through the prior
   market date.
+- CAISO DA hourly LMPs through the current OASIS trading date.
+- CAISO RT five-minute LMPs through the prior OASIS trading date.
 
 This scheduled repair writes to the same canonical tables and uses
 `ops.api_fetch_log.metadata` backfill fields. It intentionally leaves
@@ -75,6 +84,8 @@ or non-price feeds.
   - DA hourly LMPs: `31` days.
   - RT verified hourly LMPs: `31` days.
   - RT unverified hourly LMPs: `30` days.
+  - CAISO DA hourly LMPs: `31` days.
+  - CAISO RT five-minute LMPs: `31` days.
   - PJM metered hourly load: `31` days.
   - PJM preliminary hourly load: `31` days.
   - Generation outages by type: `31` execution dates.

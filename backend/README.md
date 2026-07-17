@@ -449,11 +449,12 @@ python -m backend.orchestration.clear_street.transactions
   -RunImportSmoke
 ```
 
-## Manual PJM Backfills
+## Manual Backfills
 
-PJM backfills are Python module entry points that call the same production
-scrape/orchestration `main()` functions as the scheduled jobs, then rely on the
-existing primary-key upserts for safe reruns.
+Promoted backfills are Python module entry points that call the same production
+scrape/orchestration `main()` functions as the scheduled jobs where the source
+contract needs readiness side effects, then rely on the existing primary-key
+upserts for safe reruns.
 
 Default module runs backfill one recent market day:
 
@@ -464,6 +465,8 @@ python -m backend.backfills.power.pjm.rt_unverified_hrl_lmps
 python -m backend.backfills.power.pjm.hrl_load_metered
 python -m backend.backfills.power.pjm.hrl_load_prelim
 python -m backend.backfills.power.pjm.gen_outages_by_type
+python -m backend.backfills.power.caiso.da_lmps
+python -m backend.backfills.power.caiso.rt_lmps
 python -m backend.backfills.weather.wsi.hourly_observed
 python -m backend.backfills.nav.positions_from_legacy_cache
 python -m backend.backfills.ice_python.futures
@@ -495,7 +498,7 @@ backfill.
 ## Scheduled LMP Price Repair
 
 `backend.backfills.power.lmp_price_backfill_7_day` runs a nightly seven-day
-repair over the promoted PJM, ISO-NE, and ERCOT LMP price tables:
+repair over the promoted PJM, ISO-NE, ERCOT, and CAISO LMP price tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
@@ -506,12 +509,16 @@ repair over the promoted PJM, ISO-NE, and ERCOT LMP price tables:
 - `isone.rt_hrl_lmps_prelim`
 - `ercot.dam_stlmnt_pnt_prices`
 - `ercot.settlement_point_prices`
+- `caiso.da_lmps`
+- `caiso.rt_lmps`
 
 The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
-`22:15 UTC` after the current daily ISO-NE, ERCOT, and PJM price timers. It
+`22:15 UTC` after the current daily ISO-NE, ERCOT, CAISO, and PJM price timers. It
 uses feed-specific publication lags: DA feeds through the current Eastern
 market date, unverified/preliminary RT and ERCOT price-adder feeds through the
 prior market date, and verified/final RT feeds through two market dates back.
+CAISO repairs use OASIS trading dates; DA repair runs through the current date,
+while the scheduled CAISO DA poll remains responsible for next-day publication.
 It stamps API fetch
 telemetry with `run_mode=backfill`, `backfill_workflow`, backfill window
 fields, and `repair_family=lmp_price_backfill_7_day`, then relies on existing

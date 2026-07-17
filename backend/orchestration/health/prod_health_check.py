@@ -187,6 +187,8 @@ LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
     "ercot.settlement_point_prices",
     "ercot.rt_price_adders_sced",
     "ercot.rt_price_adders_15min",
+    "caiso.da_lmps",
+    "caiso.rt_lmps",
 )
 
 

@@ -56,10 +56,11 @@ For ad hoc local dates, edit the bottom `main(...)` call or the default
 constants in the target module before running. The DA orchestration defaults to
 the next Pacific trading date; RT defaults to the previous Pacific trading date.
 
-CAISO DA hourly LMP backfills use:
+CAISO LMP backfills use:
 
 ```powershell
 python -m backend.backfills.power.caiso.da_lmps
+python -m backend.backfills.power.caiso.rt_lmps
 ```
 
 The scheduled DA orchestration starts before the CAISO 1:00 p.m. Pacific
@@ -69,11 +70,17 @@ outcome, emits complete-day readiness events, and queues one inline DA LMP
 release email per configured `HELIOS_EMAIL_RECIPIENTS` recipient through
 `ops.email_notification_outbox`.
 
-The backfill wrapper calls the DA orchestration path with `run_mode=backfill`,
-so it writes the same `caiso.da_lmps` rows, `ops.api_fetch_log` metadata, and
-complete-day readiness events as the scheduled job. Backfills do not enqueue
-release emails. Multi-day backfills include an inter-day request delay to avoid
-CAISO OASIS throttling.
+The dedicated DA and RT backfill wrappers call their orchestration paths with
+`run_mode=backfill`, so they write the same `caiso.da_lmps` or
+`caiso.rt_lmps` rows, `ops.api_fetch_log` metadata, and complete-day readiness
+events as the scheduled workflows. Backfills do not enqueue release emails.
+Multi-day backfills include an inter-day request delay to avoid CAISO OASIS
+throttling.
+
+The nightly global LMP repair uses `backend.backfills.power.lmp_price_backfill_7_day`
+to repair recent CAISO DA and RT price rows through raw scrape/upsert paths
+with `repair_family=lmp_price_backfill_7_day` metadata. That repair does not
+emit readiness events or release emails.
 
 ## Reference DDL
 
