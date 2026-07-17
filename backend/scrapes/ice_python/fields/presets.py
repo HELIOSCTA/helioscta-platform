@@ -6,6 +6,7 @@ from backend.scrapes.ice_python.fields.catalog import (
     HIGH,
     LOW,
     OPEN,
+    OPEN_INTEREST,
     SETTLE,
     VOLUME,
     VWAP_CLOSE,
@@ -20,6 +21,7 @@ DEFAULT_SETTLEMENT_FIELDS: list[str] = [
     CLOSE,
     VWAP_CLOSE,
     VOLUME,
+    OPEN_INTEREST,
 ]
 
 PJM_SHORT_TERM_FIELDS = DEFAULT_SETTLEMENT_FIELDS

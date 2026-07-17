@@ -18,6 +18,46 @@ DEFAULT_MAX_MISSING_SYMBOL_RATIO = 0.20
 logger = logging.getLogger(__name__)
 
 
+class IceRegistryValidationError(Exception):
+    """Non-retryable validation failure with partial registry-run context."""
+
+    def __init__(
+        self,
+        message: str,
+        summary: dict[str, object] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.summary = summary
+
+
+def _build_registry_summary(
+    *,
+    registry_label: str,
+    resolved_start_date: date,
+    resolved_end_date: date,
+    selected_symbols: list[str],
+    selected_fields: list[str],
+    contract_dates_summary: dict[str, object],
+    settlements_summary: dict[str, object],
+    contract_dates_required: bool,
+) -> dict[str, object]:
+    rows_processed = (
+        int(contract_dates_summary.get("rows_processed", 0))
+        + int(settlements_summary.get("rows_processed", 0))
+    )
+    return {
+        "registry": registry_label,
+        "start_date": resolved_start_date.isoformat(),
+        "end_date": resolved_end_date.isoformat(),
+        "symbols": selected_symbols,
+        "fields": selected_fields,
+        "contract_dates": contract_dates_summary,
+        "settlements": settlements_summary,
+        "contract_dates_required": contract_dates_required,
+        "rows_processed": rows_processed,
+    }
+
+
 def _log_step_summary(step_name: str, summary: dict[str, object]) -> None:
     rows_processed = int(summary.get("rows_processed", 0))
     symbols_requested = summary.get("symbols_requested", "n/a")
@@ -49,7 +89,7 @@ def _validate_rows(
 ) -> None:
     rows_processed = int(summary.get("rows_processed", 0))
     if require_rows and rows_processed <= 0:
-        raise RuntimeError(
+        raise IceRegistryValidationError(
             f"{step_name} returned zero rows from ICE; treating this as a failed "
             "live pull."
         )
@@ -73,7 +113,7 @@ def _validate_symbol_coverage(
 
     missing_ratio = len(missing_symbols) / symbols_requested
     if missing_ratio > max_missing_symbol_ratio:
-        raise RuntimeError(
+        raise IceRegistryValidationError(
             f"{step_name} missed {len(missing_symbols)} of {symbols_requested} "
             "ICE symbol(s), exceeding the configured coverage threshold of "
             f"{max_missing_symbol_ratio:.0%}."
@@ -164,6 +204,7 @@ def run_registry_settlements(
         "skipped": True,
         "rows_processed": 0,
     }
+    contract_dates_required = require_rows and require_contract_date_rows
     if pull_contract_dates_enabled:
         contract_dates_summary = contract_dates_pull.run_contract_dates(
             symbols=selected_symbols,
@@ -171,18 +212,30 @@ def run_registry_settlements(
             database=database,
         )
         _log_step_summary("contract_dates", contract_dates_summary)
-        contract_dates_required = require_rows and require_contract_date_rows
-        _validate_rows(
-            summary=contract_dates_summary,
-            step_name="contract_dates",
-            require_rows=contract_dates_required,
-        )
-        _validate_symbol_coverage(
-            summary=contract_dates_summary,
-            step_name="contract_dates",
-            require_rows=contract_dates_required,
-            max_missing_symbol_ratio=max_missing_symbol_ratio,
-        )
+        try:
+            _validate_rows(
+                summary=contract_dates_summary,
+                step_name="contract_dates",
+                require_rows=contract_dates_required,
+            )
+            _validate_symbol_coverage(
+                summary=contract_dates_summary,
+                step_name="contract_dates",
+                require_rows=contract_dates_required,
+                max_missing_symbol_ratio=max_missing_symbol_ratio,
+            )
+        except IceRegistryValidationError as exc:
+            exc.summary = _build_registry_summary(
+                registry_label=registry_label,
+                resolved_start_date=resolved_start_date,
+                resolved_end_date=resolved_end_date,
+                selected_symbols=selected_symbols,
+                selected_fields=selected_fields,
+                contract_dates_summary=contract_dates_summary,
+                settlements_summary={"skipped": True, "rows_processed": 0},
+                contract_dates_required=contract_dates_required,
+            )
+            raise
         if (
             not contract_dates_required
             and int(contract_dates_summary.get("rows_processed", 0)) <= 0
@@ -206,30 +259,38 @@ def run_registry_settlements(
             database=database,
         )
         _log_step_summary("settlements", settlements_summary)
-        _validate_rows(
-            summary=settlements_summary,
-            step_name="settlements",
-            require_rows=require_rows,
-        )
-        _validate_symbol_coverage(
-            summary=settlements_summary,
-            step_name="settlements",
-            require_rows=require_rows,
-            max_missing_symbol_ratio=max_missing_symbol_ratio,
-        )
+        try:
+            _validate_rows(
+                summary=settlements_summary,
+                step_name="settlements",
+                require_rows=require_rows,
+            )
+            _validate_symbol_coverage(
+                summary=settlements_summary,
+                step_name="settlements",
+                require_rows=require_rows,
+                max_missing_symbol_ratio=max_missing_symbol_ratio,
+            )
+        except IceRegistryValidationError as exc:
+            exc.summary = _build_registry_summary(
+                registry_label=registry_label,
+                resolved_start_date=resolved_start_date,
+                resolved_end_date=resolved_end_date,
+                selected_symbols=selected_symbols,
+                selected_fields=selected_fields,
+                contract_dates_summary=contract_dates_summary,
+                settlements_summary=settlements_summary,
+                contract_dates_required=contract_dates_required,
+            )
+            raise
 
-    rows_processed = (
-        int(contract_dates_summary.get("rows_processed", 0))
-        + int(settlements_summary.get("rows_processed", 0))
+    return _build_registry_summary(
+        registry_label=registry_label,
+        resolved_start_date=resolved_start_date,
+        resolved_end_date=resolved_end_date,
+        selected_symbols=selected_symbols,
+        selected_fields=selected_fields,
+        contract_dates_summary=contract_dates_summary,
+        settlements_summary=settlements_summary,
+        contract_dates_required=contract_dates_required,
     )
-    return {
-        "registry": registry_label,
-        "start_date": resolved_start_date.isoformat(),
-        "end_date": resolved_end_date.isoformat(),
-        "symbols": selected_symbols,
-        "fields": selected_fields,
-        "contract_dates": contract_dates_summary,
-        "settlements": settlements_summary,
-        "contract_dates_required": require_rows and require_contract_date_rows,
-        "rows_processed": rows_processed,
-    }

@@ -5,6 +5,8 @@ from backend.scrapes.ice_python.fields.catalog import (  # noqa: F401
     ICE_FIELD_TO_COLUMN,
     LOW,
     OPEN,
+    OPEN_INTEREST,
+    OPEN_INTEREST_COMPACT,
     SETTLE,
     SETTLEMENT,
     SETTLEMENT_COLUMNS,

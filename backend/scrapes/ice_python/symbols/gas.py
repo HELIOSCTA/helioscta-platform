@@ -218,7 +218,9 @@ BALMO_GAS_DESCRIPTIONS: dict[str, str] = {
 
 GAS_FUTURES_PRODUCTS: list[dict] = [
     {"product": "HNG", "ice_product_id": "6590258", "product_name": "Henry LD1 Fixed Price Future", "description": "Henry Hub Natural Gas", "region": "louisiana"},
-    {"product": "PHE", "ice_product_id": "6590264", "product_name": "Henry Penultimate Fixed Price Future", "description": "Henry Penultimate Natural Gas", "region": "louisiana"},
+    # ICE product metadata lists this market under PHE, but ICE Python quote and
+    # timeseries calls resolve the futures symbols with the PHH prefix.
+    {"product": "PHH", "ice_product_id": "6590264", "product_name": "Henry Penultimate Fixed Price Future", "description": "Henry Penultimate Natural Gas", "region": "louisiana"},
     {"product": "TRZ", "ice_product_id": "6590165", "product_name": "Transco Station 85 (Zone 4) Basis Future", "description": "Transco Station 85 Basis", "region": "southeast"},
     {"product": "TFL", "ice_product_id": "6590159", "product_name": "Tennessee 500L Basis Future", "description": "TGP 500L Basis", "region": "southeast"},
     {"product": "CGB", "ice_product_id": "6590126", "product_name": "CG-Mainline Basis Future", "description": "Columbia Gulf Basis", "region": "southeast"},

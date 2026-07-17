@@ -304,6 +304,9 @@ def run_with_logging(
         status = "failure"
         error_type = type(exc).__name__
         error_message = redact_secrets(str(exc))
+        partial_summary = getattr(exc, "summary", None)
+        if isinstance(partial_summary, dict):
+            summary = partial_summary
         run_logger.exception(f"Orchestration failed: {error_message}")
         raise
     finally:

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.orchestration.ice_python import job_runner
+from backend.orchestration.ice_python import _policies
 from backend.orchestration.ice_python.settlements import gas_futures_core
 from backend.orchestration.ice_python.settlements import gas_futures_east
 from backend.orchestration.ice_python.settlements import gas_futures_gulf
@@ -157,7 +158,7 @@ def test_pjm_futures_wrapper_builds_bounded_horizon(monkeypatch):
 @pytest.mark.parametrize(
     ("module", "expected_registry", "expected_products"),
     [
-        (gas_futures_core, "gas_futures_core", ["HNG", "PHE"]),
+        (gas_futures_core, "gas_futures_core", ["HNG", "PHH"]),
         (
             gas_futures_gulf,
             "gas_futures_gulf",
@@ -282,6 +283,57 @@ def test_run_with_logging_emits_ice_api_fetch_telemetry(monkeypatch, tmp_path):
     assert telemetry[0]["metadata"]["lock_file_path"].endswith(
         "ice.orchestration_ice_python_test.lock"
     )
+
+
+def test_run_with_logging_uses_partial_summary_from_validation_error(
+    monkeypatch,
+    tmp_path,
+):
+    telemetry: list[dict[str, object]] = []
+    monkeypatch.setenv("HELIOS_ICE_JOB_LOCK_FILE", str(tmp_path / "ice.lock"))
+    monkeypatch.setattr(
+        _runtime,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    partial_summary = {
+        "registry": "gas_futures_core",
+        "start_date": "2026-07-03",
+        "end_date": "2026-07-17",
+        "symbols": ["HNG Q26-IUS", "PHH Q26-IUS"],
+        "fields": ["Settle", "Open Interest"],
+        "contract_dates_required": True,
+        "rows_processed": 1,
+        "contract_dates": {
+            "target_table": "ice_python.settlement_contract_dates",
+            "symbols_missing": ["PHH Q26-IUS"],
+            "rows_processed": 1,
+        },
+        "settlements": {"skipped": True, "rows_processed": 0},
+    }
+
+    def operation(_log_file_path):
+        raise registry.IceRegistryValidationError(
+            "contract_dates missed 1 of 2 ICE symbol(s)",
+            summary=partial_summary,
+        )
+
+    with pytest.raises(registry.IceRegistryValidationError):
+        _runtime.run_with_logging(
+            pipeline_name="orchestration_ice_python_test",
+            log_dir=tmp_path,
+            database="stage_db",
+            operation=operation,
+        )
+
+    assert len(telemetry) == 1
+    assert telemetry[0]["status"] == "failure"
+    assert telemetry[0]["rows_written"] == 1
+    assert telemetry[0]["target_table"] == "ice_python.settlement_contract_dates"
+    assert telemetry[0]["metadata"]["registry"] == "gas_futures_core"
+    assert telemetry[0]["metadata"]["contract_dates_rows_processed"] == 1
+    assert telemetry[0]["metadata"]["missing_symbol_count"] == 1
 
 
 def test_ice_job_lock_scopes_by_pipeline_name(tmp_path):
@@ -440,7 +492,7 @@ def test_registry_runner_fails_when_symbol_coverage_breaches_threshold(monkeypat
     )
 
     with pytest.raises(
-        RuntimeError,
+        registry.IceRegistryValidationError,
         match="exceeding the configured coverage threshold",
     ):
         registry.run_registry_settlements(
@@ -450,3 +502,18 @@ def test_registry_runner_fails_when_symbol_coverage_breaches_threshold(monkeypat
             fields=["Settle"],
             max_missing_symbol_ratio=0.25,
         )
+
+
+def test_registry_validation_errors_are_not_retried_by_transient_policy():
+    calls = 0
+
+    @_policies.ice_transient_retry_policy(attempts=2)
+    def failing_validation():
+        nonlocal calls
+        calls += 1
+        raise registry.IceRegistryValidationError("deterministic coverage failure")
+
+    with pytest.raises(registry.IceRegistryValidationError):
+        failing_validation()
+
+    assert calls == 1

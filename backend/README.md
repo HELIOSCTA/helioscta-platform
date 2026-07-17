@@ -461,6 +461,7 @@ python -m backend.backfills.power.pjm.hrl_load_prelim
 python -m backend.backfills.power.pjm.gen_outages_by_type
 python -m backend.backfills.weather.wsi.hourly_observed
 python -m backend.backfills.nav.positions_from_legacy_cache
+python -m backend.backfills.ice_python.futures
 ```
 
 For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
@@ -476,6 +477,15 @@ The NAV positions legacy-cache backfill copies workbooks from the old local
 cache into `backend/scrapes/nav/downloads/` and then upserts parsed rows into
 `nav.positions` with the same primary key as the scheduled SFTP workflow. It
 does not move or delete legacy workbooks.
+
+ICE Python futures backfills write `ice_python.settlements` at
+`trade_date, symbol` grain for monthly futures generated from the active PJM,
+ERCOT, western power, eastern power, and gas registries. The default full
+futures backfill requests `Settle`, `Open`, `High`, `Low`, `Close`,
+`VWAP Close`, `Volume`, and `Open Interest` from 2020 through calendar 2028.
+It emits `ops.api_fetch_log` telemetry through the shared ICE orchestration
+runtime and reports source-missing symbols without failing the whole family
+backfill.
 
 ## Scheduled PJM Price Repair
 

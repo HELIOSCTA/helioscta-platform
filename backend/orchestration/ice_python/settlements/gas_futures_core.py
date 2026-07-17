@@ -9,7 +9,7 @@ from backend.scrapes.ice_python import settings
 
 API_SCRAPE_NAME = "orchestration_ice_python_settlements_gas_futures_core"
 REGISTRY_LABEL = "gas_futures_core"
-PRODUCTS = ["HNG", "PHE"]
+PRODUCTS = ["HNG", "PHH"]
 
 
 def run(
