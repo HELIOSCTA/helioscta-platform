@@ -5,6 +5,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 import os
 from pathlib import Path
+import re
 import sys
 import time
 from typing import Any
@@ -19,6 +20,7 @@ SUMMARY = TypeVar("SUMMARY", bound=dict[str, object])
 SYMBOL_PREVIEW_LIMIT = 20
 DEFAULT_LOCK_FILENAME = "ice_python_jobs.lock"
 ENV_JOB_LOCK_FILE = "HELIOS_ICE_JOB_LOCK_FILE"
+LOCK_SCOPE_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def preview_values(values: list[str], limit: int = SYMBOL_PREVIEW_LIMIT) -> str:
@@ -31,30 +33,59 @@ def preview_values(values: list[str], limit: int = SYMBOL_PREVIEW_LIMIT) -> str:
     return preview or "(none)"
 
 
-def resolve_lock_file(lock_file: str | Path | None = None) -> Path:
+def _safe_lock_scope(lock_scope: str) -> str:
+    safe_scope = LOCK_SCOPE_PATTERN.sub("_", lock_scope.strip())
+    return safe_scope.strip("._") or "default"
+
+
+def _scoped_lock_file(base_lock_file: Path, lock_scope: str | None = None) -> Path:
+    if not lock_scope:
+        return base_lock_file
+    safe_scope = _safe_lock_scope(lock_scope)
+    return base_lock_file.with_name(
+        f"{base_lock_file.stem}.{safe_scope}{base_lock_file.suffix}"
+    )
+
+
+def resolve_lock_file(
+    lock_file: str | Path | None = None,
+    lock_scope: str | None = None,
+) -> Path:
     """Resolve the cross-process local ICE job lock file."""
     if lock_file is not None:
-        return Path(lock_file)
+        return _scoped_lock_file(Path(lock_file), lock_scope=lock_scope)
 
     configured_lock_file = os.environ.get(ENV_JOB_LOCK_FILE)
     if configured_lock_file:
-        return Path(configured_lock_file)
+        return _scoped_lock_file(Path(configured_lock_file), lock_scope=lock_scope)
 
     configured_state_dir = os.environ.get("HELIOS_STATE_DIR")
     if configured_state_dir:
-        return Path(configured_state_dir) / DEFAULT_LOCK_FILENAME
+        return _scoped_lock_file(
+            Path(configured_state_dir) / DEFAULT_LOCK_FILENAME,
+            lock_scope=lock_scope,
+        )
 
     configured_log_dir = os.environ.get("HELIOS_LOG_DIR")
     if configured_log_dir:
-        return Path(configured_log_dir).parent / "state" / DEFAULT_LOCK_FILENAME
+        return _scoped_lock_file(
+            Path(configured_log_dir).parent / "state" / DEFAULT_LOCK_FILENAME,
+            lock_scope=lock_scope,
+        )
 
-    return Path(__file__).parent / "logs" / DEFAULT_LOCK_FILENAME
+    return _scoped_lock_file(
+        Path(__file__).parent / "logs" / DEFAULT_LOCK_FILENAME,
+        lock_scope=lock_scope,
+    )
 
 
 @contextmanager
-def exclusive_job_lock(lock_file: str | Path | None = None):
-    """Hold an OS-released lock so manual and service runs cannot overlap."""
-    resolved_lock_file = resolve_lock_file(lock_file)
+def exclusive_job_lock(
+    lock_file: str | Path | None = None,
+    lock_scope: str | None = None,
+):
+    """Hold an OS-released lock so the same ICE job cannot overlap itself."""
+    resolved_lock_file = resolve_lock_file(lock_file, lock_scope=lock_scope)
     resolved_lock_file.parent.mkdir(parents=True, exist_ok=True)
     with resolved_lock_file.open("a+", encoding="utf-8") as handle:
         _acquire_file_lock(handle)
@@ -69,13 +100,13 @@ def exclusive_job_lock(lock_file: str | Path | None = None):
 
 
 def _acquire_file_lock(handle) -> None:
-    handle.seek(0)
-    if not handle.read(1):
-        handle.write("\0")
-        handle.flush()
-    handle.seek(0)
-
     try:
+        handle.seek(0)
+        if not handle.read(1):
+            handle.write("\0")
+            handle.flush()
+        handle.seek(0)
+
         if sys.platform == "win32":
             import msvcrt
 
@@ -86,8 +117,8 @@ def _acquire_file_lock(handle) -> None:
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError as exc:
         raise RuntimeError(
-            "Another ICE Python job is already running; refusing to overlap "
-            "local ICE runtime calls."
+            "Another ICE Python job with the same lock scope is already running; "
+            "refusing to overlap it."
         ) from exc
 
 
@@ -174,6 +205,17 @@ def _metadata_from_summary(
         if key in summary:
             metadata[key] = summary[key]
 
+    contract_dates_required = summary.get("contract_dates_required")
+    if isinstance(contract_dates_required, bool):
+        metadata["contract_dates_required"] = contract_dates_required
+
+    for step_name in ("contract_dates", "settlements"):
+        step_summary = summary.get(step_name)
+        if isinstance(step_summary, dict):
+            rows_processed = step_summary.get("rows_processed")
+            if isinstance(rows_processed, int):
+                metadata[f"{step_name}_rows_processed"] = rows_processed
+
     symbols_requested = _symbols_requested(summary)
     if symbols_requested is not None:
         metadata["symbols_requested"] = symbols_requested
@@ -249,7 +291,7 @@ def run_with_logging(
     lock_file_path: Path | None = None
     try:
         run_logger.header(pipeline_name)
-        with exclusive_job_lock() as acquired_lock_file:
+        with exclusive_job_lock(lock_scope=pipeline_name) as acquired_lock_file:
             lock_file_path = acquired_lock_file
             run_logger.info(f"Acquired ICE job lock: {acquired_lock_file}")
             summary = operation(run_logger.log_file_path)

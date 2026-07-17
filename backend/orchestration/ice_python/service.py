@@ -62,8 +62,7 @@ class ServiceJob:
 
 
 DEFAULT_HOURLY_WINDOWS: tuple[TimeWindow, ...] = (
-    TimeWindow(start=dt_time(6, 0), end=dt_time(10, 0)),
-    TimeWindow(start=dt_time(14, 0), end=dt_time(19, 0)),
+    TimeWindow(start=dt_time(5, 0), end=dt_time(23, 0)),
 )
 
 SETTLEMENTS_MODULE_ROOT = "backend.orchestration.ice_python.settlements"
@@ -118,11 +117,28 @@ DEFAULT_JOBS: tuple[ServiceJob, ...] = (
         windows=DEFAULT_HOURLY_WINDOWS,
     ),
     ServiceJob(
-        name="gas_futures",
-        cadence="daily",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures",
-        daily_start=dt_time(15, 0),
-        timeout_seconds=90 * 60,
+        name="gas_futures_core",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_core",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures_gulf",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_gulf",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures_west",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_west",
+        windows=DEFAULT_HOURLY_WINDOWS,
+    ),
+    ServiceJob(
+        name="gas_futures_east",
+        cadence="hourly",
+        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_east",
+        windows=DEFAULT_HOURLY_WINDOWS,
     ),
 )
 
@@ -236,11 +252,31 @@ def job_run_key(job: ServiceJob, current_time: datetime) -> str:
 def _scheduled_at_current_time(job: ServiceJob, current_time: datetime) -> bool:
     local_time = current_time.timetz().replace(tzinfo=None)
     if job.cadence == "hourly":
+        if current_time.weekday() >= 5:
+            return False
         return any(window.contains(local_time) for window in job.windows)
     if job.cadence == "daily":
         if job.daily_start is None:
             raise ValueError(f"Daily job {job.name} is missing daily_start.")
         return local_time >= job.daily_start
+    raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
+
+
+def _scheduled_for_task_scheduler_tick(
+    job: ServiceJob,
+    current_time: datetime,
+) -> bool:
+    """Return whether a visible Task Scheduler start should run this job."""
+    local_time = current_time.timetz().replace(tzinfo=None)
+    if job.cadence == "hourly":
+        return any(window.contains(local_time) for window in job.windows)
+    if job.cadence == "daily":
+        if job.daily_start is None:
+            raise ValueError(f"Daily job {job.name} is missing daily_start.")
+        return (
+            local_time.hour == job.daily_start.hour
+            and local_time >= job.daily_start
+        )
     raise ValueError(f"Unsupported ICE service cadence: {job.cadence}")
 
 
@@ -293,6 +329,94 @@ def due_jobs(
 ) -> list[ServiceJob]:
     """Return the jobs due at current_time."""
     return [job for job in jobs if is_job_due(job, current_time, run_state)]
+
+
+def task_scheduler_tick_jobs(
+    current_time: datetime,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+) -> list[ServiceJob]:
+    """Return jobs for one Task Scheduler tick, ignoring persisted run state."""
+    return [
+        job
+        for job in jobs
+        if _scheduled_for_task_scheduler_tick(job, current_time)
+    ]
+
+
+def _parse_job_run_time(
+    *,
+    job: ServiceJob,
+    run_key: str,
+    timezone: ZoneInfo,
+) -> datetime | None:
+    prefix = f"{job.name}:"
+    if not run_key.startswith(prefix):
+        return None
+
+    window_text = run_key[len(prefix) :]
+    try:
+        if job.cadence == "hourly":
+            return datetime.strptime(window_text, "%Y-%m-%dT%H").replace(
+                tzinfo=timezone
+            )
+        if job.cadence == "daily":
+            parsed_date = datetime.strptime(window_text, "%Y-%m-%d")
+            start_time = job.daily_start or dt_time(0, 0)
+            return datetime.combine(
+                parsed_date.date(),
+                start_time,
+                tzinfo=timezone,
+            )
+    except ValueError:
+        return None
+    return None
+
+
+def latest_failed_job_attempts(
+    *,
+    current_time: datetime,
+    run_state: RUN_STATE,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+) -> list[tuple[ServiceJob, datetime]]:
+    """Return latest failed or stale-running records that should be replayed."""
+    timezone = current_time.tzinfo
+    if not isinstance(timezone, ZoneInfo):
+        timezone = ZoneInfo(DEFAULT_TIMEZONE)
+
+    attempts: list[tuple[ServiceJob, datetime]] = []
+    for job in jobs:
+        records: list[tuple[datetime, RUN_RECORD]] = []
+        for run_key, value in run_state.items():
+            run_time = _parse_job_run_time(
+                job=job,
+                run_key=run_key,
+                timezone=timezone,
+            )
+            if run_time is None:
+                continue
+            record = _normalize_run_record(value)
+            if record is not None:
+                records.append((run_time, record))
+
+        if not records:
+            continue
+
+        run_time, record = sorted(
+            records,
+            key=lambda item: item[0],
+            reverse=True,
+        )[0]
+        status = str(record.get("status", "attempted"))
+        if status in {"failed", "timed_out"}:
+            attempts.append((job, run_time))
+        elif status == "running" and _is_running_record_stale(
+            job=job,
+            current_time=current_time,
+            record=record,
+        ):
+            attempts.append((job, run_time))
+
+    return attempts
 
 
 def _tail_text(value: str | bytes | None, line_limit: int = PROCESS_LOG_TAIL_LINES) -> str:
@@ -501,17 +625,74 @@ def run_due_jobs(
     jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
     state_file: Path | None = None,
     logger: logging.Logger | None = None,
+    respect_run_state: bool = True,
 ) -> dict[str, int]:
     """Attempt due jobs and return a compact service-loop summary."""
     service_logger = logger or configure_service_logging()
-    selected_jobs = due_jobs(current_time=current_time, run_state=run_state, jobs=jobs)
+    if respect_run_state:
+        selected_jobs = [
+            (job, current_time)
+            for job in due_jobs(
+                current_time=current_time,
+                run_state=run_state,
+                jobs=jobs,
+            )
+        ]
+    else:
+        selected_jobs = [
+            (job, current_time)
+            for job in task_scheduler_tick_jobs(
+                current_time=current_time,
+                jobs=jobs,
+            )
+        ]
+    return run_selected_jobs(
+        selected_jobs=selected_jobs,
+        run_state=run_state,
+        state_file=state_file,
+        logger=service_logger,
+    )
+
+
+def run_failed_jobs(
+    current_time: datetime,
+    run_state: RUN_STATE,
+    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+    state_file: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> dict[str, int]:
+    """Replay latest failed or stale-running job records from persisted state."""
+    service_logger = logger or configure_service_logging()
+    selected_jobs = latest_failed_job_attempts(
+        current_time=current_time,
+        run_state=run_state,
+        jobs=jobs,
+    )
+    return run_selected_jobs(
+        selected_jobs=selected_jobs,
+        run_state=run_state,
+        state_file=state_file,
+        logger=service_logger,
+    )
+
+
+def run_selected_jobs(
+    *,
+    selected_jobs: Sequence[tuple[ServiceJob, datetime]],
+    run_state: RUN_STATE,
+    state_file: Path | None = None,
+    logger: logging.Logger | None = None,
+) -> dict[str, int]:
+    """Attempt selected jobs and persist results under their scheduler window."""
+    service_logger = logger or configure_service_logging()
     succeeded = 0
     failed = 0
     timed_out = 0
 
-    for job in selected_jobs:
-        run_key = job_run_key(job, current_time)
-        run_state[run_key] = _started_record(job=job, current_time=current_time)
+    for job, run_key_time in selected_jobs:
+        run_key = job_run_key(job, run_key_time)
+        started_at = datetime.now(run_key_time.tzinfo)
+        run_state[run_key] = _started_record(job=job, current_time=started_at)
         if state_file is not None:
             try:
                 save_run_state(state_file=state_file, run_state=run_state)
@@ -521,9 +702,10 @@ def run_due_jobs(
         service_logger.info("Starting ICE Python job: %s", job.name)
         try:
             result = run_service_job(job=job, logger=service_logger)
+            finished_at = datetime.now(started_at.tzinfo)
             run_state[run_key] = _finished_record(
                 job=job,
-                current_time=current_time,
+                current_time=finished_at,
                 result=result,
             )
             rows_processed = int(result.get("rows_processed", 0))
@@ -543,9 +725,10 @@ def run_due_jobs(
             )
         except Exception as exc:
             failed += 1
+            finished_at = datetime.now(started_at.tzinfo)
             run_state[run_key] = _finished_record(
                 job=job,
-                current_time=current_time,
+                current_time=finished_at,
                 result={
                     "status": "failed",
                     "rows_processed": 0,
@@ -596,6 +779,7 @@ def sleep_until_next_poll(poll_seconds: int) -> None:
 def run_service_loop(
     poll_seconds: int | None = None,
     run_once: bool = False,
+    rerun_failed: bool = False,
     timezone_name: str = DEFAULT_TIMEZONE,
     state_file: str | Path | None = None,
     jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
@@ -622,6 +806,17 @@ def run_service_loop(
         resolved_state_file,
     )
 
+    if rerun_failed:
+        current_time = datetime.now(local_timezone)
+        summary = run_failed_jobs(
+            current_time=current_time,
+            run_state=run_state,
+            jobs=jobs,
+            state_file=resolved_state_file,
+            logger=service_logger,
+        )
+        return 1 if summary["jobs_failed"] else 0
+
     while not _STOP_REQUESTED:
         current_time = datetime.now(local_timezone)
         summary = run_due_jobs(
@@ -630,6 +825,7 @@ def run_service_loop(
             jobs=jobs,
             state_file=resolved_state_file,
             logger=service_logger,
+            respect_run_state=not run_once,
         )
         if run_once:
             return 1 if summary["jobs_failed"] else 0
@@ -642,6 +838,7 @@ def run_service_loop(
 def main(
     poll_seconds: int | None = None,
     run_once: bool = False,
+    rerun_failed: bool = False,
     timezone_name: str = DEFAULT_TIMEZONE,
     state_file: str | Path | None = None,
 ) -> int:
@@ -650,6 +847,7 @@ def main(
     return run_service_loop(
         poll_seconds=poll_seconds,
         run_once=run_once,
+        rerun_failed=rerun_failed,
         timezone_name=timezone_name,
         state_file=state_file,
     )

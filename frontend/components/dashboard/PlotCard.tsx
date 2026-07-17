@@ -17,6 +17,8 @@ interface PlotCardProps {
   onToggleSeries: (key: string) => void;
   onShowAll?: () => void;
   onHideAll?: () => void;
+  controls?: React.ReactNode;
+  showSeriesControls?: boolean;
   children: React.ReactNode;
   focusedChildren?: React.ReactNode;
   collapsible?: boolean;
@@ -88,6 +90,8 @@ export default function PlotCard({
   onToggleSeries,
   onShowAll,
   onHideAll,
+  controls,
+  showSeriesControls = true,
   children,
   focusedChildren,
   collapsible = false,
@@ -141,20 +145,23 @@ export default function PlotCard({
           </div>
           {!collapsed && (
             <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 xl:justify-end">
-              <SeriesControls
-                series={series}
-                hiddenSeries={hiddenSeries}
-                onToggleSeries={onToggleSeries}
-                onShowAll={onShowAll}
-                onHideAll={onHideAll}
-              />
+              {showSeriesControls ? (
+                <SeriesControls
+                  series={series}
+                  hiddenSeries={hiddenSeries}
+                  onToggleSeries={onToggleSeries}
+                  onShowAll={onShowAll}
+                  onHideAll={onHideAll}
+                />
+              ) : null}
+              {controls}
               <button
                 type="button"
                 onClick={() => setFocused(true)}
                 className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-                aria-label={`Focus ${title}`}
+                aria-label={`Expand ${title}`}
               >
-                Focus
+                Expand
               </button>
             </div>
           )}
@@ -167,7 +174,7 @@ export default function PlotCard({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"
           role="dialog"
           aria-modal="true"
-          aria-label={`${title} focused chart`}
+          aria-label={`${title} expanded chart`}
         >
           <div className="flex max-h-[92vh] w-full max-w-7xl flex-col rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl">
             <div className="flex flex-col gap-3 border-b border-gray-800 p-3 xl:flex-row xl:items-start xl:justify-between">
@@ -176,13 +183,16 @@ export default function PlotCard({
                 {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
               </div>
               <div className="flex min-w-0 flex-wrap items-center justify-start gap-2 xl:justify-end">
-                <SeriesControls
-                  series={series}
-                  hiddenSeries={hiddenSeries}
-                  onToggleSeries={onToggleSeries}
-                  onShowAll={onShowAll}
-                  onHideAll={onHideAll}
-                />
+                {showSeriesControls ? (
+                  <SeriesControls
+                    series={series}
+                    hiddenSeries={hiddenSeries}
+                    onToggleSeries={onToggleSeries}
+                    onShowAll={onShowAll}
+                    onHideAll={onHideAll}
+                  />
+                ) : null}
+                {controls}
                 <button
                   type="button"
                   onClick={() => setFocused(false)}

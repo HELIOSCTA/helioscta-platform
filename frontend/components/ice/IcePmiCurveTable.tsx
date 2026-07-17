@@ -16,6 +16,8 @@ import {
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
+type PricingMode = "power" | "cal" | "spark";
+
 interface PriorSettlementPoint {
   contractYear: number | null;
   pointType?: "settlement" | "forward" | null;
@@ -46,7 +48,8 @@ interface IcePmiCurveRow {
 }
 
 interface IcePmiCurvePayload {
-  product: "PMI";
+  product: string;
+  pricingMode?: PricingMode;
   source: string;
   dataAsOf: string | null;
   rows: IcePmiCurveRow[];
@@ -64,7 +67,7 @@ interface ContractHistoryPoint {
 }
 
 interface ContractHistoryPayload {
-  product: "PMI";
+  product: string;
   symbol: string;
   source: string;
   rowCount: number;
@@ -85,9 +88,23 @@ interface ContractHistoryPayload {
   };
 }
 
+interface IcePmiCurveTableProps {
+  mode?: PricingMode;
+  sparkProduct?: string;
+  selectedYears?: number[];
+}
+
 interface MatrixCell {
   point: PriorSettlementPoint | null;
   scan: ActiveScan | null;
+}
+
+interface MatrixRow {
+  strip: string;
+  stripOrder: number;
+  legLabel?: string;
+  cells: Map<number, MatrixCell>;
+  points: PriorSettlementPoint[];
 }
 
 interface SelectedContract {
@@ -134,6 +151,16 @@ function fmtSigned(value: number | null | undefined, decimals = 2): string {
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `-${formatted}`;
   return formatted;
+}
+
+function chartDateMs(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const time = new Date(`${value.slice(0, 10)}T00:00:00Z`).getTime();
+  return Number.isFinite(time) ? time : null;
+}
+
+function chartDaysBetween(startMs: number, endMs: number): number {
+  return Math.max(1, Math.ceil((endMs - startMs) / (1000 * 60 * 60 * 24)));
 }
 
 function finiteTrendValues(points: TrendPoint[] | undefined): number[] {
@@ -199,6 +226,7 @@ function pointTypeLabel(point: PriorSettlementPoint | null, dataAsOf: string | n
 
 function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] }) {
   const [focused, setFocused] = useState(false);
+  const [chartWindowDays, setChartWindowDays] = useState<number | "all">(90);
   const [visibleSeries, setVisibleSeries] = useState({
     settlement: true,
     volume: true,
@@ -208,15 +236,28 @@ function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] })
     .filter((point) => point.tradeDate && point.settlement !== null)
     .map((point) => ({
       tradeDate: fmtDate(point.tradeDate),
+      tradeDateMs: chartDateMs(point.tradeDate) ?? 0,
       settlement: point.settlement,
       volume: point.volume,
       openInterest: point.openInterest ?? null,
     }));
+  const dateExtent = chartData.length
+    ? [
+        Math.min(...chartData.map((point) => point.tradeDateMs)),
+        Math.max(...chartData.map((point) => point.tradeDateMs)),
+      ]
+    : [Date.now(), Date.now()] as const;
+  const maxWindowDays = chartDaysBetween(dateExtent[0], dateExtent[1]);
+  const sliderValue = chartWindowDays === "all" ? maxWindowDays : chartWindowDays;
+  const visibleChartData =
+    chartWindowDays === "all"
+      ? chartData
+      : chartData.filter((point) => point.tradeDateMs >= dateExtent[1] - chartWindowDays * 24 * 60 * 60 * 1000);
   const hasOpenInterest = chartData.some(
     (point) => point.openInterest !== null && Number.isFinite(point.openInterest),
   );
 
-  if (chartData.length < 2) {
+  if (visibleChartData.length < 2) {
     return <div className="px-3 py-8 text-sm text-gray-500">Not enough history to chart.</div>;
   }
 
@@ -237,14 +278,14 @@ function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] })
         </div>
         <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
           <div className="text-xs text-gray-500">
-            {chartData[0].tradeDate} to {chartData.at(-1)?.tradeDate}
+            {visibleChartData[0].tradeDate} to {visibleChartData.at(-1)?.tradeDate}
           </div>
           <button
             type="button"
             onClick={() => setFocused((value) => !value)}
             className="rounded-md border border-gray-700 bg-gray-950 px-2 py-1 text-xs font-semibold text-gray-300 transition-colors hover:border-cyan-400 hover:text-white"
           >
-            {focused ? "Exit Focus" : "Focus"}
+            {focused ? "Collapse" : "Expand"}
           </button>
         </div>
       </div>
@@ -271,9 +312,45 @@ function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] })
           </button>
         ))}
       </div>
+      <div className="mb-3 flex flex-wrap items-center justify-end gap-3">
+        <div className="flex flex-wrap gap-1 rounded-md border border-gray-800 bg-gray-950/55 p-1">
+          {[
+            { label: "30D", days: 30 },
+            { label: "90D", days: 90 },
+            { label: "180D", days: 180 },
+            { label: "All", days: "all" as const },
+          ].map(({ label, days }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => setChartWindowDays(days)}
+              className={`min-w-12 rounded px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                chartWindowDays === days ? "bg-gray-100 text-gray-950" : "text-gray-400 hover:bg-gray-800"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="flex min-w-[220px] items-center gap-2">
+          <input
+            type="range"
+            min={30}
+            max={Math.max(30, maxWindowDays)}
+            step={10}
+            value={sliderValue}
+            onChange={(event) => setChartWindowDays(Number(event.target.value))}
+            className="h-2 flex-1 accent-cyan-400"
+            aria-label="Contract chart date lookback window"
+          />
+          <span className="w-14 text-right text-xs font-semibold text-gray-400">
+            {chartWindowDays === "all" ? "All" : `${chartWindowDays}D`}
+          </span>
+        </div>
+      </div>
       <div className={`${focused ? "h-[72vh]" : "h-[430px]"} w-full`}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={chartData} margin={{ top: 12, right: 20, bottom: 12, left: 8 }}>
+          <ComposedChart data={visibleChartData} margin={{ top: 12, right: 20, bottom: 12, left: 8 }}>
             <CartesianGrid stroke="rgba(148, 163, 184, 0.14)" vertical={false} />
             <XAxis
               dataKey="tradeDate"
@@ -367,23 +444,56 @@ function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] })
   );
 }
 
-export default function IcePmiCurveTable() {
+function pricingModeLabel(mode: PricingMode): string {
+  if (mode === "cal") return "Calendar";
+  if (mode === "spark") return "Sparks";
+  return "Power Outright";
+}
+
+export default function IcePmiCurveTable({
+  mode = "power",
+  sparkProduct,
+  selectedYears,
+}: IcePmiCurveTableProps = {}) {
   const [payload, setPayload] = useState<IcePmiCurvePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [lookbackDays, setLookbackDays] = useState(7);
+  const [showMetrics, setShowMetrics] = useState(true);
+  const lookbackDays = 7;
   const [selectedContract, setSelectedContract] = useState<SelectedContract | null>(null);
   const [contractPayload, setContractPayload] = useState<ContractHistoryPayload | null>(null);
   const [contractLoading, setContractLoading] = useState(false);
   const [contractError, setContractError] = useState<string | null>(null);
+  const matrixCurrentYear = useMemo(() => new Date().getFullYear(), []);
+  const selectedYearsKey = selectedYears?.join(",") ?? "";
+  const selectedYearValues = useMemo(
+    () => selectedYearsKey.split(",").map(Number).filter((year) => Number.isFinite(year)),
+    [selectedYearsKey],
+  );
+  const matrixEndYear = Math.max(matrixCurrentYear + 2, ...selectedYearValues);
+  const priorYears = Math.max(5, matrixCurrentYear - Math.min(matrixCurrentYear, ...selectedYearValues));
+  const selectedYearSet = useMemo(
+    () => (selectedYearValues.length ? new Set(selectedYearValues) : null),
+    [selectedYearValues],
+  );
 
   const apiUrl = useMemo(
-    () => `/api/ice-pmi-curve?currentYear=2026&endYear=2028&tradingDays=${lookbackDays}&priorYears=5`,
-    [lookbackDays],
+    () => {
+      const params = new URLSearchParams({
+        currentYear: String(matrixCurrentYear),
+        endYear: String(matrixEndYear),
+        tradingDays: String(lookbackDays),
+        priorYears: String(priorYears),
+        mode,
+      });
+      if (sparkProduct) params.set("sparkProduct", sparkProduct);
+      return `/api/ice-pmi-curve?${params.toString()}`;
+    },
+    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, priorYears, sparkProduct],
   );
   const cacheKey = useMemo(
-    () => `api:ice-pmi-curve:2026:2028:${lookbackDays}:5`,
-    [lookbackDays],
+    () => `api:ice-pmi-curve:${mode}:${sparkProduct ?? "default"}:${matrixCurrentYear}:${matrixEndYear}:${lookbackDays}:${priorYears}`,
+    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, priorYears, sparkProduct],
   );
 
   useEffect(() => {
@@ -442,16 +552,20 @@ export default function IcePmiCurveTable() {
     const years = new Set<number>();
     for (const row of payload?.rows ?? []) {
       for (const point of row.monthCurvePoints) {
-        if (point.contractYear !== null && Number.isFinite(point.contractYear)) {
+        if (
+          point.contractYear !== null &&
+          Number.isFinite(point.contractYear) &&
+          (!selectedYearSet || selectedYearSet.has(point.contractYear))
+        ) {
           years.add(point.contractYear);
         }
       }
     }
     return [...years].sort((a, b) => a - b);
-  }, [payload?.rows]);
+  }, [payload?.rows, selectedYearSet]);
 
-  const matrixRows = useMemo(() => {
-    const baseRows = [...(payload?.rows ?? [])]
+  const monthlyMatrixRows = useMemo<MatrixRow[]>(() => {
+    return [...(payload?.rows ?? [])]
       .sort((a, b) => a.stripOrder - b.stripOrder)
       .map((row) => {
         const pointsByYear = new Map<number, PriorSettlementPoint>();
@@ -466,22 +580,22 @@ export default function IcePmiCurveTable() {
           const point = pointsByYear.get(year) ?? null;
           let scan: ActiveScan | null = null;
 
-          if (isActiveForwardPoint(point, payload?.dataAsOf) && point?.symbol) {
-            if (point.symbol === row.currentSymbol) {
+          if (point && isActiveForwardPoint(point, payload?.dataAsOf)) {
+            if (point.symbol === row.currentSymbol || (!point.symbol && point.contractYear === matrixCurrentYear)) {
               scan = {
                 ...buildActiveScan(row.priceTrend, row.volumeTrend),
                 attentionScore: null,
                 isHighVolume: false,
                 isBigMove: false,
               };
-            } else if (point.symbol === row.cal27Symbol) {
+            } else if (point.symbol === row.cal27Symbol || (!point.symbol && point.contractYear === 2027)) {
               scan = {
                 ...buildActiveScan(row.cal27PriceTrend, row.cal27VolumeTrend),
                 attentionScore: null,
                 isHighVolume: false,
                 isBigMove: false,
               };
-            } else if (point.symbol === row.cal28Symbol) {
+            } else if (point.symbol === row.cal28Symbol || (!point.symbol && point.contractYear === 2028)) {
               scan = {
                 ...buildActiveScan(row.cal28PriceTrend, row.cal28VolumeTrend),
                 attentionScore: null,
@@ -501,6 +615,10 @@ export default function IcePmiCurveTable() {
           points: row.monthCurvePoints,
         };
       });
+  }, [matrixCurrentYear, matrixYears, payload?.dataAsOf, payload?.rows]);
+
+  const matrixRows = useMemo(() => {
+    const baseRows = monthlyMatrixRows;
 
     const activeScans = baseRows.flatMap((row) =>
       matrixYears.map((year) => row.cells.get(year)?.scan ?? null),
@@ -551,7 +669,7 @@ export default function IcePmiCurveTable() {
     }
 
     return baseRows;
-  }, [matrixYears, payload?.dataAsOf, payload?.rows]);
+  }, [matrixYears, monthlyMatrixRows]);
 
   const selectedSameMonthPoints = useMemo(() => {
     if (!selectedContract) return [];
@@ -578,26 +696,34 @@ export default function IcePmiCurveTable() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedContract]);
 
+  useEffect(() => {
+    setSelectedContract(null);
+  }, [mode]);
+
   return (
     <div className="space-y-4">
       <DataTableShell
-        title="PMI Month x Year"
-        subtitle={`Cells with Vol or Move badges shade green by ${lookbackDays}-day move plus volume; settled contracts stay neutral`}
+        title={
+          `${pricingModeLabel(mode)} Month x Year`
+        }
+        subtitle={
+          showMetrics
+            ? `Metrics show ${lookbackDays}-day move and volume analytics; settled contracts open contract history`
+            : "Metrics hidden; cells show settlement marks only"
+        }
         action={
-          <label className="flex items-center gap-2 text-xs text-gray-400">
-            <span>Lookback</span>
-            <select
-              value={lookbackDays}
-              onChange={(event) => setLookbackDays(Number(event.target.value))}
-              className="rounded-md border border-gray-700 bg-gray-950 px-2 py-1 text-xs font-semibold text-gray-100 outline-none focus:border-cyan-400"
-            >
-              <option value={5}>5 days</option>
-              <option value={7}>7 days</option>
-              <option value={10}>10 days</option>
-              <option value={14}>14 days</option>
-              <option value={20}>20 days</option>
-            </select>
-          </label>
+          <button
+            type="button"
+            aria-pressed={showMetrics}
+            onClick={() => setShowMetrics((value) => !value)}
+            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              showMetrics
+                ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100"
+                : "border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+            }`}
+          >
+            Metrics
+          </button>
         }
         bodyClassName="border-gray-800"
       >
@@ -618,14 +744,14 @@ export default function IcePmiCurveTable() {
             {loading && (
               <tr>
                 <td className="px-3 py-4 text-gray-500" colSpan={Math.max(2, matrixYears.length + 1)}>
-                  Loading ICE PMI matrix...
+                  Loading {pricingModeLabel(mode).toLowerCase()} matrix...
                 </td>
               </tr>
             )}
             {!loading && matrixRows.length === 0 && (
               <tr>
                 <td className="px-3 py-4 text-gray-500" colSpan={Math.max(2, matrixYears.length + 1)}>
-                  No PMI matrix rows returned.
+                  No {pricingModeLabel(mode).toLowerCase()} matrix rows returned.
                 </td>
               </tr>
             )}
@@ -633,14 +759,17 @@ export default function IcePmiCurveTable() {
               matrixRows.map((row) => (
                 <tr key={row.strip} className="bg-[#151820] odd:bg-[#181b23]">
                   <th className="sticky left-0 z-10 bg-inherit px-2 py-1 text-left text-sm font-semibold text-gray-100">
-                    {row.strip}
+                    <span className="block">{row.strip}</span>
+                    {row.legLabel ? (
+                      <span className="block text-[9px] font-medium leading-tight text-gray-500">{row.legLabel}</span>
+                    ) : null}
                   </th>
                   {matrixYears.map((year) => {
                     const cell = row.cells.get(year) ?? { point: null, scan: null };
                     const selected = activeSymbol && cell.point?.symbol === activeSymbol;
                     const pointLabel = pointTypeLabel(cell.point, payload?.dataAsOf);
                     const activeForward = isActiveForwardPoint(cell.point, payload?.dataAsOf);
-                    const attentionWorthy = Boolean(cell.scan?.isHighVolume || cell.scan?.isBigMove);
+                    const attentionWorthy = showMetrics && Boolean(cell.scan?.isHighVolume || cell.scan?.isBigMove);
                     const statusClass = activeForward
                       ? "text-cyan-200"
                       : cell.point
@@ -661,6 +790,13 @@ export default function IcePmiCurveTable() {
                             if (!cell.point?.symbol) return;
                             setSelectedContract({ strip: row.strip, year, point: cell.point });
                           }}
+                          title={
+                            cell.point?.symbol
+                              ? undefined
+                              : cell.point
+                                ? "Derived analytics cell; contract history is available only for outright PMI contracts"
+                                : undefined
+                          }
                           className={`min-h-[42px] w-full rounded border px-1.5 py-1 text-right transition-colors disabled:cursor-not-allowed ${
                             selected
                               ? "border-cyan-300 shadow-[0_0_0_1px_rgba(34,211,238,0.55)]"
@@ -685,7 +821,7 @@ export default function IcePmiCurveTable() {
                           <div className={`text-[9px] font-semibold leading-tight tabular-nums ${statusClass}`}>
                             {cell.point ? `${pointLabel} ${fmtDate(cell.point.finalTradeDate)}` : "-"}
                           </div>
-                          {cell.scan ? (
+                          {showMetrics && cell.scan ? (
                             <div className={`text-[9px] font-semibold leading-tight tabular-nums ${moveTone}`}>
                               {lookbackDays}d {fmtSigned(cell.scan.priceMove)} · V {fmtVolume(cell.scan.latestVolume)}
                               {cell.scan.isHighVolume && <span className="ml-1 text-cyan-100">Vol</span>}

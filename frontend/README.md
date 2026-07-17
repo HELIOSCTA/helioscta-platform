@@ -56,8 +56,6 @@ GET /api/cache/warm-forecasts
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
-GET /api/ice-pmi-curve?currentYear=2026&endYear=2028&tradingDays=7&priorYears=5
-GET /api/ice-pmi-curve/contract?symbol=PMI%20Q27-IUS
 ```
 
 Email/report links can open the PJM DA LMP page directly into the single-day
@@ -72,10 +70,15 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 ```text
 GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
-GET /api/gas-daily-prices?basis=settlement
+GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
+GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
+GET /api/gas-daily-prices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
+GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/dev/nav-positions?fund=all&rawLimit=200
-GET /api/dev/clear-street-trades?tradeDate=YYYY-MM-DD
+GET /api/dev/clear-street-trades?limit=500
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
+GET /api/pjm-tightness-lookback?date=YYYY-MM-DD
+GET /api/pjm-price-view?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/weather/wsi-forecast-map?region=PJM&date=YYYY-MM-DD&forecastRun=primary
@@ -86,6 +89,9 @@ GET /api/pjm-net-load-forecast-differences?source=pjm&area=RTO&date=YYYY-MM-DD&l
 GET /api/pjm-net-load-forecast-differences?source=meteologica&area=WEST&date=YYYY-MM-DD&lookbackHours=72
 GET /api/pjm-net-load-forecast-date-compare?source=pjm&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
 GET /api/pjm-net-load-forecast-date-compare?source=meteologica&area=WEST&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/pjm-actuals-regime-scatter?loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&start=YYYY-MM-DD&end=YYYY-MM-DD
+GET /api/pjm-forecast-price-analogs?source=pjm&loadArea=RTO&generationArea=RTO&stationId=PJM&hub=WESTERN%20HUB&seasonStart=05-01&seasonEnd=08-31&lookbackYears=3&includeCurrentYear=1
+GET /api/cache/warm-price-distributions?run=1
 GET /api/pjm-ops-summary?date=YYYY-MM-DD
 ```
 
@@ -122,6 +128,27 @@ day HE8-23, and `7x24` is all hours. Legacy aliases `onpeak`, `offpeak`, and
 the shared frontend trading calendar helpers. Hub spreads in the UI are derived
 client-side from two route payloads as `To Hub - From Hub`.
 
+## Local DEV PJM Price Duration Curves Source Contract
+
+The Price Analytics duration-curve view reads historical hourly LMPs with
+`helios_readonly` from `pjm.da_hrl_lmps`, `pjm.rt_hrl_lmps`, and
+`pjm.rt_unverified_hrl_lmps`.
+
+Source system: PJM Data Miner 2 hourly LMP feeds.
+
+Promoted table grain:
+DA and verified RT are keyed by
+`datetime_beginning_utc x pnode_id x pnode_name x row_is_current x version_nbr`.
+Unverified RT is keyed by `datetime_beginning_utc x pnode_name x type`.
+
+The route `GET /api/pjm-price-duration-curves` accepts bounded params:
+`market=rt|da`, `rtSource=verified|unverified`, `hub`, `component`,
+`month`, comma-separated `years`, `hourFilter`, and optional `threshold`.
+Each selected year's hourly prices are sorted descending. The x-axis is
+exceedance share, not chronological time. `weekday_onpeak` is NERC
+business-day HE8-23, and `offpeak` includes NERC off-peak days plus
+business-day HE1-7/HE24.
+
 ## PJM Historical Settlements Source Contract
 
 The Historical Settlements view reads historical hourly PJM LMPs with
@@ -156,25 +183,6 @@ embedded Term Bible view reuses `GET /api/pjm-term-bible`, renders tables only,
 and suppresses the daily plot. Legacy links with `?section=pjm-term-bible` open
 the Historical Settlements page on the Term Bible tab.
 
-## ICE PMI Source Contract
-
-The ICE PMI view reads non-option PJM Western Hub real-time peak mini futures
-settlement marks with `helios_readonly` from `ice_python.settlements`.
-
-Source system: ICE Python / ICE XL local Windows runtime.
-
-Promoted table grain: `trade_date x symbol`, with primary key
-`(trade_date, symbol)` and freshness field `updated_at`.
-
-The route `GET /api/ice-pmi-curve` returns a month-by-contract-year matrix for
-PMI monthly futures plus prior-year settled contracts. The route
-`GET /api/ice-pmi-curve/contract` accepts a bounded PMI symbol such as
-`PMI Q27-IUS` and returns full settlement, volume, and open-interest history,
-latest moves, window high/low, average volume, and source freshness for the
-clicked heat-map cell.
-The view does not create a database model, frontend cache table, backend job, or
-new credential requirement.
-
 ## Local DEV Positions Source Contract
 
 The Positions DEV view reads NAV position valuation snapshots with
@@ -203,28 +211,18 @@ frontend cache table.
 
 ## Local DEV Clear Street Trades Source Contract
 
-The Trades DEV view reads selected Clear Street SFTP trade-date rows across
-accounts with `helios_readonly` from `clear_street.eod_transactions` and derives
-product, account, contract, and export fields from
-`frontend/sql/clear-street-trades/marts/eod_all_history.sql`. That SQL is copied
-from
-`dbt/azure_postgres/reference_sql/ddl/clear_street/eod_transactions/target/cs_65_eod_all_history.sql`.
-It is local-only and appears in the local `DEV` sidebar section at
-`/?section=clear-street-trades`; Vercel builds hide the page and return `404`
-from `GET /api/dev/clear-street-trades`.
+The Trades DEV view reads latest raw Clear Street MUFG rows with
+`helios_readonly` from `clear_street.eod_transactions` and derives product and
+export fields from `frontend/lib/positionsAndTrades/rules/*.json` through
+`frontend/lib/positionsAndTrades/productRules.ts`. It is local-only and appears
+in the local `DEV` sidebar section at `/?section=clear-street-trades`; Vercel
+builds hide the page and return `404` from
+`GET /api/dev/clear-street-trades`.
 
-The frontend exposes only a trade-date selector for this view. The local route
-accepts `tradeDate=YYYY-MM-DD`; without it, it selects the latest available
-`trade_date_from_sftp` from the Clear Street rows. For the selected SFTP trade
-date, the route displays only the latest `sftp_upload_timestamp` trade file,
-applies a 10,000-row safety cap, and wraps the copied all-history SQL for the
-curated review/export fields. It does not mutate data or create a cache table.
-
-Clear Street account names are derived in the copied SQL from
-`give_in_out_firm_num` using the same account lookup contract embedded in the
-dbt target SQL. NAV account names are still derived from `nav.positions.account`
-using `backend/scrapes/positions_and_trades/rules/data/account_catalog.py`
-synced into `frontend/lib/positionsAndTrades/rules/account_lookups.json`.
+The route accepts bounded params `limit=25..2000` and optional `search`. The
+SQL only selects the latest SFTP date and MUFG firm rows. The frontend route
+applies the row cap, search filter, and JSON/TypeScript product rules for
+review. It does not read generated SQL, mutate data, or create a cache table.
 
 ## Local DEV Sparks Source Contract
 
@@ -259,25 +257,39 @@ Source system: ICE Python / ICE XL local Windows runtime.
 Promoted table grain: `trade_date x symbol`, with primary key
 `(trade_date, symbol)` and freshness field `updated_at`.
 
-The route `GET /api/gas-daily-prices` accepts an optional price `basis` field.
-The page calls it without a trade-date selector and displays the latest ICE
-trade date available across the gas registry. Gas market rows are generated
-from the backend ICE registry by running
-`python frontend/scripts/sync-ice-gas-registry.py`, which writes
-`frontend/lib/gasPricing/ice_gas_registry.json` from
-`backend.scrapes.ice_python.symbols.gas`. The response returns one
-curve-snapshot matrix with `Region` and `Market` rows and `Cash`, `BalMo`, plus
-12 active monthly contract columns labeled by actual strip month, such as
-`Aug 26` through `Jul 27` when the latest ICE trade date is in July 2026. The
-current calendar contract month is treated as expired for this matrix; active
-curve months must be strictly after the latest ICE trade date's calendar month.
-For non-Henry markets, monthly curve cells are all-in local gas
-prices built from Henry monthly fixed price plus that market's basis future
-when both legs are available. Registry rows without a matching BalMo or monthly
-future stay visible and return null cells for missing legs instead of being
-silently dropped. Matrix cells open a local detail popup with the source
-symbol/formula and update timestamp. It does not create a database model,
+The route `GET /api/gas-daily-prices` accepts bounded gas-day params
+`startDate=YYYY-MM-DD` and `endDate=YYYY-MM-DD`, with a maximum range of 120 gas
+days. The response returns a daily WVAP Close matrix over the promoted next-day
+physical gas hub registry. Gas-day attribution is generated from the shared ICE
+physical gas trading calendar, so weekend and holiday strips use the same
+mapping as the standalone SQL verifier. It does not create a database model,
 frontend cache table, backend job, or new credential requirement.
+
+## Local DEV ICE Trade Blotter Settles Source Contract
+
+The ICE Trade Blotter Settles DEV view reads PJM short-term settlement marks
+with `helios_readonly` from PJM LMPs and `ice_python.settlements`, using the
+frontend trade-blotter product dictionary for the displayed contract catalog.
+It appears in the local `DEV` sidebar section at `/?section=ice-settlements`;
+Vercel builds hide the routes.
+
+Source systems: PJM hourly LMP tables and ICE Python / ICE XL local Windows
+settlement tables.
+
+Primary settle grain:
+`market_date x cc x hub x contract x settlement_source_key`.
+
+The PJM short-term scope is the default and only exposed UI scope for this
+page. It covers `PDP`, `PWA`, `PDA`, `PJL`, `PDO`, and `ODP` with daily,
+weekly, and weekend contract codes. The route
+`GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm` returns daily
+settle rows and metadata. The product dictionary route exposes the rules used
+for mapping trade-blotter product codes to settlement sources. The copied
+trade-level matching routes still expect the legacy
+`ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI
+until that source table is promoted into this database. This work does not
+create a database model, frontend cache table, backend job, or new credential
+requirement.
 
 ## Local DEV PJM Generation Source Contract
 
@@ -303,6 +315,87 @@ emergency max, committed capacity, scheduled-generation economic max fields,
 fuel summary rows, and source-window freshness. Capacity and
 scheduled-generation feeds are joined as nonblocking overlays, so fuel-mix date
 depth and intraday availability are not limited by `pjm.rt_and_self_ecomax`.
+
+## Local DEV PJM Tightness Lookback Source Contract
+
+The Tightness Lookback DEV view is an adequacy-first lookback for a selected
+PJM operating date, defaulting to yesterday in PJM EPT. It reads promoted PJM
+operational source tables with `helios_readonly`; it does not create a
+database model, frontend cache table, migration, or new credential requirement.
+
+Primary sources are `pjm.hrl_load_metered` with fallback to
+`pjm.hrl_load_prelim` for RTO load, `pjm.rt_dispatch_reserves` for the tightest
+hourly reserve row, `pjm.dispatched_reserves` and
+`pjm.reserve_market_results` for shortage and reserve-price confirmation, and
+`pjm.rt_fivemin_hrl_lmps` with fallback to `pjm.rt_unverified_hrl_lmps` for RT
+hub prices. Context sources are `pjm.rt_marginal_value`,
+`pjm.five_min_tie_flows` or `pjm.act_sch_interchange`, `pjm.gen_by_fuel`,
+`pjm.day_gen_capacity`, `pjm.rt_and_self_ecomax`, `pjm.gen_outages_by_type`,
+and `pjm.frcstd_gen_outages`.
+
+The route `GET /api/pjm-tightness-lookback` accepts optional
+`date=YYYY-MM-DD`. The response returns selected-date coverage by source, one
+hourly row per EPT HE with load/reserve/price/generation/interchange/constraint
+fields, a constraint leaderboard, outage context, and summary objects for peak
+load, tightest reserve margin, max deficit, max reserve MCP, and max Western
+Hub RT price. Missing secondary sources are exposed as nulls and coverage
+counts rather than treated as route failures. The page appears in the local
+`DEV` sidebar section at `/?section=pjm-tightness-lookback`; Vercel builds hide
+the page and return `404` from the API route.
+
+## Local DEV PJM Price View Source Contract
+
+The Price View DEV page is a source-by-hour matrix for inspecting one PJM
+operating date before building a fuller dispatch-curve workflow. It reads with
+`helios_readonly` from `pjm.hrl_load_metered`, `pjm.hrl_load_prelim`,
+`pjm.gen_by_fuel`, `pjm.rt_hrl_lmps`, and `ice_python.settlements`; it does not
+create a database model, frontend cache table, migration, or new credential
+requirement.
+
+The default route `GET /api/pjm-price-view` accepts optional
+`date=YYYY-MM-DD` and defaults to the latest complete date in the recent source
+window. It returns one matrix row each for selected RTO load, `gen_by_fuel`
+wind, `gen_by_fuel` solar, derived net load, verified Western Hub RT LMP, Tetco
+M3 gas, and derived heat rate. Tetco M3 gas uses ICE physical next-day
+`XZR D1-IPG` WVAP Close from `ice_python.settlements`, aligned to hourly PJM
+timestamps by UTC so the 09:00 CT gas day rolls at 10:00 Eastern. Heat rate is
+`Western Hub RT LMP / Tetco M3 WVAP Close`. The UI shows `Metric`, optional
+`Data Source`, then `HE1` through `HE24`; verification status and a short
+source note are embedded in the toggleable `Data Source` cell.
+
+The same payload returns selected-day chart points for hourly net load versus
+hourly heat rate and Western Hub RT price. The chart defaults to heat rate and
+can toggle back to RT price. Historical binned dispatch curves are a follow-on
+slice once the single-date data shape is validated.
+
+The same endpoint also supports
+`GET /api/pjm-price-view?view=da-net-load-scatter&lookbackDays=30&hub=WESTERN%20HUB`
+for the `30D DA Scatter` tab. `lookbackDays` is bounded from 7 to 90 and means
+the latest complete source dates to return. The scatter reads current
+`pjm.da_hrl_lmps` DA total LMP rows for the selected hub, selected RTO load with
+the same metered/prelim fallback, `pjm.gen_by_fuel` wind and solar, and ICE
+physical Tetco M3 `XZR D1-IPG` gas from `ice_python.settlements`. It returns
+one point per complete hourly EPT interval with date, HE, DA LMP, load GW, wind
+GW, solar GW, derived net load GW, Tetco M3 gas, and derived DA heat rate. The
+UI colors points by hour group: overnight HE1-7 and HE24, morning HE8-11,
+afternoon HE12-17, and evening HE18-23.
+
+The DA scatter also accepts
+`dateMode=month-years&months=6,7&years=2024,2025,2026` to inspect one month or
+a selected collection of months across selected calendar years. In
+`month-years` mode, `lookbackDays` is retained in the payload for control
+state, but the SQL window is driven by the selected years and filtered to the
+selected months. Additional scatter filters are applied client-side for day
+type, hour group, individual HE, X-axis metric, Y-axis metric, and numeric X/Y
+ranges.
+
+Load uses latest `pjm.hrl_load_metered` direct `RTO` rows when all 24 hourly
+rows exist for the operating date. When metered RTO is unavailable, the route
+falls back to summed promoted preliminary load component areas `AEP`, `AP`,
+`ATSI`, `DAY`, `DEOK`, `DOM`, `DUQ`, `EKPC`, `MIDATL`, and `NI`. Net load is
+derived as `load - wind - solar`. The page appears in the local `DEV` sidebar
+section at `/?section=pjm-price-view`; Vercel builds hide the page and return
+`404` from the API route.
 
 ## PJM Daily Load Growth Source Contract
 
@@ -458,6 +551,56 @@ The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
 `area`, `baseDate`, and `compareDate`. It returns the latest complete hourly
 load, solar, wind, and net-load curves for both selected forecast dates plus
 `B - A` deltas, using the same component-completeness rule as the explorer.
+
+## PJM Price Distributions Source Contract
+
+The Price Distributions page is a local DEV-only workspace while the workflow
+is still being designed. It appears in the local `DEV` sidebar section at
+`/?section=pjm-price-distributions`. The previous
+`/?section=pjm-actuals-regime-scatter` section id is accepted locally as a
+backward-compatible alias and maps to Price Distributions. Vercel builds hide
+the page and production URL parsing falls back to the default LMPs section.
+
+The current dev view uses the simplified forward analog workflow. It uses either
+PJM Data Miner (`source=pjm`) or Meteologica (`source=meteologica`) RTO load,
+wind, and solar forecasts with WSI forecast temperatures to build a
+forecast-conditioned historical RT price distribution. Net load is always
+derived as `load - solar - wind`, and the v1 analog score uses normalized
+temperature and net-load similarity only. The analog pool defaults to 40 rows
+per target HE, clamps to 20-100 rows per HE, and the frontend shows
+selected-hour median/max distance as the similarity quality check.
+
+Derived formula:
+`net_load_mw = gross_load_mw - wind_mw - solar_mw`.
+
+The route `GET /api/pjm-actuals-regime-scatter` accepts bounded params for
+load area, wind/solar area, station, hub, RT source, price component, date
+range, season, hour/day filters, price/outage bounds, color regime, and max
+points. It samples matched hourly rows after server-side filters and does not
+create a database model, table, or materialized cache. The historical scatter
+endpoint remains hidden outside local Next.js runs and returns `404` on Vercel.
+
+Outage joins are retained in the API payload for future diagnostics but are not
+part of the simplified visible workflow or default analog ranking.
+
+`GET /api/pjm-forecast-price-analogs` uses `helios_readonly`, bounded inputs,
+Next Data Cache with a 10-minute revalidate window in local/dev, and
+process-local in-flight request dedupe. The cache makes warmed and repeated
+configs fast, but a cold uncached config can still take longer because it
+rebuilds the historical analog pool from source tables on demand. The route is
+local-only and returns `404` on Vercel.
+The diagnostic headers `X-Helios-Response-Cache` and `X-Helios-Cache-Layer`
+distinguish process-memory hits, process in-flight dedupe, forced refreshes,
+and the shared-cache-or-origin path. They do not distinguish a Next/Vercel Data
+Cache hit from an origin SQL rebuild after the request has entered the cached
+loader.
+
+`GET /api/cache/warm-price-distributions` is a protected no-store warmer for
+Price Distributions. It warms complete forecast date lookups for PJM and
+Meteologica every run, then alternates one full default analog payload between
+PJM and Meteologica. Local development may call it with `?run=1`. The route is
+local-only, returns `404` on Vercel, and is not included in the committed
+Vercel Cron schedule.
 
 ## PJM Ops Sum Source Contract
 

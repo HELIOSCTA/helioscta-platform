@@ -35,6 +35,12 @@ function Resolve-CommandPath {
     throw "Could not resolve executable: $Executable"
 }
 
+function Remove-LogNullCharacters {
+    process {
+        [string]$_ -replace "`0", ""
+    }
+}
+
 if ($LookbackDays -lt 1) {
     throw "LookbackDays must be at least 1."
 }
@@ -82,7 +88,9 @@ try {
         "poll_deadline_hour=$PollDeadlineHour, " +
         "target_nav_date=$targetArg))"
     )
-    & $resolvedPythonExe -c $pythonSnippet 2>&1 | Tee-Object -FilePath $coordinatorLog -Append
+    & $resolvedPythonExe -c $pythonSnippet 2>&1 |
+        Remove-LogNullCharacters |
+        Tee-Object -FilePath $coordinatorLog -Append
     $exitCode = $LASTEXITCODE
 }
 finally {

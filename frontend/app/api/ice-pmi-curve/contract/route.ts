@@ -46,8 +46,8 @@ function toDateString(value: unknown): string | null {
 
 function normalizeSymbol(value: string | null): string {
   const symbol = (value ?? "").trim().toUpperCase();
-  if (!/^PMI [FGHJKMNQUVXZ][0-9]{2}-IUS$/.test(symbol)) {
-    throw new Error("Invalid PMI symbol.");
+  if (!/^(PMI|OPJ|NEP|ERN|ECI) [FGHJKMNQUVXZ][0-9]{2}-IUS$/.test(symbol)) {
+    throw new Error("Invalid ICE power symbol.");
   }
   return symbol;
 }
@@ -125,7 +125,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 
   return {
     payload: {
-      product: "PMI",
+      product: symbol.split(" ")[0],
       symbol,
       source: "ice_python.settlements",
       rowCount: history.length,

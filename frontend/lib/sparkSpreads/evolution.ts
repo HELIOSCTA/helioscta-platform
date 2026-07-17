@@ -31,15 +31,34 @@ export interface SparkEvolutionSnapshotPoint {
   sparkSpread: number;
 }
 
+export interface PowerEvolutionSnapshotPoint {
+  tradeDate: string;
+  daysToExpiry: number;
+  power: number;
+}
+
+export interface SparkEvolutionYearDiagnostic {
+  rawRows: number;
+  inHorizonRows: number;
+  completePoints: number;
+  missingComponents: string[];
+  reason: "complete" | "missing_components" | "outside_horizon" | "no_rows";
+}
+
 export interface SparkEvolutionResponse {
   strip: string;
   monthName: string;
   componentCodes: string[];
   years: number[];
   data: SparkEvolutionPoint[];
+  powerData: SparkEvolutionPoint[];
   seriesByYear: Record<string, SparkEvolutionSnapshotPoint[]>;
+  powerSeriesByYear: Record<string, PowerEvolutionSnapshotPoint[]>;
   latestByYear: Record<string, SparkEvolutionSnapshotPoint | null>;
+  latestPowerByYear: Record<string, PowerEvolutionSnapshotPoint | null>;
   dataAvailability: Record<string, boolean>;
+  powerDataAvailability: Record<string, boolean>;
+  yearDiagnostics: Record<string, SparkEvolutionYearDiagnostic>;
   metadata: {
     heatRate: number;
     gasLeg: string;
@@ -95,9 +114,11 @@ export const COMPOSITE_STRIPS: Record<string, { codes: string[]; name: string; d
 
 const SYMBOL_RE = /^([A-Z]+)\s+([FGHJKMNQUVXZ])(\d{2})-IUS$/;
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+const MAX_DAYS_TO_EXPIRY = 1_100;
 
 interface DayPrices {
   power?: number;
+  spreadPower?: number;
   gas?: number;
   basis?: number;
   dte: number;
@@ -154,7 +175,10 @@ export function buildSettlementSymbols({
   endYear: number;
 }): string[] {
   const symbols: string[] = [];
-  for (const root of [product.powerRoot, product.gasRoot, product.basisRoot]) {
+  const roots = [product.powerRoot, product.spreadRoot, product.gasRoot, product.basisRoot].filter(
+    (root): root is string => Boolean(root),
+  );
+  for (const root of roots) {
     for (const code of stripCodes) {
       for (let year = startYear; year <= endYear; year += 1) {
         symbols.push(`${root} ${code}${yearSuffix(year)}-IUS`);
@@ -164,13 +188,13 @@ export function buildSettlementSymbols({
   return symbols;
 }
 
-function lastTradingDay(month: number, year: number): Date {
-  const date = new Date(Date.UTC(year, month - 1, 1));
+function secondBusinessDayAfterDeliveryMonth(month: number, year: number): Date {
+  const date = new Date(Date.UTC(year, month, 1));
   let count = 0;
-  while (count < 3) {
-    date.setUTCDate(date.getUTCDate() - 1);
+  while (count < 2) {
     const day = date.getUTCDay();
     if (day !== 0 && day !== 6) count += 1;
+    if (count < 2) date.setUTCDate(date.getUTCDate() + 1);
   }
   return date;
 }
@@ -217,7 +241,11 @@ function resolveYears(
   stripCodes: readonly string[],
   symbolCache: Map<string, ParsedIceSymbol | null>,
 ): number[] {
-  const productRoots = new Set([product.powerRoot, product.gasRoot, product.basisRoot]);
+  const productRoots = new Set(
+    [product.powerRoot, product.spreadRoot, product.gasRoot, product.basisRoot].filter(
+      (root): root is string => Boolean(root),
+    ),
+  );
   const stripCodeSet = new Set(stripCodes);
   const years = new Set<number>();
 
@@ -253,7 +281,63 @@ export function buildSparkEvolutionData({
   const targetYears = resolveYears(rows, product, resolved.codes, symbolCache);
   const targetYearSet = new Set(targetYears);
   const byYearDate = new Map<string, Map<string, DayPrices>>();
-  const expiryCache = new Map<string, number>();
+  const observedFinalTradeTimeBySymbol = new Map<string, number>();
+  let latestSourceTradeTime: number | null = null;
+  const diagnosticComponents = new Map<
+    string,
+    {
+      rawRows: number;
+      inHorizonRows: number;
+      components: Map<string, { power: boolean; spreadPower: boolean; gas: boolean; basis: boolean }>;
+    }
+  >();
+
+  function getDiagnostic(year: number) {
+    const yearKey = String(year);
+    let diagnostic = diagnosticComponents.get(yearKey);
+    if (!diagnostic) {
+      diagnostic = { rawRows: 0, inHorizonRows: 0, components: new Map() };
+      diagnosticComponents.set(yearKey, diagnostic);
+    }
+    return diagnostic;
+  }
+
+  function getDiagnosticComponent(
+    diagnostic: {
+      rawRows: number;
+      inHorizonRows: number;
+      components: Map<string, { power: boolean; spreadPower: boolean; gas: boolean; basis: boolean }>;
+    },
+    stripCode: string,
+  ) {
+    let component = diagnostic.components.get(stripCode);
+    if (!component) {
+      component = { power: false, spreadPower: false, gas: false, basis: false };
+      diagnostic.components.set(stripCode, component);
+    }
+    return component;
+  }
+
+  for (const row of rows) {
+    let parsed = symbolCache.get(row.symbol);
+    if (parsed === undefined) {
+      parsed = parseIceSymbol(row.symbol);
+      symbolCache.set(row.symbol, parsed);
+    }
+    if (!parsed) continue;
+    if (!componentCodeSet.has(parsed.stripCode)) continue;
+    if (!targetYearSet.has(parsed.year)) continue;
+    if (![product.powerRoot, product.spreadRoot, product.gasRoot, product.basisRoot].includes(parsed.product)) continue;
+
+    const tradeTime = toDate(row.trade_date).getTime();
+    if (latestSourceTradeTime === null || tradeTime > latestSourceTradeTime) {
+      latestSourceTradeTime = tradeTime;
+    }
+    const observed = observedFinalTradeTimeBySymbol.get(row.symbol);
+    if (observed === undefined || tradeTime > observed) {
+      observedFinalTradeTimeBySymbol.set(row.symbol, tradeTime);
+    }
+  }
 
   for (const row of rows) {
     let parsed = symbolCache.get(row.symbol);
@@ -265,16 +349,25 @@ export function buildSparkEvolutionData({
     if (!componentCodeSet.has(parsed.stripCode)) continue;
     if (!targetYearSet.has(parsed.year)) continue;
 
+    const diagnostic = getDiagnostic(parsed.year);
+    diagnostic.rawRows += 1;
+    const diagnosticComponent = getDiagnosticComponent(diagnostic, parsed.stripCode);
+    if (parsed.product === product.powerRoot) diagnosticComponent.power = true;
+    if (product.spreadRoot && parsed.product === product.spreadRoot) diagnosticComponent.spreadPower = true;
+    if (parsed.product === product.gasRoot) diagnosticComponent.gas = true;
+    if (parsed.product === product.basisRoot) diagnosticComponent.basis = true;
+
     const tradeDate = toDate(row.trade_date);
-    const expiryKey = `${parsed.year}:${parsed.month}`;
-    let expiryTime = expiryCache.get(expiryKey);
-    if (expiryTime === undefined) {
-      expiryTime = lastTradingDay(parsed.month, parsed.year).getTime();
-      expiryCache.set(expiryKey, expiryTime);
-    }
+    const projectedFinalTradeTime = secondBusinessDayAfterDeliveryMonth(parsed.month, parsed.year).getTime();
+    const observedFinalTradeTime = observedFinalTradeTimeBySymbol.get(row.symbol) ?? projectedFinalTradeTime;
+    const expiryTime =
+      latestSourceTradeTime !== null && projectedFinalTradeTime <= latestSourceTradeTime
+        ? observedFinalTradeTime
+        : projectedFinalTradeTime;
 
     const dte = Math.round((expiryTime - tradeDate.getTime()) / MS_PER_DAY);
-    if (dte < 0 || dte > 730) continue;
+    if (dte < 0 || dte > MAX_DAYS_TO_EXPIRY) continue;
+    diagnostic.inHorizonRows += 1;
 
     const dateKey = toDateKey(row.trade_date);
     const yearDateKey = `${parsed.year}:${dateKey}`;
@@ -282,26 +375,68 @@ export function buildSparkEvolutionData({
     const dayPrices = getOrInitDayPrices(stripMap, parsed.stripCode, dte);
 
     if (parsed.product === product.powerRoot) dayPrices.power = row.value;
+    if (product.spreadRoot && parsed.product === product.spreadRoot) dayPrices.spreadPower = row.value;
     if (parsed.product === product.gasRoot) dayPrices.gas = row.value;
     if (parsed.product === product.basisRoot) dayPrices.basis = row.value;
   }
 
   const spreadMap = new Map<string, number>();
+  const powerMap = new Map<string, number>();
   const dateMap = new Map<string, string>();
+  const powerDateMap = new Map<string, string>();
   const seriesByYear: Record<string, SparkEvolutionSnapshotPoint[]> = {};
+  const powerSeriesByYear: Record<string, PowerEvolutionSnapshotPoint[]> = {};
   const latestByYear: Record<string, SparkEvolutionSnapshotPoint | null> = {};
+  const latestPowerByYear: Record<string, PowerEvolutionSnapshotPoint | null> = {};
   let lastTradeDate: string | null = null;
 
   for (const year of targetYears) {
     const yearKey = String(year);
     seriesByYear[yearKey] = [];
+    powerSeriesByYear[yearKey] = [];
     latestByYear[yearKey] = null;
+    latestPowerByYear[yearKey] = null;
   }
 
   for (const [yearDate, stripMap] of byYearDate) {
     const separator = yearDate.indexOf(":");
     const yearKey = yearDate.slice(0, separator);
     const tradeDate = yearDate.slice(separator + 1);
+
+    let outrightPowerSum = 0;
+    let outrightSpreadRootSum = 0;
+    let outrightDteValue: number | undefined;
+    let hasCompletePower = true;
+
+    for (const code of resolved.codes) {
+      const entry = stripMap.get(code);
+      if (
+        !entry ||
+        entry.power === undefined ||
+        (product.spreadRoot && entry.spreadPower === undefined)
+      ) {
+        hasCompletePower = false;
+        break;
+      }
+      outrightPowerSum += entry.power;
+      if (product.spreadRoot) outrightSpreadRootSum += entry.spreadPower ?? 0;
+      if (code === resolved.dteRef) outrightDteValue = entry.dte;
+    }
+
+    if (hasCompletePower && outrightDteValue !== undefined) {
+      const power = product.spreadRoot
+        ? roundTo((outrightPowerSum - outrightSpreadRootSum) / resolved.codes.length, 4)
+        : roundTo(outrightPowerSum / resolved.codes.length, 4);
+      const mapKey = `${yearKey}:${outrightDteValue}`;
+      powerMap.set(mapKey, power);
+      powerDateMap.set(mapKey, tradeDate);
+      powerSeriesByYear[yearKey]?.push({
+        tradeDate,
+        daysToExpiry: outrightDteValue,
+        power,
+      });
+      if (!lastTradeDate || tradeDate > lastTradeDate) lastTradeDate = tradeDate;
+    }
 
     let powerSum = 0;
     let gasSum = 0;
@@ -310,11 +445,17 @@ export function buildSparkEvolutionData({
 
     for (const code of resolved.codes) {
       const entry = stripMap.get(code);
-      if (!entry || entry.power === undefined || entry.gas === undefined || entry.basis === undefined) {
+      if (
+        !entry ||
+        entry.power === undefined ||
+        (product.spreadRoot && entry.spreadPower === undefined) ||
+        entry.gas === undefined ||
+        entry.basis === undefined
+      ) {
         dteValue = undefined;
         break;
       }
-      powerSum += entry.power;
+      powerSum += product.spreadRoot ? entry.power - (entry.spreadPower ?? 0) : entry.power;
       gasSum += entry.gas;
       basisSum += entry.basis;
       if (code === resolved.dteRef) dteValue = entry.dte;
@@ -349,9 +490,15 @@ export function buildSparkEvolutionData({
   for (const key of spreadMap.keys()) {
     allDtes.add(Number.parseInt(key.slice(key.lastIndexOf(":") + 1), 10));
   }
+  const powerDtes = new Set<number>();
+  for (const key of powerMap.keys()) {
+    powerDtes.add(Number.parseInt(key.slice(key.lastIndexOf(":") + 1), 10));
+  }
 
   const dataAvailability: Record<string, boolean> = {};
+  const powerDataAvailability: Record<string, boolean> = {};
   for (const year of targetYears) dataAvailability[String(year)] = false;
+  for (const year of targetYears) powerDataAvailability[String(year)] = false;
 
   const data: SparkEvolutionPoint[] = Array.from(allDtes)
     .sort((first, second) => second - first)
@@ -368,10 +515,61 @@ export function buildSparkEvolutionData({
       return point;
     });
 
+  const powerData: SparkEvolutionPoint[] = Array.from(powerDtes)
+    .sort((first, second) => second - first)
+    .map((dte) => {
+      const point: SparkEvolutionPoint = { daysToExpiry: dte };
+      for (const year of targetYears) {
+        const yearKey = String(year);
+        const key = `${year}:${dte}`;
+        const value = powerMap.get(key) ?? null;
+        point[yearKey] = value;
+        point[`${yearKey}Date`] = value !== null ? powerDateMap.get(key) ?? null : null;
+        if (value !== null) powerDataAvailability[yearKey] = true;
+      }
+      return point;
+    });
+
   for (const year of targetYears) {
     const yearKey = String(year);
     seriesByYear[yearKey].sort((first, second) => second.daysToExpiry - first.daysToExpiry);
+    powerSeriesByYear[yearKey].sort((first, second) => second.daysToExpiry - first.daysToExpiry);
     latestByYear[yearKey] = seriesByYear[yearKey].at(-1) ?? null;
+    latestPowerByYear[yearKey] = powerSeriesByYear[yearKey].at(-1) ?? null;
+  }
+
+  const yearDiagnostics: Record<string, SparkEvolutionYearDiagnostic> = {};
+  for (const year of targetYears) {
+    const yearKey = String(year);
+    const diagnostic = diagnosticComponents.get(yearKey);
+    const missingComponents: string[] = [];
+    if (diagnostic) {
+      for (const code of resolved.codes) {
+        const component = diagnostic.components.get(code);
+        if (!component?.power) missingComponents.push(`${product.powerRoot} ${code}${yearSuffix(year)}`);
+        if (product.spreadRoot && !component?.spreadPower) missingComponents.push(`${product.spreadRoot} ${code}${yearSuffix(year)}`);
+        if (!component?.gas) missingComponents.push(`${product.gasRoot} ${code}${yearSuffix(year)}`);
+        if (!component?.basis) missingComponents.push(`${product.basisRoot} ${code}${yearSuffix(year)}`);
+      }
+    }
+
+    const completePoints = seriesByYear[yearKey].length;
+    const reason =
+      completePoints > 0
+        ? "complete"
+        : !diagnostic || diagnostic.rawRows === 0
+          ? "no_rows"
+          : missingComponents.length > 0
+            ? "missing_components"
+            : "outside_horizon";
+
+    yearDiagnostics[yearKey] = {
+      rawRows: diagnostic?.rawRows ?? 0,
+      inHorizonRows: diagnostic?.inHorizonRows ?? 0,
+      completePoints,
+      missingComponents,
+      reason,
+    };
   }
 
   return {
@@ -380,13 +578,20 @@ export function buildSparkEvolutionData({
     componentCodes: resolved.codes,
     years: targetYears,
     data,
+    powerData,
     seriesByYear,
+    powerSeriesByYear,
     latestByYear,
+    latestPowerByYear,
     dataAvailability,
+    powerDataAvailability,
+    yearDiagnostics,
     metadata: {
       heatRate: product.heatRate,
       gasLeg: `${product.gasRoot} + ${product.basisRoot} (${product.gasLabel})`,
-      powerLeg: `${product.powerRoot} (${product.hub})`,
+      powerLeg: product.spreadRoot
+        ? `${product.powerRoot} - ${product.spreadRoot} (${product.hub})`
+        : `${product.powerRoot} (${product.hub})`,
       lastTradeDate,
       latestUpdatedAt,
       sourceTable: "ice_python.settlements",

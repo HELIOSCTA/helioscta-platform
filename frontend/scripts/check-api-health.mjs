@@ -37,6 +37,12 @@ const endpoints = [
     targetMs: 2_500,
   },
   {
+    name: "PJM duration curves",
+    path: "/api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak",
+    targetMs: 1_500,
+    devOnly: true,
+  },
+  {
     name: "PJM forecasts",
     path: "/api/pjm-forecasts?area=RTO_COMBINED",
     targetMs: 750,

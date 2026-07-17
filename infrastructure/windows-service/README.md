@@ -65,9 +65,11 @@ this repo.
 
 `backend.orchestration.ice_python.service` runs:
 
-- Hourly settlement jobs once per local hour during `[06:00, 10:00)` and
-  `[14:00, 19:00)`.
-- `gas_futures` once per local day when the service sees `15:00` or later.
+- Hourly settlement jobs once per local hour Monday-Friday during
+  `[05:00, 23:00)`, which includes the `22:00` launch.
+- Split gas futures jobs (`gas_futures_core`, `gas_futures_gulf`,
+  `gas_futures_west`, and `gas_futures_east`) run with the hourly settlement
+  jobs.
 
 The service persists attempt state at:
 
@@ -82,12 +84,7 @@ the result explicit. A stale `running` record can be retried after the job
 timeout window. The underlying table writes are still upserts, so reruns remain
 safe.
 
-Default hard timeouts:
-
-- Most jobs: 45 minutes.
-- `gas_futures`: 90 minutes.
-
-Override the default non-`gas_futures` timeout with
+The default hard timeout is 45 minutes per job. Override it with
 `HELIOS_ICE_JOB_TIMEOUT_SECONDS` or the installer `-JobTimeoutSeconds`
 parameter.
 

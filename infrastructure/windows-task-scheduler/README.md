@@ -13,21 +13,29 @@ Task Scheduler runs one coordinator task:
 \HeliosCTA\ICE Python\HeliosCTA ICE Python Coordinator
 ```
 
-The task runs at local hours `06`, `07`, `08`, `09`, `14`, `15`, `16`, `17`,
-and `18`. Each launch calls:
+The task runs hourly on weekdays at local hours `05` through `22`. Each launch
+calls:
 
 ```powershell
 python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
 ```
 
-The Python coordinator owns the real schedule policy. It only runs due jobs,
-persists once-per-hour or once-per-day state, prevents overlap with a local lock
-file, launches each ICE job in a child Python process, applies hard timeouts,
-and writes durable telemetry to `ops.api_fetch_log`.
+Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
+the current ICE batch for that local-time window, even if a feed already failed
+earlier in the same hour. The hourly settlement batch, including the split
+`gas_futures_core`, `gas_futures_gulf`, `gas_futures_west`, and
+`gas_futures_east` feeds, runs Monday-Friday during `[05:00, 23:00)`, which
+includes the `22:00` launch. The Python coordinator still persists per-window
+state for status, prevents same-feed overlap with local lock files, launches
+each ICE job in a child Python process, applies hard timeouts, and writes
+durable telemetry to `ops.api_fetch_log`.
 
-This is intentionally one scheduled task, not one Task Scheduler entry per ICE
-feed. Running each feed as a separate task can overload the local ICE runtime
-and recreate the hung-process behavior this promoted path avoids.
+Routine scheduled coordinator actions launch hidden under the interactive
+Windows user. Use the visible status task as the operator surface.
+
+This is intentionally one scheduled coordinator task, not one Task Scheduler
+entry per ICE feed. Feed-level status and retries are handled inside the
+coordinator/status scripts.
 
 ## Runtime Setup
 
@@ -78,7 +86,39 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one coordinator task under the current Windows user.
+- registers or updates one hidden hourly weekday coordinator task under the
+  current Windows user for local hours `05` through `22`. Python also decides
+  whether any ICE feeds are due for that hour.
+
+Install or update the visible status task:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_ice_python_status_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -HistoryPerFeed 5
+```
+
+This registers one no-trigger Task Scheduler task:
+
+```text
+\HeliosCTA\ICE Python\HeliosCTA ICE Python Status
+```
+
+Start it from Task Scheduler when you want a visible status window. It reads
+`ice_python_service_state.json`, prints a latest summary table with last
+success and failure times, prints recent history for each feed, and waits for
+input before closing.
+
+The status window shows an `ACTIONS` block. Press `R` to rerun only the latest
+failed or stale-running records, or press `Q`/Enter to close. Feeds with a newer
+successful record are skipped.
+
+ICE reruns use per-feed lock files. That means a failed `gas_balmo` retry can
+run while the coordinator is still working on `west_power_futures`, but a second
+`gas_balmo` run will be blocked until the first one exits.
 
 The default task uses interactive logon for the current user. That is usually
 the simplest choice when ICE licensing is tied to the logged-in Windows profile.
@@ -97,7 +137,8 @@ Run one coordinator tick directly:
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
 ```
 
-Start the scheduled task manually:
+Start the scheduled coordinator manually. This runs quietly; open the status
+task to inspect latest results and feed history.
 
 ```powershell
 Start-ScheduledTask `
@@ -117,6 +158,29 @@ Get-ScheduledTaskInfo `
   -TaskName "HeliosCTA ICE Python Coordinator"
 
 Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
+```
+
+Open the status window from PowerShell:
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath "\HeliosCTA\ICE Python\" `
+  -TaskName "HeliosCTA ICE Python Status"
+```
+
+In the status window:
+
+- press `R` to rerun latest unresolved failures, then review the refreshed
+  status table;
+- press `Q` or Enter to close.
+
+If a historical log opens in VS Code with red `NUL` markers, strip NUL
+characters while viewing it:
+
+```powershell
+(Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Raw) `
+  -replace "`0", "" |
+  Set-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.clean.log
 ```
 
 Per-pull application logs still live under
