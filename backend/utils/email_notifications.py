@@ -39,9 +39,19 @@ CAISO_DA_LMP_COMPONENTS = [
     ("total", "Total", "total"),
 ]
 DA_LMP_TOTAL_COMPONENT = [("total", "Total", "total")]
-DA_LMP_ONPEAK_START = 8
-DA_LMP_ONPEAK_END = 23
 DA_LMP_HOURS = list(range(1, 25))
+DA_LMP_PEAK_HE_8_23 = {
+    "peak_start_he": 8,
+    "peak_end_he": 23,
+    "peak_label": "Peak HE8-23",
+    "off_peak_label": "OffPeak HE1-7,24",
+}
+DA_LMP_PEAK_HE_7_22 = {
+    "peak_start_he": 7,
+    "peak_end_he": 22,
+    "peak_label": "Peak HE7-22",
+    "off_peak_label": "OffPeak HE1-6,23-24",
+}
 DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
     "pjm": {
         "label": "PJM",
@@ -63,6 +73,7 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
             "WEST INT HUB",
         ],
         "components": DA_LMP_COMPONENTS,
+        **DA_LMP_PEAK_HE_8_23,
     },
     "isone": {
         "label": "NEPOOL",
@@ -71,6 +82,7 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
         "default_hub": ".H.INTERNAL_HUB",
         "hubs": [".H.INTERNAL_HUB"],
         "components": DA_LMP_COMPONENTS,
+        **DA_LMP_PEAK_HE_8_23,
     },
     "ercot": {
         "label": "ERCOT",
@@ -79,6 +91,7 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
         "default_hub": "HB_NORTH",
         "hubs": ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"],
         "components": DA_LMP_TOTAL_COMPONENT,
+        **DA_LMP_PEAK_HE_7_22,
     },
     "caiso": {
         "label": "CAISO",
@@ -87,6 +100,7 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
         "default_hub": DEFAULT_CAISO_DA_LMP_HUB,
         "hubs": ["TH_NP15_GEN-APND", "TH_SP15_GEN-APND"],
         "components": CAISO_DA_LMP_COMPONENTS,
+        **DA_LMP_PEAK_HE_7_22,
     },
 }
 MAX_ERROR_MESSAGE_LENGTH = 2000
@@ -1298,6 +1312,36 @@ def _da_lmp_rows_query(
     raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
 
 
+def _da_lmp_peak_profile(config: dict[str, Any]) -> dict[str, Any]:
+    peak_start_he = int(config["peak_start_he"])
+    peak_end_he = int(config["peak_end_he"])
+    if peak_start_he < min(DA_LMP_HOURS) or peak_end_he > max(DA_LMP_HOURS):
+        raise ValueError(
+            "DA LMP peak hour profile must stay within HE1-HE24: "
+            f"{peak_start_he}-{peak_end_he}"
+        )
+    if peak_start_he > peak_end_he:
+        raise ValueError(
+            "DA LMP peak hour profile start must be before end: "
+            f"{peak_start_he}-{peak_end_he}"
+        )
+    return {
+        "peak_start_he": peak_start_he,
+        "peak_end_he": peak_end_he,
+        "peak_label": str(config["peak_label"]),
+        "off_peak_label": str(config["off_peak_label"]),
+    }
+
+
+def _is_da_lmp_peak_hour(
+    hour_ending: int,
+    *,
+    peak_start_he: int,
+    peak_end_he: int,
+) -> bool:
+    return peak_start_he <= hour_ending <= peak_end_he
+
+
 def _build_da_lmp_snapshot(
     *,
     iso: str,
@@ -1307,6 +1351,7 @@ def _build_da_lmp_snapshot(
     hubs: list[str],
 ) -> dict[str, Any]:
     config = _da_lmp_email_config(iso)
+    peak_profile = _da_lmp_peak_profile(config)
     as_of = None
     for row in rows:
         updated_at = row.get("updated_at")
@@ -1328,8 +1373,14 @@ def _build_da_lmp_snapshot(
         "as_of": as_of,
         "source": config["source"],
         "components": config["components"],
+        **peak_profile,
         "hubs": [
-            _summarize_da_lmp_hub(hub=hub, hourly=rows_by_hub.get(hub, []))
+            _summarize_da_lmp_hub(
+                hub=hub,
+                hourly=rows_by_hub.get(hub, []),
+                peak_start_he=peak_profile["peak_start_he"],
+                peak_end_he=peak_profile["peak_end_he"],
+            )
             for hub in hubs
         ],
     }
@@ -1351,18 +1402,27 @@ def _summarize_da_lmp_hub(
     *,
     hub: str,
     hourly: list[dict[str, Any]],
+    peak_start_he: int,
+    peak_end_he: int,
 ) -> dict[str, Any]:
     hourly = sorted(hourly, key=lambda row: int(row["hour_ending"]))
     onpeak = [
         row["total"]
         for row in hourly
-        if DA_LMP_ONPEAK_START <= int(row["hour_ending"]) <= DA_LMP_ONPEAK_END
+        if _is_da_lmp_peak_hour(
+            int(row["hour_ending"]),
+            peak_start_he=peak_start_he,
+            peak_end_he=peak_end_he,
+        )
     ]
     offpeak = [
         row["total"]
         for row in hourly
-        if int(row["hour_ending"]) < DA_LMP_ONPEAK_START
-        or int(row["hour_ending"]) > DA_LMP_ONPEAK_END
+        if not _is_da_lmp_peak_hour(
+            int(row["hour_ending"]),
+            peak_start_he=peak_start_he,
+            peak_end_he=peak_end_he,
+        )
     ]
     peak = None
     for row in hourly:
@@ -1435,8 +1495,8 @@ def _render_da_lmp_summary_table(snapshot: dict[str, Any]) -> str:
         "<tr>"
         f"{_th('Hub', align='left')}"
         f"{_th('Hours')}"
-        f"{_th('OnPeak')}"
-        f"{_th('OffPeak')}"
+        f"{_th(snapshot.get('peak_label') or 'Peak')}"
+        f"{_th(snapshot.get('off_peak_label') or 'OffPeak')}"
         f"{_th('Flat')}"
         f"{_th('Peak HE')}"
         f"{_th('Peak Price')}"
@@ -1468,6 +1528,8 @@ def _render_da_lmp_hub_component_table(
     hub: dict[str, Any],
 ) -> str:
     components = snapshot.get("components") or DA_LMP_COMPONENTS
+    peak_start_he = int(snapshot.get("peak_start_he") or 8)
+    peak_end_he = int(snapshot.get("peak_end_he") or 23)
     hourly_by_hour = {int(row["hour_ending"]): row for row in hub.get("hourly", [])}
     rows = []
     for index, component in enumerate(components):
@@ -1479,12 +1541,20 @@ def _render_da_lmp_hub_component_table(
         onpeak = [
             value
             for hour, value in zip(DA_LMP_HOURS, values)
-            if DA_LMP_ONPEAK_START <= hour <= DA_LMP_ONPEAK_END
+            if _is_da_lmp_peak_hour(
+                hour,
+                peak_start_he=peak_start_he,
+                peak_end_he=peak_end_he,
+            )
         ]
         offpeak = [
             value
             for hour, value in zip(DA_LMP_HOURS, values)
-            if hour < DA_LMP_ONPEAK_START or hour > DA_LMP_ONPEAK_END
+            if not _is_da_lmp_peak_hour(
+                hour,
+                peak_start_he=peak_start_he,
+                peak_end_he=peak_end_he,
+            )
         ]
         background = "#ffffff" if index % 2 == 0 else "#f9fafb"
         cells = [
@@ -1506,8 +1576,8 @@ def _render_da_lmp_hub_component_table(
         "<tr>"
         f"{_th('Date', align='left')}"
         f"{_th('Component', align='left')}"
-        f"{_th('OnPeak')}"
-        f"{_th('OffPeak')}"
+        f"{_th(snapshot.get('peak_label') or 'Peak')}"
+        f"{_th(snapshot.get('off_peak_label') or 'OffPeak')}"
         f"{_th('Flat')}"
         f"{hour_headers}"
         "</tr>"
