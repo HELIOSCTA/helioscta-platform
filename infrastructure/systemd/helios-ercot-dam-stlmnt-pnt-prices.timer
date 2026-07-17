@@ -2,7 +2,7 @@
 Description=Daily HeliosCTA ERCOT DAM Settlement Point Prices orchestration timer
 
 [Timer]
-OnCalendar=*-*-* 16:15:00 UTC
+OnCalendar=*-*-* 11:15:00 America/Chicago
 Persistent=true
 RandomizedDelaySec=5min
 AccuracySec=1min

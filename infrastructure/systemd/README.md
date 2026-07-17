@@ -338,7 +338,7 @@ helios-ercot-settlement-point-prices.timer
 ```
 
 The DAM workflow runs `backend.orchestration.power.ercot.dam_stlmnt_pnt_prices`
-daily at `16:15 UTC`, upserts current-delivery-date hub settlement point
+daily at `11:15 America/Chicago`, upserts current-delivery-date hub settlement point
 prices, and emits complete delivery-date readiness events. The RT workflow runs
 `backend.orchestration.power.ercot.settlement_point_prices` every 15 minutes,
 upserts published hub intervals, and emits readiness only when a full delivery
@@ -433,7 +433,8 @@ helios-ercot-load-batch.timer
 It runs `backend.orchestration.power.ercot.load_batch`, which executes
 `actual_system_load` and `seven_day_load_forecast`. These are scheduled as
 support feeds rather than critical readiness gates. The timer runs daily at
-`12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+`07:20 America/Chicago` with `Persistent=true` and
+`RandomizedDelaySec=10min`.
 
 ## ERCOT Congestion Batch
 
@@ -446,8 +447,9 @@ helios-ercot-congestion-batch.timer
 
 It runs `backend.orchestration.power.ercot.congestion_batch`, which executes
 `dam_shadow_prices` and `sced_shadow_prices`. These are scheduled as support
-feeds rather than critical readiness gates. The timer runs daily at `12:45 UTC`
-with `Persistent=true` and `RandomizedDelaySec=10min`.
+feeds rather than critical readiness gates. The timer runs daily at
+`07:45 America/Chicago` with `Persistent=true` and
+`RandomizedDelaySec=10min`.
 
 ## ERCOT Renewables Batch
 
@@ -462,7 +464,8 @@ It runs `backend.orchestration.power.ercot.renewables_batch`, which executes
 `wind_power_production_hourly` and `solar_power_production_hourly`. The batch
 pulls yesterday through seven days forward so the same source payload captures
 completed actual generation and the current forecast curve. The timer runs
-daily at `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+daily at `08:10 America/Chicago` with `Persistent=true` and
+`RandomizedDelaySec=10min`.
 
 ## ERCOT 5-Minute Renewables Actual Batch
 
@@ -477,7 +480,8 @@ helios-ercot-renewables-5min-batch.timer
 It runs `backend.orchestration.power.ercot.renewables_5min_batch`, which
 executes `wind_power_actual_5min` and `solar_power_actual_5min`. The batch
 pulls the prior complete interval-ending day. The timer runs daily at
-`13:25 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+`08:25 America/Chicago` with `Persistent=true` and
+`RandomizedDelaySec=10min`.
 
 ## ERCOT Outage/Capacity Batch
 
@@ -490,7 +494,7 @@ helios-ercot-outage-capacity-batch.timer
 
 It runs `backend.orchestration.power.ercot.outage_capacity_batch`, which
 executes `hourly_resource_outage_capacity` and `short_term_system_adequacy`.
-The timer runs daily at `13:35 UTC` with `Persistent=true` and
+The timer runs daily at `08:35 America/Chicago` with `Persistent=true` and
 `RandomizedDelaySec=10min`.
 
 ## ERCOT Price Adders Batch

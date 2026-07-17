@@ -2,7 +2,7 @@
 Description=Daily HeliosCTA ERCOT load support scrape batch timer
 
 [Timer]
-OnCalendar=*-*-* 12:20:00 UTC
+OnCalendar=*-*-* 07:20:00 America/Chicago
 Persistent=true
 RandomizedDelaySec=10min
 AccuracySec=1min

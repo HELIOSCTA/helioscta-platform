@@ -219,7 +219,7 @@ LIMIT 10;
 - Destination tables:
   - `ercot.dam_shadow_prices`
   - `ercot.sced_shadow_prices`
-- Schedule: daily at `12:45 UTC` with `Persistent=true` and
+- Schedule: daily at `07:45 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
   congestion day.
 - Systemd units:
@@ -278,7 +278,7 @@ LIMIT 10;
 - Destination tables:
   - `ercot.wind_power_production_hourly`
   - `ercot.solar_power_production_hourly`
-- Schedule: daily at `13:10 UTC` with `Persistent=true` and
+- Schedule: daily at `08:10 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; scheduled defaults pull yesterday through seven
   days forward to capture actuals plus the forecast curve.
 - Systemd units:
@@ -303,7 +303,7 @@ LIMIT 10;
 - Destination tables:
   - `ercot.wind_power_actual_5min`
   - `ercot.solar_power_actual_5min`
-- Schedule: daily at `13:25 UTC` with `Persistent=true` and
+- Schedule: daily at `08:25 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
   interval-ending day.
 - Systemd units:
@@ -327,7 +327,7 @@ LIMIT 10;
 - Destination tables:
   - `ercot.hourly_resource_outage_capacity`
   - `ercot.short_term_system_adequacy`
-- Schedule: daily at `13:35 UTC` with `Persistent=true` and
+- Schedule: daily at `08:35 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; scheduled defaults pull the prior complete
   outage/capacity operating day and STSA delivery date.
 - Systemd units:
@@ -404,7 +404,8 @@ Operational notes:
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service`.
-- Schedule: daily at `16:15 UTC` with `RandomizedDelaySec=5min`.
+- Schedule: daily at `11:15 America/Chicago` with
+  `RandomizedDelaySec=5min`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-dam-stlmnt-pnt-prices.lock`.
@@ -1044,7 +1045,8 @@ FROM isone.seven_day_solar_forecast;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-ercot-load-batch.service`.
-- Schedule: daily at `12:20 UTC` with `RandomizedDelaySec=10min`.
+- Schedule: daily at `07:20 America/Chicago` with
+  `RandomizedDelaySec=10min`.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-load-batch.lock`.

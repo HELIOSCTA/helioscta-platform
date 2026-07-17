@@ -2,7 +2,7 @@
 Description=Run HeliosCTA ERCOT 5-minute renewables actual support batch daily
 
 [Timer]
-OnCalendar=*-*-* 13:25:00 UTC
+OnCalendar=*-*-* 08:25:00 America/Chicago
 Persistent=true
 RandomizedDelaySec=10min
 Unit=helios-ercot-renewables-5min-batch.service

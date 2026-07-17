@@ -67,8 +67,9 @@ workspace.
 - Primary key: `operatingday`, `hourending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-load-batch.timer`, daily at
-  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
-  scheduled default pulls complete operating days through yesterday.
+  `07:20 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls complete operating
+  days through yesterday.
 - Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
   `2026-06-12` on `2026-06-13 17:48 UTC`, upserted 24 hourly rows, and wrote
   successful ERCOT API telemetry.
@@ -86,7 +87,8 @@ workspace.
 - Primary key: `posteddatetime`, `deliverydate`, `hourending`, `model`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-load-batch.timer`, daily at
-  `12:20 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`.
+  `07:20 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`.
 - Manual smoke: conda env `helioscta-platform-backend` ran the scrape for
   delivery date `2026-06-13` on `2026-06-13 17:48 UTC`, upserted 4,344 rows,
   and wrote successful ERCOT API telemetry.
@@ -106,8 +108,9 @@ workspace.
   `contingencyname`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
-  `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
-  scheduled default pulls the prior complete delivery date.
+  `07:45 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  delivery date.
 - Manual smoke: VM service ran the congestion batch for delivery date
   `2026-06-12` on `2026-06-13 18:06 UTC` and upserted 1,128 DAM shadow price
   rows.
@@ -128,8 +131,9 @@ workspace.
   `contingencyname`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-congestion-batch.timer`, daily at
-  `12:45 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
-  scheduled default pulls the prior complete SCED day.
+  `07:45 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
+  SCED day.
 - Manual smoke: VM service ran the congestion batch for SCED day `2026-06-12`
   on `2026-06-13 18:06 UTC` and upserted 2,618 SCED shadow price rows.
 
@@ -194,8 +198,9 @@ workspace.
 - Primary key: `posteddatetime`, `deliverydate`, `hourending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-renewables-batch.timer`, daily at
-  `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
-  scheduled default pulls yesterday through seven days forward.
+  `08:10 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls yesterday through
+  seven days forward.
 - Data shape note: the raw ERCOT payload contains actual wind generation,
   COP HSL, STWPF, WGRPP, and HSL fields. Downstream shaping unpivots system-wide and
   load-zone values into hourly region rows.
@@ -217,8 +222,9 @@ workspace.
 - Primary key: `posteddatetime`, `deliverydate`, `hourending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-renewables-batch.timer`, daily at
-  `13:10 UTC` with `Persistent=true` and `RandomizedDelaySec=10min`; the
-  scheduled default pulls yesterday through seven days forward.
+  `08:10 America/Chicago` with `Persistent=true` and
+  `RandomizedDelaySec=10min`; the scheduled default pulls yesterday through
+  seven days forward.
 - Data shape note: the raw ERCOT payload contains actual solar generation,
   COP HSL, STPPF, PVGRPP, and HSL fields. Downstream shaping exposes a system-wide
   hourly actual/forecast row.
@@ -240,7 +246,7 @@ workspace.
 - Primary key: `posteddatetime`, `intervalending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-renewables-5min-batch.timer`,
-  daily at `13:25 UTC` with `Persistent=true` and
+  daily at `08:25 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
   interval-ending day.
 - Data shape note: the raw ERCOT payload contains repeated posted snapshots
@@ -261,7 +267,7 @@ workspace.
 - Primary key: `posteddatetime`, `intervalending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-renewables-5min-batch.timer`,
-  daily at `13:25 UTC` with `Persistent=true` and
+  daily at `08:25 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
   interval-ending day.
 - Data shape note: the raw ERCOT payload contains repeated posted snapshots
@@ -280,7 +286,7 @@ workspace.
 - Primary key: `posteddatetime`, `operatingdate`, `hourending`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-outage-capacity-batch.timer`,
-  daily at `13:35 UTC` with `Persistent=true` and
+  daily at `08:35 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
   operating day.
 - Data shape note: the raw ERCOT payload contains outage capacity by load zone
@@ -304,7 +310,7 @@ workspace.
   `repeathourflag`.
 - Safe rerun story: upsert on the primary key.
 - Production schedule: through `helios-ercot-outage-capacity-batch.timer`,
-  daily at `13:35 UTC` with `Persistent=true` and
+  daily at `08:35 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete
   delivery date.
 - Data shape note: the raw ERCOT payload contains available online generation

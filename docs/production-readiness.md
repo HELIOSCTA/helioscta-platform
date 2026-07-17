@@ -44,7 +44,7 @@ A backend workflow is production-ready when it has:
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |
-| ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
+| ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `17:10 UTC`. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
