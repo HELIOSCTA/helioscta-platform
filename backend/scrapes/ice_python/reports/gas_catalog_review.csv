@@ -1,0 +1,77 @@
+market,region,source_registry,instrument_role,symbol,product,ice_product_id,ice_product_url,product_name,active,candidate_for_market,ice_catalog_status,metadata_status,review_status
+Henry Hub,louisiana,gas_next_day,cash_physical,XGF D1-IPG,,1156,https://www.ice.com/products/1156,Henry Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Transco Station 85,southeast,gas_next_day,cash_physical,XVA D1-IPG,,3306646,https://www.ice.com/products/3306646,Transco Station 85 (Zone 4) Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+TGP-500L,southeast,gas_next_day,cash_physical,XLM D1-IPG,,1318,https://www.ice.com/products/1318,TGP 500L Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+FGT Zone 3,southeast,gas_next_day,cash_physical,YHV D1-IPG,,69138045,https://www.ice.com/products/69138045,Florida Gas Zone 3 Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Columbia Gulf (Mainline),southeast,gas_next_day,cash_physical,XLA D1-IPG,,1306,https://www.ice.com/products/1306,CG Mainline Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+ANR SE-T,southeast,gas_next_day,cash_physical,XTA D1-IPG,,3306641,https://www.ice.com/products/3306641,ANR SE (Louisiana) Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Pine Prairie,southeast,gas_next_day,cash_physical,YV7 D1-IPG,,72764821,https://www.ice.com/products/72764821,Pine Prairie Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Tetco WLA,southeast,gas_next_day,cash_physical,XVM D1-IPG,,3306648,https://www.ice.com/products/3306648,TETCO WLA Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Houston Ship Channel,east_texas,gas_next_day,cash_physical,XYZ D1-IPG,,3306663,https://www.ice.com/products/3306663,HSC HPL Pool Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Waha,east_texas,gas_next_day,cash_physical,XT6 D1-IPG,,34598274,https://www.ice.com/products/34598274,Waha Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+NGPL TX/OK,east_texas,gas_next_day,cash_physical,XIT D1-IPG,,1162,https://www.ice.com/products/1162,NGPL TXOK Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Algonquin Citygates,northeast,gas_next_day,cash_physical,X7F D1-IPG,,,,Algonquin Citygates (non-G),True,,not_found,unverified_legacy_symbol,legacy_cash_requires_business_mapping_review
+Tetco M3,northeast,gas_next_day,cash_physical,XZR D1-IPG,,26209306,https://www.ice.com/products/26209306,TETCO M3 Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Transco Zone 5 South,northeast,gas_next_day,cash_physical,YFF D1-IPG,,60045058,https://www.ice.com/products/60045058,Transco Z5 South Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Transco Zone 5 North,northeast,gas_next_day,cash_physical,Z2Y D1-IPG,,,,Transco Zone 5 North,True,,not_found,unverified_legacy_symbol,legacy_cash_requires_business_mapping_review
+Iroquois Zone 2,northeast,gas_next_day,cash_physical,YP8 D1-IPG,,,,Iroquois Zone 2,True,,not_found,unverified_legacy_symbol,legacy_cash_requires_business_mapping_review
+Transco Zone 6 NY,northeast,gas_next_day,cash_physical,XWK D1-IPG,,26209312,https://www.ice.com/products/26209312,Transco Z6 (NY) Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Dominion South (Eastern Gas-South),northeast,gas_next_day,cash_physical,XJL D1-IPG,,1155,https://www.ice.com/products/1155,Eastern Gas-South Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Columbia TCO Pool,northeast,gas_next_day,cash_physical,XIZ D1-IPG,,1161,https://www.ice.com/products/1161,TCO Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Tetco M2 (Receipt),northeast,gas_next_day,cash_physical,YAG D1-IPG,,42944123,https://www.ice.com/products/42944123,TETCO M2 (Receipt) Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Tennessee Z4 (Marcellus),northeast,gas_next_day,cash_physical,Z1Q D1-IPG,,,,Tennessee Z4 (Marcellus),True,,not_found,unverified_legacy_symbol,legacy_cash_requires_business_mapping_review
+Transco Leidy,northeast,gas_next_day,cash_physical,YQE D1-IPG,,70466407,https://www.ice.com/products/70466407,Leidy-Transco Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Northern Ventura (NNG),midwest,gas_next_day,cash_physical,XTG D1-IPG,,3306642,https://www.ice.com/products/3306642,NNG Ventura Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Chicago CityGate (NGPL-Nicor),midwest,gas_next_day,cash_physical,YHF D1-IPG,,65657575,https://www.ice.com/products/65657575,NGPL Nicor Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+SoCal Citygate,southwest,gas_next_day,cash_physical,XKF D1-IPG,,3306638,https://www.ice.com/products/3306638,Socal Citygate Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+PG&E Citygate,southwest,gas_next_day,cash_physical,XGV D1-IPG,,1160,https://www.ice.com/products/1160,PG&E Citygate Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+CIG Mainline,rockies_northwest,gas_next_day,cash_physical,YKL D1-IPG,,,,CIG Mainline,True,,not_found,unverified_legacy_symbol,legacy_cash_requires_business_mapping_review
+NGPL Midcontinent,midwest,gas_next_day,cash_physical,XJR D1-IPG,,1158,https://www.ice.com/products/1158,NGPL Midcont Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+MichCon,midwest,gas_next_day,cash_physical,XJZ D1-IPG,,3306637,https://www.ice.com/products/3306637,Michcon Physical Fixed Price Spot,True,,verified,ice_product_url_verified,verified_cash
+Henry Hub,louisiana,gas_balmo,balmo_swing,HHD B0-IUS,,6590229,https://www.ice.com/products/6590229,Henry Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Transco Station 85,southeast,gas_balmo,balmo_swing,TRW B0-IUS,,6590252,https://www.ice.com/products/6590252,Transco Station 85 (Zone 4) Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+FGT Zone 3,southeast,gas_balmo,balmo_swing,FTS B0-IUS,,6590228,https://www.ice.com/products/6590228,Florida Gas Zone 3 Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Columbia Gulf (Mainline),southeast,gas_balmo,balmo_swing,CGR B0-IUS,,6590221,https://www.ice.com/products/6590221,CG-Mainline Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+ANR SE-T,southeast,gas_balmo,balmo_swing,APS B0-IUS,,6590219,https://www.ice.com/products/6590219,ANR SE (Louisiana) Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Pine Prairie,southeast,gas_balmo,balmo_swing,CVK B0-IUS,,71544009,https://www.ice.com/products/71544009,Pine Prairie Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Tetco WLA,southeast,gas_balmo,balmo_swing,CVP B0-IUS,,71544034,https://www.ice.com/products/71544034,TETCO WLA Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Houston Ship Channel,east_texas,gas_balmo,balmo_swing,UCS B0-IUS,,6590255,https://www.ice.com/products/6590255,HSC Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Waha,east_texas,gas_balmo,balmo_swing,WAS B0-IUS,,6590256,https://www.ice.com/products/6590256,Waha Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+NGPL TX/OK,east_texas,gas_balmo,balmo_swing,NTS B0-IUS,,6590236,https://www.ice.com/products/6590236,NGPL TXOK Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Algonquin Citygates,northeast,gas_balmo,balmo_swing,ALS B0-IUS,,6590217,https://www.ice.com/products/6590217,Algonquin Citygates Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Tetco M3,northeast,gas_balmo,balmo_swing,TSS B0-IUS,,6590253,https://www.ice.com/products/6590253,TETCO M3 Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Transco Zone 5,northeast,gas_balmo,balmo_swing,DKS B0-IUS,,42944092,https://www.ice.com/products/42944092,Transco Zone 5 Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Transco Zone 5 South,northeast,gas_balmo,balmo_swing,T5C B0-IUS,,82270890,https://www.ice.com/products/82270890,Transco Zone 5 South Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Iroquois Zone 2,northeast,gas_balmo,balmo_swing,IZS B0-IUS,,21592921,https://www.ice.com/products/21592921,Iroquois-Z2 Swing (Platts) Future,True,,verified,ice_product_url_verified,verified_balmo
+Transco Zone 6 NY,northeast,gas_balmo,balmo_swing,ZSS B0-IUS,,6590257,https://www.ice.com/products/6590257,Transco Zone 6 (NY) Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Dominion South (Eastern Gas-South),northeast,gas_balmo,balmo_swing,DSS B0-IUS,,6590227,https://www.ice.com/products/6590227,Eastern Gas South Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+SoCal Citygate,southwest,gas_balmo,balmo_swing,SCS B0-IUS,,6590244,https://www.ice.com/products/6590244,Socal Citygate Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+PG&E Citygate,southwest,gas_balmo,balmo_swing,PIG B0-IUS,,6590241,https://www.ice.com/products/6590241,PG&E Citygate Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+CIG Mainline,rockies_northwest,gas_balmo,balmo_swing,CRS B0-IUS,,6590223,https://www.ice.com/products/6590223,CIG Rockies Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+NGPL Midcontinent,midwest,gas_balmo,balmo_swing,MTS B0-IUS,,6590232,https://www.ice.com/products/6590232,NGPL Midcont Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+MichCon,midwest,gas_balmo,balmo_swing,NMS B0-IUS,,6590233,https://www.ice.com/products/6590233,Michcon Swing Future,True,,verified,ice_product_url_verified,verified_balmo
+Henry Hub Natural Gas,louisiana,gas_futures,fixed_price_future,,HNG,6590258,https://www.ice.com/products/6590258,Henry LD1 Fixed Price Future,True,,verified,ice_product_url_verified,verified_fixed_price_curve
+Henry Penultimate Natural Gas,louisiana,gas_futures,fixed_price_future,,PHE,6590264,https://www.ice.com/products/6590264,Henry Penultimate Fixed Price Future,True,,verified,ice_product_url_verified,verified_fixed_price_curve
+Transco Station 85,southeast,gas_futures,basis_future,,TRZ,6590165,https://www.ice.com/products/6590165,Transco Station 85 (Zone 4) Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+TGP 500L,southeast,gas_futures,basis_future,,TFL,6590159,https://www.ice.com/products/6590159,Tennessee 500L Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Columbia Gulf,southeast,gas_futures,basis_future,,CGB,6590126,https://www.ice.com/products/6590126,CG-Mainline Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+ANR SE-T,southeast,gas_futures,basis_future,,CGM,6590127,https://www.ice.com/products/6590127,ANR SE (Louisiana) Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Tetco WLA,southeast,gas_futures,basis_future,,TWB,6590168,https://www.ice.com/products/6590168,TETCO WLA Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Houston Ship Channel,east_texas,gas_futures,basis_future,,HXS,6590137,https://www.ice.com/products/6590137,HSC Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Waha,east_texas,gas_futures,basis_future,,WAH,6590171,https://www.ice.com/products/6590171,Waha Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+NGPL TX/OK,east_texas,gas_futures,basis_future,,NTO,6590143,https://www.ice.com/products/6590143,NGPL TXOK Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Algonquin Citygates,northeast,gas_futures,basis_future,,ALQ,6590124,https://www.ice.com/products/6590124,Algonquin Citygates Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Tetco M3,northeast,gas_futures,basis_future,,TMT,6590161,https://www.ice.com/products/6590161,TETCO M3 Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Transco Zone 5 South,northeast,gas_futures,basis_future,,T5B,82270888,https://www.ice.com/products/82270888,Transco Zone 5 South Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Iroquois Zone 2,northeast,gas_futures,basis_future,,IZB,21587547,https://www.ice.com/products/21587547,Iroquois-Z2 Basis (Platts) Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Transco Zone 6 NY,northeast,gas_futures,basis_future,,TZS,6590169,https://www.ice.com/products/6590169,Transco Zone 6 (NY) Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Dominion South,northeast,gas_futures,basis_future,,DOM,6590133,https://www.ice.com/products/6590133,Eastern Gas South Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+SoCal Citygate,southwest,gas_futures,basis_future,,SCB,6590151,https://www.ice.com/products/6590151,Socal Citygate Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+PG&E Citygate,southwest,gas_futures,basis_future,,PGE,6590150,https://www.ice.com/products/6590150,PG&E Citygate Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+CIG Mainline,rockies_northwest,gas_futures,basis_future,,CRI,6590129,https://www.ice.com/products/6590129,CIG Rockies Basis Future,True,,verified,ice_product_url_verified,verified_basis_curve
+Algonquin Citygates Fixed Price,northeast,gas_futures,fixed_price_future,,ALG,71085626,https://www.ice.com/products/71085626,Algonquin Citygates Fixed Price Future,False,Algonquin Citygates,verified,ice_product_url_verified,candidate_verified_not_mapped
+Transco Zone 5 Fixed Price,northeast,gas_futures,fixed_price_future,,TZ5,83048643,https://www.ice.com/products/83048643,Transco Zone 5 Fixed Price,False,Transco Zone 5 North,verified,ice_product_url_verified,candidate_verified_not_mapped
+Iroquois Zone 2 Fixed Price,northeast,gas_futures,fixed_price_future,,IZP,83048605,https://www.ice.com/products/83048605,Iroquois-Z2 (Platts) Fixed Price,False,Iroquois Zone 2,verified,ice_product_url_verified,candidate_verified_not_mapped
+Tennessee Zone 4 200L Fixed Price,northeast,gas_futures,fixed_price_future,,TN4,83048637,https://www.ice.com/products/83048637,Tennessee Zone 4 200L Fixed Price,False,Tennessee Z4 (Marcellus),verified,ice_product_url_verified,candidate_verified_not_mapped
+Tennessee Zone 4 300L Fixed Price,northeast,gas_futures,fixed_price_future,,DM9,83048638,https://www.ice.com/products/83048638,Tennessee Zone 4 300L Fixed Price Future,False,Tennessee Z4 (Marcellus),verified,ice_product_url_verified,candidate_verified_not_mapped
+CIG Rockies Fixed Price,rockies_northwest,gas_futures,fixed_price_future,,CRA,71085627,https://www.ice.com/products/71085627,CIG Rockies Fixed Price Future,False,CIG Mainline,verified,ice_product_url_verified,candidate_verified_not_mapped

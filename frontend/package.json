@@ -9,6 +9,7 @@
     "check:api": "node scripts/check-api-health.mjs",
     "sql:nav-positions": "python scripts/generate-nav-position-sql.py",
     "verify:nav-positions-sql": "python scripts/verify-nav-position-sql.py",
+    "verify:ice-gas-registry": "python scripts/verify-ice-gas-registry.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
