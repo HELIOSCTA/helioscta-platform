@@ -465,6 +465,85 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-caiso-da-lmps
+
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled and latest manual
+  VM service run succeeded.
+- Workflow: CAISO Day-Ahead Hourly LMP orchestration.
+- Runtime module: `backend.orchestration.power.caiso.da_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.caiso.da_lmps`.
+- Manual backfill module: `backend.backfills.power.caiso.da_lmps`.
+- Source system: CAISO OASIS `PRC_LMP` with `market_run_id=DAM`.
+- Destination table: `caiso.da_lmps`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Scope: trading hubs `TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`.
+- Unit files:
+  - `infrastructure/systemd/helios-caiso-da-lmps.service`
+  - `infrastructure/systemd/helios-caiso-da-lmps.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-caiso-da-lmps.service`.
+- Schedule: daily at `13:20 America/Los_Angeles` with
+  `RandomizedDelaySec=5min`.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-caiso-da-lmps.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Application DDL applied locally with `helios_admin` on `2026-07-17`.
+- Local backfill verification: `2026-07-17 16:54 UTC`; loaded trading dates
+  `2026-06-17` through `2026-07-17` into `caiso.da_lmps` with 1,488 rows
+  total, 48 rows per date, 31 complete readiness events, and zero duplicate
+  primary-key groups.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded to `d11832e` on
+  `2026-07-17`; service and timer unit files copied to `/etc/systemd/system`,
+  `daemon-reload` completed, and `helios-caiso-da-lmps.timer` enabled.
+- VM smoke-run correction: the first immediate service run at
+  `2026-07-17 17:13 UTC` targeted unpublished trading date `2026-07-18` and
+  failed because OASIS returned no CSV. Commit `27072d8` changed the default
+  DA trading date to the latest expected published market date, preserving the
+  scheduled `13:20 America/Los_Angeles` next-day behavior.
+- Latest VM verification: `2026-07-17 17:15 UTC`; `/opt/helioscta-platform`
+  fast-forwarded to `27072d8`, service exited `status=0/SUCCESS`, pulled
+  trading date `2026-07-17`, upserted 48 rows, and observed existing readiness
+  event `caiso_da_lmps:data_ready:2026-07-17:trading_hubs_np15_sp15`.
+- Next scheduled run observed: `2026-07-17 20:20:40 UTC`.
+
+Verification SQL for CAISO DA hourly LMP coverage:
+
+```sql
+SELECT
+    operating_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT node_id) AS nodes,
+    COUNT(DISTINCT interval_start_time_utc) AS intervals,
+    MAX(updated_at) AS latest_update
+FROM caiso.da_lmps
+GROUP BY operating_date
+ORDER BY operating_date DESC
+LIMIT 30;
+```
+
+Verification SQL for CAISO OASIS fetch telemetry:
+
+```sql
+SELECT
+    operation_name,
+    target_table,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE provider = 'caiso'
+  AND target_table = 'caiso.da_lmps'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## helios-isone-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest VM run succeeded.
