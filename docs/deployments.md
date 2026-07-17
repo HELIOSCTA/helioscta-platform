@@ -507,16 +507,27 @@ LIMIT 10;
 - VM smoke-run correction: the first immediate service run at
   `2026-07-17 17:13 UTC` targeted unpublished trading date `2026-07-18` and
   failed because OASIS returned no CSV. Commit `27072d8` changed the default
-  DA trading date to the latest expected published market date, preserving the
-  scheduled `13:20 America/Los_Angeles` next-day behavior.
+  DA trading date for one-off runs to the latest expected published market
+  date.
 - Latest VM verification: `2026-07-17 17:15 UTC`; `/opt/helioscta-platform`
   fast-forwarded to `27072d8`, service exited `status=0/SUCCESS`, pulled
   trading date `2026-07-17`, upserted 48 rows, and observed existing readiness
   event `caiso_da_lmps:data_ready:2026-07-17:trading_hubs_np15_sp15`.
-- Next scheduled run observed: `2026-07-17 20:20:40 UTC`.
-- Polling correction pending deployment: update `helios-caiso-da-lmps.timer`
-  from post-publication `13:20 America/Los_Angeles` to pre-publication
-  `12:50 America/Los_Angeles`, and update the service timeout to 5 hours.
+- Polling deployment: `/opt/helioscta-platform` fast-forwarded through commit
+  `711894a` on `2026-07-17`; service and timer unit files were recopied to
+  `/etc/systemd/system`, `daemon-reload` completed, and
+  `helios-caiso-da-lmps.timer` was restarted with the pre-publication
+  `12:50 America/Los_Angeles` schedule and a 5-hour service timeout. The VM was
+  later observed at `d338197`, which includes the CAISO polling commit plus
+  unrelated ERCOT deployment-register work.
+- Polling smoke verification: `2026-07-17 17:32 UTC`; a systemd-run smoke test
+  executed the scheduled polling path for already-published trading date
+  `2026-07-17`, exited `status=0/SUCCESS`, upserted 48 rows, observed existing
+  readiness event `caiso_da_lmps:data_ready:2026-07-17:trading_hubs_np15_sp15`,
+  and wrote one resolved `ops.api_fetch_log` row with
+  `operation_name = 'da_lmps_poll'`, `poll_count = 1`, and `rows_returned = 48`.
+- Next scheduled run observed after polling deployment:
+  `2026-07-17 19:52:00 UTC`.
 
 Verification SQL for CAISO DA hourly LMP coverage:
 
