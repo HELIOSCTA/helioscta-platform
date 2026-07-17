@@ -1107,8 +1107,8 @@ FROM isone.seven_day_solar_forecast;
 
 ## helios-lmp-price-backfill-7-day
 
-- Status: ready to deploy; global timer replaces the older PJM-only
-  `helios-pjm-hourly-price-backfill-7-day.timer`.
+- Status: deployed on `helioscta-prod-vm-01`; global timer enabled and older
+  PJM-only `helios-pjm-hourly-price-backfill-7-day.timer` disabled.
 - Workflow: PJM, ISO-NE, and ERCOT LMP price seven-day backfill repair.
 - Runtime module: `backend.backfills.power.lmp_price_backfill_7_day`.
 - Source systems: PJM Data Miner 2, ISO-NE ISO Express CSV reports, and ERCOT
@@ -1137,6 +1137,20 @@ FROM isone.seven_day_solar_forecast;
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-lmp-price-backfill-7-day.service`.
 - Schedule: daily at `22:15 UTC` with `RandomizedDelaySec=10min`.
+- Deployed runtime commit:
+  `724e46d5f4e08fae3456eb5d8222c08966674f47`.
+- Deployed at: `2026-07-17 17:08 UTC`.
+- Latest VM verification: manual one-shot service run exited
+  `status=0/SUCCESS` at `2026-07-17 17:15:20 UTC`; journal summary reported
+  `9 succeeded, 0 failed`.
+- Backfill telemetry verification: `ops.api_fetch_log` showed successful
+  `repair_family=lmp_price_backfill_7_day` rows for all nine target LMP feeds
+  after the manual run. The production health check's `LMP repair freshness`
+  section reported `Coverage: 9/9 successful target-table repairs`.
+- ISO-NE final RT repair result: the run filled full final rows for
+  `2026-07-10`, `2026-07-11`, and `2026-07-15`; earlier missing dates
+  `2026-07-02` and `2026-07-03` remain outside the rolling seven-day repair
+  window, and `2026-07-16` remains pending under the two-day final-RT lag.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-lmp-price-backfill-7-day.lock`.
