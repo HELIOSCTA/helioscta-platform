@@ -20,6 +20,10 @@ def test_isone_rt_hrl_lmps_prelim_event_key():
     )
 
 
+def test_isone_rt_hrl_lmps_prelim_scheduled_default_targets_prior_operating_day():
+    assert rt_hrl_lmps_prelim.DEFAULT_LOOKBACK_DAYS == 1
+
+
 def test_isone_rt_hrl_lmps_prelim_emits_readiness_event_for_complete_rows(monkeypatch):
     captured: list[dict[str, object]] = []
 

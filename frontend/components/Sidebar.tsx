@@ -45,20 +45,31 @@ interface TopSection {
 }
 
 function getSections(showLocalDevFeatures: boolean): TopSection[] {
-  const sections: TopSection[] = [
-    {
-      key: "power",
-      label: "POWER",
+  const sections: TopSection[] = [];
+
+  if (showLocalDevFeatures) {
+    sections.push({
+      key: "prices",
+      label: "PRICING",
       navItems: [
-        { id: "pjm-da-lmps", label: "LMPs" },
-        { id: "pjm-historical-settlements", label: "Historical Settlements" },
-        { id: "pjm-ops-summary", label: "Ops Sum" },
-        { id: "pjm-outages", label: "Outages" },
-        { id: "pjm-forecasts", label: "Forecasts" },
-        { id: "pjm-load-growth", label: "Load Growth" },
+        { id: "ice-settlements", label: "Power Settles" },
+        { id: "spark-spreads", label: "Power Curves" },
       ],
-    },
-  ];
+    });
+  }
+
+  sections.push({
+    key: "power",
+    label: "POWER",
+    navItems: [
+      { id: "pjm-da-lmps", label: "LMPs" },
+      { id: "pjm-historical-settlements", label: "Historical Settlements" },
+      { id: "pjm-ops-summary", label: "Ops Sum" },
+      { id: "pjm-outages", label: "Outages" },
+      { id: "pjm-forecasts", label: "Forecasts" },
+      { id: "pjm-load-growth", label: "Load Growth" },
+    ],
+  });
 
   if (showLocalDevFeatures) {
     sections.push({
@@ -67,8 +78,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       navItems: [
         { id: "pjm-da-model", label: "DA Model" },
         { id: "pjm-price-view", label: "Price View" },
-        { id: "ice-settlements", label: "ICE Settles" },
-        { id: "spark-spreads", label: "Power Pricing" },
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
         { id: "nav-positions", label: "Positions" },

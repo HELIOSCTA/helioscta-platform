@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ColumnVisibilityPopover from "@/components/dashboard/ColumnVisibilityPopover";
 import DataTableShell from "@/components/dashboard/DataTableShell";
+import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
   formatIceTradeProductDisplay,
@@ -463,6 +464,25 @@ const EMPTY_PRODUCT_DICTIONARY_ROWS: ProductDictionaryRow[] = [];
 const EMPTY_POSITION_ROWS: PositionRow[] = [];
 const EMPTY_POSITION_LEG_ROWS: PositionLegRow[] = [];
 const EMPTY_PNL_SUMMARY_ROWS: PnlSummaryRow[] = [];
+const DEFAULT_SETTLE_REGION_FILTERS = ["PJM"] as const;
+const PJM_MONTHLY_SETTLE_MATRICES = [
+  {
+    key: "pmi",
+    productId: "PJM_WH_RT_TETCO_M3_7X",
+    title: "PMI Monthly Matrix",
+    subtitle: "PJM Western Hub RT on-peak monthly settles.",
+  },
+  {
+    key: "opj",
+    productId: "PJM_WH_RT_OFFPEAK_TETCO_M3_7X",
+    title: "OPJ Monthly Matrix",
+    subtitle: "PJM Western Hub RT off-peak monthly settles.",
+  },
+] as const;
+
+function defaultPjmMonthlyMatrixYears(referenceYear = new Date().getFullYear()): number[] {
+  return Array.from({ length: 7 }, (_, index) => referenceYear - 4 + index);
+}
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "--";
@@ -482,6 +502,23 @@ function fmtIsoDate(value: string | null | undefined): string {
   const month = String(parsedDate.getMonth() + 1).padStart(2, "0");
   const day = String(parsedDate.getDate()).padStart(2, "0");
   return `${parsedDate.getFullYear()}-${month}-${day}`;
+}
+
+function fmtSummaryHeaderDate(value: string | null | undefined): string {
+  const parsedDate = parseIceDate(value);
+  if (!parsedDate) return value || "--";
+  const weekday = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][parsedDate.getDay()];
+  const month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+    parsedDate.getMonth()
+  ];
+  const day = String(parsedDate.getDate()).padStart(2, "0");
+  return `${weekday} ${month}-${day}`;
+}
+
+function fmtSummaryHeaderDateRange(startValue: string | null | undefined, endValue: string | null | undefined): string {
+  if (!startValue && !endValue) return "--";
+  if (!startValue || !endValue || startValue === endValue) return fmtSummaryHeaderDate(startValue || endValue);
+  return `${fmtSummaryHeaderDate(startValue)}-${fmtSummaryHeaderDate(endValue)}`;
 }
 
 function fmtContractDate(value: string | null | undefined): string {
@@ -901,7 +938,7 @@ function markSourceLabel(source: string | null | undefined): string {
     source === "ERCOT_DA_LMP" ||
     source === "ERCOT_RT_LMP"
   ) return "Settle";
-  if (source === "ICE_MARK") return "ICE Mark";
+  if (source === "ICE_MARK") return "ICE Settle";
   if (source === "ICE_OPTION_MARK") return "Option Mark";
   return fmtText(source);
 }
@@ -911,7 +948,7 @@ function markSourceDetail(source: string | null | undefined): string {
   if (source === "PJM_RT_LMP") return "PJM RT";
   if (source === "ERCOT_DA_LMP") return "ERCOT DA";
   if (source === "ERCOT_RT_LMP") return "ERCOT RT";
-  if (source === "ICE_MARK") return "ICE mark";
+  if (source === "ICE_MARK") return "ICE settle";
   if (source === "ICE_OPTION_MARK") return "ICE option mark";
   return fmtText(source);
 }
@@ -957,7 +994,7 @@ function tradeBlotterSourceNote(row: IceTradeBlotterRow): SourceNoteLine[] {
   return [
     { label: "Active", value: markSourceDetail(row.active_mark_source) },
     { label: "Active Mark", value: fmtOptionalPrice(toFiniteNumber(row.settlement_mark)) },
-    { label: "ICE Mark", value: fmtOptionalPrice(toFiniteNumber(row.ice_mark)) },
+    { label: "ICE Settle", value: fmtOptionalPrice(toFiniteNumber(row.ice_mark)) },
     { label: "ICE Open", value: fmtOptionalPrice(toFiniteNumber(row.ice_open)) },
     { label: "ICE High", value: fmtOptionalPrice(toFiniteNumber(row.ice_high)) },
     { label: "ICE Low", value: fmtOptionalPrice(toFiniteNumber(row.ice_low)) },
@@ -1225,7 +1262,7 @@ function dailySettlementSourceLabel(
   availability = settleAvailability(row)
 ): string {
   if (availability.label !== "Settled") {
-    return toFiniteNumber(row.ice_settlement) === null ? "No source mark" : "ICE settlement";
+    return toFiniteNumber(row.vwap_close) === null ? "No source price" : "ICE WVAP";
   }
 
   if (row.settlement_source === "PJM_DA_LMP") return "PJM DA LMP";
@@ -1273,7 +1310,7 @@ function dailySettlementConfidence(row: DailySettlementRow): {
       label: "Pending",
       daysLabel,
       className: "border-sky-500/40 bg-sky-500/10 text-sky-100",
-      title: `Source marks are not complete yet, so Final Mark may fall back to ICE. Source: ${source}.`,
+      title: `Actual settles are not complete yet, so mark may fall back to ICE WVAP. Source: ${source}.`,
     };
   }
   if (metadata === "missing_contract_dates" || metadata === "no_eligible_delivery_days") {
@@ -1300,6 +1337,23 @@ function settlementHistoryWindowKey(row: DailySettlementRow): string {
   ]
     .map((value) => String(value ?? ""))
     .join("|");
+}
+
+function settlementHistoryMatchesManualTenorWindow(
+  row: DailySettlementRow,
+  columnKey: string
+): boolean {
+  if (settlementTenorColumn(row).key !== columnKey) return false;
+  if (!(columnKey in FIXED_TRADE_TENOR_SORT_ORDER)) return true;
+
+  const ruleBeginDate = fmtIsoDate(row.rule_begin_date);
+  const ruleEndDate = fmtIsoDate(row.rule_end_date);
+  if (ruleBeginDate === "--" || ruleEndDate === "--") return true;
+
+  return (
+    fmtIsoDate(dailySettlementBeginDate(row)) === ruleBeginDate &&
+    fmtIsoDate(dailySettlementEndDate(row)) === ruleEndDate
+  );
 }
 
 function settlementHistoryColumnDisplayValue(
@@ -1343,6 +1397,7 @@ function addSettlementSummaryValues(
   const activeMark = dailySettlementActiveMark(row);
   const settle = toFiniteNumber(row.settlement);
   const iceMark = toFiniteNumber(row.ice_settlement);
+  const vwap = toFiniteNumber(row.vwap_close);
   const volume = toFiniteNumber(row.volume);
 
   target.rowCount += 1;
@@ -1359,6 +1414,10 @@ function addSettlementSummaryValues(
   if (iceMark !== null) {
     target.iceMarkCount += 1;
     target.iceMarkTotal += iceMark;
+  }
+  if (vwap !== null) {
+    target.vwapCount += 1;
+    target.vwapTotal += vwap;
   }
   if (volume !== null) {
     target.volumeCount += 1;
@@ -1395,6 +1454,8 @@ function buildSettlementSummary(rows: DailySettlementRow[]): { columns: TradeSum
         settleTotal: 0,
         iceMarkCount: 0,
         iceMarkTotal: 0,
+        vwapCount: 0,
+        vwapTotal: 0,
         volumeCount: 0,
         volumeTotal: 0,
         sourceLabels: new Set<string>(),
@@ -1419,6 +1480,8 @@ function buildSettlementSummary(rows: DailySettlementRow[]): { columns: TradeSum
         settleTotal: 0,
         iceMarkCount: 0,
         iceMarkTotal: 0,
+        vwapCount: 0,
+        vwapTotal: 0,
         volumeCount: 0,
         volumeTotal: 0,
         sourceLabels: new Set<string>(),
@@ -1489,6 +1552,13 @@ function settlementSummaryMetricValue(
   metric: SettlementSummaryMetric
 ): number | null {
   if (metric === "volume") return rowOrCell.volumeCount === 0 ? null : rowOrCell.volumeTotal;
+  if (metric === "settle_or_vwap") {
+    if (rowOrCell.settleCount > 0) return rowOrCell.settleTotal / rowOrCell.settleCount;
+    return rowOrCell.vwapCount === 0 ? null : rowOrCell.vwapTotal / rowOrCell.vwapCount;
+  }
+  if (metric === "vwap") {
+    return rowOrCell.vwapCount === 0 ? null : rowOrCell.vwapTotal / rowOrCell.vwapCount;
+  }
   if (metric === "settle") {
     return rowOrCell.settleCount === 0 ? null : rowOrCell.settleTotal / rowOrCell.settleCount;
   }
@@ -1530,8 +1600,26 @@ function settlementSummaryMarkSource(
 }
 
 function settlementSummaryMetricBadge(
+  rowOrCell: SettlementSummaryRow | SettlementSummaryCell,
   metric: SettlementSummaryMetric
 ): { label: string; className: string; title: string } | null {
+  if (metric === "settle_or_vwap") {
+    if (rowOrCell.settleCount > 0) {
+      return {
+        label: "SET",
+        className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+        title: "Released source settlement value.",
+      };
+    }
+    if (rowOrCell.vwapCount > 0) {
+      return {
+        label: "WVAP",
+        className: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
+        title: "WVAP fallback while settle is unavailable.",
+      };
+    }
+    return null;
+  }
   if (metric === "settle") {
     return {
       label: "SET",
@@ -1543,7 +1631,14 @@ function settlementSummaryMetricBadge(
     return {
       label: "ICE",
       className: "border-sky-500/40 bg-sky-500/10 text-sky-200",
-      title: "ICE mark value.",
+      title: "ICE settle value.",
+    };
+  }
+  if (metric === "vwap") {
+    return {
+      label: "WVAP",
+      className: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
+      title: "WVAP.",
     };
   }
   return null;
@@ -1558,12 +1653,13 @@ function renderSettlementSummaryMetric(
   const source =
     metric === "final_mark"
       ? settlementSummaryMarkSource(rowOrCell)
-      : settlementSummaryMetricBadge(metric);
-  if (value === null) return "--";
+      : settlementSummaryMetricBadge(rowOrCell, metric);
   return (
     <span className="inline-flex items-center justify-end gap-1.5">
-      <span>{fmtSettlementSummaryMetric(value, metric)}</span>
-      {source && (
+      <SettlementValueBox muted={value === null}>
+        {fmtSettlementSummaryMetric(value, metric)}
+      </SettlementValueBox>
+      {value !== null && source && (
         <span
           title={source.title}
           className={`rounded border px-1 py-0.5 text-[9px] font-bold ${source.className}`}
@@ -1575,38 +1671,27 @@ function renderSettlementSummaryMetric(
   );
 }
 
-function settlementSummaryMetricSourceDate(
-  cell: SettlementSummaryCell,
-  metric: SettlementSummaryMetric
-): string | null {
-  const matchingRows = cell.rows.filter((row) => {
-    if (metric === "volume") return toFiniteNumber(row.volume) !== null;
-    if (metric === "settle") return toFiniteNumber(row.settlement) !== null;
-    if (metric === "ice_mark") return toFiniteNumber(row.ice_settlement) !== null;
-    return dailySettlementActiveMark(row) !== null;
-  });
-  if (matchingRows.length === 0) return null;
-  return matchingRows.reduce<string | null>(
-    (latest, row) => (!latest || row.date > latest ? row.date : latest),
-    null
-  );
+function settlementSummaryColumnDeliveryRange(
+  rows: SettlementSummaryRow[],
+  columnKey: string
+): { label: string; title: string } | null {
+  const cellRows = rows.flatMap((row) => row.cells[columnKey]?.rows ?? []);
+  const beginDates = cellRows.map(dailySettlementBeginDate).filter(Boolean).sort();
+  const endDates = cellRows.map(dailySettlementEndDate).filter(Boolean).sort();
+  const beginDate = beginDates[0];
+  const endDate = endDates.at(-1);
+  if (!beginDate && !endDate) return null;
+  return {
+    label: fmtSummaryHeaderDateRange(beginDate, endDate),
+    title: `Delivery ${fmtIsoDate(beginDate)} to ${fmtIsoDate(endDate)}`,
+  };
 }
 
 function renderSettlementSummaryCellMetric(
   cell: SettlementSummaryCell,
   metric: SettlementSummaryMetric
 ): React.ReactNode {
-  const renderedMetric = renderSettlementSummaryMetric(cell, metric);
-  const sourceDate = settlementSummaryMetricSourceDate(cell, metric);
-  if (!sourceDate || renderedMetric === "--") return renderedMetric;
-  return (
-    <span className="inline-flex flex-col items-end gap-0.5">
-      <span>{renderedMetric}</span>
-      <span className="text-[10px] font-normal tabular-nums text-gray-500">
-        {fmtIsoDate(sourceDate)}
-      </span>
-    </span>
-  );
+  return renderSettlementSummaryMetric(cell, metric);
 }
 
 function sortedFilterValues(values: Array<string | null | undefined>): string[] {
@@ -1755,7 +1840,7 @@ type ColumnKey =
 type TradeBlotterView = "pnl" | "positions" | "trades" | "settles" | "products";
 type DateMode = "single" | "historical";
 type SortDirection = "asc" | "desc";
-type SettlementStatusFilter = "all" | "Settled" | "ICE Mark";
+type SettlementStatusFilter = "all" | "Settled" | "WVAP";
 type QuickFilterRow = {
   trader?: string | null;
   asset_class?: string | null;
@@ -2042,6 +2127,8 @@ interface SettlementSummaryCell {
   settleTotal: number;
   iceMarkCount: number;
   iceMarkTotal: number;
+  vwapCount: number;
+  vwapTotal: number;
   volumeCount: number;
   volumeTotal: number;
   sourceLabels: Set<string>;
@@ -2062,13 +2149,21 @@ interface SettlementSummaryRow {
   settleTotal: number;
   iceMarkCount: number;
   iceMarkTotal: number;
+  vwapCount: number;
+  vwapTotal: number;
   volumeCount: number;
   volumeTotal: number;
   sourceLabels: Set<string>;
   cells: Record<string, SettlementSummaryCell>;
 }
 
-type SettlementSummaryMetric = "final_mark" | "settle" | "ice_mark" | "volume";
+type SettlementSummaryMetric =
+  | "final_mark"
+  | "settle"
+  | "ice_mark"
+  | "settle_or_vwap"
+  | "vwap"
+  | "volume";
 type SettlementHistoryLookback = 7 | 14 | 30 | 90 | "all";
 type SettlementHistoryColumnKey =
   | "date"
@@ -2091,12 +2186,7 @@ interface SettlementHistorySelection {
   historyEndDate: string;
 }
 
-const SETTLEMENT_SUMMARY_METRICS: { key: SettlementSummaryMetric; label: string }[] = [
-  { key: "final_mark", label: "Final Mark" },
-  { key: "settle", label: "Settle" },
-  { key: "ice_mark", label: "ICE Mark" },
-  { key: "volume", label: "Volume" },
-];
+const SETTLEMENT_SUMMARY_METRIC: SettlementSummaryMetric = "settle_or_vwap";
 const SETTLEMENT_HISTORY_ALL_START_DATE = "2020-01-01";
 const SETTLEMENT_HISTORY_LOOKBACKS: SettlementHistoryLookback[] = [7, 14, 30, 90, "all"];
 const SETTLEMENT_HISTORY_FILTER_COLUMNS: {
@@ -2354,7 +2444,7 @@ const COLUMN_DEFINITIONS: ColumnDefinition[] = [
   },
   {
     key: "ice_mark",
-    label: "ICE Mark Raw",
+    label: "ICE Settle Raw",
     align: "right",
     minClass: "min-w-[110px]",
     render: (row) => fmtOptionalPrice(toFiniteNumber(row.ice_mark)),
@@ -2587,6 +2677,7 @@ interface DailySettlementColumnDefinition {
   label: string;
   align?: "left" | "right";
   minClass?: string;
+  cellClass?: (row: DailySettlementRow) => string;
   render: (row: DailySettlementRow) => React.ReactNode;
 }
 
@@ -2596,6 +2687,7 @@ interface SourceNoteLine {
 }
 
 type SourceNoteTone = "info" | "settled" | "pending" | "overdue" | "partial" | "unknown";
+type SettlementValueTone = "settle" | "wvap";
 
 interface SettleAvailability {
   label: Exclude<SettlementStatusFilter, "all">;
@@ -2621,7 +2713,7 @@ const SETTLEMENT_STATUS_LEGEND: Array<{
   glyph: string;
 }> = [
   { label: "Settled", tone: "settled", glyph: "S" },
-  { label: "ICE Mark", tone: "pending", glyph: "I" },
+  { label: "WVAP", tone: "pending", glyph: "W" },
 ];
 
 function dateOnlyTime(value: string | null | undefined): number | null {
@@ -2707,12 +2799,12 @@ function settleAvailability(row: DailySettlementRow): SettleAvailability {
   }
 
   return {
-    label: "ICE Mark",
+    label: "WVAP",
     tone: isOverdue ? "overdue" : metadata.includes("partial") ? "partial" : "pending",
-    glyph: "I",
+    glyph: "W",
     detail: isOverdue
-      ? "No source settlement value is available after the delivery window; Final Mark falls back to ICE."
-      : "Source settlement value is not complete; Final Mark falls back to ICE.",
+      ? "No actual settle is available after the delivery window; mark falls back to ICE WVAP."
+      : "Actual settle is not complete; mark falls back to ICE WVAP.",
     delivery: isOverdue ? "Overdue" : displayedDelivery,
     deliveryDetail: isOverdue
       ? "Today is after the end date and no complete source settle is available."
@@ -2726,7 +2818,7 @@ function dailySettlementActiveMark(row: DailySettlementRow): number | null {
   if (availability.label === "Settled" && settle !== null) {
     return settle;
   }
-  return toFiniteNumber(row.ice_settlement);
+  return toFiniteNumber(row.vwap_close);
 }
 
 function formatPnlUnmarkedPosition(position: PnlSummaryUnmarkedPosition): string {
@@ -3004,9 +3096,10 @@ function SettlementDailyValuesHover({
         onMouseEnter={showTooltip}
         onFocus={showTooltip}
         onBlur={hideTooltip}
-        className="inline-flex cursor-help items-center rounded border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 text-[9px] font-bold text-emerald-200 outline-none transition-colors hover:border-emerald-300/70 hover:bg-emerald-500/20 focus:border-emerald-300/70 focus:bg-emerald-500/20"
+        className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded border border-emerald-500/35 bg-emerald-500/10 text-[9px] font-bold leading-none text-emerald-200 outline-none transition-colors hover:border-emerald-300/70 hover:bg-emerald-500/20 focus:border-emerald-300/70 focus:bg-emerald-500/20"
+        title="Daily values"
       >
-        DAYS
+        D
       </span>
       {tooltip}
     </span>
@@ -3069,6 +3162,50 @@ function SettlementStatusPill({
   );
 }
 
+function SettlementValueBox({
+  children,
+  muted = false,
+}: {
+  children: React.ReactNode;
+  muted?: boolean;
+}) {
+  return (
+    <span className={`tabular-nums ${muted ? "text-gray-500" : ""}`}>
+      {children}
+    </span>
+  );
+}
+
+function SettlementPriceBox({ value }: { value: number | null }) {
+  return (
+    <SettlementValueBox muted={value === null}>
+      {fmtOptionalPrice(value)}
+    </SettlementValueBox>
+  );
+}
+
+function SettlementVolumeBox({ value }: { value: number | null }) {
+  return (
+    <SettlementValueBox muted={value === null}>
+      {fmtNumber(value, 0)}
+    </SettlementValueBox>
+  );
+}
+
+function settlementValueCellClass(
+  value: number | null,
+  tone?: SettlementValueTone
+): string {
+  const base = "outline outline-1 -outline-offset-1";
+  if (tone === "settle" && value !== null) {
+    return `${base} bg-emerald-500/12 outline-emerald-400/70 font-semibold text-emerald-100`;
+  }
+  if (tone === "wvap" && value !== null) {
+    return `${base} bg-cyan-500/12 outline-cyan-400/70 font-semibold text-cyan-100`;
+  }
+  return `${base} bg-gray-700/25 outline-gray-500/80`;
+}
+
 function PriceWithBadge({
   value,
   badge,
@@ -3076,17 +3213,16 @@ function PriceWithBadge({
 }: {
   value: number | null;
   badge?: string;
-  tone?: "settle" | "ice";
+  tone?: "settle" | "wvap";
 }) {
-  if (value === null) return "--";
   const badgeClass =
     tone === "settle"
       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-      : "border-sky-500/40 bg-sky-500/10 text-sky-200";
+      : "border-cyan-500/40 bg-cyan-500/10 text-cyan-200";
   return (
     <span className="inline-flex items-center justify-end gap-1.5">
-      <span className="tabular-nums">{fmtOptionalPrice(value)}</span>
-      {badge && (
+      <SettlementPriceBox value={value} />
+      {value !== null && badge && (
         <span className={`rounded border px-1 py-0.5 text-[9px] font-bold ${badgeClass}`}>
           {badge}
         </span>
@@ -3140,7 +3276,7 @@ function dailySettlementDateCheckLabel(row: DailySettlementRow): string {
 }
 
 function dailySettlementDateCheckTitle(row: DailySettlementRow): string {
-  const ruleWindow = `${fmtIsoDate(row.begin_date)} to ${fmtIsoDate(row.end_date)}`;
+  const ruleWindow = `${fmtIsoDate(row.rule_begin_date)} to ${fmtIsoDate(row.rule_end_date)}`;
   const iceWindow = `${fmtIsoDate(row.ice_begin_date)} to ${fmtIsoDate(row.ice_end_date)}`;
   return [
     row.date_check_detail || "Date check unavailable.",
@@ -3165,21 +3301,22 @@ function renderDailySettlementDateCell(
   row: DailySettlementRow,
   field: "begin" | "end"
 ): React.ReactNode {
-  const ruleDate = field === "begin" ? row.begin_date : row.end_date;
+  const ruleDate = field === "begin" ? row.rule_begin_date : row.rule_end_date;
   const iceDate = field === "begin" ? row.ice_begin_date : row.ice_end_date;
-  const showIceDate =
+  const displayDate = field === "begin" ? row.begin_date : row.end_date;
+  const showRuleDate =
     dailySettlementDateCheckStatus(row) === "diff" &&
-    iceDate !== null &&
+    ruleDate !== null &&
     iceDate !== ruleDate;
 
   return (
     <span className="block" title={dailySettlementDateCheckTitle(row)}>
       <span className="block whitespace-nowrap text-gray-200">
-        {fmtIsoDate(ruleDate)}
+        {fmtIsoDate(displayDate)}
       </span>
-      {showIceDate && (
-        <span className="block whitespace-nowrap text-[10px] font-semibold text-amber-300">
-          ICE ref {fmtIsoDate(iceDate)}
+      {showRuleDate && (
+        <span className="block whitespace-nowrap text-[10px] font-semibold text-gray-500">
+          Rule {fmtIsoDate(ruleDate)}
         </span>
       )}
     </span>
@@ -3200,19 +3337,20 @@ function dailySettlementSourceNote(row: DailySettlementRow): SourceNoteLine[] {
     { label: "Delivery", value: availability.delivery },
     { label: "Date Check", value: dailySettlementDateCheckLabel(row) },
     { label: "Date Detail", value: row.date_check_detail || "--" },
-    { label: "Rule Dates", value: `${fmtIsoDate(row.begin_date)} to ${fmtIsoDate(row.end_date)}` },
-    { label: "ICE Reference Dates", value: `${fmtIsoDate(row.ice_begin_date)} to ${fmtIsoDate(row.ice_end_date)}` },
-    { label: "Final Mark", value: fmtOptionalPrice(dailySettlementActiveMark(row)) },
+    { label: "ICE Contract Dates", value: `${fmtIsoDate(row.ice_begin_date)} to ${fmtIsoDate(row.ice_end_date)}` },
+    { label: "Rule Dates", value: `${fmtIsoDate(row.rule_begin_date)} to ${fmtIsoDate(row.rule_end_date)}` },
+    { label: "Mark", value: fmtOptionalPrice(dailySettlementActiveMark(row)) },
     { label: "Rule", value: availability.detail },
     { label: "Window", value: availability.deliveryDetail },
-    { label: "Settle", value: fmtOptionalPrice(toFiniteNumber(row.settlement)) },
+    { label: "Actual Settle", value: fmtOptionalPrice(toFiniteNumber(row.settlement)) },
     { label: "Settle Source", value: settleSourceNote(row.settlement_source) },
     { label: "Asset", value: fmtText(row.asset_class) },
     { label: "Region", value: fmtText(row.region) },
     { label: "CC", value: row.blotter_cc ? `${row.cc} (blotter ${row.blotter_cc})` : row.cc },
     { label: "Symbol", value: row.symbol || "--" },
     { label: "Type", value: row.contract_family || "--" },
-    { label: "ICE Mark", value: fmtOptionalPrice(toFiniteNumber(row.ice_settlement)) },
+    { label: "ICE Settle", value: fmtOptionalPrice(toFiniteNumber(row.ice_settlement)) },
+    { label: "ICE WVAP", value: fmtOptionalPrice(toFiniteNumber(row.vwap_close)) },
     {
       label: "Stats",
       value: "ice_python.settlements by trade date and ICE symbol",
@@ -3220,7 +3358,7 @@ function dailySettlementSourceNote(row: DailySettlementRow): SourceNoteLine[] {
     { label: "Hub", value: hub },
     { label: "Alias", value: row.hub || "--" },
     { label: "Hours", value: hourBucketNote(row.hour_bucket) },
-    { label: "Dates", value: "deterministic short-term PJM ladder; ICE contract dates shown as audit context" },
+    { label: "Dates", value: "Deterministic ladder dates drive marks; ICE contract dates retained as audit context" },
     { label: "Metadata", value: row.metadata_status || "--" },
   ];
 }
@@ -3344,31 +3482,43 @@ const DAILY_SETTLEMENT_COLUMN_DEFINITIONS: DailySettlementColumnDefinition[] = [
   },
   {
     key: "final_mark",
-    label: "Final Mark",
+    label: "Mark",
     align: "right",
     minClass: "min-w-[120px]",
+    cellClass: (row) => {
+      const availability = settleAvailability(row);
+      const activeMark = dailySettlementActiveMark(row);
+      const usesSettle = availability.label === "Settled" && toFiniteNumber(row.settlement) !== null;
+      return settlementValueCellClass(activeMark, usesSettle ? "settle" : activeMark !== null ? "wvap" : undefined);
+    },
     render: (row) => {
       const availability = settleAvailability(row);
       const activeMark = dailySettlementActiveMark(row);
       if (availability.label === "Settled" && toFiniteNumber(row.settlement) !== null) {
         return <PriceWithBadge value={activeMark} badge="SET" tone="settle" />;
       }
-      return <PriceWithBadge value={activeMark} badge={activeMark === null ? undefined : "ICE"} tone="ice" />;
+      return <PriceWithBadge value={activeMark} badge={activeMark === null ? undefined : "WVAP"} tone="wvap" />;
     },
   },
   {
     key: "settlement",
-    label: "Settle",
+    label: "Actual Settle",
     align: "right",
     minClass: "min-w-[110px]",
-    render: (row) => fmtOptionalPrice(toFiniteNumber(row.settlement)),
+    cellClass: (row) =>
+      settlementValueCellClass(
+        toFiniteNumber(row.settlement),
+        settleAvailability(row).label === "Settled" ? "settle" : undefined
+      ),
+    render: (row) => <SettlementPriceBox value={toFiniteNumber(row.settlement)} />,
   },
   {
     key: "ice_settlement",
-    label: "ICE Mark",
+    label: "ICE Settle",
     align: "right",
     minClass: "min-w-[110px]",
-    render: (row) => fmtOptionalPrice(toFiniteNumber(row.ice_settlement)),
+    cellClass: (row) => settlementValueCellClass(toFiniteNumber(row.ice_settlement)),
+    render: (row) => <SettlementPriceBox value={toFiniteNumber(row.ice_settlement)} />,
   },
   {
     key: "open",
@@ -3396,16 +3546,18 @@ const DAILY_SETTLEMENT_COLUMN_DEFINITIONS: DailySettlementColumnDefinition[] = [
   },
   {
     key: "vwap_close",
-    label: "ICE VWAP",
+    label: "ICE WVAP",
     align: "right",
     minClass: "min-w-[110px]",
-    render: (row) => fmtOptionalPrice(toFiniteNumber(row.vwap_close)),
+    cellClass: (row) => settlementValueCellClass(toFiniteNumber(row.vwap_close)),
+    render: (row) => <SettlementPriceBox value={toFiniteNumber(row.vwap_close)} />,
   },
   {
     key: "volume",
-    label: "Volume",
+    label: "ICE Volume",
     align: "right",
-    render: (row) => fmtNumber(toFiniteNumber(row.volume), 0),
+    cellClass: (row) => settlementValueCellClass(toFiniteNumber(row.volume)),
+    render: (row) => <SettlementVolumeBox value={toFiniteNumber(row.volume)} />,
   },
   {
     key: "updated_at",
@@ -3563,12 +3715,12 @@ const DEFAULT_DAILY_SETTLEMENT_COLUMN_KEYS: DailySettlementColumnKey[] = [
   "cc",
   "ice_trading_screen_hub_name",
   "contract",
-  "date_check",
   "begin_date",
   "end_date",
   "final_mark",
   "settlement",
   "ice_settlement",
+  "vwap_close",
   "volume",
   "updated_at",
 ];
@@ -4699,6 +4851,7 @@ function dailySettlementColumnValue(
   }
   if (key === "delivery_status") return settleAvailability(row).delivery;
   if (key === "date_check") return dailySettlementDateCheckLabel(row);
+  if (key === "final_mark") return dailySettlementActiveMark(row);
   if (
     key === "settlement" ||
     key === "ice_settlement" ||
@@ -4711,7 +4864,6 @@ function dailySettlementColumnValue(
   ) {
     return toFiniteNumber(row[key]);
   }
-  if (key === "final_mark") return dailySettlementActiveMark(row);
   return row[key] ?? null;
 }
 
@@ -4739,6 +4891,7 @@ function dailySettlementColumnDisplayValue(
   }
   if (key === "contract_snapshot_trade_date") return fmtIsoDate(String(value));
   if (
+    key === "final_mark" ||
     key === "settlement" ||
     key === "ice_settlement" ||
     key === "open" ||
@@ -5390,11 +5543,11 @@ export default function IceTradeBlotter({
   const [selectedTradeSummaryKey, setSelectedTradeSummaryKey] = useState<string | null>(null);
   const [tradeSummaryMetric, setTradeSummaryMetric] =
     useState<TradeSummaryMetric>("net_quantity");
-  const [settlementSummaryMetric, setSettlementSummaryMetric] =
-    useState<SettlementSummaryMetric>("final_mark");
   const [quickTraderFilter, setQuickTraderFilter] = useState("All");
   const [quickAssetFilters, setQuickAssetFilters] = useState<string[]>([]);
-  const [quickRegionFilters, setQuickRegionFilters] = useState<string[]>([]);
+  const [quickRegionFilters, setQuickRegionFilters] = useState<string[]>([
+    ...DEFAULT_SETTLE_REGION_FILTERS,
+  ]);
   const [selectedPositionKey, setSelectedPositionKey] = useState<string | null>(null);
   const [positionTraderFilter, setPositionTraderFilter] = useState("All");
   const [positionAssetFilters, setPositionAssetFilters] = useState<string[]>([]);
@@ -5494,7 +5647,7 @@ export default function IceTradeBlotter({
   const clearQuickFilters = () => {
     setQuickTraderFilter("All");
     setQuickAssetFilters([]);
-    setQuickRegionFilters([]);
+    setQuickRegionFilters([...DEFAULT_SETTLE_REGION_FILTERS]);
   };
 
 
@@ -5604,6 +5757,18 @@ export default function IceTradeBlotter({
   const toggleQuickRegionFilter = (region: string) => {
     if (region === "All") {
       setQuickRegionFilters([]);
+      return;
+    }
+    if (view === "settles") {
+      setQuickRegionFilters((filters) => {
+        if (!filters.includes(region)) {
+          return [...filters, region];
+        }
+        const next = filters.filter((value) => value !== region);
+        return next.length > 0 ? next : [...DEFAULT_SETTLE_REGION_FILTERS];
+      });
+      clearCellSelection();
+      clearDailySettlementCellSelection();
       return;
     }
     setQuickRegionFilters((filters) =>
@@ -6798,9 +6963,10 @@ export default function IceTradeBlotter({
   );
   useEffect(() => {
     if (view !== "settles") return;
-    setQuickRegionFilters((filters) =>
-      filters.filter((region) => settleQuickRegionOptions.includes(region))
-    );
+    setQuickRegionFilters((filters) => {
+      const filtered = filters.filter((region) => settleQuickRegionOptions.includes(region));
+      return filtered.length > 0 ? filtered : [...DEFAULT_SETTLE_REGION_FILTERS];
+    });
   }, [settleQuickRegionOptions, view]);
   const dailySettlementRows = useMemo(
     () =>
@@ -6975,13 +7141,28 @@ export default function IceTradeBlotter({
   );
   const settlementSummaryColumns = settlementSummary.columns;
   const settlementSummaryRows = settlementSummary.rows;
+  const pjmMonthlyMatrixYears = useMemo(() => defaultPjmMonthlyMatrixYears(), []);
+  const showPjmMonthlyMatrices = displayedDailySettlementRows.some(
+    (row) => String(row.region ?? "").trim().toUpperCase() === "PJM"
+  );
+  const settlementSummaryColumnDeliveryRanges = useMemo(
+    () =>
+      Object.fromEntries(
+        settlementSummaryColumns.map((column) => [
+          column.key,
+          settlementSummaryColumnDeliveryRange(settlementSummaryRows, column.key),
+        ])
+      ) as Record<string, { label: string; title: string } | null>,
+    [settlementSummaryColumns, settlementSummaryRows]
+  );
   const settlementHistoryRows = useMemo(() => {
     if (!settlementHistorySelection || !settlementHistoryData) return EMPTY_DAILY_SETTLEMENT_ROWS;
     return settlementHistoryData.rows
       .filter(
         (row) =>
           dailySettlementProductKey(row) === settlementHistorySelection.productKey &&
-          row.symbol === settlementHistorySelection.symbol
+          row.symbol === settlementHistorySelection.symbol &&
+          settlementHistoryMatchesManualTenorWindow(row, settlementHistorySelection.columnKey)
       )
       .sort((first, second) => second.date.localeCompare(first.date));
   }, [settlementHistoryData, settlementHistorySelection]);
@@ -7126,7 +7307,7 @@ export default function IceTradeBlotter({
       view === "trades"
         ? tradeQuickRegionOptions
         : view === "settles"
-          ? settleQuickRegionOptions
+          ? Array.from(new Set([...DEFAULT_SETTLE_REGION_FILTERS, ...settleQuickRegionOptions]))
           : view === "products"
             ? productQuickRegionOptions
             : EMPTY_FILTER_VALUES,
@@ -7148,8 +7329,14 @@ export default function IceTradeBlotter({
         : view === "products"
           ? filteredProductDictionaryData?.rows.length ?? 0
           : 0;
+  const defaultSettleRegionSelected =
+    view === "settles" &&
+    quickRegionFilters.length === DEFAULT_SETTLE_REGION_FILTERS.length &&
+    DEFAULT_SETTLE_REGION_FILTERS.every((region) => quickRegionFilters.includes(region));
   const quickFilterActive =
-    quickTraderFilter !== "All" || quickAssetFilters.length > 0 || quickRegionFilters.length > 0;
+    quickTraderFilter !== "All" ||
+    quickAssetFilters.length > 0 ||
+    (view === "settles" ? !defaultSettleRegionSelected : quickRegionFilters.length > 0);
   useEffect(() => {
     if (!quickFiltersVisible) return;
     if (view !== "trades" && quickTraderFilter !== "All") {
@@ -7158,9 +7345,11 @@ export default function IceTradeBlotter({
     setQuickAssetFilters((filters) =>
       filters.filter((asset) => quickFilterAssetOptions.includes(asset))
     );
-    setQuickRegionFilters((filters) =>
-      filters.filter((region) => quickFilterRegionOptions.includes(region))
-    );
+    if (quickFilterRegionOptions.length > 0) {
+      setQuickRegionFilters((filters) =>
+        filters.filter((region) => quickFilterRegionOptions.includes(region))
+      );
+    }
   }, [
     quickFilterAssetOptions,
     quickFilterRegionOptions,
@@ -8036,8 +8225,8 @@ export default function IceTradeBlotter({
   return (
     <div className="w-full space-y-4">
       {quickFiltersVisible && (
-        <div className="mx-auto w-full max-w-3xl">
-            <ControlCard title="Market Filters">
+        <div className="mx-auto w-full max-w-2xl">
+            <ControlCard title="Region">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -8079,7 +8268,8 @@ export default function IceTradeBlotter({
                 })}
               </div>
             )}
-            <div className="flex flex-wrap items-center gap-2">
+            {view !== "settles" && (
+              <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Asset
               </span>
@@ -8107,12 +8297,13 @@ export default function IceTradeBlotter({
                   </button>
                 );
               })}
-            </div>
+              </div>
+            )}
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Region
               </span>
-              {["All", ...quickFilterRegionOptions].map((region) => {
+              {(view === "settles" ? quickFilterRegionOptions : ["All", ...quickFilterRegionOptions]).map((region) => {
                 const active =
                   region === "All"
                     ? quickRegionFilters.length === 0
@@ -8137,7 +8328,8 @@ export default function IceTradeBlotter({
                 );
               })}
             </div>
-            <div className="flex flex-wrap items-center gap-2">
+            {view !== "settles" && (
+              <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Term
               </span>
@@ -8164,7 +8356,8 @@ export default function IceTradeBlotter({
                   </button>
                 );
               })}
-            </div>
+              </div>
+            )}
             {quickFilterActive && (
               <button
                 type="button"
@@ -8826,7 +9019,7 @@ export default function IceTradeBlotter({
       {dailySettlementsData && !loading && view === "settles" && (
         <>
           <DataTableShell
-            title="Settle Summary"
+            title="Short Term Power"
             subtitle={
               dailySettlementsData
                 ? `Latest trade date ${fmtDate(dailySettlementsData.endDate)} | Click a product or settle value to view exact-symbol history.`
@@ -8836,23 +9029,6 @@ export default function IceTradeBlotter({
             bodyClassName="w-fit max-w-full"
             action={
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex rounded-md border border-gray-800 bg-gray-950/40 p-1">
-                  {SETTLEMENT_SUMMARY_METRICS.map((metric) => (
-                    <button
-                      key={metric.key}
-                      type="button"
-                      aria-pressed={settlementSummaryMetric === metric.key}
-                      onClick={() => setSettlementSummaryMetric(metric.key)}
-                      className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-                        settlementSummaryMetric === metric.key
-                          ? "bg-sky-500/15 text-sky-200"
-                          : "text-gray-400 hover:bg-gray-900 hover:text-gray-200"
-                      }`}
-                    >
-                      {metric.label}
-                    </button>
-                  ))}
-                </div>
                 <button
                   type="button"
                   onClick={openSettlesDebug}
@@ -8870,14 +9046,23 @@ export default function IceTradeBlotter({
                     <th className="sticky left-0 z-20 w-[320px] bg-gray-950 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide">
                       Product
                     </th>
-                    {settlementSummaryColumns.map((column) => (
-                      <th
-                        key={column.key}
-                        className="w-[132px] whitespace-nowrap px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide"
-                      >
-                        {column.label}
-                      </th>
-                    ))}
+                    {settlementSummaryColumns.map((column) => {
+                      const deliveryRange = settlementSummaryColumnDeliveryRanges[column.key];
+                      return (
+                        <th
+                          key={column.key}
+                          className="w-[132px] whitespace-nowrap px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide"
+                          title={deliveryRange?.title}
+                        >
+                          <span className="block">{column.label}</span>
+                          {deliveryRange ? (
+                            <span className="block pt-0.5 text-[9px] font-semibold normal-case tracking-normal text-gray-500">
+                              {deliveryRange.label}
+                            </span>
+                          ) : null}
+                        </th>
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-800">
@@ -8922,10 +9107,15 @@ export default function IceTradeBlotter({
                           {settlementSummaryColumns.map((column) => {
                             const cell = row.cells[column.key];
                             const historyTitle = `Show ${row.product} ${column.label} settle history`;
-                            const showDailyValues =
-                              cell &&
-                              (settlementSummaryMetric === "final_mark" ||
-                                settlementSummaryMetric === "settle");
+                            const summaryValue = cell
+                              ? settlementSummaryMetricValue(cell, SETTLEMENT_SUMMARY_METRIC)
+                              : null;
+                            const summaryTone =
+                              cell && cell.settledCount === cell.rowCount
+                                ? "settle"
+                                : cell && cell.activeMarkCount > 0
+                                  ? "wvap"
+                                  : undefined;
                             return (
                               <td
                                 key={column.key}
@@ -8937,19 +9127,16 @@ export default function IceTradeBlotter({
                                   cell
                                     ? "cursor-pointer text-gray-200 transition-colors hover:bg-sky-500/10"
                                     : "text-gray-700"
-                                }`}
+                                } ${cell ? settlementValueCellClass(summaryValue, summaryTone) : ""}`}
                               >
                                 {cell ? (
-                                  <span className="inline-flex items-center justify-end gap-1.5">
+                                  <span className="inline-flex items-start justify-end gap-1.5">
                                     <span>
                                       {renderSettlementSummaryCellMetric(
                                         cell,
-                                        settlementSummaryMetric
+                                        SETTLEMENT_SUMMARY_METRIC
                                       )}
                                     </span>
-                                    {showDailyValues ? (
-                                      <SettlementDailyValuesHover rows={cell.rows} />
-                                    ) : null}
                                   </span>
                                 ) : (
                                   "--"
@@ -8965,6 +9152,24 @@ export default function IceTradeBlotter({
               </table>
             </div>
           </DataTableShell>
+
+          {showPjmMonthlyMatrices ? (
+            <div className="grid w-full grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+              {PJM_MONTHLY_SETTLE_MATRICES.map((matrix) => (
+                <IcePmiCurveTable
+                  key={matrix.key}
+                  className="min-w-0"
+                  mode="power"
+                  sparkProduct={matrix.productId}
+                  selectedYears={pjmMonthlyMatrixYears}
+                  title={matrix.title}
+                  subtitle={matrix.subtitle}
+                  pairedLayout
+                  defaultShowMetrics={false}
+                />
+              ))}
+            </div>
+          ) : null}
 
           {settlementHistorySelection && (
             <div
@@ -9038,15 +9243,15 @@ export default function IceTradeBlotter({
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
                     <span className="inline-flex items-center gap-1">
                       <span className="h-2 w-2 rounded-sm bg-emerald-400/70" />
-                      Final Mark uses completed settle
+                      Mark uses actual settle
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <span className="h-2 w-2 rounded-sm bg-sky-400/70" />
-                      Final Mark uses ICE mark while pending
+                      Mark uses ICE WVAP while pending
                     </span>
                     <span className="inline-flex items-center gap-1">
-                      <span className="rounded border border-emerald-500/35 bg-emerald-500/10 px-1 py-0.5 text-[9px] font-bold text-emerald-200">
-                        DAYS
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded border border-emerald-500/35 bg-emerald-500/10 text-[9px] font-bold leading-none text-emerald-200">
+                        D
                       </span>
                       Hover for daily settle values
                     </span>
@@ -9114,9 +9319,11 @@ export default function IceTradeBlotter({
                             </th>
                           );
                         })}
-                        <th className="px-3 py-2 text-right font-semibold">Final Mark</th>
-                        <th className="px-3 py-2 text-right font-semibold">Settle</th>
-                        <th className="px-3 py-2 text-right font-semibold">ICE Mark</th>
+                        <th className="px-3 py-2 text-right font-semibold">Mark</th>
+                        <th className="px-3 py-2 text-right font-semibold">Actual Settle</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE Settle</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE WVAP</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE Volume</th>
                         {SETTLEMENT_HISTORY_FILTER_COLUMNS.slice(4).map((column) => {
                           const sortDirection =
                             settlementHistorySortState?.key === column.key
@@ -9176,26 +9383,25 @@ export default function IceTradeBlotter({
                             </th>
                           );
                         })}
-                        <th className="px-3 py-2 text-right font-semibold">Volume</th>
                         <th className="px-3 py-2 font-semibold">Updated</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800">
                       {settlementHistoryLoading ? (
                         <tr>
-                          <td colSpan={12} className="px-3 py-8 text-center text-sm text-gray-500">
+                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-gray-500">
                             Loading settle history...
                           </td>
                         </tr>
                       ) : settlementHistoryError ? (
                         <tr>
-                          <td colSpan={12} className="px-3 py-8 text-center text-sm text-red-300">
+                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-red-300">
                             {settlementHistoryError}
                           </td>
                         </tr>
                       ) : displayedSettlementHistoryRows.length === 0 ? (
                         <tr>
-                          <td colSpan={12} className="px-3 py-8 text-center text-sm text-gray-500">
+                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-gray-500">
                             No settle history found for this settle symbol.
                           </td>
                         </tr>
@@ -9204,14 +9410,15 @@ export default function IceTradeBlotter({
                           const sourceLabel = dailySettlementSourceLabel(row);
                           const confidence = dailySettlementConfidence(row);
                           const settleValue = toFiniteNumber(row.settlement);
-                          const iceMark = toFiniteNumber(row.ice_settlement);
+                          const iceSettle = toFiniteNumber(row.ice_settlement);
+                          const iceWvap = toFiniteNumber(row.vwap_close);
                           const settleApplies =
                             settlementHistorySettleTradeDateByWindow.get(
                               settlementHistoryWindowKey(row)
                             ) === row.date;
                           const usesSettle = settleApplies && settleValue !== null;
-                          const usesIceMark = !usesSettle && iceMark !== null;
-                          const finalMark = usesSettle ? settleValue : iceMark;
+                          const usesWvap = !usesSettle && iceWvap !== null;
+                          const markValue = usesSettle ? settleValue : iceWvap;
                           const hasDailyValues = dailySettlementComponentRows(row).some(
                             (component) => toFiniteNumber(component.settlement) !== null
                           );
@@ -9220,7 +9427,7 @@ export default function IceTradeBlotter({
                             : "text-gray-500";
                           const dateTitle = usesSettle
                             ? "Settle is applied on this trade row."
-                            : "Settle is not applied on this trade row; Final Mark uses ICE or is pending.";
+                            : "Actual settle is not applied on this trade row; mark uses ICE WVAP or is pending.";
                           return (
                             <tr key={dailySettlementRowKey(row)} className="hover:bg-gray-900/60">
                               <td
@@ -9245,15 +9452,28 @@ export default function IceTradeBlotter({
                                 {fmtText(row.contract)}
                               </td>
                               <td
-                                className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-200"
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-200 ${settlementValueCellClass(
+                                  markValue,
+                                  usesSettle ? "settle" : usesWvap ? "wvap" : undefined
+                                )}`}
                                 title={
-                                  usesIceMark
-                                      ? "Final Mark uses ICE mark while the source settle is pending."
-                                      : undefined
+                                  usesWvap
+                                    ? "Mark uses ICE WVAP while the actual settle is pending."
+                                    : undefined
                                 }
                               >
                                 <span className="inline-flex items-center justify-end gap-1.5">
-                                  <span>{fmtOptionalPrice(finalMark)}</span>
+                                  <PriceWithBadge
+                                    value={markValue}
+                                    badge={
+                                      markValue === null
+                                        ? undefined
+                                        : usesSettle
+                                          ? "SET"
+                                          : "WVAP"
+                                    }
+                                    tone={usesSettle ? "settle" : "wvap"}
+                                  />
                                   {usesSettle && hasDailyValues ? (
                                     <SettlementDailyValuesHover rows={[row]} />
                                   ) : null}
@@ -9264,25 +9484,39 @@ export default function IceTradeBlotter({
                                   usesSettle
                                     ? "bg-emerald-500/10 font-semibold text-emerald-100"
                                     : "text-gray-300"
-                                }`}
-                                title={usesSettle ? "Final Mark uses this Settle value." : undefined}
+                                } ${settlementValueCellClass(settleValue, usesSettle ? "settle" : undefined)}`}
+                                title={usesSettle ? "Mark uses this actual settle value." : undefined}
                               >
                                 <span className="inline-flex items-center justify-end gap-1.5">
-                                  <span>{fmtOptionalPrice(settleValue)}</span>
+                                  <SettlementPriceBox value={settleValue} />
                                   {hasDailyValues ? (
                                     <SettlementDailyValuesHover rows={[row]} />
                                   ) : null}
                                 </span>
                               </td>
                               <td
-                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
-                                  usesIceMark
-                                    ? "bg-sky-500/10 font-semibold text-sky-100"
-                                    : "text-gray-300"
-                                }`}
-                                title={usesIceMark ? "Final Mark uses this ICE Mark value." : undefined}
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  iceSettle
+                                )}`}
                               >
-                                {fmtOptionalPrice(iceMark)}
+                                <SettlementPriceBox value={iceSettle} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
+                                  usesWvap
+                                    ? "bg-cyan-500/10 font-semibold text-cyan-100"
+                                    : "text-gray-300"
+                                } ${settlementValueCellClass(iceWvap, usesWvap ? "wvap" : undefined)}`}
+                                title={usesWvap ? "Mark uses this ICE WVAP while actual settle is unavailable." : undefined}
+                              >
+                                <SettlementPriceBox value={iceWvap} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  toFiniteNumber(row.volume)
+                                )}`}
+                              >
+                                <SettlementVolumeBox value={toFiniteNumber(row.volume)} />
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-gray-300">
                                 {sourceLabel}
@@ -9300,9 +9534,6 @@ export default function IceTradeBlotter({
                                 title={confidence.title}
                               >
                                 {confidence.daysLabel}
-                              </td>
-                              <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300">
-                                {fmtNumber(toFiniteNumber(row.volume), 0)}
                               </td>
                               <td className="whitespace-nowrap px-3 py-2 text-gray-500">
                                 {fmtTimestamp(row.updated_at)}

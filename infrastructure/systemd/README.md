@@ -346,6 +346,35 @@ prices, and emits complete delivery-date readiness events. The RT workflow runs
 upserts published hub intervals, and emits readiness only when a full delivery
 date is present. Both services use `flock` to avoid overlap.
 
+## CAISO LMPs
+
+The CAISO LMP workflows have dedicated daily timers:
+
+```text
+helios-caiso-da-lmps.service
+helios-caiso-da-lmps.timer
+helios-caiso-rt-lmps.service
+helios-caiso-rt-lmps.timer
+```
+
+The DA service runs `backend.orchestration.power.caiso.da_lmps`, which pulls
+CAISO OASIS `PRC_LMP` day-ahead prices for `TH_NP15_GEN-APND` and
+`TH_SP15_GEN-APND`, upserts `caiso.da_lmps`, writes OASIS fetch telemetry to
+`ops.api_fetch_log`, emits complete-day readiness events to
+`ops.data_availability_events`, and queues CAISO DA release email
+notifications. The timer starts daily at `12:50 America/Los_Angeles` and the
+service polls for up to four hours so it can catch CAISO's day-ahead OASIS
+publication window. The service uses `flock` with
+`/tmp/helios-caiso-da-lmps.lock`.
+
+The RT service runs `backend.orchestration.power.caiso.rt_lmps`, which pulls
+CAISO OASIS `PRC_INTVL_LMP` real-time five-minute prices for the same trading
+hubs, upserts `caiso.rt_lmps`, writes OASIS fetch telemetry to
+`ops.api_fetch_log`, and emits complete-day readiness events to
+`ops.data_availability_events`. The timer runs daily at
+`09:20 America/Los_Angeles` for the previous complete Pacific trading date.
+The service uses `flock` with `/tmp/helios-caiso-rt-lmps.lock`.
+
 ## ISO-NE ISO Express Feeds
 
 The ISO-NE ISO Express workflows have dedicated daily timers:
@@ -764,6 +793,10 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-da-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-da-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-rt-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-rt-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.service /etc/systemd/system/
@@ -810,6 +843,8 @@ sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-slack-notification-outbox.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
+sudo systemctl enable --now helios-caiso-da-lmps.timer
+sudo systemctl enable --now helios-caiso-rt-lmps.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
@@ -848,6 +883,8 @@ sudo systemctl start helios-pjm-hrl-load-prelim.service
 sudo systemctl start helios-pjm-load-frcstd-7-day.service
 sudo systemctl start helios-pjm-ops-sum.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
+sudo systemctl start helios-caiso-da-lmps.service
+sudo systemctl start helios-caiso-rt-lmps.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
@@ -1001,6 +1038,17 @@ journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service -n 200 --no-pager
 systemctl status helios-ercot-settlement-point-prices.service
 systemctl status helios-ercot-settlement-point-prices.timer
 journalctl -u helios-ercot-settlement-point-prices.service -n 200 --no-pager
+```
+
+For CAISO LMPs:
+
+```bash
+systemctl status helios-caiso-da-lmps.service
+systemctl status helios-caiso-da-lmps.timer
+journalctl -u helios-caiso-da-lmps.service -n 200 --no-pager
+systemctl status helios-caiso-rt-lmps.service
+systemctl status helios-caiso-rt-lmps.timer
+journalctl -u helios-caiso-rt-lmps.service -n 200 --no-pager
 ```
 
 For the ERCOT load batch:

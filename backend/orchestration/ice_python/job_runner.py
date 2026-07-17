@@ -12,6 +12,7 @@ from backend.utils.ops_logging import redact_secrets
 
 ENV_JOB_MODULE = "HELIOS_ICE_JOB_MODULE"
 ENV_JOB_NAME = "HELIOS_ICE_JOB_NAME"
+ENV_JOB_KWARGS = "HELIOS_ICE_JOB_KWARGS"
 SUMMARY_PREFIX = "HELIOS_ICE_JOB_SUMMARY="
 FAILURE_PREFIX = "HELIOS_ICE_JOB_FAILURE="
 
@@ -22,14 +23,32 @@ def _emit(prefix: str, payload: dict[str, Any]) -> None:
     print(f"{prefix}{json.dumps(payload, default=str, sort_keys=True)}", flush=True)
 
 
-def run_job_module(module_name: str) -> dict[str, object]:
+def _resolve_job_kwargs(job_kwargs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Resolve optional JSON kwargs for the child job runner."""
+    if job_kwargs is not None:
+        return dict(job_kwargs)
+
+    raw_kwargs = os.environ.get(ENV_JOB_KWARGS)
+    if not raw_kwargs:
+        return {}
+
+    parsed = json.loads(raw_kwargs)
+    if not isinstance(parsed, dict):
+        raise TypeError(f"{ENV_JOB_KWARGS} must decode to a JSON object.")
+    return parsed
+
+
+def run_job_module(
+    module_name: str,
+    job_kwargs: dict[str, Any] | None = None,
+) -> dict[str, object]:
     """Import an ICE orchestration module and run its default job function."""
     module = importlib.import_module(module_name)
     runner = getattr(module, "run", None)
     if runner is None:
         raise AttributeError(f"{module_name} does not expose a run() function.")
 
-    summary = runner()
+    summary = runner(**_resolve_job_kwargs(job_kwargs))
     if not isinstance(summary, dict):
         raise TypeError(f"{module_name}.run() returned {type(summary).__name__}.")
     return summary
@@ -38,6 +57,7 @@ def run_job_module(module_name: str) -> dict[str, object]:
 def main(
     module_name: str | None = None,
     job_name: str | None = None,
+    job_kwargs: dict[str, Any] | None = None,
 ) -> int:
     """Run the configured child job and emit one parseable JSON summary line."""
     resolved_module_name = module_name or os.environ.get(ENV_JOB_MODULE)
@@ -57,7 +77,7 @@ def main(
         or resolved_module_name.rsplit(".", maxsplit=1)[-1]
     )
     try:
-        summary = run_job_module(resolved_module_name)
+        summary = run_job_module(resolved_module_name, job_kwargs=job_kwargs)
         _emit(
             SUMMARY_PREFIX,
             {

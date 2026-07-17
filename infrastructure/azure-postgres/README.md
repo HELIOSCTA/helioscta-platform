@@ -13,7 +13,9 @@ passwords before execution. Do not commit real passwords.
    - `bootstrap/02_databases.sql`
 2. Connect to `helios_prod` as `helios_admin` and apply the application schema,
    table, index, observability, and notification DDL required by the workflows
-   being enabled. That DDL is not managed in this repo.
+   being enabled. Reference SQL for promoted application objects lives under
+   `dbt/azure_postgres/reference_sql/ddl`; it is operator-applied SQL, not a
+   dbt-managed migration system.
 3. Connect to `helios_prod` as `helios_admin` and run:
    - `permissions/01_apply_database_permissions.sql`
 4. Verify `helios_prod` with:
@@ -50,9 +52,9 @@ existing Azure Postgres server
 
 - `CREATE DATABASE` cannot run inside a transaction block.
 - `CREATE INDEX CONCURRENTLY` also cannot run inside a transaction block.
-- Application schema, table, and index DDL is managed outside this repo. Apply the
-  required DDL with `helios_admin` before enabling backend workflows that write
-  to those objects.
+- Application schema, table, and index DDL is operator-applied from reference
+  SQL under `dbt/azure_postgres/reference_sql/ddl`. Apply the required DDL with
+  `helios_admin` before enabling backend workflows that write to those objects.
 - Shared runtime observability and notification tables are application objects.
   Apply them before enabling workflows that emit API telemetry,
   data-availability events, or email/Slack notifications.

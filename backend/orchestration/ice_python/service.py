@@ -29,6 +29,13 @@ ENV_POLL_SECONDS = "HELIOS_ICE_SERVICE_POLL_SECONDS"
 ENV_JOB_TIMEOUT_SECONDS = "HELIOS_ICE_JOB_TIMEOUT_SECONDS"
 ENV_STATE_DIR = "HELIOS_STATE_DIR"
 PROCESS_LOG_TAIL_LINES = 80
+PRICE_REFRESH_FIELDS = ["Settle", "VWAP Close", "Volume"]
+SHORT_TERM_PRICE_REFRESH_KWARGS: dict[str, Any] = {
+    "fields": PRICE_REFRESH_FIELDS,
+    "lookback_days": 0,
+    "pull_contract_dates_enabled": False,
+    "require_rows": False,
+}
 
 RUN_RECORD = dict[str, Any]
 RUN_STATE = MutableMapping[str, RUN_RECORD]
@@ -55,6 +62,7 @@ class ServiceJob:
     name: str
     cadence: str
     module_name: str | None = None
+    module_kwargs: dict[str, Any] | None = None
     runner: RUNNER | None = None
     windows: tuple[TimeWindow, ...] = ()
     daily_start: dt_time | None = None
@@ -67,80 +75,155 @@ DEFAULT_HOURLY_WINDOWS: tuple[TimeWindow, ...] = (
 
 SETTLEMENTS_MODULE_ROOT = "backend.orchestration.ice_python.settlements"
 
-DEFAULT_JOBS: tuple[ServiceJob, ...] = (
-    ServiceJob(
-        name="pjm_short_term",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_short_term",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="pjm_futures",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_futures",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="ercot_short_term",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_short_term",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="ercot_futures",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_futures",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="west_power_futures",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.west_power_futures",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="east_power_futures",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_futures",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_next_day",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_next_day",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_balmo",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_balmo",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_futures_core",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_core",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_futures_gulf",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_gulf",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_futures_west",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_west",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
-    ServiceJob(
-        name="gas_futures_east",
-        cadence="hourly",
-        module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_east",
-        windows=DEFAULT_HOURLY_WINDOWS,
-    ),
+PJM_SHORT_TERM_JOB = ServiceJob(
+    name="pjm_short_term",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_short_term",
+    windows=DEFAULT_HOURLY_WINDOWS,
 )
+PJM_SHORT_TERM_PRICE_JOB = ServiceJob(
+    name="pjm_short_term",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_short_term",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+PJM_FUTURES_JOB = ServiceJob(
+    name="pjm_futures",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.pjm_futures",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+ERCOT_SHORT_TERM_JOB = ServiceJob(
+    name="ercot_short_term",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_short_term",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+ERCOT_SHORT_TERM_PRICE_JOB = ServiceJob(
+    name="ercot_short_term",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_short_term",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+ERCOT_FUTURES_JOB = ServiceJob(
+    name="ercot_futures",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.ercot_futures",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+WEST_POWER_FUTURES_JOB = ServiceJob(
+    name="west_power_futures",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.west_power_futures",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+EAST_POWER_FUTURES_JOB = ServiceJob(
+    name="east_power_futures",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_futures",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_NEXT_DAY_JOB = ServiceJob(
+    name="gas_next_day",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_next_day",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_NEXT_DAY_PRICE_JOB = ServiceJob(
+    name="gas_next_day",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_next_day",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_BALMO_JOB = ServiceJob(
+    name="gas_balmo",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_balmo",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_BALMO_PRICE_JOB = ServiceJob(
+    name="gas_balmo",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_balmo",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_FUTURES_CORE_JOB = ServiceJob(
+    name="gas_futures_core",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_core",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_FUTURES_GULF_JOB = ServiceJob(
+    name="gas_futures_gulf",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_gulf",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_FUTURES_WEST_JOB = ServiceJob(
+    name="gas_futures_west",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_west",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+GAS_FUTURES_EAST_JOB = ServiceJob(
+    name="gas_futures_east",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.gas_futures_east",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+
+SHORT_TERM_JOBS: tuple[ServiceJob, ...] = (
+    PJM_SHORT_TERM_PRICE_JOB,
+    ERCOT_SHORT_TERM_PRICE_JOB,
+    GAS_NEXT_DAY_PRICE_JOB,
+    GAS_BALMO_PRICE_JOB,
+)
+
+FUTURES_JOBS: tuple[ServiceJob, ...] = (
+    PJM_FUTURES_JOB,
+    ERCOT_FUTURES_JOB,
+    WEST_POWER_FUTURES_JOB,
+    EAST_POWER_FUTURES_JOB,
+    GAS_FUTURES_CORE_JOB,
+    GAS_FUTURES_GULF_JOB,
+    GAS_FUTURES_WEST_JOB,
+    GAS_FUTURES_EAST_JOB,
+)
+
+DEFAULT_JOBS: tuple[ServiceJob, ...] = (
+    PJM_SHORT_TERM_JOB,
+    PJM_FUTURES_JOB,
+    ERCOT_SHORT_TERM_JOB,
+    ERCOT_FUTURES_JOB,
+    WEST_POWER_FUTURES_JOB,
+    EAST_POWER_FUTURES_JOB,
+    GAS_NEXT_DAY_JOB,
+    GAS_BALMO_JOB,
+    GAS_FUTURES_CORE_JOB,
+    GAS_FUTURES_GULF_JOB,
+    GAS_FUTURES_WEST_JOB,
+    GAS_FUTURES_EAST_JOB,
+)
+
+JOB_GROUPS: dict[str, tuple[ServiceJob, ...]] = {
+    "all": DEFAULT_JOBS,
+    "short_term": SHORT_TERM_JOBS,
+    "futures": FUTURES_JOBS,
+}
+
+
+def resolve_job_group(job_group: str | None = None) -> tuple[ServiceJob, ...]:
+    """Return the configured ICE jobs for a scheduler group name."""
+    normalized = (job_group or "all").strip().lower().replace("-", "_")
+    try:
+        return JOB_GROUPS[normalized]
+    except KeyError as exc:
+        valid = ", ".join(sorted(JOB_GROUPS))
+        raise ValueError(f"Unknown ICE job group {job_group!r}. Valid groups: {valid}.") from exc
 
 
 def configure_service_logging(level: int = logging.INFO) -> logging.Logger:
@@ -489,6 +572,8 @@ def _run_job_subprocess(
     env = os.environ.copy()
     env[job_runner.ENV_JOB_MODULE] = job.module_name
     env[job_runner.ENV_JOB_NAME] = job.name
+    if job.module_kwargs:
+        env[job_runner.ENV_JOB_KWARGS] = json.dumps(job.module_kwargs)
     env.setdefault("PYTHONUNBUFFERED", "1")
     command = [
         sys.executable,
@@ -569,6 +654,7 @@ def _started_record(job: ServiceJob, current_time: datetime) -> RUN_RECORD:
         "status": "running",
         "job_name": job.name,
         "module_name": job.module_name,
+        "module_kwargs": job.module_kwargs,
         "cadence": job.cadence,
         "started_at": current_time.isoformat(),
         "timeout_seconds": resolve_job_timeout_seconds(job.timeout_seconds),
@@ -585,6 +671,7 @@ def _finished_record(
         **result,
         "job_name": job.name,
         "module_name": job.module_name,
+        "module_kwargs": job.module_kwargs,
         "cadence": job.cadence,
         "finished_at": current_time.isoformat(),
     }
@@ -614,6 +701,7 @@ def _log_timeout_telemetry(
         metadata={
             "runtime": "local_windows_ice_python_service",
             "module_name": job.module_name,
+            "module_kwargs": job.module_kwargs,
             "timeout_seconds": result.get("timeout_seconds"),
         },
     )
@@ -782,13 +870,15 @@ def run_service_loop(
     rerun_failed: bool = False,
     timezone_name: str = DEFAULT_TIMEZONE,
     state_file: str | Path | None = None,
-    jobs: Sequence[ServiceJob] = DEFAULT_JOBS,
+    jobs: Sequence[ServiceJob] | None = None,
+    job_group: str = "all",
 ) -> int:
     """Run the ICE service scheduler loop."""
     service_logger = configure_service_logging()
     local_timezone = ZoneInfo(timezone_name)
     resolved_poll_seconds = resolve_poll_seconds(poll_seconds)
     resolved_state_file = resolve_state_file(state_file)
+    selected_jobs = tuple(jobs) if jobs is not None else resolve_job_group(job_group)
 
     try:
         run_state = load_run_state(resolved_state_file)
@@ -800,10 +890,13 @@ def run_service_loop(
         run_state = {}
 
     service_logger.info(
-        "ICE Python service starting: timezone=%s poll_seconds=%s state_file=%s",
+        "ICE Python service starting: timezone=%s poll_seconds=%s "
+        "state_file=%s job_group=%s jobs=%s",
         timezone_name,
         resolved_poll_seconds,
         resolved_state_file,
+        job_group,
+        ", ".join(job.name for job in selected_jobs),
     )
 
     if rerun_failed:
@@ -811,7 +904,7 @@ def run_service_loop(
         summary = run_failed_jobs(
             current_time=current_time,
             run_state=run_state,
-            jobs=jobs,
+            jobs=selected_jobs,
             state_file=resolved_state_file,
             logger=service_logger,
         )
@@ -822,7 +915,7 @@ def run_service_loop(
         summary = run_due_jobs(
             current_time=current_time,
             run_state=run_state,
-            jobs=jobs,
+            jobs=selected_jobs,
             state_file=resolved_state_file,
             logger=service_logger,
             respect_run_state=not run_once,
@@ -841,6 +934,7 @@ def main(
     rerun_failed: bool = False,
     timezone_name: str = DEFAULT_TIMEZONE,
     state_file: str | Path | None = None,
+    job_group: str = "all",
 ) -> int:
     """Service entrypoint for Windows Service Control Manager wrappers."""
     install_stop_handlers()
@@ -850,6 +944,7 @@ def main(
         rerun_failed=rerun_failed,
         timezone_name=timezone_name,
         state_file=state_file,
+        job_group=job_group,
     )
 
 

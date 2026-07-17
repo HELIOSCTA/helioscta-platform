@@ -32,6 +32,9 @@ infrastructure/azure-postgres/bootstrap/
 # Local-only modelling workspace
 modelling/
 
+# dbt generated artifacts
+dbt/**/target/
+
 # Runtime logs
 *.log
 backend/**/logs/

@@ -25,6 +25,7 @@ def run(
     trade_date: date | None = None,
     end_date: date | None = None,
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
+    pull_contract_dates_enabled: bool = True,
     require_rows: bool = True,
     database: str | None = settings.TARGET_DATABASE,
 ) -> dict[str, object]:
@@ -34,12 +35,13 @@ def run(
     def operation(log_file_path: Path | None) -> dict[str, object]:
         logger.info(
             "Entry parameters: symbols=%s fields=%s trade_date=%s end_date=%s "
-            "lookback_days=%s require_rows=%s",
+            "lookback_days=%s pull_contract_dates_enabled=%s require_rows=%s",
             "default ERCOT short-term" if symbols is None else len(symbols),
             "default settlement fields" if fields is None else fields,
             trade_date,
             end_date,
             lookback_days,
+            pull_contract_dates_enabled,
             require_rows,
         )
         return registry.run_registry_settlements(
@@ -50,6 +52,7 @@ def run(
             trade_date=trade_date,
             end_date=end_date,
             lookback_days=lookback_days,
+            pull_contract_dates_enabled=pull_contract_dates_enabled,
             require_rows=require_rows,
             log_file_path=log_file_path,
             database=database,
@@ -69,6 +72,7 @@ def main(
     trade_date: date | None = None,
     end_date: date | None = None,
     lookback_days: int | None = DEFAULT_LOOKBACK_DAYS,
+    pull_contract_dates_enabled: bool = True,
     require_rows: bool = True,
     database: str | None = settings.TARGET_DATABASE,
 ) -> int:
@@ -79,6 +83,7 @@ def main(
             trade_date=trade_date,
             end_date=end_date,
             lookback_days=lookback_days,
+            pull_contract_dates_enabled=pull_contract_dates_enabled,
             require_rows=require_rows,
             database=database,
         )

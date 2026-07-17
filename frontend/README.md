@@ -224,12 +224,12 @@ SQL only selects the latest SFTP date and MUFG firm rows. The frontend route
 applies the row cap, search filter, and JSON/TypeScript product rules for
 review. It does not read generated SQL, mutate data, or create a cache table.
 
-## Local DEV Sparks Source Contract
+## Local Power Curves Source Contract
 
-The Sparks DEV view reads non-option ICE settlement marks with
-`helios_readonly` from `ice_python.settlements`. It appears in the local `DEV`
-sidebar section at `/?section=spark-spreads&view=spark&sparkStrip=H`; Vercel
-builds hide the page and return `404` from `GET /api/spark-spread-evolution`.
+The Power Curves local view reads non-option ICE settlement marks with
+`helios_readonly` from `ice_python.settlements`. It appears in the local
+`Pricing` sidebar section at `/?section=spark-spreads&pricingMode=spark&sparkStrip=H`;
+Vercel builds hide the page and return `404` from `GET /api/spark-spread-evolution`.
 
 Source system: ICE Python / ICE XL local Windows runtime.
 
@@ -265,12 +265,12 @@ physical gas trading calendar, so weekend and holiday strips use the same
 mapping as the standalone SQL verifier. It does not create a database model,
 frontend cache table, backend job, or new credential requirement.
 
-## Local DEV ICE Trade Blotter Settles Source Contract
+## Local ICE Power Settles Source Contract
 
-The ICE Trade Blotter Settles DEV view reads PJM short-term settlement marks
+The Power Settles local view reads PJM short-term and monthly settlement marks
 with `helios_readonly` from PJM LMPs and `ice_python.settlements`, using the
 frontend trade-blotter product dictionary for the displayed contract catalog.
-It appears in the local `DEV` sidebar section at `/?section=ice-settlements`;
+It appears in the local `Pricing` sidebar section at `/?section=ice-settlements`;
 Vercel builds hide the routes.
 
 Source systems: PJM hourly LMP tables and ICE Python / ICE XL local Windows

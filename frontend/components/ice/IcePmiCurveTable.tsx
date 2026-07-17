@@ -92,6 +92,11 @@ interface IcePmiCurveTableProps {
   mode?: PricingMode;
   sparkProduct?: string;
   selectedYears?: number[];
+  className?: string;
+  title?: string;
+  subtitle?: string;
+  pairedLayout?: boolean;
+  defaultShowMetrics?: boolean;
 }
 
 interface MatrixCell {
@@ -454,11 +459,16 @@ export default function IcePmiCurveTable({
   mode = "power",
   sparkProduct,
   selectedYears,
+  className = "",
+  title,
+  subtitle,
+  pairedLayout = false,
+  defaultShowMetrics = true,
 }: IcePmiCurveTableProps = {}) {
   const [payload, setPayload] = useState<IcePmiCurvePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showMetrics, setShowMetrics] = useState(true);
+  const [showMetrics, setShowMetrics] = useState(defaultShowMetrics);
   const lookbackDays = 7;
   const [selectedContract, setSelectedContract] = useState<SelectedContract | null>(null);
   const [contractPayload, setContractPayload] = useState<ContractHistoryPayload | null>(null);
@@ -467,11 +477,17 @@ export default function IcePmiCurveTable({
   const matrixCurrentYear = useMemo(() => new Date().getFullYear(), []);
   const selectedYearsKey = selectedYears?.join(",") ?? "";
   const selectedYearValues = useMemo(
-    () => selectedYearsKey.split(",").map(Number).filter((year) => Number.isFinite(year)),
+    () =>
+      selectedYearsKey
+        ? selectedYearsKey.split(",").map(Number).filter((year) => Number.isFinite(year))
+        : [],
     [selectedYearsKey],
   );
   const matrixEndYear = Math.max(matrixCurrentYear + 2, ...selectedYearValues);
-  const priorYears = Math.max(5, matrixCurrentYear - Math.min(matrixCurrentYear, ...selectedYearValues));
+  const priorYears =
+    selectedYearValues.length > 0
+      ? Math.max(1, matrixCurrentYear - Math.min(matrixCurrentYear, ...selectedYearValues))
+      : 5;
   const selectedYearSet = useMemo(
     () => (selectedYearValues.length ? new Set(selectedYearValues) : null),
     [selectedYearValues],
@@ -700,16 +716,19 @@ export default function IcePmiCurveTable({
     setSelectedContract(null);
   }, [mode]);
 
+  const monthColumnWidth = 64;
+  const yearColumnWidth = 96;
+  const tableMinWidth = monthColumnWidth + matrixYears.length * yearColumnWidth;
+
   return (
-    <div className="space-y-4">
+    <div className={`space-y-4 ${pairedLayout ? "h-full min-w-0" : ""} ${className}`}>
       <DataTableShell
-        title={
-          `${pricingModeLabel(mode)} Month x Year`
-        }
+        title={title ?? `${pricingModeLabel(mode)} Month x Year`}
         subtitle={
-          showMetrics
+          subtitle ??
+          (showMetrics
             ? `Metrics show ${lookbackDays}-day move and volume analytics; settled contracts open contract history`
-            : "Metrics hidden; cells show settlement marks only"
+            : "Metrics hidden; cells show settlement marks only")
         }
         action={
           <button
@@ -725,16 +744,26 @@ export default function IcePmiCurveTable({
             Metrics
           </button>
         }
+        className={pairedLayout ? "h-full min-w-0" : ""}
         bodyClassName="border-gray-800"
       >
-        <table className="w-max min-w-full table-fixed border-collapse text-xs text-gray-200">
+        <table
+          className={`min-w-full table-fixed border-collapse text-xs text-gray-200 ${pairedLayout ? "w-full" : "w-max"}`}
+          style={pairedLayout ? { minWidth: tableMinWidth } : undefined}
+        >
+          <colgroup>
+            <col style={{ width: monthColumnWidth }} />
+            {matrixYears.map((year) => (
+              <col key={year} style={{ width: yearColumnWidth }} />
+            ))}
+          </colgroup>
           <thead className="bg-gray-950/60 text-[10px] uppercase tracking-wider text-gray-500">
             <tr>
-              <th className="sticky left-0 z-20 w-[64px] bg-gray-950 px-2 py-1.5 text-left font-semibold">
+              <th className="sticky left-0 z-20 bg-gray-950 px-2 py-1.5 text-left font-semibold">
                 Month
               </th>
               {matrixYears.map((year) => (
-                <th key={year} className="w-[96px] px-2 py-1.5 text-right font-semibold">
+                <th key={year} className="px-2 py-1.5 text-right font-semibold">
                   {year}
                 </th>
               ))}
@@ -757,7 +786,7 @@ export default function IcePmiCurveTable({
             )}
             {!loading &&
               matrixRows.map((row) => (
-                <tr key={row.strip} className="bg-[#151820] odd:bg-[#181b23]">
+                <tr key={row.strip} className="h-[54px] bg-[#151820] odd:bg-[#181b23]">
                   <th className="sticky left-0 z-10 bg-inherit px-2 py-1 text-left text-sm font-semibold text-gray-100">
                     <span className="block">{row.strip}</span>
                     {row.legLabel ? (
@@ -782,7 +811,7 @@ export default function IcePmiCurveTable({
                           ? "text-red-200"
                           : "text-gray-400";
                     return (
-                      <td key={`${row.strip}-${year}`} className="px-1 py-0.5 align-top">
+                      <td key={`${row.strip}-${year}`} className="h-[54px] px-1 py-0.5 align-top">
                         <button
                           type="button"
                           disabled={!cell.point?.symbol}

@@ -216,7 +216,7 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
         exact_products.contract_family,
         exact_products.contract_code,
         exact_products.hour_bucket,
-        COALESCE(NULLIF(market_stats.settlement::text, 'NaN')::double precision, market_stats.vwap_close) AS ice_settlement,
+        NULLIF(market_stats.settlement::text, 'NaN')::double precision AS ice_settlement,
         market_stats.open,
         market_stats.high,
         market_stats.low,
@@ -279,7 +279,7 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
         COALESCE(futures_products.contract_family, 'Monthly') AS contract_family,
         'MONTH'::text AS contract_code,
         COALESCE(futures_products.hour_bucket, 'ONPEAK') AS hour_bucket,
-        COALESCE(NULLIF(market_stats.settlement::text, 'NaN')::double precision, market_stats.vwap_close) AS ice_settlement,
+        NULLIF(market_stats.settlement::text, 'NaN')::double precision AS ice_settlement,
         market_stats.open,
         market_stats.high,
         market_stats.low,
@@ -313,8 +313,8 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
         ) AS resolved_contract,
         derived_dates.begin_date AS rule_begin_date,
         derived_dates.end_date AS rule_end_date,
-        derived_dates.begin_date AS begin_date,
-        derived_dates.end_date AS end_date,
+        COALESCE(derived_dates.begin_date, contract_dates.start_date) AS begin_date,
+        COALESCE(derived_dates.end_date, contract_dates.end_date) AS end_date,
         CASE
           WHEN derived_dates.begin_date IS NULL OR derived_dates.end_date IS NULL THEN 'rule'
           WHEN contract_dates.start_date IS NULL OR contract_dates.end_date IS NULL THEN 'missing'
@@ -330,7 +330,7 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
           WHEN contract_dates.start_date = derived_dates.begin_date
             AND contract_dates.end_date = derived_dates.end_date
             THEN 'ICE contract dates match the deterministic short-term PJM ladder.'
-          ELSE 'ICE contract dates disagree with the deterministic short-term PJM ladder; ICE dates are shown as reference only.'
+          ELSE 'ICE contract dates disagree with the deterministic short-term PJM ladder; using deterministic ladder dates for settlement marks.'
         END AS date_check_detail
       FROM product_rows
       LEFT JOIN LATERAL (
@@ -396,12 +396,12 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
         SELECT
           CASE
             WHEN product_rows.contract_code IN ('W1', 'W2', 'W3', 'W4') THEN
-              product_rows.trade_date
+              COALESCE(bal_week_dates.end_date, product_rows.trade_date)
               + (
                 (
                   CASE
-                    WHEN EXTRACT(ISODOW FROM product_rows.trade_date)::int = 1 THEN 7
-                    ELSE (8 - EXTRACT(ISODOW FROM product_rows.trade_date)::int) % 7
+                    WHEN EXTRACT(ISODOW FROM COALESCE(bal_week_dates.end_date, product_rows.trade_date))::int = 1 THEN 7
+                    ELSE (8 - EXTRACT(ISODOW FROM COALESCE(bal_week_dates.end_date, product_rows.trade_date))::int) % 7
                   END
                   + ((SUBSTRING(product_rows.contract_code FROM 2 FOR 1)::int - 1) * 7)
                 ) * INTERVAL '1 day'

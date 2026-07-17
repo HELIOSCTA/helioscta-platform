@@ -15,7 +15,6 @@ import {
 } from "recharts";
 
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
-import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import StripSelector, { COMPOSITE_OPTIONS, STRIP_MONTHS } from "@/components/spark/StripSelector";
 import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
@@ -39,7 +38,6 @@ const VALID_STRIPS: Set<string> = new Set([
   ...STRIP_MONTHS.map((strip) => strip.code),
   ...COMPOSITE_OPTIONS.map((strip) => strip.code),
 ]);
-const POWER_PRICING_WORKSPACE_TABS = ["evolution", "matrix"] as const;
 const POWER_PRICING_MODES = ["power", "cal", "spark"] as const;
 const MONTH_STRIP_CODES = STRIP_MONTHS.map((strip) => strip.code);
 const STRIP_PIN_PARAM = "1";
@@ -72,7 +70,6 @@ const NEXT_COMPOSITE_STRIP: Record<string, string> = {
   Q4: "Q1",
 };
 
-type PowerPricingWorkspaceTab = (typeof POWER_PRICING_WORKSPACE_TABS)[number];
 type PowerPricingMode = (typeof POWER_PRICING_MODES)[number];
 type CalendarEvolutionSnapshotPoint = PowerEvolutionSnapshotPoint & { farPower: number };
 type PricingSnapshotPoint = SparkEvolutionSnapshotPoint | PowerEvolutionSnapshotPoint | CalendarEvolutionSnapshotPoint;
@@ -202,13 +199,6 @@ function initialMode(searchParams: URLSearchParams): PowerPricingMode {
   return (POWER_PRICING_MODES as readonly string[]).includes(candidate)
     ? (candidate as PowerPricingMode)
     : "power";
-}
-
-function initialWorkspaceTab(searchParams: URLSearchParams): PowerPricingWorkspaceTab {
-  const candidate = (searchParams.get("pricingView") ?? searchParams.get("pricingTab") ?? "evolution").toLowerCase();
-  return (POWER_PRICING_WORKSPACE_TABS as readonly string[]).includes(candidate)
-    ? (candidate as PowerPricingWorkspaceTab)
-    : "evolution";
 }
 
 function defaultYearRange(referenceYear = new Date().getFullYear()): number[] {
@@ -600,35 +590,6 @@ function ModeTabs({
         subtitle="Power - gas x 7.0"
         active={mode === "spark"}
         onClick={() => onModeChange("spark")}
-      />
-    </div>
-  );
-}
-
-function ViewTabs({
-  workspaceTab,
-  mode,
-  onWorkspaceTabChange,
-}: {
-  workspaceTab: PowerPricingWorkspaceTab;
-  mode: PowerPricingMode;
-  onWorkspaceTabChange: (tab: PowerPricingWorkspaceTab) => void;
-}) {
-  const matrixEnabled = mode === "power";
-  return (
-    <div className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
-      <ModeButton
-        title="Evolution"
-        subtitle="History and trends"
-        active={workspaceTab === "evolution"}
-        onClick={() => onWorkspaceTabChange("evolution")}
-      />
-      <ModeButton
-        title="Matrix"
-        subtitle={matrixEnabled ? "Month x year scan" : "Power outright only"}
-        active={workspaceTab === "matrix" && matrixEnabled}
-        onClick={() => onWorkspaceTabChange("matrix")}
-        disabled={!matrixEnabled}
       />
     </div>
   );
@@ -1302,7 +1263,6 @@ export default function SparkSpreadEvolution() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [workspaceTab, setWorkspaceTab] = useState<PowerPricingWorkspaceTab>(() => initialWorkspaceTab(searchParams));
   const [strip, setStrip] = useState(() => initialStrip(searchParams));
   const [farStrip, setFarStrip] = useState(() => initialFarStrip(searchParams, initialStrip(searchParams)));
   const [stripSelectionSource, setStripSelectionSource] = useState<StripSelectionSource>(() =>
@@ -1347,9 +1307,7 @@ export default function SparkSpreadEvolution() {
     const urlHeatRate = initialHeatRate(searchParams);
     const urlHeatRateSelectionSource = searchParams.get("heatRateSource") === "manual" ? "manual" : "default";
     const urlMode = initialMode(searchParams);
-    const urlWorkspaceTab = initialWorkspaceTab(searchParams);
     const urlStripSelectionSource = initialStripSelectionSource(searchParams);
-    setWorkspaceTab((previous) => (previous === urlWorkspaceTab ? previous : urlWorkspaceTab));
     setStrip((previous) => (previous === urlStrip ? previous : urlStrip));
     setFarStrip((previous) => (previous === urlFarStrip ? previous : urlFarStrip));
     setStripSelectionSource((previous) =>
@@ -1363,12 +1321,6 @@ export default function SparkSpreadEvolution() {
     );
     setMode((previous) => (previous === urlMode ? previous : urlMode));
   }, [searchParams]);
-
-  useEffect(() => {
-    if (mode !== "power" && workspaceTab === "matrix") {
-      setWorkspaceTab("evolution");
-    }
-  }, [mode, workspaceTab]);
 
   useEffect(() => {
     if (mode === "spark" && !baseProduct.sparkEnabled) {
@@ -1388,11 +1340,7 @@ export default function SparkSpreadEvolution() {
   }, [farStrip, mode, strip]);
 
   useEffect(() => {
-    const currentWorkspaceTab = (
-      searchParams.get("pricingView") ??
-      searchParams.get("pricingTab") ??
-      ""
-    ).toLowerCase();
+    const hasWorkspaceTabParam = searchParams.has("pricingView") || searchParams.has("pricingTab");
     const currentStrip = (searchParams.get("sparkStrip") ?? "").toUpperCase();
     const currentStripSelectionSource = initialStripSelectionSource(searchParams);
     const expectedStrip = stripSelectionSource === "manual" ? strip : "";
@@ -1403,7 +1351,7 @@ export default function SparkSpreadEvolution() {
     const currentHeatRateSelectionSource = searchParams.get("heatRateSource") === "manual" ? "manual" : "default";
     const currentView = (searchParams.get("pricingMode") ?? searchParams.get("view") ?? "").toLowerCase();
     if (
-      currentWorkspaceTab === workspaceTab &&
+      !hasWorkspaceTabParam &&
       currentStrip === expectedStrip &&
       currentFarStrip === farStrip &&
       currentStripSelectionSource === stripSelectionSource &&
@@ -1418,8 +1366,8 @@ export default function SparkSpreadEvolution() {
 
     const params = new URLSearchParams(searchParams.toString());
     params.set("section", "spark-spreads");
-    params.set("pricingView", workspaceTab);
     params.set("pricingMode", mode);
+    params.delete("pricingView");
     params.delete("pricingTab");
     params.delete("view");
     if (stripSelectionSource === "manual") {
@@ -1454,15 +1402,9 @@ export default function SparkSpreadEvolution() {
     selectedGasLeg.id,
     strip,
     stripSelectionSource,
-    workspaceTab,
   ]);
 
   useEffect(() => {
-    if (workspaceTab !== "evolution") {
-      setLoading(false);
-      return;
-    }
-
     const controller = new AbortController();
     let active = true;
 
@@ -1524,7 +1466,7 @@ export default function SparkSpreadEvolution() {
       active = false;
       controller.abort();
     };
-  }, [baseProduct.id, farStrip, heatRate, mode, selectedGasLeg.id, strip, workspaceTab]);
+  }, [baseProduct.id, farStrip, heatRate, mode, selectedGasLeg.id, strip]);
 
   const availableYears = useMemo(() => {
     const years = new Set(fallbackYears);
@@ -1577,7 +1519,6 @@ export default function SparkSpreadEvolution() {
     ? (value: number | null) => formatSignedMoney(value, 2)
     : metricFormatter(mode);
   const zeroLineLabel = selectedProduct.spreadRoot && mode !== "spark" ? "Flat" : copy.zeroLineLabel;
-  const matrixView = workspaceTab === "matrix" && mode === "power";
   const stripLabel =
     mode === "cal" && farData
       ? `${data?.monthName ?? strip} - ${farData.monthName}`
@@ -1644,9 +1585,6 @@ export default function SparkSpreadEvolution() {
       setProductId(DEFAULT_POWER_SPARK_SPREAD_PRODUCT.id);
     }
     setMode(nextMode);
-    if (nextMode !== "power") {
-      setWorkspaceTab("evolution");
-    }
   }
 
   const chart = data && activeYears.length > 0 ? (
@@ -1663,9 +1601,8 @@ export default function SparkSpreadEvolution() {
   ) : null;
 
   return (
-    <div className={`mx-auto space-y-5 ${matrixView ? "max-w-none" : "max-w-6xl"}`}>
+    <div className="mx-auto max-w-6xl space-y-5">
       <ModeTabs mode={mode} onModeChange={handleModeChange} />
-      <ViewTabs workspaceTab={workspaceTab} mode={mode} onWorkspaceTabChange={setWorkspaceTab} />
       <ControlsPanel
         selectedProduct={selectedProduct}
         selectedGasLegId={selectedGasLeg.id}
@@ -1681,95 +1618,79 @@ export default function SparkSpreadEvolution() {
         availableYears={availableYears}
         selectedYears={selectedYearNumbers}
         onToggleYear={toggleSelectedYear}
-        showStripSelector={!matrixView}
+        showStripSelector
       />
 
-      {matrixView ? (
+      {loading && <div className="h-[440px] w-full animate-pulse rounded-lg bg-gray-800/60" />}
+
+      {error && !loading && (
+        <div className="flex h-[440px] items-center justify-center rounded-lg border border-red-900/40 bg-red-950/20 p-6 text-sm text-red-300">
+          {error}
+        </div>
+      )}
+
+      {data && !loading && !error && activeYears.length === 0 && (
+        <div className="flex h-[440px] items-center justify-center rounded-lg border border-gray-800 bg-[#12141d] text-sm text-gray-500">
+          No {copy.snapshotLabel.toLowerCase()} years are available for {data.monthName}.
+        </div>
+      )}
+
+      {data && activeYears.length > 0 && !loading && !error && (
         <>
-          <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-            Matrix source: ICE settlements for {copy.snapshotLabel.toLowerCase()} analytics.
-          </div>
-          <IcePmiCurveTable
-            key={`${mode}-${selectedYearsKey}`}
+          {mode === "spark" ? <YearAvailabilityDiagnostics data={data} /> : null}
+
+          {chart && (
+            <PlotCard
+              key={`${mode}-${strip}-${selectedYearsKey}`}
+              title={`${copy.chartTitle} - ${selectedProduct.marketLabel} ${peakDisplayName(selectedProduct.peak)} ${stripLabel}`}
+              subtitle={`${copy.chartSubtitlePrefix} | Last update ${data.metadata.lastTradeDate ?? "--"}`}
+              series={series}
+              hiddenSeries={hiddenYears}
+              onToggleSeries={toggleYear}
+              onShowAll={showAllYears}
+              onHideAll={hideAllYears}
+              showSeriesControls={false}
+              controls={
+                <DteWindowControls
+                  chartWindowDays={chartWindowDays}
+                  maxWindowDays={maxWindowDays}
+                  onSetDteWindow={setChartWindowDays}
+                />
+              }
+              focusedChildren={
+                <SparkLineChart
+                  key={`expanded-${mode}-${strip}-${selectedYearsKey}`}
+                  chartData={chartData}
+                  activeYears={activeYears}
+                  zoomDomain={zoomDomain}
+                  height={620}
+                  onHoverDte={setHoveredDte}
+                  valueFormatter={valueFormatter}
+                  yAxisLabel={copy.yAxisLabel}
+                  zeroLineLabel={zeroLineLabel}
+                />
+              }
+            >
+              {chart}
+            </PlotCard>
+          )}
+
+          <EvolutionYearTable
+            key={`year-marks-${mode}-${strip}-${selectedYearsKey}`}
+            data={data}
+            farData={farData}
+            nearStrip={strip}
+            farStrip={farStrip}
+            activeYears={activeYears}
             mode={mode}
-            sparkProduct={baseProduct.id}
-            selectedYears={selectedYearNumbers}
           />
         </>
-      ) : (
-        <>
-          {loading && <div className="h-[440px] w-full animate-pulse rounded-lg bg-gray-800/60" />}
+      )}
 
-          {error && !loading && (
-            <div className="flex h-[440px] items-center justify-center rounded-lg border border-red-900/40 bg-red-950/20 p-6 text-sm text-red-300">
-              {error}
-            </div>
-          )}
-
-          {data && !loading && !error && activeYears.length === 0 && (
-            <div className="flex h-[440px] items-center justify-center rounded-lg border border-gray-800 bg-[#12141d] text-sm text-gray-500">
-              No {copy.snapshotLabel.toLowerCase()} years are available for {data.monthName}.
-            </div>
-          )}
-
-          {data && activeYears.length > 0 && !loading && !error && (
-            <>
-              {mode === "spark" ? <YearAvailabilityDiagnostics data={data} /> : null}
-
-              {chart && (
-                <PlotCard
-                  key={`${mode}-${strip}-${selectedYearsKey}`}
-                  title={`${copy.chartTitle} - ${selectedProduct.marketLabel} ${peakDisplayName(selectedProduct.peak)} ${stripLabel}`}
-                  subtitle={`${copy.chartSubtitlePrefix} | Last update ${data.metadata.lastTradeDate ?? "--"}`}
-                  series={series}
-                  hiddenSeries={hiddenYears}
-                  onToggleSeries={toggleYear}
-                  onShowAll={showAllYears}
-                  onHideAll={hideAllYears}
-                  showSeriesControls={false}
-                  controls={
-                    <DteWindowControls
-                      chartWindowDays={chartWindowDays}
-                      maxWindowDays={maxWindowDays}
-                      onSetDteWindow={setChartWindowDays}
-                    />
-                  }
-                  focusedChildren={
-                    <SparkLineChart
-                      key={`expanded-${mode}-${strip}-${selectedYearsKey}`}
-                      chartData={chartData}
-                      activeYears={activeYears}
-                      zoomDomain={zoomDomain}
-                      height={620}
-                      onHoverDte={setHoveredDte}
-                      valueFormatter={valueFormatter}
-                      yAxisLabel={copy.yAxisLabel}
-                      zeroLineLabel={zeroLineLabel}
-                    />
-                  }
-                >
-                  {chart}
-                </PlotCard>
-              )}
-
-              <EvolutionYearTable
-                key={`year-marks-${mode}-${strip}-${selectedYearsKey}`}
-                data={data}
-                farData={farData}
-                nearStrip={strip}
-                farStrip={farStrip}
-                activeYears={activeYears}
-                mode={mode}
-              />
-            </>
-          )}
-
-          {data && data.componentCodes.length > 1 && !loading && !error && (
-            <p className="text-xs text-gray-600">
-              {data.monthName} averages component strips: {data.componentCodes.join(", ")}.
-            </p>
-          )}
-        </>
+      {data && data.componentCodes.length > 1 && !loading && !error && (
+        <p className="text-xs text-gray-600">
+          {data.monthName} averages component strips: {data.componentCodes.join(", ")}.
+        </p>
       )}
     </div>
   );

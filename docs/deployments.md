@@ -583,6 +583,97 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
+## helios-caiso-rt-lmps
+
+- Status: promoted for VM install; local manual database run succeeded.
+- Workflow: CAISO Real-Time Five-Minute LMP orchestration.
+- Runtime module: `backend.orchestration.power.caiso.rt_lmps`.
+- Lower-level scrape module: `backend.scrapes.power.caiso.rt_lmps`.
+- Source system: CAISO OASIS `PRC_INTVL_LMP` with `market_run_id=RTM`.
+- Destination table: `caiso.rt_lmps`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Scope: trading hubs `TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`.
+- Grain: `interval_start_time_utc x node_id x market_run_id`.
+- Unit files:
+  - `infrastructure/systemd/helios-caiso-rt-lmps.service`
+  - `infrastructure/systemd/helios-caiso-rt-lmps.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-caiso-rt-lmps.service`.
+- Schedule: daily at `09:20 America/Los_Angeles` for the previous complete
+  Pacific trading date.
+- Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-caiso-rt-lmps.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Application DDL verified in Azure Postgres on `2026-07-17`.
+- Local manual verification: `2026-07-17 16:39 UTC`; rows for trading date
+  `2026-07-16` were present through interval `2026-07-17 06:55 UTC`, with
+  CAISO OASIS fetch telemetry metadata showing `run_mode=manual` and
+  `upsert_validation_rerun=true`.
+- VM install pending: copy unit files to `/etc/systemd/system`, run
+  `systemctl daemon-reload`, enable `helios-caiso-rt-lmps.timer`, and verify a
+  service run from `/opt/helioscta-platform`.
+
+Verification SQL for CAISO RT five-minute LMP coverage:
+
+```sql
+SELECT
+    operating_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT node_id) AS nodes,
+    COUNT(DISTINCT interval_start_time_utc) AS intervals,
+    MIN(interval_start_time_utc) AS min_ts,
+    MAX(interval_start_time_utc) AS max_ts,
+    MAX(updated_at) AS latest_update
+FROM caiso.rt_lmps
+GROUP BY operating_date
+ORDER BY operating_date DESC
+LIMIT 30;
+```
+
+Verification SQL for CAISO OASIS RT fetch telemetry:
+
+```sql
+SELECT
+    operation_name,
+    target_table,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE provider = 'caiso'
+  AND target_table = 'caiso.rt_lmps'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for CAISO RT readiness events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'caiso_rt_lmps'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## helios-isone-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest VM run succeeded.

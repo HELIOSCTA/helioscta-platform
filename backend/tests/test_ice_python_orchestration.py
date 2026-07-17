@@ -15,8 +15,10 @@ from backend.orchestration.ice_python.settlements import gas_futures_east
 from backend.orchestration.ice_python.settlements import gas_futures_gulf
 from backend.orchestration.ice_python.settlements import gas_futures_west
 from backend.orchestration.ice_python.settlements import gas_next_day
+from backend.orchestration.ice_python.settlements import gas_balmo
 from backend.orchestration.ice_python.settlements import pjm_short_term
 from backend.orchestration.ice_python.settlements import pjm_futures
+from backend.orchestration.ice_python.settlements import ercot_short_term
 from backend.orchestration.ice_python.settlements import _runtime
 from backend.orchestration.ice_python.settlements import registry
 
@@ -115,6 +117,54 @@ def test_gas_next_day_wrapper_selects_default_symbols(monkeypatch):
     assert len(summary["symbols"]) == 29
     assert summary["symbols"][0] == "XGF D1-IPG"
     assert captured["fields"] == ["Settle"]
+    assert captured["require_rows"] is False
+
+
+@pytest.mark.parametrize(
+    ("module", "expected_registry"),
+    [
+        (ercot_short_term, "ercot_short_term"),
+        (gas_next_day, "gas_next_day"),
+        (gas_balmo, "gas_balmo"),
+    ],
+)
+def test_short_term_wrappers_can_skip_contract_dates_for_price_refresh(
+    monkeypatch,
+    module,
+    expected_registry,
+):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        module,
+        "run_with_logging",
+        lambda *, pipeline_name, log_dir, operation, database=None: operation(None),
+    )
+
+    def fake_run_registry_settlements(**kwargs):
+        captured.update(kwargs)
+        return {
+            "registry": kwargs["registry_label"],
+            "rows_processed": 0,
+        }
+
+    monkeypatch.setattr(
+        module.registry,
+        "run_registry_settlements",
+        fake_run_registry_settlements,
+    )
+
+    summary = module.run(
+        fields=["Settle", "VWAP Close", "Volume"],
+        lookback_days=0,
+        pull_contract_dates_enabled=False,
+        require_rows=False,
+    )
+
+    assert summary["registry"] == expected_registry
+    assert captured["fields"] == ["Settle", "VWAP Close", "Volume"]
+    assert captured["lookback_days"] == 0
+    assert captured["pull_contract_dates_enabled"] is False
     assert captured["require_rows"] is False
 
 
@@ -229,6 +279,45 @@ def test_pjm_short_term_tolerates_empty_contract_date_refresh(monkeypatch):
     assert len(summary["symbols"]) == 13
     assert captured["fields"] == ["Settle"]
     assert captured["require_rows"] is True
+    assert captured["pull_contract_dates_enabled"] is True
+    assert captured["require_contract_date_rows"] is False
+
+
+def test_pjm_short_term_can_skip_contract_date_refresh_for_fast_poll(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        pjm_short_term,
+        "run_with_logging",
+        lambda *, pipeline_name, log_dir, operation, database=None: operation(None),
+    )
+
+    def fake_run_registry_settlements(**kwargs):
+        captured.update(kwargs)
+        return {
+            "registry": kwargs["registry_label"],
+            "symbols": kwargs["symbols"],
+            "rows_processed": 0,
+        }
+
+    monkeypatch.setattr(
+        pjm_short_term.registry,
+        "run_registry_settlements",
+        fake_run_registry_settlements,
+    )
+
+    summary = pjm_short_term.run(
+        fields=["Settle", "VWAP Close", "Volume"],
+        lookback_days=0,
+        pull_contract_dates_enabled=False,
+        require_rows=False,
+    )
+
+    assert summary["registry"] == "pjm_short_term"
+    assert captured["fields"] == ["Settle", "VWAP Close", "Volume"]
+    assert captured["lookback_days"] == 0
+    assert captured["pull_contract_dates_enabled"] is False
+    assert captured["require_rows"] is False
     assert captured["require_contract_date_rows"] is False
 
 
@@ -457,6 +546,38 @@ def test_job_runner_emits_parseable_summary(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert output.startswith(job_runner.SUMMARY_PREFIX)
     assert '"rows_processed": 5' in output
+
+
+def test_job_runner_passes_configured_kwargs(monkeypatch, capsys):
+    observed: dict[str, object] = {}
+
+    def fake_run(**kwargs):
+        observed.update(kwargs)
+        return {"rows_processed": 7}
+
+    monkeypatch.setattr(
+        job_runner.importlib,
+        "import_module",
+        lambda module_name: SimpleNamespace(run=fake_run),
+    )
+
+    exit_code = job_runner.main(
+        module_name="backend.orchestration.ice_python.settlements.test",
+        job_name="test",
+        job_kwargs={
+            "fields": ["Settle", "VWAP Close", "Volume"],
+            "lookback_days": 0,
+            "pull_contract_dates_enabled": False,
+        },
+    )
+
+    assert exit_code == 0
+    assert observed == {
+        "fields": ["Settle", "VWAP Close", "Volume"],
+        "lookback_days": 0,
+        "pull_contract_dates_enabled": False,
+    }
+    assert capsys.readouterr().out.startswith(job_runner.SUMMARY_PREFIX)
 
 
 def test_registry_runner_fails_when_symbol_coverage_breaches_threshold(monkeypatch):

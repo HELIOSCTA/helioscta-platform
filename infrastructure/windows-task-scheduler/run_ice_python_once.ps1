@@ -9,7 +9,9 @@ param(
     [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
-    [int]$JobTimeoutSeconds = 2700
+    [int]$JobTimeoutSeconds = 2700,
+    [ValidateSet("all", "short_term", "futures")]
+    [string]$JobGroup = "all"
 )
 
 $ErrorActionPreference = "Stop"
@@ -56,12 +58,13 @@ $env:PYTHONUNBUFFERED = "1"
 $startedAt = Get-Date
 Add-Content -Path $coordinatorLog -Value (
     "[$($startedAt.ToString('s'))] Starting ICE Python scheduler tick " +
-    "repo=$resolvedRepoRoot python=$resolvedPythonExe timeout=$JobTimeoutSeconds"
+    "repo=$resolvedRepoRoot python=$resolvedPythonExe timeout=$JobTimeoutSeconds " +
+    "job_group=$JobGroup"
 )
 
 Push-Location $resolvedRepoRoot
 try {
-    $pythonSnippet = "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
+    $pythonSnippet = "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True, job_group='$JobGroup'))"
     & $resolvedPythonExe -c $pythonSnippet 2>&1 |
         Remove-LogNullCharacters |
         Tee-Object -FilePath $coordinatorLog -Append

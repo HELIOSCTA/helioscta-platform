@@ -4,6 +4,8 @@ from datetime import datetime
 from datetime import time as dt_time
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from backend.orchestration.ice_python import service
 
 
@@ -21,6 +23,45 @@ def _job(name: str, cadence: str = "hourly") -> service.ServiceJob:
         windows=HOURLY_WINDOWS_UNDER_TEST if cadence == "hourly" else (),
         daily_start=dt_time(15, 0) if cadence == "daily" else None,
     )
+
+
+def test_resolve_job_group_selects_expected_jobs():
+    short_term_jobs = service.resolve_job_group("short-term")
+    assert [job.name for job in short_term_jobs] == [
+        "pjm_short_term",
+        "ercot_short_term",
+        "gas_next_day",
+        "gas_balmo",
+    ]
+    assert all(
+        job.module_kwargs == {
+            "fields": ["Settle", "VWAP Close", "Volume"],
+            "lookback_days": 0,
+            "pull_contract_dates_enabled": False,
+            "require_rows": False,
+        }
+        for job in short_term_jobs
+    )
+    assert service.SHORT_TERM_PRICE_REFRESH_KWARGS == {
+        "fields": ["Settle", "VWAP Close", "Volume"],
+        "lookback_days": 0,
+        "pull_contract_dates_enabled": False,
+        "require_rows": False,
+    }
+    assert [job.name for job in service.resolve_job_group("futures")] == [
+        "pjm_futures",
+        "ercot_futures",
+        "west_power_futures",
+        "east_power_futures",
+        "gas_futures_core",
+        "gas_futures_gulf",
+        "gas_futures_west",
+        "gas_futures_east",
+    ]
+    assert service.resolve_job_group(None) == service.DEFAULT_JOBS
+    assert service.DEFAULT_JOBS[0].module_kwargs is None
+    with pytest.raises(ValueError, match="Unknown ICE job group"):
+        service.resolve_job_group("spot")
 
 
 def test_hourly_job_is_due_once_inside_service_window():

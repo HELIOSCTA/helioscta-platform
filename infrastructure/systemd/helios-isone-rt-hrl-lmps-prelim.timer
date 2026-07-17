@@ -2,7 +2,7 @@
 Description=Daily HeliosCTA ISO-NE Preliminary Real-Time Hourly LMP orchestration timer
 
 [Timer]
-OnCalendar=*-*-* 01:10:00 UTC
+OnCalendar=*-*-* 01:10:00 America/New_York
 Persistent=true
 RandomizedDelaySec=5min
 AccuracySec=1min

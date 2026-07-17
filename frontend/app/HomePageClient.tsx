@@ -460,19 +460,19 @@ export default function HomePageClient({
     }
     if (showLocalDevFeatures && activeSection === "ice-settlements") {
       return {
-        title: "ICE Settles Workstation - PJM Short Term",
+        title: "ICE Power Settles",
         subtitle:
-          "PJM short-term settlement marks with source context.",
+          "PJM short-term and monthly power settlement marks with source context.",
         footer:
-          "ICE Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
+          "ICE Power Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "spark-spreads") {
       return {
-        title: "Power Pricing Workstation",
+        title: "Power Curves",
         subtitle:
-          "Market-scalable spread evolution, heat-rate context, and contract history.",
-        footer: "Power Pricing | Source: ice_python.settlements / Azure PostgreSQL",
+          "Outright, calendar, and spark spread curve history with heat-rate context.",
+        footer: "Power Curves | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {

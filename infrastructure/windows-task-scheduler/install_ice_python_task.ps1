@@ -1,8 +1,8 @@
-# Installs or updates the local-only ICE Python Windows Task Scheduler coordinator.
+# Installs or updates a local-only ICE Python Windows Task Scheduler coordinator.
 #
-# The task runs a single coordinator process at scheduled weekday local hours.
-# The coordinator uses backend.orchestration.ice_python.service in run_once mode
-# so due-job selection, lock handling, state persistence, child timeouts, and
+# Each task runs one selected job group through
+# backend.orchestration.ice_python.service in run_once mode so due-job
+# selection, lock handling, state persistence, child timeouts, and
 # ops.api_fetch_log telemetry stay in Python.
 
 param(
@@ -11,7 +11,13 @@ param(
     [string]$TaskName = "HeliosCTA ICE Python Coordinator",
     [string]$TaskPath = "\HeliosCTA\ICE Python\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
+    [ValidateSet("all", "short_term", "futures")]
+    [string]$JobGroup = "all",
     [int[]]$RunHours = @(5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22),
+    [int]$RunStartHour = 5,
+    [int]$RunEndHour = 22,
+    [int]$StartMinute = 0,
+    [int]$IntervalMinutes = 0,
     [string[]]$RunDays = @("Monday", "Tuesday", "Wednesday", "Thursday", "Friday"),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
@@ -248,6 +254,46 @@ function Quote-TaskArgument {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
+function Convert-MinutesToIsoDuration {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$Minutes
+    )
+
+    if ($Minutes -lt 1) {
+        throw "Duration minutes must be at least 1."
+    }
+
+    $hours = [Math]::Floor($Minutes / 60)
+    $remainingMinutes = $Minutes % 60
+    if ($remainingMinutes -eq 0) {
+        return "PT${hours}H"
+    }
+    if ($hours -eq 0) {
+        return "PT${remainingMinutes}M"
+    }
+    return "PT${hours}H${remainingMinutes}M"
+}
+
+function New-RepetitionPattern {
+    param(
+        [Parameter(Mandatory = $true)]
+        [int]$IntervalMinutes,
+        [Parameter(Mandatory = $true)]
+        [int]$DurationMinutes
+    )
+
+    return New-CimInstance `
+        -Namespace Root/Microsoft/Windows/TaskScheduler `
+        -ClassName MSFT_TaskRepetitionPattern `
+        -ClientOnly `
+        -Property @{
+            Interval = (Convert-MinutesToIsoDuration -Minutes $IntervalMinutes)
+            Duration = (Convert-MinutesToIsoDuration -Minutes $DurationMinutes)
+            StopAtDurationEnd = $false
+        }
+}
+
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
 $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 $resolvedGitExe = Resolve-CommandPath -Executable "git"
@@ -265,8 +311,14 @@ Write-Host "RepoRoot: $resolvedRepoRoot"
 Write-Host "Python: $resolvedPythonExe"
 Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
-Write-Host "RunHours: $($RunHours -join ', ')"
+Write-Host "JobGroup: $JobGroup"
 Write-Host "RunDays: $($RunDays -join ', ')"
+if ($IntervalMinutes -gt 0) {
+    Write-Host "Repeated window: $($RunStartHour.ToString('00')):$($StartMinute.ToString('00')) through $($RunEndHour.ToString('00')) local, every $IntervalMinutes minute(s)"
+}
+else {
+    Write-Host "RunHours: $($RunHours -join ', ')"
+}
 
 if ($PullLatest) {
     $dirty = Get-GitOutput -Arguments @("-C", $resolvedRepoRoot, "status", "--porcelain")
@@ -352,7 +404,9 @@ $actionArguments = @(
     "-StateDir",
     (Quote-TaskArgument $StateDir),
     "-JobTimeoutSeconds",
-    [string]$JobTimeoutSeconds
+    [string]$JobTimeoutSeconds,
+    "-JobGroup",
+    $JobGroup
 ) -join " "
 
 $action = New-ScheduledTaskAction `
@@ -361,14 +415,55 @@ $action = New-ScheduledTaskAction `
     -WorkingDirectory $resolvedRepoRoot
 
 $triggers = @()
-foreach ($hour in ($RunHours | Sort-Object -Unique)) {
-    if ($hour -lt 0 -or $hour -gt 23) {
-        throw "RunHours entries must be between 0 and 23."
+if ($IntervalMinutes -gt 0) {
+    if ($RunStartHour -lt 0 -or $RunStartHour -gt 23) {
+        throw "RunStartHour must be between 0 and 23."
     }
-    $triggers += New-ScheduledTaskTrigger `
-        -Weekly `
-        -DaysOfWeek $RunDays `
-        -At ([datetime]::Today.AddHours($hour))
+    if ($RunEndHour -lt 0 -or $RunEndHour -gt 23) {
+        throw "RunEndHour must be between 0 and 23."
+    }
+    if ($RunEndHour -lt $RunStartHour) {
+        throw "RunEndHour must be greater than or equal to RunStartHour."
+    }
+    if ($StartMinute -lt 0 -or $StartMinute -gt 59) {
+        throw "StartMinute must be between 0 and 59."
+    }
+    if ($IntervalMinutes -gt 60) {
+        throw "IntervalMinutes must be 60 or less."
+    }
+
+    $lastMinute = $StartMinute
+    while (($lastMinute + $IntervalMinutes) -lt 60) {
+        $lastMinute += $IntervalMinutes
+    }
+    $startTotalMinutes = ($RunStartHour * 60) + $StartMinute
+    $endTotalMinutes = ($RunEndHour * 60) + $lastMinute
+    $repetitionDurationMinutes = $endTotalMinutes - $startTotalMinutes
+    if ($repetitionDurationMinutes -lt $IntervalMinutes) {
+        throw "The configured repeated run window must allow at least one interval."
+    }
+
+    foreach ($day in $RunDays) {
+        $trigger = New-ScheduledTaskTrigger `
+            -Weekly `
+            -DaysOfWeek $day `
+            -At ([datetime]::Today.AddHours($RunStartHour).AddMinutes($StartMinute))
+        $trigger.Repetition = New-RepetitionPattern `
+            -IntervalMinutes $IntervalMinutes `
+            -DurationMinutes $repetitionDurationMinutes
+        $triggers += $trigger
+    }
+}
+else {
+    foreach ($hour in ($RunHours | Sort-Object -Unique)) {
+        if ($hour -lt 0 -or $hour -gt 23) {
+            throw "RunHours entries must be between 0 and 23."
+        }
+        $triggers += New-ScheduledTaskTrigger `
+            -Weekly `
+            -DaysOfWeek $RunDays `
+            -At ([datetime]::Today.AddHours($hour))
+    }
 }
 
 $settings = New-ScheduledTaskSettingsSet `
@@ -387,7 +482,7 @@ $task = New-ScheduledTask `
     -Trigger $triggers `
     -Settings $settings `
     -Principal $principal `
-    -Description "Runs one HeliosCTA ICE Python scheduler tick hourly on weekdays from 05:00 through 22:00 local time."
+    -Description "Runs one HeliosCTA ICE Python $JobGroup scheduler tick."
 
 Register-ScheduledTask `
     -TaskName $TaskName `

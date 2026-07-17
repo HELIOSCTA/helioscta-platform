@@ -117,6 +117,27 @@ The external interface metered data workflow runs through
 annual workbook rows for ISO-NE control-area totals and interface-level
 metered interchange plus DA/RT price components.
 
+CAISO OASIS helpers use public `SingleZip` CSV report URLs and do not require
+CAISO-specific credentials. The promoted CAISO runtime modules live under
+`backend.scrapes.power.caiso` and `backend.orchestration.power.caiso`. Their
+target tables must exist before scheduled writers run. Initial feeds cover
+NP15/SP15 trading-hub day-ahead hourly LMPs in `caiso.da_lmps` and real-time
+five-minute LMPs in `caiso.rt_lmps`, using OASIS nodes
+`TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`. Source component rows are normalized
+to total, energy, congestion, loss, and GHG price columns at
+`interval_start_time_utc x node_id x market_run_id` grain. Runs log OASIS API
+fetch telemetry to `ops.api_fetch_log` and orchestration emits complete-day
+readiness events for the selected trading hubs.
+The CAISO DA hourly LMP production path is
+`backend.orchestration.power.caiso.da_lmps`, with manual backfills at
+`backend.backfills.power.caiso.da_lmps`. The VM timer is
+`helios-caiso-da-lmps.timer`, scheduled daily at `13:20 America/Los_Angeles`,
+after CAISO's published 1:00 p.m. day-ahead results window. The CAISO RT
+five-minute LMP production path is
+`backend.orchestration.power.caiso.rt_lmps`; `helios-caiso-rt-lmps.timer`
+runs daily at `09:20 America/Los_Angeles` and defaults to the previous
+complete Pacific trading date.
+
 MISO public Real-Time Data API helpers use unauthenticated JSON endpoints from
 `https://public-api.misoenergy.org` and do not require MISO-specific
 credentials. The first promoted MISO runtime module is

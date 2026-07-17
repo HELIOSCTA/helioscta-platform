@@ -7,35 +7,64 @@ excluded from Linux VM systemd until explicitly promoted there.
 
 ## Production Model
 
-Task Scheduler runs one coordinator task:
+Task Scheduler runs two ICE coordinator tasks:
 
 ```text
-\HeliosCTA\ICE Python\HeliosCTA ICE Python Coordinator
+\HeliosCTA\ICE Python\HeliosCTA ICE Python Short Term Coordinator
+\HeliosCTA\ICE Python\HeliosCTA ICE Python Futures Coordinator
 ```
 
-The task runs hourly on weekdays at local hours `05` through `22`. Each launch
-calls:
+The short-term coordinator runs weekdays every 15 minutes from local `05:10`
+through `22:55` with `job_group=short_term`. It refreshes the near-term markets
+used by the frontend short-term price views:
+
+```text
+pjm_short_term
+ercot_short_term
+gas_next_day
+gas_balmo
+```
+
+Within that group, each job runs as a current-day price refresh for `Settle`,
+`VWAP Close`, and `Volume`, with contract-date pulls skipped. That keeps the
+frequent frontend freshness path separate from the heavier historical and
+contract-date work.
+
+The futures coordinator runs hourly on weekdays at local hours `05` through
+`22` with `job_group=futures`. It refreshes heavier futures/monthly markets:
+
+```text
+pjm_futures
+ercot_futures
+west_power_futures
+east_power_futures
+gas_futures_core
+gas_futures_gulf
+gas_futures_west
+gas_futures_east
+```
+
+Both tasks call the same wrapper and Python service:
 
 ```powershell
-python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True))"
+python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True, job_group='<group>'))"
 ```
 
 Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
-the current ICE batch for that local-time window, even if a feed already failed
-earlier in the same hour. The hourly settlement batch, including the split
-`gas_futures_core`, `gas_futures_gulf`, `gas_futures_west`, and
-`gas_futures_east` feeds, runs Monday-Friday during `[05:00, 23:00)`, which
-includes the `22:00` launch. The Python coordinator still persists per-window
-state for status, prevents same-feed overlap with local lock files, launches
-each ICE job in a child Python process, applies hard timeouts, and writes
-durable telemetry to `ops.api_fetch_log`.
+the selected ICE job group for that local-time window, even if a feed already
+failed earlier in the same hour. The Python coordinator still persists
+per-window state for status, prevents same-feed overlap with local lock files,
+launches each ICE job in a child Python process, applies hard timeouts, and
+writes durable telemetry to `ops.api_fetch_log`.
 
 Routine scheduled coordinator actions launch hidden under the interactive
 Windows user. Use the visible status task as the operator surface.
 
-This is intentionally one scheduled coordinator task, not one Task Scheduler
-entry per ICE feed. Feed-level status and retries are handled inside the
-coordinator/status scripts.
+This is intentionally one scheduled coordinator task per job group, not one
+Task Scheduler entry per ICE feed. Feed-level status and retries are handled
+inside the coordinator/status scripts. The legacy `all` coordinator can remain
+registered as a fallback, but it should be disabled once the short-term and
+futures coordinators are active to avoid duplicate pulls.
 
 ## Runtime Setup
 
@@ -67,12 +96,35 @@ secrets.
 
 ## Install Or Update
 
-Run from the production clone in PowerShell:
+Run from the production clone in PowerShell.
+
+Install or update the short-term coordinator:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -TaskName "HeliosCTA ICE Python Short Term Coordinator" `
+  -JobGroup short_term `
+  -RunStartHour 5 `
+  -RunEndHour 22 `
+  -StartMinute 10 `
+  -IntervalMinutes 15 `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -PullLatest `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+Install or update the futures coordinator:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
+  -TaskName "HeliosCTA ICE Python Futures Coordinator" `
+  -JobGroup futures `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
   -PullLatest `
@@ -86,9 +138,9 @@ The installer:
 - fast-forwards the production clone when `-PullLatest` is passed;
 - verifies writer host/user/password config exists;
 - optionally installs local Windows dependencies;
-- registers or updates one hidden hourly weekday coordinator task under the
-  current Windows user for local hours `05` through `22`. Python also decides
-  whether any ICE feeds are due for that hour.
+- registers or updates one hidden weekday coordinator task under the current
+  Windows user. Python also decides whether any selected ICE feeds are due for
+  that local-time window.
 
 Install or update the visible status task:
 
@@ -127,23 +179,24 @@ can import `icepython`, access the Python environment, and read writer config.
 
 ## Manual Smoke
 
-Run one coordinator tick directly:
+Run one short-term coordinator tick directly:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\run_ice_python_once.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
-  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state
+  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -JobGroup short_term
 ```
 
-Start the scheduled coordinator manually. This runs quietly; open the status
-task to inspect latest results and feed history.
+Start a scheduled coordinator manually. This runs quietly; open the status task
+to inspect latest results and feed history.
 
 ```powershell
 Start-ScheduledTask `
   -TaskPath "\HeliosCTA\ICE Python\" `
-  -TaskName "HeliosCTA ICE Python Coordinator"
+  -TaskName "HeliosCTA ICE Python Short Term Coordinator"
 ```
 
 Inspect task status and logs:
@@ -151,11 +204,11 @@ Inspect task status and logs:
 ```powershell
 Get-ScheduledTask `
   -TaskPath "\HeliosCTA\ICE Python\" `
-  -TaskName "HeliosCTA ICE Python Coordinator"
+  -TaskName "HeliosCTA ICE Python Short Term Coordinator"
 
 Get-ScheduledTaskInfo `
   -TaskPath "\HeliosCTA\ICE Python\" `
-  -TaskName "HeliosCTA ICE Python Coordinator"
+  -TaskName "HeliosCTA ICE Python Short Term Coordinator"
 
 Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
 ```
@@ -497,11 +550,11 @@ ORDER BY fund_code;
 
 ## Cutover From Legacy Tasks
 
-Before enabling this coordinator, stop or disable old ICE Task Scheduler entries
-that call individual ICE modules from legacy repositories. Keep only this one
-coordinator active for promoted ICE settlements. Do not delete legacy tasks
-until the coordinator has run successfully and downstream consumers have been
-verified.
+Before enabling these coordinators, stop or disable old ICE Task Scheduler
+entries that call individual ICE modules from legacy repositories. Keep only the
+short-term and futures coordinators active for promoted ICE settlements. Do not
+delete legacy tasks until the coordinators have run successfully and downstream
+consumers have been verified.
 
 Run the cutover cleanup from an elevated PowerShell session:
 

@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA CAISO Real-Time Five-Minute LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 09:20:00 America/Los_Angeles
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-caiso-rt-lmps.service
+
+[Install]
+WantedBy=timers.target
