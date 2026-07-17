@@ -27,6 +27,8 @@ there is a clear consumer for all nodes, zones, or resources.
 - `dam_stlmnt_pnt_prices` provides day-ahead hub price readiness.
 - `settlement_point_prices` provides real-time hub price collection and
   complete-day readiness.
+- `rt_price_adders_sced` and `rt_price_adders_15min` provide real-time price
+  adder formation at SCED and settlement-interval grains.
 - `actual_system_load` and `seven_day_load_forecast` are support feeds in the
   daily ERCOT load batch; they are not critical readiness gates.
 
@@ -41,6 +43,8 @@ there is a clear consumer for all nodes, zones, or resources.
 | actual_system_load | NP6-346-CD | np6-346-cd/act_sys_load_by_fzn | Promoted; daily load support batch |
 | dam_shadow_prices | NP4-191-CD | np4-191-cd/dam_shadow_prices | Promoted; daily congestion support batch |
 | sced_shadow_prices | NP6-86-CD | np6-86-cd/shdw_prices_bnd_trns_const | Promoted; daily congestion support batch |
+| rt_price_adders_sced | NP6-323-CD | np6-323-cd/rt_price_adder_sced | Promoted; daily price-adder support batch |
+| rt_price_adders_15min | NP6-324-CD | np6-324-cd/rt_15min_price_adders | Promoted; daily price-adder support batch |
 | wind_power_production_hourly | NP4-732-CD | np4-732-cd/wpp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
 | solar_power_production_hourly | NP4-737-CD | np4-737-cd/spp_hrly_avrg_actl_fcast | Promoted; daily renewables support batch |
 | wind_power_actual_5min | NP4-733-CD | np4-733-cd/wpp_actual_5min_avg_values | Promoted; daily 5-minute renewables actual support batch |

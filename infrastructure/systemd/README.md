@@ -495,6 +495,26 @@ executes `hourly_resource_outage_capacity` and `short_term_system_adequacy`.
 The timer runs daily at `13:35 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`.
 
+## ERCOT Price Adders Batch
+
+The ERCOT real-time price adder support feeds run through one daily batch
+timer:
+
+```text
+helios-ercot-price-adders-batch.service
+helios-ercot-price-adders-batch.timer
+```
+
+It runs `backend.orchestration.power.ercot.price_adders_batch`, which executes
+`rt_price_adders_sced` and `rt_price_adders_15min`. The batch pulls the prior
+complete `America/Chicago` market date for both feeds and upserts by source
+primary key. The timer runs daily at `01:20 America/Chicago` with
+`Persistent=true`, `RandomizedDelaySec=10min`, and `AccuracySec=1min`.
+
+Do not enable this timer until the `ercot.rt_price_adders_sced` and
+`ercot.rt_price_adders_15min` source tables and indexes have been applied with
+the `helios_admin` role.
+
 ## Manual PJM Backfills
 
 Most PJM backfills are manual operator workflows, not timers:

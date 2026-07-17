@@ -234,6 +234,40 @@ LIMIT 10;
   failed`.
 - Next scheduled run observed: `2026-06-14 12:52:17 UTC`.
 
+## ercot-price-adders-batch
+
+- Status: promoted in repo; production DDL applied. Run a VM smoke before
+  enabling the timer.
+- Runtime module: `backend.orchestration.power.ercot.price_adders_batch`.
+- Lower-level scrape modules:
+  - `backend.scrapes.power.ercot.rt_price_adders_sced`
+  - `backend.scrapes.power.ercot.rt_price_adders_15min`
+- Destination tables:
+  - `ercot.rt_price_adders_sced`
+  - `ercot.rt_price_adders_15min`
+- Source products:
+  - `NP6-323-CD`, Real-Time Price Adders by SCED Interval.
+  - `NP6-324-CD`, Real-Time Price Adders for 15-Minute Settlement Interval.
+- Schedule: daily at `01:20 America/Chicago` with `Persistent=true`,
+  `RandomizedDelaySec=10min`, and `AccuracySec=1min`; scheduled defaults pull
+  the prior complete `America/Chicago` market date for both feeds.
+- Systemd units:
+  - `infrastructure/systemd/helios-ercot-price-adders-batch.service`
+  - `infrastructure/systemd/helios-ercot-price-adders-batch.timer`
+- Journal logs: `journalctl -u helios-ercot-price-adders-batch.service`.
+- Safe rerun story: upsert on each feed's source primary key.
+- API telemetry: `ops.api_fetch_log`.
+- Production DDL: applied to `helios_prod` on `2026-07-17`; tables and indexes
+  are owned by `helios_admin`.
+- Reference DDL:
+  - `dbt/azure_postgres/reference_sql/ddl/power/ercot/rt_price_adders_sced/table_ercot_rt_price_adders_sced.sql`
+  - `dbt/azure_postgres/reference_sql/ddl/power/ercot/rt_price_adders_sced/index_ercot_rt_price_adders_sced.sql`
+  - `dbt/azure_postgres/reference_sql/ddl/power/ercot/rt_price_adders_15min/table_ercot_rt_price_adders_15min.sql`
+  - `dbt/azure_postgres/reference_sql/ddl/power/ercot/rt_price_adders_15min/index_ercot_rt_price_adders_15min.sql`
+- Local API shape verification: `2026-07-17`; authenticated public-report
+  probes returned normalized rows for both endpoints using source filters
+  `SCEDTimestampFrom`/`SCEDTimestampTo` and `deliveryDateFrom`/`deliveryDateTo`.
+
 ## ercot-renewables-batch
 
 - Status: deployed; timer enabled and latest manual run succeeded.

@@ -19,7 +19,8 @@ workspace.
   the shape `ercot_dam_stlmnt_pnt_prices:data_ready:<YYYY-MM-DD>:hub`.
 - Deployment status: runtime, orchestration, and systemd schedule
   are promoted for VM deployment.
-- Production schedule: daily at `16:15 UTC` with `Persistent=true` and
+- Production schedule: daily at `11:15 America/Chicago` with
+  `Persistent=true` and
   `RandomizedDelaySec=5min`; the scheduled default pulls the current delivery
   date.
 - Manual smoke: conda env `helioscta-platform-backend` ran the orchestration
@@ -131,6 +132,53 @@ workspace.
   scheduled default pulls the prior complete SCED day.
 - Manual smoke: VM service ran the congestion batch for SCED day `2026-06-12`
   on `2026-06-13 18:06 UTC` and upserted 2,618 SCED shadow price rows.
+
+## Real-Time Price Adders By SCED Interval
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP6-323-CD`, Real-Time Price Adders by SCED Interval.
+- Report Type ID: `13221`.
+- Endpoint: `np6-323-cd/rt_price_adder_sced`.
+- Runtime: `backend.scrapes.power.ercot.rt_price_adders_sced`.
+- Batch orchestration: `backend.orchestration.power.ercot.price_adders_batch`.
+- Destination: `ercot.rt_price_adders_sced`.
+- Primary grain: SCED timestamp x repeat-hour flag.
+- Primary key: `scedtimestamp`, `repeathourflag`.
+- Safe rerun story: upsert on the primary key.
+- Source cadence: event per SCED run. ERCOT public-report samples on
+  `2026-07-17` exposed `SCEDTimestampFrom` and `SCEDTimestampTo` filters and
+  current-day rows.
+- Production schedule: through `helios-ercot-price-adders-batch.timer`, daily
+  at `01:20 America/Chicago` with `Persistent=true`,
+  `RandomizedDelaySec=10min`, and `AccuracySec=1min`; the scheduled default
+  pulls the prior complete `America/Chicago` market date.
+- Deployment note: production source table and indexes were applied on
+  `2026-07-17`; run a VM smoke before enabling the timer.
+
+## Real-Time Price Adders For 15-Minute Settlement Interval
+
+- Source system: ERCOT Public Reports API.
+- Source product: `NP6-324-CD`, Real-Time Price Adders for 15-Minute Settlement
+  Interval.
+- Report Type ID: `13220`.
+- Endpoint: `np6-324-cd/rt_15min_price_adders`.
+- Runtime: `backend.scrapes.power.ercot.rt_price_adders_15min`.
+- Batch orchestration: `backend.orchestration.power.ercot.price_adders_batch`.
+- Destination: `ercot.rt_price_adders_15min`.
+- Primary grain: delivery date x delivery hour x delivery interval x
+  repeat-hour flag.
+- Primary key: `deliverydate`, `deliveryhour`, `deliveryinterval`,
+  `repeathourflag`.
+- Safe rerun story: upsert on the primary key.
+- Source cadence: chron - 15 minutes. ERCOT public-report samples on
+  `2026-07-17` exposed `deliveryDateFrom` and `deliveryDateTo` filters and
+  current-day rows.
+- Production schedule: through `helios-ercot-price-adders-batch.timer`, daily
+  at `01:20 America/Chicago` with `Persistent=true`,
+  `RandomizedDelaySec=10min`, and `AccuracySec=1min`; the scheduled default
+  pulls the prior complete `America/Chicago` market date.
+- Deployment note: production source table and indexes were applied on
+  `2026-07-17`; run a VM smoke before enabling the timer.
 
 ## Wind Power Production Hourly
 

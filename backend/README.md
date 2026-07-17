@@ -94,6 +94,10 @@ runtime module is `backend.scrapes.power.ercot.dam_stlmnt_pnt_prices`. Its
 target tables must exist before scheduled writers run.
 Promoted ERCOT schedules run orchestration modules through systemd so API
 telemetry and data-readiness events are emitted with the database writes.
+The ERCOT price-adder support batch runs through
+`backend.orchestration.power.ercot.price_adders_batch`, executes
+`rt_price_adders_sced` and `rt_price_adders_15min`, and defaults to the prior
+complete `America/Chicago` market date for daily VM runs.
 
 ISO-NE ISO Express CSV helpers use public CSV report URLs and do not require
 ISO-NE-specific credentials. The promoted ISO-NE runtime modules live under
