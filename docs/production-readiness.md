@@ -52,14 +52,14 @@ A backend workflow is production-ready when it has:
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 23 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
-| LMP price repair | Ready to deploy | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, and ERCOT LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
+| LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, and CAISO LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | Scheduled PJM, ERCOT, and ISO-NE API scrapes write `ops.api_fetch_log`. |
-| Data readiness | In place | Critical PJM, ERCOT, and ISO-NE price orchestration write `ops.data_availability_events`. |
-| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, and ERCOT DAM SPPs queue backend HTML email release notices with inline DA LMP hub/hour tables and Vercel report links. PJM DA still sends Slack during the transition. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
+| API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, and CAISO API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | Critical PJM, ERCOT, ISO-NE, and CAISO price orchestration write `ops.data_availability_events`. |
+| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, and CAISO DA LMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. PJM DA still sends Slack during the transition. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
-| Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
+| Manual backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests on pushes and pull requests. |
 | Log retention | In place | Journald retention is versioned in `infrastructure/systemd/journald-helioscta.conf`; operator policy is documented in `docs/operations/log-retention.md`. |
 | Alert schema dependency | Removed | Backend no longer depends on `alerts.events`. |

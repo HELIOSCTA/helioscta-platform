@@ -1180,10 +1180,18 @@ FROM isone.seven_day_solar_forecast;
 - Journal logs: `journalctl -u helios-lmp-price-backfill-7-day.service`.
 - Schedule: daily at `22:15 UTC` with `RandomizedDelaySec=10min`.
 - Deployed runtime commit:
-  `971c7a7e1996b1fcb43291b29411ac9777ea4a36`.
-- Deployed at: `2026-07-17 17:30 UTC`; original global repair deployment was
-  `2026-07-17 17:08 UTC`.
-- Latest VM verification: ERCOT price-adder repair smoke run exited
+  `84b7eab035eafcfc05c1fa9d6f9f41e6fbe890ca`.
+- Deployed at: `2026-07-17 18:05 UTC` for the CAISO repair extension;
+  original global repair deployment was `2026-07-17 17:08 UTC`.
+- Latest VM verification: CAISO repair smoke run via `systemd-run` exited
+  `status=0/SUCCESS` at `2026-07-17 18:05 UTC`; journal summary reported
+  `2 succeeded, 0 failed`, with `48` DA rows for `2026-07-17` and `576`
+  RT rows for `2026-07-16` processed. `ops.api_fetch_log` showed successful
+  `repair_family=lmp_price_backfill_7_day` rows for `caiso.da_lmps` and
+  `caiso.rt_lmps`, and target-table counts matched the processed rows. The
+  production health check's `LMP repair freshness` section reported
+  `Coverage: 13/13 successful target-table repairs` at `2026-07-17 18:06 UTC`.
+- Previous VM verification: ERCOT price-adder repair smoke run exited
   `status=0/SUCCESS` at `2026-07-17 17:27 UTC`; journal summary reported
   `2 succeeded, 0 failed`, with `2030` SCED rows and `672` 15-minute rows
   processed for `2026-07-10` through `2026-07-16`. The production health
