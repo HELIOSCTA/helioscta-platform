@@ -469,10 +469,10 @@ export default function HomePageClient({
     }
     if (showLocalDevFeatures && activeSection === "spark-spreads") {
       return {
-        title: "Power Curves",
+        title: "Power Forwards/Sparks",
         subtitle:
           "Outright, calendar, and spark spread curve history with heat-rate context.",
-        footer: "Power Curves | Source: ice_python.settlements / Azure PostgreSQL",
+        footer: "Power Forwards/Sparks | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {

@@ -224,9 +224,9 @@ SQL only selects the latest SFTP date and MUFG firm rows. The frontend route
 applies the row cap, search filter, and JSON/TypeScript product rules for
 review. It does not read generated SQL, mutate data, or create a cache table.
 
-## Local Power Curves Source Contract
+## Local Power Forwards/Sparks Source Contract
 
-The Power Curves local view reads non-option ICE settlement marks with
+The Power Forwards/Sparks local view reads non-option ICE settlement marks with
 `helios_readonly` from `ice_python.settlements`. It appears in the local
 `Pricing` sidebar section at `/?section=spark-spreads&pricingMode=spark&sparkStrip=H`;
 Vercel builds hide the page and return `404` from `GET /api/spark-spread-evolution`.

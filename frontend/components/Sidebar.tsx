@@ -53,7 +53,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       label: "PRICING",
       navItems: [
         { id: "ice-settlements", label: "Power Settles" },
-        { id: "spark-spreads", label: "Power Curves" },
+        { id: "spark-spreads", label: "Power Forwards/Sparks" },
       ],
     });
   }
