@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
@@ -81,15 +80,6 @@ function secondBusinessDayAfterDeliveryMonth(month: number, year: number): Date 
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return {
-      status: 404,
-      payload: { error: "Spark spreads are local-only while the ICE settlement dashboard is being validated." },
-      headers: { "Cache-Control": "no-store" },
-      rowCount: 0,
-    };
-  }
-
   const { searchParams } = new URL(request.url);
   const strip = validStrip(searchParams.get("strip") ?? searchParams.get("sparkStrip")) ?? currentMonthStrip();
   const baseProduct =

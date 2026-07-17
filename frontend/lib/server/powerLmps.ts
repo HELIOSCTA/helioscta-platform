@@ -2,7 +2,7 @@ import "server-only";
 
 import { query } from "@/lib/server/db";
 
-export type PowerIso = "pjm" | "ercot" | "isone";
+export type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
 export type PowerLmpProduct = "da" | "rt";
 export type RtLmpSource = "verified" | "unverified";
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
@@ -24,6 +24,7 @@ const PJM_HUBS = [
 
 const ERCOT_HUBS = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"] as const;
 const ISONE_HUBS = [".H.INTERNAL_HUB"] as const;
+const CAISO_HUBS = ["TH_SP15_GEN-APND", "TH_NP15_GEN-APND"] as const;
 
 interface IsoConfig {
   iso: PowerIso;
@@ -55,12 +56,20 @@ const ISO_CONFIGS: Record<PowerIso, IsoConfig> = {
     hubs: ISONE_HUBS,
     supportsComponents: true,
   },
+  caiso: {
+    iso: "caiso",
+    label: "CAISO",
+    defaultHub: "TH_SP15_GEN-APND",
+    hubs: CAISO_HUBS,
+    supportsComponents: true,
+  },
 };
 
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
   ercot: { start: 7, end: 22 },
   isone: { start: 8, end: 23 },
+  caiso: { start: 7, end: 22 },
 };
 
 interface LmpRow {
@@ -82,7 +91,7 @@ interface HourRow {
 }
 
 export function parsePowerIso(raw: string | null): PowerIso {
-  if (raw === "ercot" || raw === "isone") return raw;
+  if (raw === "ercot" || raw === "isone" || raw === "caiso") return raw;
   return "pjm";
 }
 
@@ -267,6 +276,20 @@ async function latestDate({
     );
     return rows[0]?.target_date ?? null;
   }
+  if (iso === "caiso") {
+    const sourceTable = product === "da" ? "caiso.da_lmps" : "caiso.rt_lmps";
+    const marketRunId = product === "da" ? "DAM" : "RTM";
+    const rows = await query<{ target_date: string | null }>(
+      `
+        select max(operating_date)::text as target_date
+        from ${sourceTable}
+        where node_id = any($1::text[])
+          and market_run_id = $2
+      `,
+      [hubs, marketRunId],
+    );
+    return rows[0]?.target_date ?? null;
+  }
   if (product === "da") {
     const rows = await query<{ target_date: string | null }>(
       `
@@ -396,6 +419,55 @@ async function lmpRows({
       [targetDate, hubs],
     );
   }
+  if (iso === "caiso" && product === "da") {
+    return query<LmpRow>(
+      `
+        select
+          to_char(
+            operating_date::timestamp + ((operating_hour - 1) * interval '1 hour'),
+            'YYYY-MM-DD"T"HH24:MI:SS'
+          ) as datetime_beginning_ept,
+          node_id as hub,
+          operating_hour as hour_ending,
+          energy_component as system_energy,
+          locational_marginal_price as total,
+          congestion_component as congestion,
+          loss_component as marginal_loss,
+          to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from caiso.da_lmps
+        where operating_date = $1::date
+          and node_id = any($2::text[])
+          and market_run_id = 'DAM'
+        order by array_position($2::text[], node_id), operating_hour
+      `,
+      [targetDate, hubs],
+    );
+  }
+  if (iso === "caiso") {
+    return query<LmpRow>(
+      `
+        select
+          to_char(
+            operating_date::timestamp + ((operating_hour - 1) * interval '1 hour'),
+            'YYYY-MM-DD"T"HH24:MI:SS'
+          ) as datetime_beginning_ept,
+          node_id as hub,
+          operating_hour as hour_ending,
+          avg(energy_component)::float8 as system_energy,
+          avg(locational_marginal_price)::float8 as total,
+          avg(congestion_component)::float8 as congestion,
+          avg(loss_component)::float8 as marginal_loss,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from caiso.rt_lmps
+        where operating_date = $1::date
+          and node_id = any($2::text[])
+          and market_run_id = 'RTM'
+        group by operating_date, operating_hour, node_id
+        order by array_position($2::text[], node_id), operating_hour
+      `,
+      [targetDate, hubs],
+    );
+  }
   if (product === "da") {
     return query<LmpRow>(
       `
@@ -478,12 +550,16 @@ export async function buildPowerLmpsPayload({
         ? "pjm.da_hrl_lmps"
         : iso === "ercot"
           ? "ercot.dam_stlmnt_pnt_prices"
-          : "isone.da_hrl_lmps"
+          : iso === "caiso"
+            ? "caiso.da_lmps"
+            : "isone.da_hrl_lmps"
       : iso === "pjm"
         ? pjmRtTable(rtSource).sourceTable
         : iso === "ercot"
           ? "ercot.settlement_point_prices"
-          : isoneRtTable(rtSource).sourceTable;
+          : iso === "caiso"
+            ? "caiso.rt_lmps"
+            : isoneRtTable(rtSource).sourceTable;
 
   return {
     payload: {
@@ -523,6 +599,12 @@ function componentExpr({
   rtSource: RtLmpSource;
 }): string {
   if (iso === "ercot") return `${prefix}.price`;
+  if (iso === "caiso") {
+    if (component === "energy") return `${prefix}.energy_component`;
+    if (component === "congestion") return `${prefix}.congestion_component`;
+    if (component === "loss") return `${prefix}.loss_component`;
+    return `${prefix}.locational_marginal_price`;
+  }
   if (iso === "pjm") {
     const suffix = market === "da" ? "da" : "rt";
     if (market === "rt" && component === "energy") {
@@ -630,6 +712,43 @@ async function settleRows({
           and deliverydate between $2::date and $3::date
         group by deliverydate, deliveryhour
         order by deliverydate, deliveryhour
+      `,
+      [hub, startDate, endDate],
+    );
+  }
+  if (iso === "caiso" && market === "da") {
+    const value = componentExpr({ iso, market, component, prefix: "lmps", rtSource });
+    return query<HourRow>(
+      `
+        select
+          operating_date::text as market_date,
+          operating_hour as hour_ending,
+          ${value}::float8 as value,
+          to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from caiso.da_lmps as lmps
+        where node_id = $1
+          and operating_date between $2::date and $3::date
+          and market_run_id = 'DAM'
+        order by operating_date, operating_hour
+      `,
+      [hub, startDate, endDate],
+    );
+  }
+  if (iso === "caiso") {
+    const value = componentExpr({ iso, market, component, prefix: "lmps", rtSource });
+    return query<HourRow>(
+      `
+        select
+          operating_date::text as market_date,
+          operating_hour as hour_ending,
+          avg(${value})::float8 as value,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from caiso.rt_lmps as lmps
+        where node_id = $1
+          and operating_date between $2::date and $3::date
+          and market_run_id = 'RTM'
+        group by operating_date, operating_hour
+        order by operating_date, operating_hour
       `,
       [hub, startDate, endDate],
     );

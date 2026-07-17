@@ -48,16 +48,14 @@ interface TopSection {
 function getSections(showLocalDevFeatures: boolean): TopSection[] {
   const sections: TopSection[] = [];
 
-  if (showLocalDevFeatures) {
-    sections.push({
-      key: "prices",
-      label: "PRICING",
-      navItems: [
-        { id: "ice-settlements", label: "Power ICE Settles" },
-        { id: "spark-spreads", label: "Power Sparks" },
-      ],
-    });
-  }
+  sections.push({
+    key: "prices",
+    label: "PRICING",
+    navItems: [
+      { id: "ice-settlements", label: "Power ICE Settles" },
+      { id: "spark-spreads", label: "Power Sparks" },
+    ],
+  });
 
   sections.push({
     key: "power",

@@ -229,10 +229,10 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
   }
-  if (showLocalDevFeatures && value === "ice-settlements") {
+  if (value === "ice-settlements") {
     return "ice-settlements";
   }
-  if (showLocalDevFeatures && value === "spark-spreads") {
+  if (value === "spark-spreads") {
     return "spark-spreads";
   }
   if (showLocalDevFeatures && value === "ice-pmi-curve") {
@@ -263,7 +263,7 @@ function parseInitialSection(
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
-  return showLocalDevFeatures ? "ice-settlements" : "pjm-da-lmps";
+  return "ice-settlements";
 }
 
 function parseInitialForecastType(
@@ -293,7 +293,9 @@ function parsePjmLmpProductParam(value: string | null): PjmLmpProduct | undefine
 }
 
 function parsePjmLmpIsoParam(value: string | null): PjmLmpIso | undefined {
-  return value === "pjm" || value === "ercot" || value === "isone" ? value : undefined;
+  return value === "pjm" || value === "ercot" || value === "isone" || value === "caiso"
+    ? value
+    : undefined;
 }
 
 function parsePjmLmpRtSourceParam(value: string | null): PjmLmpRtSource | undefined {
@@ -481,7 +483,7 @@ export default function HomePageClient({
           "Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
       };
     }
-    if (showLocalDevFeatures && activeSection === "ice-settlements") {
+    if (activeSection === "ice-settlements") {
       return {
         title: "Power ICE Settles",
         subtitle:
@@ -490,7 +492,7 @@ export default function HomePageClient({
           "Power ICE Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
       };
     }
-    if (showLocalDevFeatures && activeSection === "spark-spreads") {
+    if (activeSection === "spark-spreads") {
       return {
         title: "Power Sparks",
         subtitle:
@@ -617,13 +619,13 @@ export default function HomePageClient({
     return {
       title: "Power LMPs",
       subtitle:
-        "PJM, ERCOT, and ISO-NE day-ahead, real-time, and DART power prices.",
+        "PJM, ERCOT, ISO-NE, and CAISO day-ahead, real-time, and DART power prices.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
   }, [activeSection, showLocalDevFeatures]);
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
-  const isIceSettlements = showLocalDevFeatures && activeSection === "ice-settlements";
+  const isIceSettlements = activeSection === "ice-settlements";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
@@ -837,7 +839,7 @@ export default function HomePageClient({
               />
             )}
 
-            {showLocalDevFeatures && activeSection === "ice-settlements" && (
+            {activeSection === "ice-settlements" && (
               <FreshnessCard
                 statusLabel={iceSettlementsFreshness.status}
                 statusClass={iceSettlementsFreshness.statusClass}
@@ -1067,13 +1069,13 @@ export default function HomePageClient({
               onFreshnessChange={setClearStreetTradesFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "ice-settlements" && (
+          {activeSection === "ice-settlements" && (
             <IceTradeBlotter
               refreshToken={iceSettlementsRefreshToken}
               onFreshnessChange={setIceSettlementsFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "spark-spreads" && (
+          {activeSection === "spark-spreads" && (
             <SparkSpreadEvolution />
           )}
           {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (

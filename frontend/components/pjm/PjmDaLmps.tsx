@@ -68,7 +68,7 @@ const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type ComponentSelection = ComponentKey | "all";
-export type PowerIso = "pjm" | "ercot" | "isone";
+export type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
 export type LmpProduct = "da" | "rt" | "dart";
 export type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
 export type RtLmpSource = "verified" | "unverified";
@@ -77,6 +77,7 @@ const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
   ercot: { start: 7, end: 22 },
   isone: { start: 8, end: 23 },
+  caiso: { start: 7, end: 22 },
 };
 
 function onPeakHoursForIso(iso: PowerIso): number[] {
@@ -227,18 +228,21 @@ const ISO_LABELS: Record<PowerIso, string> = {
   pjm: "PJM",
   ercot: "ERCOT",
   isone: "ISO-NE",
+  caiso: "CAISO",
 };
 
 const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
   pjm: "WESTERN HUB",
   ercot: "HB_NORTH",
   isone: ".H.INTERNAL_HUB",
+  caiso: "TH_SP15_GEN-APND",
 };
 
 const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
   { value: "pjm", label: "PJM" },
   { value: "ercot", label: "ERCOT" },
   { value: "isone", label: "ISO-NE" },
+  { value: "caiso", label: "CAISO" },
 ];
 
 const TOTAL_COMPONENT = COMPONENTS.find((component) => component.key === "total") ?? COMPONENTS[3];
@@ -255,6 +259,10 @@ const RT_SOURCE_LABELS_BY_ISO: Record<PowerIso, Record<RtLmpSource, string>> = {
   isone: {
     verified: "Final Hourly",
     unverified: "Prelim Hourly",
+  },
+  caiso: {
+    verified: "Five-Min Avg",
+    unverified: "Five-Min Avg",
   },
 };
 
@@ -308,6 +316,20 @@ const LMP_SOURCE_FEEDS: LmpSourceFeed[] = [
     sourceLabel: "ISO-NE Preliminary Real-Time Hourly LMPs",
     sourceUrl:
       "https://www.iso-ne.com/isoexpress/web/reports/pricing/-/tree/lmps-rt-hourly-prelim",
+  },
+  {
+    iso: "caiso",
+    market: "DA hourly",
+    sourceLabel: "CAISO OASIS PRC_LMP",
+    sourceUrl:
+      "https://www.caiso.com/systems-applications/portals-applications/open-access-same-time-information-system-oasis",
+  },
+  {
+    iso: "caiso",
+    market: "RT five-minute",
+    sourceLabel: "CAISO OASIS PRC_INTVL_LMP",
+    sourceUrl:
+      "https://www.caiso.com/systems-applications/portals-applications/open-access-same-time-information-system-oasis",
   },
 ];
 
@@ -447,6 +469,7 @@ function selectedLmpSourceFeeds({
     pjm: "DA hourly",
     ercot: "DAM settlement point",
     isone: "DA hourly",
+    caiso: "DA hourly",
   };
   const rtMarketByIso: Record<PowerIso, Record<RtLmpSource, string>> = {
     pjm: {
@@ -460,6 +483,10 @@ function selectedLmpSourceFeeds({
     isone: {
       verified: "RT final hourly",
       unverified: "RT preliminary hourly",
+    },
+    caiso: {
+      verified: "RT five-minute",
+      unverified: "RT five-minute",
     },
   };
   const findFeed = (market: string) =>
@@ -969,7 +996,8 @@ function RtDatasetCard({
   value: RtLmpSource;
   onChange: (value: RtLmpSource) => void;
 }) {
-  const options: RtLmpSource[] = iso === "ercot" ? ["unverified"] : ["unverified", "verified"];
+  const options: RtLmpSource[] =
+    iso === "pjm" || iso === "isone" ? ["unverified", "verified"] : ["unverified"];
   const labels = RT_SOURCE_LABELS_BY_ISO[iso];
 
   return (
@@ -1457,7 +1485,7 @@ export default function PjmDaLmps({
     setSelectedHub(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubA(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubB(ISO_DEFAULT_HUBS[activeIso]);
-    if (activeIso === "ercot") {
+    if (activeIso === "ercot" || activeIso === "caiso") {
       setRtSource("unverified");
     }
   }, [activeIso]);

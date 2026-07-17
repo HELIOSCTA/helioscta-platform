@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { query as serverQuery } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 import { buildProductDictionaryCte } from "@/lib/iceTradeBlotterProductDictionary";
 import {
   parseIceTradeProductScope,
@@ -957,10 +956,6 @@ function normalizeSummary(row: SummaryRow | undefined): DailySettlementsPayload[
 }
 
 export async function GET(request: Request) {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return NextResponse.json({ error: "ICE trade blotter is local-only while the settlement view is being validated." }, { status: 404, headers: { "Cache-Control": "no-store" } });
-  }
-
   const { searchParams } = new URL(request.url);
   const now = new Date();
   const dateMode = parseDateMode(searchParams.get("mode"));

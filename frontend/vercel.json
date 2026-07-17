@@ -44,6 +44,26 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/ice-trade-blotter/daily-settlements/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/ice-trade-blotter/settlements/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/ice-pmi-curve/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/ice-pmi-curve/contract/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/spark-spread-evolution/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/ops/readiness/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
