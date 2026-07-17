@@ -585,7 +585,8 @@ LIMIT 10;
 
 ## helios-caiso-rt-lmps
 
-- Status: promoted for VM install; local manual database run succeeded.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual VM
+  smoke run succeeded.
 - Workflow: CAISO Real-Time Five-Minute LMP orchestration.
 - Runtime module: `backend.orchestration.power.caiso.rt_lmps`.
 - Lower-level scrape module: `backend.scrapes.power.caiso.rt_lmps`.
@@ -614,9 +615,16 @@ LIMIT 10;
   `2026-07-16` were present through interval `2026-07-17 06:55 UTC`, with
   CAISO OASIS fetch telemetry metadata showing `run_mode=manual` and
   `upsert_validation_rerun=true`.
-- VM install pending: copy unit files to `/etc/systemd/system`, run
-  `systemctl daemon-reload`, enable `helios-caiso-rt-lmps.timer`, and verify a
-  service run from `/opt/helioscta-platform`.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded from `bfe21e0` to
+  `f607ee2` on `2026-07-17 18:13 UTC`; service and timer unit files copied to
+  `/etc/systemd/system`, `daemon-reload` completed, and
+  `helios-caiso-rt-lmps.timer` enabled.
+- VM smoke verification: `2026-07-17 18:14 UTC`; service exited
+  `status=0/SUCCESS`, pulled trading date `2026-07-16`, upserted 576 rows into
+  `caiso.rt_lmps`, and observed existing readiness event
+  `caiso_rt_lmps:data_ready:2026-07-16:trading_hubs_np15_sp15`.
+- Next scheduled run observed after timer enablement:
+  `2026-07-18 16:22:57 UTC`.
 
 Verification SQL for CAISO RT five-minute LMP coverage:
 
