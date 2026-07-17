@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA CAISO Day-Ahead Hourly LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 13:20:00 America/Los_Angeles
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-caiso-da-lmps.service
+
+[Install]
+WantedBy=timers.target
