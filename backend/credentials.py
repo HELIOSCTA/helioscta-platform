@@ -40,6 +40,23 @@ def _get_first_env(*names: str, default: str | None = None) -> str | None:
             return value.strip()
     return default
 
+
+def _with_required_email_recipients(
+    recipients: list[str] | tuple[str, ...],
+) -> list[str]:
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for recipient in [*recipients, *HELIOS_REQUIRED_EMAIL_RECIPIENTS]:
+        clean = recipient.strip()
+        if not clean:
+            continue
+        key = clean.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        resolved.append(clean)
+    return resolved
+
 # ────── Azure PostgreSQL ──────
 AZURE_POSTGRESQL_DB_HOST = _get_first_env(
     "AZURE_POSTGRES_WRITER_HOST",
@@ -84,6 +101,8 @@ AZURE_SQL_PASSWORD = os.getenv("AZURE_SQL_PASSWORD")
 
 # ────── Azure Outlook (Graph API) ──────
 DEFAULT_OUTLOOK_SENDER = "aidan.keaveny@helioscta.com"
+# Appended to backend email audiences even when env vars override defaults.
+HELIOS_REQUIRED_EMAIL_RECIPIENTS = ["Kapil.Saxena@HeliosCTA.com"]
 AZURE_OUTLOOK_CLIENT_ID = os.getenv("AZURE_OUTLOOK_CLIENT_ID")
 AZURE_OUTLOOK_TENANT_ID = os.getenv("AZURE_OUTLOOK_TENANT_ID")
 AZURE_OUTLOOK_CLIENT_SECRET = os.getenv("AZURE_OUTLOOK_CLIENT_SECRET")
@@ -99,11 +118,11 @@ CLEAR_STREET_NAV_EMAIL_SENDER = _get_first_env(
     "HELIOS_EMAIL_FROM_ADDRESS",
     default=DEFAULT_OUTLOOK_SENDER,
 )
-CLEAR_STREET_NAV_EMAIL_RECIPIENTS = (
+CLEAR_STREET_NAV_EMAIL_RECIPIENTS = _with_required_email_recipients(
     _get_csv_env("CLEAR_STREET_NAV_EMAIL_RECIPIENTS")
     or [
         "Aidan.Keaveny@HeliosCTA.com",
-        "kapil.saxena@helioscta.com",
+        "Kapil.Saxena@HeliosCTA.com",
         "edi.lacic@helioscta.com",
         "HeliosCTA@navfundservices.com",
     ]
@@ -114,7 +133,7 @@ CLEAR_STREET_NAV_EMAIL_RECIPIENTS = (
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED = _get_bool_env(
     "HELIOS_EMAIL_NOTIFICATIONS_ENABLED"
 )
-HELIOS_EMAIL_RECIPIENTS = (
+HELIOS_EMAIL_RECIPIENTS = _with_required_email_recipients(
     _get_csv_env("HELIOS_EMAIL_RECIPIENTS")
     or ["aidan.keaveny@helioscta.com"]
 )
