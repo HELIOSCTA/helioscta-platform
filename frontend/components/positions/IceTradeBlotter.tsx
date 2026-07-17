@@ -1704,6 +1704,10 @@ function sortedFilterValues(values: Array<string | null | undefined>): string[] 
   ).sort((first, second) => sortFilterOption(first, second));
 }
 
+function sameStringValues(first: readonly string[], second: readonly string[]): boolean {
+  return first.length === second.length && first.every((value, index) => value === second[index]);
+}
+
 function rowMatchesQuickFilters(
   row: QuickFilterRow,
   traderFilter: string,
@@ -6486,9 +6490,10 @@ export default function IceTradeBlotter({
     : null;
 
   useEffect(() => {
+    if (!selectedTradeSummaryKey) return;
     const visibleKeys = new Set(tradeSummaryRows.map((row) => row.key));
-    setSelectedTradeSummaryKey((key) => (key && visibleKeys.has(key) ? key : null));
-  }, [tradeSummaryRows]);
+    if (!visibleKeys.has(selectedTradeSummaryKey)) setSelectedTradeSummaryKey(null);
+  }, [selectedTradeSummaryKey, tradeSummaryRows]);
 
   useEffect(() => {
     if (!selectedTradeSummaryKey) return;
@@ -6502,17 +6507,18 @@ export default function IceTradeBlotter({
 
   useEffect(() => {
     if (!groupRowsEnabled) {
-      setSelectedGroupKey(null);
+      if (selectedGroupKey) setSelectedGroupKey(null);
       return;
     }
+    if (!selectedGroupKey) return;
 
     const visibleGroupKeys = new Set(
       displayedRows
         .map((row) => groupedTradeRowKey(row))
         .filter((key) => groupedLegsByKey.has(key))
     );
-    setSelectedGroupKey((key) => (key && visibleGroupKeys.has(key) ? key : null));
-  }, [displayedRows, groupedLegsByKey, groupRowsEnabled]);
+    if (!visibleGroupKeys.has(selectedGroupKey)) setSelectedGroupKey(null);
+  }, [displayedRows, groupedLegsByKey, groupRowsEnabled, selectedGroupKey]);
 
   useEffect(() => {
     if (!selectedGroupKey) return;
@@ -6965,7 +6971,8 @@ export default function IceTradeBlotter({
     if (view !== "settles") return;
     setQuickRegionFilters((filters) => {
       const filtered = filters.filter((region) => settleQuickRegionOptions.includes(region));
-      return filtered.length > 0 ? filtered : [...DEFAULT_SETTLE_REGION_FILTERS];
+      const next = filtered.length > 0 ? filtered : [...DEFAULT_SETTLE_REGION_FILTERS];
+      return sameStringValues(filters, next) ? filters : next;
     });
   }, [settleQuickRegionOptions, view]);
   const dailySettlementRows = useMemo(
