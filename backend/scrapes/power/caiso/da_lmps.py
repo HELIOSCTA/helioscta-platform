@@ -41,6 +41,7 @@ TARGET_DATA_TYPES = _lmp.TARGET_DATA_TYPES
 DEFAULT_NODES = _lmp.DEFAULT_TRADING_HUB_NODES
 DEFAULT_DELTA = relativedelta(days=1)
 DEFAULT_LOOKAHEAD_DAYS = 1
+DEFAULT_PUBLICATION_HOUR = 13
 LOCAL_MARKET_TIMEZONE = _lmp.LOCAL_MARKET_TIMEZONE
 
 logger = logging.getLogger(__name__)
@@ -51,11 +52,24 @@ def _local_now() -> pd.Timestamp:
 
 
 def _resolve_default_start_date():
-    return (_local_now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)).date()
+    return _latest_expected_published_trading_date()
 
 
 def _resolve_default_end_date():
-    return (_local_now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)).date()
+    return _latest_expected_published_trading_date()
+
+
+def _latest_expected_published_trading_date(now: pd.Timestamp | None = None):
+    local_now = now or _local_now()
+    if local_now.tzinfo is None:
+        local_now = local_now.tz_localize(LOCAL_MARKET_TIMEZONE)
+    else:
+        local_now = local_now.tz_convert(LOCAL_MARKET_TIMEZONE)
+
+    trading_date = local_now.date()
+    if local_now.hour >= DEFAULT_PUBLICATION_HOUR:
+        trading_date = trading_date + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
+    return trading_date
 
 
 def _pull(

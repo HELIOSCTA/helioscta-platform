@@ -24,6 +24,26 @@ def test_caiso_da_lmps_target_contract():
     ]
 
 
+def test_caiso_da_lmps_default_trading_date_uses_latest_published_window():
+    before_publication = pd.Timestamp(
+        "2026-07-17T12:59:00",
+        tz=da_lmps.LOCAL_MARKET_TIMEZONE,
+    )
+    after_publication = pd.Timestamp(
+        "2026-07-17T13:20:00",
+        tz=da_lmps.LOCAL_MARKET_TIMEZONE,
+    )
+
+    assert (
+        da_lmps._latest_expected_published_trading_date(before_publication)
+        == date(2026, 7, 17)
+    )
+    assert (
+        da_lmps._latest_expected_published_trading_date(after_publication)
+        == date(2026, 7, 18)
+    )
+
+
 def test_caiso_rt_lmps_target_contract():
     assert rt_lmps.API_SCRAPE_NAME == "rt_lmps"
     assert rt_lmps.OASIS_QUERY_NAME == "PRC_INTVL_LMP"
