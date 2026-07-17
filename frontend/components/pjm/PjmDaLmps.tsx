@@ -12,6 +12,13 @@ import {
 } from "recharts";
 import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import LmpColumnFilterMenu, {
+  EMPTY_COLUMN_FILTER,
+  type ColumnFilters,
+  matchesColumnFilter,
+  uniqueColumnOptions,
+  updateColumnFilter,
+} from "@/components/pjm/LmpColumnFilterMenu";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import { buildPjmDaSingleDateReport } from "@/lib/pjm-da-lmps/single-date-view";
 
@@ -35,14 +42,14 @@ interface HubLmpSummary {
 }
 
 interface PjmLmpsPayload {
+  iso: PowerIso;
+  isoLabel: string;
+  defaultHub?: string;
+  supportsComponents?: boolean;
   targetDate: string;
   latestDate: string | null;
   asOf: string | null;
-  source:
-    | "pjm.da_hrl_lmps"
-    | "pjm.rt_hrl_lmps"
-    | "pjm.rt_unverified_hrl_lmps"
-    | "pjm.dart_lmps";
+  source: string;
   rtSource?: RtLmpSource;
   hubs: HubLmpSummary[];
 }
@@ -57,23 +64,43 @@ export interface PjmDaLmpsFreshnessSummary {
 }
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
-const ONPEAK_START = 8;
-const ONPEAK_END = 23;
-const ONPEAK_HOURS = HOURS.filter((hour) => hour >= ONPEAK_START && hour <= ONPEAK_END);
-const OFFPEAK_HOURS = HOURS.filter((hour) => hour < ONPEAK_START || hour > ONPEAK_END);
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type ComponentSelection = ComponentKey | "all";
+export type PowerIso = "pjm" | "ercot" | "isone";
 export type LmpProduct = "da" | "rt" | "dart";
 export type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
 export type RtLmpSource = "verified" | "unverified";
+
+const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
+  pjm: { start: 8, end: 23 },
+  ercot: { start: 7, end: 22 },
+  isone: { start: 8, end: 23 },
+};
+
+function onPeakHoursForIso(iso: PowerIso): number[] {
+  const window = PEAK_WINDOW_BY_ISO[iso];
+  return HOURS.filter((hour) => hour >= window.start && hour <= window.end);
+}
+
+function offPeakHoursForIso(iso: PowerIso): number[] {
+  const window = PEAK_WINDOW_BY_ISO[iso];
+  return HOURS.filter((hour) => hour < window.start || hour > window.end);
+}
+
+function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
+  const window = PEAK_WINDOW_BY_ISO[iso];
+  return hourEnding >= window.start && hourEnding <= window.end;
+}
+
 type SettleDayType = "all" | "weekday" | "weekend" | "holiday";
 type SettleSortDirection = "asc" | "desc";
 // Sort/selection column keys for the daily settles grid: the three period summaries
 // plus one per hour-ending ("he1" … "he24"). "date" sorts the leading column.
 type SettleColumnKey = "onpeak" | "offpeak" | "flat" | `he${number}`;
 type SettleSortKey = "date" | SettleColumnKey;
+type SettleFilterKey = "dayType" | SettleSortKey;
 type MetricTableId = "single-day" | "compare-dates" | "compare-hubs";
 interface SettleSortState {
   key: SettleSortKey;
@@ -112,6 +139,13 @@ interface ComponentRow {
   flatAvg: number | null;
   min: number;
   max: number;
+}
+
+interface LmpSourceFeed {
+  iso: PowerIso;
+  market: string;
+  sourceLabel: string;
+  sourceUrl: string;
 }
 
 interface PjmLmpSettleDayRow {
@@ -185,14 +219,97 @@ const COMPARISON_COLORS = {
 
 const PRODUCT_LABELS: Record<LmpProduct, string> = {
   da: "DA LMPs",
-  rt: "RT LMPs",
+  rt: "RT",
   dart: "DART",
 };
 
-const RT_SOURCE_LABELS: Record<RtLmpSource, string> = {
-  verified: "Verified Hourly",
-  unverified: "Unverified Hourly",
+const ISO_LABELS: Record<PowerIso, string> = {
+  pjm: "PJM",
+  ercot: "ERCOT",
+  isone: "ISO-NE",
 };
+
+const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
+  pjm: "WESTERN HUB",
+  ercot: "HB_NORTH",
+  isone: ".H.INTERNAL_HUB",
+};
+
+const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
+  { value: "pjm", label: "PJM" },
+  { value: "ercot", label: "ERCOT" },
+  { value: "isone", label: "ISO-NE" },
+];
+
+const TOTAL_COMPONENT = COMPONENTS.find((component) => component.key === "total") ?? COMPONENTS[3];
+
+const RT_SOURCE_LABELS_BY_ISO: Record<PowerIso, Record<RtLmpSource, string>> = {
+  pjm: {
+    verified: "Verified Hourly",
+    unverified: "Unverified Hourly",
+  },
+  ercot: {
+    verified: "Hourly Avg",
+    unverified: "Hourly Avg",
+  },
+  isone: {
+    verified: "Final Hourly",
+    unverified: "Prelim Hourly",
+  },
+};
+
+const LMP_SOURCE_FEEDS: LmpSourceFeed[] = [
+  {
+    iso: "pjm",
+    market: "DA hourly",
+    sourceLabel: "PJM Data Miner da_hrl_lmps",
+    sourceUrl: "https://dataminer2.pjm.com/feed/da_hrl_lmps/definition",
+  },
+  {
+    iso: "pjm",
+    market: "RT verified hourly",
+    sourceLabel: "PJM Data Miner rt_hrl_lmps",
+    sourceUrl: "https://dataminer2.pjm.com/feed/rt_hrl_lmps/definition",
+  },
+  {
+    iso: "pjm",
+    market: "RT unverified hourly",
+    sourceLabel: "PJM Data Miner rt_unverified_hrl_lmps",
+    sourceUrl: "https://dataminer2.pjm.com/feed/rt_unverified_hrl_lmps/definition",
+  },
+  {
+    iso: "ercot",
+    market: "DAM settlement point",
+    sourceLabel: "ERCOT NP4-190-CD",
+    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=NP4-190-CD",
+  },
+  {
+    iso: "ercot",
+    market: "RT settlement point",
+    sourceLabel: "ERCOT NP6-905-CD",
+    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-905-CD",
+  },
+  {
+    iso: "isone",
+    market: "DA hourly",
+    sourceLabel: "ISO-NE Hourly Day-Ahead LMPs",
+    sourceUrl: "https://www.iso-ne.com/isoexpress/web/reports/pricing/-/tree/lmps-da-hourly",
+  },
+  {
+    iso: "isone",
+    market: "RT final hourly",
+    sourceLabel: "ISO-NE Final Real-Time Hourly LMPs",
+    sourceUrl:
+      "https://www.iso-ne.com/isoexpress/web/reports/pricing/-/tree/lmps-rt-hourly-final",
+  },
+  {
+    iso: "isone",
+    market: "RT preliminary hourly",
+    sourceLabel: "ISO-NE Preliminary Real-Time Hourly LMPs",
+    sourceUrl:
+      "https://www.iso-ne.com/isoexpress/web/reports/pricing/-/tree/lmps-rt-hourly-prelim",
+  },
+];
 
 const LMP_VIEW_TABS: Array<DashboardTabOption<LmpView>> = [
   { value: "daily-settles", label: "Daily Settles" },
@@ -253,39 +370,43 @@ function offsetDate(value: string, days: number): string {
 }
 
 function buildLmpsApiUrl({
+  iso,
   product,
   date,
   rtSource,
   refresh = false,
 }: {
+  iso: PowerIso;
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
   refresh?: boolean;
 }): string {
-  const params = new URLSearchParams();
+  const params = new URLSearchParams({ iso, product: product === "dart" ? "da" : product });
   if (date) params.set("date", date);
   if (product === "rt") params.set("source", rtSource);
   if (refresh) params.set("refresh", "1");
 
-  const baseUrl = product === "rt" ? "/api/pjm-rt-lmps" : "/api/pjm-da-lmps";
   const query = params.toString();
-  return query ? `${baseUrl}?${query}` : baseUrl;
+  return `/api/power-lmps?${query}`;
 }
 
 function buildLmpsCacheKey({
+  iso,
   product,
   date,
   rtSource,
 }: {
+  iso: PowerIso;
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
 }): string {
-  return `api:pjm-${product}-lmps:${product === "rt" ? rtSource : "hourly"}:${date ?? "latest"}`;
+  return `api:power-${iso}-${product}-lmps:${product === "rt" ? rtSource : "hourly"}:${date ?? "latest"}`;
 }
 
 function buildSettlesApiUrl({
+  iso,
   startDate,
   endDate,
   hub,
@@ -293,6 +414,7 @@ function buildSettlesApiUrl({
   rtSource,
   refresh = false,
 }: {
+  iso: PowerIso;
   startDate: string;
   endDate: string;
   hub: string;
@@ -301,6 +423,7 @@ function buildSettlesApiUrl({
   refresh?: boolean;
 }): string {
   const params = new URLSearchParams({
+    iso,
     start: startDate,
     end: endDate,
     hub,
@@ -308,7 +431,45 @@ function buildSettlesApiUrl({
     rtSource,
   });
   if (refresh) params.set("refresh", "1");
-  return `/api/pjm-lmp-settles?${params.toString()}`;
+  return `/api/power-lmp-settles?${params.toString()}`;
+}
+
+function selectedLmpSourceFeeds({
+  iso,
+  product,
+  rtSource,
+}: {
+  iso: PowerIso;
+  product: LmpProduct;
+  rtSource: RtLmpSource;
+}): LmpSourceFeed[] {
+  const daMarketByIso: Record<PowerIso, string> = {
+    pjm: "DA hourly",
+    ercot: "DAM settlement point",
+    isone: "DA hourly",
+  };
+  const rtMarketByIso: Record<PowerIso, Record<RtLmpSource, string>> = {
+    pjm: {
+      verified: "RT verified hourly",
+      unverified: "RT unverified hourly",
+    },
+    ercot: {
+      verified: "RT settlement point",
+      unverified: "RT settlement point",
+    },
+    isone: {
+      verified: "RT final hourly",
+      unverified: "RT preliminary hourly",
+    },
+  };
+  const findFeed = (market: string) =>
+    LMP_SOURCE_FEEDS.find((feed) => feed.iso === iso && feed.market === market);
+  const daFeed = findFeed(daMarketByIso[iso]);
+  const rtFeed = findFeed(rtMarketByIso[iso][rtSource]);
+
+  if (product === "da") return daFeed ? [daFeed] : [];
+  if (product === "rt") return rtFeed ? [rtFeed] : [];
+  return [daFeed, rtFeed].filter((feed): feed is LmpSourceFeed => Boolean(feed));
 }
 
 // Resolve a day's 24 hourly values for the active product. DART is the per-hour
@@ -324,15 +485,15 @@ function settleHourlyForProduct(
   return HOURS.map((_, index) => subtractValue(da[index], rt[index]));
 }
 
-// Plain hour-window averages with no calendar logic: OnPeak = HE 8-23, OffPeak = the
-// rest, Flat = all 24. Weekend / holiday status is surfaced as a row badge only and
-// never changes the numbers shown.
+// Plain intraday hour-window averages with no calendar logic. Weekend / holiday
+// status is surfaced as a row badge only and never changes the daily block values.
 function settlePeriodAverages(
+  iso: PowerIso,
   hourly: Array<number | null>
 ): { onPeak: number | null; offPeak: number | null; flat: number | null } {
   return {
-    onPeak: avg(ONPEAK_HOURS.map((hour) => hourly[hour - 1] ?? null)),
-    offPeak: avg(OFFPEAK_HOURS.map((hour) => hourly[hour - 1] ?? null)),
+    onPeak: avg(onPeakHoursForIso(iso).map((hour) => hourly[hour - 1] ?? null)),
+    offPeak: avg(offPeakHoursForIso(iso).map((hour) => hourly[hour - 1] ?? null)),
     flat: avg(hourly),
   };
 }
@@ -358,6 +519,31 @@ function settleColumnValue(
   if (column === "flat") return day.flat;
   const hour = Number(column.slice(2));
   return Number.isFinite(hour) ? day.hourly[hour - 1] ?? null : null;
+}
+
+function settleDayTypeLabels(day: {
+  isWeekend: boolean;
+  isNercHoliday: boolean;
+}): string[] {
+  const labels: string[] = [];
+  if (!day.isWeekend && !day.isNercHoliday) labels.push(SETTLE_DAY_TYPE_LABELS.weekday);
+  if (day.isWeekend) labels.push(SETTLE_DAY_TYPE_LABELS.weekend);
+  if (day.isNercHoliday) labels.push(SETTLE_DAY_TYPE_LABELS.holiday);
+  return labels;
+}
+
+function settleFilterValue(
+  day: {
+    date: string;
+    onPeak: number | null;
+    offPeak: number | null;
+    flat: number | null;
+    hourly: Array<number | null>;
+  },
+  key: SettleSortKey
+): string {
+  if (key === "date") return day.date;
+  return fmtPrice(settleColumnValue(day, key));
 }
 
 function componentRowColumnValue(row: ComponentRow, column: SettleColumnKey): number | null {
@@ -412,11 +598,13 @@ function buildTableRow({
   label,
   color,
   values,
+  iso,
 }: {
   key: string;
   label: string;
   color: string;
   values: Map<number, number | null>;
+  iso: PowerIso;
 }): ComponentRow {
   const allValues = HOURS.map((hour) => values.get(hour) ?? null);
   const nums = allValues.filter((value): value is number => value !== null);
@@ -426,8 +614,8 @@ function buildTableRow({
     label,
     color,
     values,
-    onPeakAvg: avg(ONPEAK_HOURS.map((hour) => values.get(hour) ?? null)),
-    offPeakAvg: avg(OFFPEAK_HOURS.map((hour) => values.get(hour) ?? null)),
+    onPeakAvg: avg(onPeakHoursForIso(iso).map((hour) => values.get(hour) ?? null)),
+    offPeakAvg: avg(offPeakHoursForIso(iso).map((hour) => values.get(hour) ?? null)),
     flatAvg: avg(allValues),
     min: nums.length > 0 ? Math.min(...nums) : 0,
     max: nums.length > 0 ? Math.max(...nums) : 0,
@@ -482,6 +670,7 @@ function fallbackHourStamp(targetDate: string, hourEnding: number): string {
 }
 
 function buildDartHub(
+  iso: PowerIso,
   hubName: string,
   daHub: HubLmpSummary | null,
   rtHub: HubLmpSummary | null,
@@ -504,12 +693,8 @@ function buildDartHub(
     };
   });
 
-  const onPeak = hourly.filter(
-    (row) => row.hourEnding >= ONPEAK_START && row.hourEnding <= ONPEAK_END
-  );
-  const offPeak = hourly.filter(
-    (row) => row.hourEnding < ONPEAK_START || row.hourEnding > ONPEAK_END
-  );
+  const onPeak = hourly.filter((row) => isOnPeakHour(iso, row.hourEnding));
+  const offPeak = hourly.filter((row) => !isOnPeakHour(iso, row.hourEnding));
   const peak = hourly.reduce<HourlyLmp | null>((best, row) => {
     if (row.total === null) return best;
     if (!best || best.total === null || row.total > best.total) return row;
@@ -528,6 +713,7 @@ function buildDartHub(
 }
 
 function buildDartPayload(
+  iso: PowerIso,
   daPayload: PjmLmpsPayload,
   rtPayload: PjmLmpsPayload,
   rtSource: RtLmpSource
@@ -536,6 +722,7 @@ function buildDartPayload(
   const hubNames = daPayload.hubs.map((hub) => hub.hub);
   const hubs = hubNames.map((hubName) =>
     buildDartHub(
+      iso,
       hubName,
       daPayload.hubs.find((hub) => hub.hub === hubName) ?? null,
       rtPayload.hubs.find((hub) => hub.hub === hubName) ?? null,
@@ -544,16 +731,21 @@ function buildDartPayload(
   );
 
   return {
+    iso,
+    isoLabel: daPayload.isoLabel,
+    defaultHub: daPayload.defaultHub,
+    supportsComponents: daPayload.supportsComponents,
     targetDate,
     latestDate: rtPayload.latestDate,
     asOf: maxStamp(daPayload.asOf, rtPayload.asOf),
-    source: "pjm.dart_lmps",
+    source: `${iso}.dart_lmps`,
     rtSource,
     hubs,
   };
 }
 
 function fetchDirectLmpsPayload({
+  iso,
   product,
   date,
   rtSource,
@@ -561,6 +753,7 @@ function fetchDirectLmpsPayload({
   cacheMode = "default",
   forceRefresh = false,
 }: {
+  iso: PowerIso;
   product: Exclude<LmpProduct, "dart">;
   date?: string | null;
   rtSource: RtLmpSource;
@@ -569,8 +762,8 @@ function fetchDirectLmpsPayload({
   forceRefresh?: boolean;
 }): Promise<PjmLmpsPayload> {
   return fetchJsonWithCache<PjmLmpsPayload>({
-    key: buildLmpsCacheKey({ product, date, rtSource }),
-    url: buildLmpsApiUrl({ product, date, rtSource, refresh: forceRefresh }),
+    key: buildLmpsCacheKey({ iso, product, date, rtSource }),
+    url: buildLmpsApiUrl({ iso, product, date, rtSource, refresh: forceRefresh }),
     ttlMs: API_CACHE_TTL_MS,
     signal,
     cacheMode,
@@ -579,6 +772,7 @@ function fetchDirectLmpsPayload({
 }
 
 async function fetchLmpsPayload({
+  iso,
   product,
   date,
   rtSource,
@@ -586,6 +780,7 @@ async function fetchLmpsPayload({
   cacheMode = "default",
   forceRefresh = false,
 }: {
+  iso: PowerIso;
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
@@ -595,6 +790,7 @@ async function fetchLmpsPayload({
 }): Promise<PjmLmpsPayload> {
   if (product !== "dart") {
     return fetchDirectLmpsPayload({
+      iso,
       product,
       date,
       rtSource,
@@ -605,6 +801,7 @@ async function fetchLmpsPayload({
   }
 
   const rtSeed = await fetchDirectLmpsPayload({
+    iso,
     product: "rt",
     date,
     rtSource,
@@ -615,6 +812,7 @@ async function fetchLmpsPayload({
   const targetDate = date ?? rtSeed.targetDate;
   const [daPayload, rtPayload] = await Promise.all([
     fetchDirectLmpsPayload({
+      iso,
       product: "da",
       date: targetDate,
       rtSource,
@@ -625,6 +823,7 @@ async function fetchLmpsPayload({
     rtSeed.targetDate === targetDate
       ? Promise.resolve(rtSeed)
       : fetchDirectLmpsPayload({
+          iso,
           product: "rt",
           date: targetDate,
           rtSource,
@@ -634,7 +833,7 @@ async function fetchLmpsPayload({
         }),
   ]);
 
-  return buildDartPayload(daPayload, rtPayload, rtSource);
+  return buildDartPayload(iso, daPayload, rtPayload, rtSource);
 }
 
 function StatTile({
@@ -711,14 +910,16 @@ function LmpComponentCard({
   value,
   onChange,
   allowAll = false,
+  components = COMPONENTS,
 }: {
   value: ComponentSelection;
   onChange: (value: ComponentSelection) => void;
   allowAll?: boolean;
+  components?: ComponentConfig[];
 }) {
   const options: Array<{ key: ComponentSelection; label: string; color?: string }> = [
     ...(allowAll ? [{ key: "all" as const, label: "All Components" }] : []),
-    ...COMPONENTS.map((component) => ({
+    ...components.map((component) => ({
       key: component.key,
       label: component.label,
       color: component.color,
@@ -760,13 +961,16 @@ function LmpComponentCard({
 }
 
 function RtDatasetCard({
+  iso,
   value,
   onChange,
 }: {
+  iso: PowerIso;
   value: RtLmpSource;
   onChange: (value: RtLmpSource) => void;
 }) {
-  const options: RtLmpSource[] = ["unverified", "verified"];
+  const options: RtLmpSource[] = iso === "ercot" ? ["unverified"] : ["unverified", "verified"];
+  const labels = RT_SOURCE_LABELS_BY_ISO[iso];
 
   return (
     <SectionCard title="RT Dataset" subtitle="Real-time LMP source">
@@ -786,12 +990,158 @@ function RtDatasetCard({
                   : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
               }`}
             >
-              {RT_SOURCE_LABELS[option]}
+              {labels[option]}
             </button>
           );
         })}
       </div>
     </SectionCard>
+  );
+}
+
+function LmpSourceLinksModal({
+  open,
+  activeIso,
+  onClose,
+}: {
+  open: boolean;
+  activeIso: PowerIso;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lmp-source-links-title"
+        className="max-h-[82vh] w-full max-w-3xl overflow-hidden rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl shadow-black"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-gray-800 px-4 py-3">
+          <div>
+            <h2 id="lmp-source-links-title" className="text-sm font-semibold text-gray-100">
+              LMP Source Links
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              DART is derived from the listed DA and selected RT feeds.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close source links"
+            className="rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-100"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="max-h-[65vh] overflow-auto">
+          <table className="w-full min-w-[620px] border-collapse text-sm">
+            <thead className="sticky top-0 bg-gray-950 text-[10px] uppercase tracking-wider text-gray-500">
+              <tr>
+                <th className="px-4 py-2 text-left font-bold">ISO</th>
+                <th className="px-4 py-2 text-left font-bold">Market</th>
+                <th className="px-4 py-2 text-left font-bold">Source Link</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-800 text-gray-300">
+              {LMP_SOURCE_FEEDS.map((feed) => {
+                const active = feed.iso === activeIso;
+                return (
+                  <tr key={`${feed.iso}-${feed.market}`} className={active ? "bg-sky-500/5" : ""}>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs font-semibold text-gray-100">
+                      {ISO_LABELS[feed.iso]}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-xs">{feed.market}</td>
+                    <td className="px-4 py-3 text-xs">
+                      <a
+                        href={feed.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sky-300 underline decoration-sky-500/40 underline-offset-4 transition-colors hover:text-sky-100"
+                      >
+                        {feed.sourceLabel}
+                      </a>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SelectedLmpSource({
+  feeds,
+  sourceTable,
+  onOpenAll,
+}: {
+  feeds: LmpSourceFeed[];
+  sourceTable: string;
+  onOpenAll: () => void;
+}) {
+  return (
+    <div className="flex w-full justify-start">
+      <div className="inline-flex max-w-full flex-col overflow-hidden rounded-lg border border-gray-800 bg-[#12141d] shadow-xl shadow-black/20 sm:flex-row sm:items-stretch">
+        <button
+          type="button"
+          onClick={onOpenAll}
+          className="shrink-0 bg-gray-950/40 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-gray-400 transition-colors hover:bg-gray-900 hover:text-gray-100"
+        >
+          All Sources
+        </button>
+        <div className="h-px bg-gray-800 sm:hidden" aria-hidden="true" />
+        <div className="hidden w-px bg-gray-800 sm:block" aria-hidden="true" />
+        <div className="min-w-0 px-3 py-2 text-left">
+          <div className="flex min-w-0 flex-col items-start gap-1 text-xs sm:flex-row sm:items-center sm:gap-2">
+            <span className="shrink-0 font-bold uppercase tracking-wider text-gray-500">Selected Source</span>
+            {feeds.length > 0 ? (
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {feeds.map((feed, index) => (
+                  <span
+                    key={`${feed.iso}-${feed.market}`}
+                    className="inline-flex min-w-0 items-center gap-1.5"
+                  >
+                    {index > 0 && <span className="text-gray-600">+</span>}
+                    <a
+                      href={feed.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-w-0 max-w-[260px] items-center rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-1 font-semibold text-sky-200 underline decoration-sky-300/80 underline-offset-4 shadow-sm shadow-sky-950/40 transition-colors hover:border-sky-300 hover:bg-sky-500/20 hover:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/60"
+                      title={feed.sourceLabel}
+                    >
+                      <span className="truncate">{feed.sourceLabel}</span>
+                    </a>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-gray-400">{sourceTable}</span>
+            )}
+          </div>
+          <p className="mt-1 max-w-full truncate text-[11px] text-gray-500">{sourceTable}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -820,6 +1170,47 @@ function SettleHeaderButton({
         {active ? (activeSort.direction === "asc" ? "▲" : "▼") : "↕"}
       </span>
     </button>
+  );
+}
+
+function FilteredSettleHeader({
+  label,
+  sortKey,
+  activeSort,
+  filterOptions,
+  selectedFilters,
+  onSort,
+  onFilterChange,
+  align = "left",
+}: {
+  label: string;
+  sortKey: SettleSortKey;
+  activeSort: SettleSortState;
+  filterOptions: string[];
+  selectedFilters: string[];
+  onSort: (key: SettleSortKey) => void;
+  onFilterChange: (values: string[]) => void;
+  align?: "left" | "right";
+}) {
+  return (
+    <div
+      className={`flex min-w-[72px] items-center gap-1.5 ${
+        align === "right" ? "justify-end" : "justify-between"
+      }`}
+    >
+      <SettleHeaderButton
+        label={label}
+        sortKey={sortKey}
+        activeSort={activeSort}
+        onSort={onSort}
+      />
+      <LmpColumnFilterMenu
+        label={label}
+        options={filterOptions}
+        selected={selectedFilters}
+        onChange={onFilterChange}
+      />
+    </div>
   );
 }
 
@@ -964,6 +1355,7 @@ function SelectionStatsBar({
 }
 
 export default function PjmDaLmps({
+  initialIso = null,
   initialDate = null,
   initialView = null,
   initialProduct = null,
@@ -973,6 +1365,7 @@ export default function PjmDaLmps({
   refreshToken = 0,
   onFreshnessChange,
 }: {
+  initialIso?: PowerIso | null;
   initialDate?: string | null;
   initialView?: LmpView | null;
   initialProduct?: LmpProduct | null;
@@ -982,10 +1375,11 @@ export default function PjmDaLmps({
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmDaLmpsFreshnessSummary) => void;
 }) {
+  const [activeIso, setActiveIso] = useState<PowerIso>(initialIso ?? "pjm");
   const [activeProduct, setActiveProduct] = useState<LmpProduct>(initialProduct ?? "da");
   const [rtSource, setRtSource] = useState<RtLmpSource>(initialRtSource ?? "unverified");
   const [data, setData] = useState<PjmLmpsPayload | null>(null);
-  const [selectedHub, setSelectedHub] = useState(initialHub ?? "WESTERN HUB");
+  const [selectedHub, setSelectedHub] = useState(initialHub ?? ISO_DEFAULT_HUBS[activeIso]);
   const [date, setDate] = useState<string | null>(initialDate);
   const [dateInput, setDateInput] = useState("");
   const [activeView, setActiveView] = useState<LmpView>(initialView ?? "daily-settles");
@@ -998,7 +1392,8 @@ export default function PjmDaLmps({
   const [settlesData, setSettlesData] = useState<PjmLmpSettlesPayload | null>(null);
   const [settlesLoading, setSettlesLoading] = useState(false);
   const [settlesError, setSettlesError] = useState<string | null>(null);
-  const [settlesDayType, setSettlesDayType] = useState<SettleDayType>("all");
+  const [settleColumnFilters, setSettleColumnFilters] =
+    useState<ColumnFilters<SettleFilterKey>>({});
   const [settlesSort, setSettlesSort] = useState<SettleSortState>({
     key: "date",
     direction: "desc",
@@ -1010,6 +1405,7 @@ export default function PjmDaLmps({
   // Seed the settles range to the latest available date once, the first time PJM data
   // loads — so we don't land on an empty "today" window before settles are posted.
   const settlesRangeSeededRef = useRef(false);
+  const isoInitializedRef = useRef(false);
   const [singleComponent, setSingleComponent] = useState<ComponentSelection>(
     initialComponent ?? "all",
   );
@@ -1020,19 +1416,51 @@ export default function PjmDaLmps({
   const [compareData, setCompareData] = useState<PjmLmpsPayload | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [compareHubA, setCompareHubA] = useState("WESTERN HUB");
-  const [compareHubB, setCompareHubB] = useState("EASTERN HUB");
+  const [compareHubA, setCompareHubA] = useState(ISO_DEFAULT_HUBS[activeIso]);
+  const [compareHubB, setCompareHubB] = useState(ISO_DEFAULT_HUBS[activeIso]);
   const [compareHubComponent, setCompareHubComponent] = useState<ComponentKey>("total");
   const [latestRefreshToken, setLatestRefreshToken] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
+  const [sourceLinksOpen, setSourceLinksOpen] = useState(false);
   const [hiddenPlotSeries, setHiddenPlotSeries] = useState<Set<string>>(() => new Set());
   const [hiddenCompareSeries, setHiddenCompareSeries] = useState<Set<string>>(() => new Set());
   const [hiddenHubCompareSeries, setHiddenHubCompareSeries] = useState<Set<string>>(
     () => new Set()
   );
   const effectiveRefreshToken = refreshToken + latestRefreshToken;
+  const supportsComponents = activeIso !== "ercot";
+  const activeComponents = useMemo(
+    () => (supportsComponents ? COMPONENTS : [TOTAL_COMPONENT]),
+    [supportsComponents],
+  );
+
+  useEffect(() => {
+    if (!supportsComponents) {
+      setSingleComponent("total");
+      setSettlesComponent("total");
+      setCompareComponent("total");
+      setCompareHubComponent("total");
+    }
+  }, [supportsComponents]);
+
+  useEffect(() => {
+    if (!isoInitializedRef.current) {
+      isoInitializedRef.current = true;
+      return;
+    }
+    settlesRangeSeededRef.current = false;
+    setSettlesStartDate("");
+    setSettlesEndDate("");
+    setDate(null);
+    setSelectedHub(ISO_DEFAULT_HUBS[activeIso]);
+    setCompareHubA(ISO_DEFAULT_HUBS[activeIso]);
+    setCompareHubB(ISO_DEFAULT_HUBS[activeIso]);
+    if (activeIso === "ercot") {
+      setRtSource("unverified");
+    }
+  }, [activeIso]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1042,6 +1470,7 @@ export default function PjmDaLmps({
     setError(null);
     setData(null);
     fetchLmpsPayload({
+      iso: activeIso,
       product: activeProduct,
       date,
       rtSource,
@@ -1058,20 +1487,20 @@ export default function PjmDaLmps({
         setSelectedHub((prev) =>
           payload.hubs.some((hub) => hub.hub === prev)
             ? prev
-            : (payload.hubs[0]?.hub ?? "WESTERN HUB")
+            : (payload.defaultHub ?? payload.hubs[0]?.hub ?? ISO_DEFAULT_HUBS[activeIso])
         );
         setCompareHubA((prev) =>
           payload.hubs.some((hub) => hub.hub === prev)
             ? prev
-            : (payload.hubs[0]?.hub ?? "WESTERN HUB")
+            : (payload.defaultHub ?? payload.hubs[0]?.hub ?? ISO_DEFAULT_HUBS[activeIso])
         );
         setCompareHubB((prev) => {
           if (payload.hubs.some((hub) => hub.hub === prev)) return prev;
           return (
-            payload.hubs.find((hub) => hub.hub === "EASTERN HUB")?.hub ??
+            payload.hubs.find((hub) => hub.hub === ISO_DEFAULT_HUBS[activeIso])?.hub ??
             payload.hubs[1]?.hub ??
             payload.hubs[0]?.hub ??
-            "EASTERN HUB"
+            ISO_DEFAULT_HUBS[activeIso]
           );
         });
       })
@@ -1089,7 +1518,7 @@ export default function PjmDaLmps({
       active = false;
       controller.abort();
     };
-  }, [activeProduct, date, effectiveRefreshToken, rtSource]);
+  }, [activeIso, activeProduct, date, effectiveRefreshToken, rtSource]);
 
   useEffect(() => {
     if (activeView !== "daily-settles") return;
@@ -1100,6 +1529,7 @@ export default function PjmDaLmps({
     const controller = new AbortController();
     let active = true;
     const url = buildSettlesApiUrl({
+      iso: activeIso,
       startDate: settlesStartDate,
       endDate: settlesEndDate,
       hub: selectedHub,
@@ -1111,7 +1541,7 @@ export default function PjmDaLmps({
     setSettlesLoading(true);
     setSettlesError(null);
     fetchJsonWithCache<PjmLmpSettlesPayload>({
-      key: `pjm-lmp-settles:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${settlesComponent}:${rtSource}`,
+      key: `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${settlesComponent}:${rtSource}`,
       url,
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
@@ -1138,6 +1568,7 @@ export default function PjmDaLmps({
     };
   }, [
     activeView,
+    activeIso,
     effectiveRefreshToken,
     rtSource,
     selectedHub,
@@ -1190,16 +1621,26 @@ export default function PjmDaLmps({
   const visibleComponentRows = useMemo(
     () =>
       singleComponent === "all"
-        ? componentRows
-        : componentRows.filter((row) => row.key === singleComponent),
-    [componentRows, singleComponent]
+        ? componentRows.filter((row) => activeComponents.some((component) => component.key === row.key))
+        : componentRows.filter(
+            (row) =>
+              row.key === singleComponent &&
+              activeComponents.some((component) => component.key === row.key)
+          ),
+    [activeComponents, componentRows, singleComponent]
   );
   const singlePlotSeries = useMemo(
     () =>
       singleComponent === "all"
-        ? PLOT_SERIES
-        : PLOT_SERIES.filter((series) => series.key === singleComponent),
-    [singleComponent]
+        ? PLOT_SERIES.filter((series) =>
+            activeComponents.some((component) => component.key === series.key)
+          )
+        : PLOT_SERIES.filter(
+            (series) =>
+              series.key === singleComponent &&
+              activeComponents.some((component) => component.key === series.key)
+          ),
+    [activeComponents, singleComponent]
   );
   const isLatestDay = data?.latestDate && data.targetDate === data.latestDate;
   const freshnessStatus = loading ? "Refreshing" : isLatestDay ? "Current" : "Selected Day";
@@ -1212,10 +1653,10 @@ export default function PjmDaLmps({
     if (!data) return null;
     const productLabel =
       activeProduct === "dart"
-        ? `DART ${RT_SOURCE_LABELS[rtSource]}`
+        ? `${ISO_LABELS[activeIso]} DART ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
         : activeProduct === "rt"
-        ? `RT ${RT_SOURCE_LABELS[rtSource]}`
-        : "PJM DA";
+        ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
+        : `${ISO_LABELS[activeIso]} DA`;
     return {
       status: freshnessStatus,
       statusClass: freshnessClass,
@@ -1224,7 +1665,7 @@ export default function PjmDaLmps({
       latestDateLabel: data.latestDate ?? "--",
       latestUpdateLabel: fmtStamp(data.asOf),
     };
-  }, [activeProduct, data, freshnessClass, freshnessStatus, rtSource]);
+  }, [activeIso, activeProduct, data, freshnessClass, freshnessStatus, rtSource]);
 
   useEffect(() => {
     if (freshnessSummary) {
@@ -1245,6 +1686,7 @@ export default function PjmDaLmps({
 
     const fetchDate = (targetDate: string) =>
       fetchLmpsPayload({
+        iso: activeIso,
         product: activeProduct,
         date: targetDate,
         rtSource,
@@ -1271,7 +1713,7 @@ export default function PjmDaLmps({
       active = false;
       controller.abort();
     };
-  }, [activeProduct, activeView, compareBaseDate, compareDate, rtSource]);
+  }, [activeIso, activeProduct, activeView, compareBaseDate, compareDate, rtSource]);
 
   const applyDate = () => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
@@ -1285,7 +1727,8 @@ export default function PjmDaLmps({
     />
   );
 
-  const compareConfig = COMPONENTS.find((component) => component.key === compareComponent) ?? COMPONENTS[3];
+  const compareConfig =
+    activeComponents.find((component) => component.key === compareComponent) ?? TOTAL_COMPONENT;
   const compareBaseHub = useMemo(
     () => compareBaseData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
     [compareBaseData, selectedHub]
@@ -1317,21 +1760,24 @@ export default function PjmDaLmps({
         label: compareBaseDate || "Reference Date",
         color: COMPARISON_COLORS.reference,
         values: new Map(compareChartData.map((row) => [row.he, row.base] as const)),
+        iso: activeIso,
       }),
       buildTableRow({
         key: "compare",
         label: compareDate || "Compare Date",
         color: COMPARISON_COLORS.compare,
         values: new Map(compareChartData.map((row) => [row.he, row.compare] as const)),
+        iso: activeIso,
       }),
       buildTableRow({
         key: "delta",
         label: "Delta",
         color: COMPARISON_COLORS.delta,
         values: new Map(compareChartData.map((row) => [row.he, row.delta] as const)),
+        iso: activeIso,
       }),
     ],
-    [compareChartData, compareBaseDate, compareDate]
+    [activeIso, compareChartData, compareBaseDate, compareDate]
   );
   const compareSeries: PlotSeries[] = [
     {
@@ -1349,7 +1795,7 @@ export default function PjmDaLmps({
     { key: "delta", label: "Delta", color: COMPARISON_COLORS.delta, defaultVisible: true },
   ];
   const hubCompareConfig =
-    COMPONENTS.find((component) => component.key === compareHubComponent) ?? COMPONENTS[3];
+    activeComponents.find((component) => component.key === compareHubComponent) ?? TOTAL_COMPONENT;
   const compareHubAData = useMemo(
     () => data?.hubs.find((hub) => hub.hub === compareHubA) ?? data?.hubs[0] ?? null,
     [compareHubA, data]
@@ -1381,21 +1827,24 @@ export default function PjmDaLmps({
         label: compareHubAData?.hub ?? "Hub A",
         color: COMPARISON_COLORS.reference,
         values: new Map(hubCompareChartData.map((row) => [row.he, row.hubA] as const)),
+        iso: activeIso,
       }),
       buildTableRow({
         key: "hubB",
         label: compareHubBData?.hub ?? "Hub B",
         color: COMPARISON_COLORS.compare,
         values: new Map(hubCompareChartData.map((row) => [row.he, row.hubB] as const)),
+        iso: activeIso,
       }),
       buildTableRow({
         key: "delta",
         label: "Delta",
         color: COMPARISON_COLORS.delta,
         values: new Map(hubCompareChartData.map((row) => [row.he, row.delta] as const)),
+        iso: activeIso,
       }),
     ],
-    [compareHubAData, compareHubBData, hubCompareChartData]
+    [activeIso, compareHubAData, compareHubBData, hubCompareChartData]
   );
   const hubCompareSeries: PlotSeries[] = [
     {
@@ -1414,7 +1863,7 @@ export default function PjmDaLmps({
   ];
   const settleRows = useMemo(() => settlesData?.rows ?? [], [settlesData]);
   const settleComponentConfig =
-    COMPONENTS.find((component) => component.key === settlesComponent) ?? COMPONENTS[3];
+    activeComponents.find((component) => component.key === settlesComponent) ?? TOTAL_COMPONENT;
   const settleMetricLabel =
     activeProduct === "dart" ? "DART (DA - RT)" : activeProduct === "rt" ? "RT" : "DA";
   // One enriched record per day: the active product's hourly values for the selected
@@ -1423,7 +1872,7 @@ export default function PjmDaLmps({
     () =>
       settleRows.map((row) => {
         const hourly = settleHourlyForProduct(row, activeProduct);
-        const periods = settlePeriodAverages(hourly);
+        const periods = settlePeriodAverages(activeIso, hourly);
         return {
           date: row.date,
           isWeekend: row.isWeekend,
@@ -1437,7 +1886,7 @@ export default function PjmDaLmps({
           asOf: settleDayAsOf(row, activeProduct),
         };
       }),
-    [activeProduct, settleRows]
+    [activeIso, activeProduct, settleRows]
   );
   // Shared color scale across the whole day×hour grid so magnitudes are comparable
   // between days (a per-row scale would flatten every day to the same gradient).
@@ -1450,16 +1899,45 @@ export default function PjmDaLmps({
       max: nums.length > 0 ? Math.max(...nums) : 0,
     };
   }, [settleDays]);
-  const filteredSettleDays = useMemo(
-    () =>
-      settleDays.filter((day) => {
-        if (settlesDayType === "weekday") return !day.isWeekend && !day.isNercHoliday;
-        if (settlesDayType === "weekend") return day.isWeekend;
-        if (settlesDayType === "holiday") return day.isNercHoliday;
-        return true;
-      }),
-    [settleDays, settlesDayType]
-  );
+  const settleColumnFilterOptions = useMemo(() => {
+    const options: Record<SettleFilterKey, string[]> = {
+      dayType: [
+        SETTLE_DAY_TYPE_LABELS.weekday,
+        SETTLE_DAY_TYPE_LABELS.weekend,
+        SETTLE_DAY_TYPE_LABELS.holiday,
+      ],
+      date: uniqueColumnOptions(settleDays.map((day) => day.date)),
+      onpeak: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.onPeak))),
+      offpeak: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.offPeak))),
+      flat: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.flat))),
+      ...Object.fromEntries(
+        HOURS.map((hour) => [
+          `he${hour}`,
+          uniqueColumnOptions(
+            settleDays.map((day) => fmtPrice(day.hourly[hour - 1] ?? null)),
+          ),
+        ]),
+      ),
+    } as Record<SettleFilterKey, string[]>;
+    return options;
+  }, [settleDays]);
+  const filteredSettleDays = useMemo(() => {
+    const activeFilters = Object.entries(settleColumnFilters).filter(
+      (entry): entry is [SettleFilterKey, string[]] =>
+        Array.isArray(entry[1]) && entry[1].length > 0
+    );
+    if (activeFilters.length === 0) return settleDays;
+
+    return settleDays.filter((day) =>
+      activeFilters.every(([key, selected]) => {
+        if (key === "dayType") {
+          const labels = settleDayTypeLabels(day);
+          return selected.some((value) => labels.includes(value));
+        }
+        return matchesColumnFilter(settleFilterValue(day, key), selected);
+      })
+    );
+  }, [settleColumnFilters, settleDays]);
   const displayedSettleDays = useMemo(() => {
     const direction = settlesSort.direction === "asc" ? 1 : -1;
     const rows = [...filteredSettleDays];
@@ -1536,6 +2014,12 @@ export default function PjmDaLmps({
     setSelectedSettleCells(new Set());
     setLastSelectedSettleCell(null);
   };
+  const hasSettleColumnFilters = Object.values(settleColumnFilters).some(
+    (values) => values && values.length > 0
+  );
+  const updateSettleColumnFilter = (key: SettleFilterKey, values: string[]) => {
+    setSettleColumnFilters((filters) => updateColumnFilter(filters, key, values));
+  };
 
   const metricCellValues = useMemo(() => {
     const values = new Map<string, number | null>();
@@ -1609,6 +2093,7 @@ export default function PjmDaLmps({
     setSelectedMetricCells(new Set());
     setLastSelectedMetricCell(null);
   }, [
+    activeIso,
     activeProduct,
     activeView,
     compareBaseDate,
@@ -1625,6 +2110,10 @@ export default function PjmDaLmps({
 
   const handleViewChange = (nextView: LmpView) => {
     setActiveView(nextView);
+  };
+
+  const handleIsoChange = (nextIso: PowerIso) => {
+    setActiveIso(nextIso);
   };
 
   const togglePlotSeries = (key: string) => {
@@ -1645,7 +2134,9 @@ export default function PjmDaLmps({
     setHiddenPlotSeries(new Set(singlePlotSeries.map((series) => series.key)));
 
   const shouldShowSingleSeries = (key: ComponentKey) =>
-    (singleComponent === "all" || singleComponent === key) && !hiddenPlotSeries.has(key);
+    activeComponents.some((component) => component.key === key) &&
+    (singleComponent === "all" || singleComponent === key) &&
+    !hiddenPlotSeries.has(key);
 
   const renderChart = (heightClass: string) => (
     <div className={heightClass}>
@@ -1893,10 +2384,10 @@ export default function PjmDaLmps({
 
   const activeProductLabel =
     activeProduct === "dart"
-      ? `DART (${RT_SOURCE_LABELS[rtSource]} RT)`
+      ? `${ISO_LABELS[activeIso]} DART (${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]} RT)`
       : activeProduct === "rt"
-      ? `RT ${RT_SOURCE_LABELS[rtSource]} LMPs`
-      : `PJM ${PRODUCT_LABELS[activeProduct]}`;
+      ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
+      : `${ISO_LABELS[activeIso]} ${PRODUCT_LABELS[activeProduct]}`;
   const metricSelectionLabel =
     activeView === "single-day"
       ? `${selected?.hub ?? selectedHub} ${activeProductLabel} selection`
@@ -1929,21 +2420,40 @@ export default function PjmDaLmps({
     label: PRODUCT_LABELS[product],
   }));
   const viewTabs: Array<DashboardTabOption<LmpView>> = LMP_VIEW_TABS;
+  const currentSourceFeeds = selectedLmpSourceFeeds({
+    iso: activeIso,
+    product: activeProduct,
+    rtSource,
+  });
 
   return (
     <div className="space-y-4">
+      <LmpSourceLinksModal
+        open={sourceLinksOpen}
+        activeIso={activeIso}
+        onClose={() => setSourceLinksOpen(false)}
+      />
       {error && (
         <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
           {error}
         </div>
       )}
       <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
+        <div className="border-b border-gray-800 pb-2">
+          <DashboardTabs
+            tabs={ISO_TABS}
+            activeValue={activeIso}
+            onChange={handleIsoChange}
+            ariaLabel="Power ISO"
+          />
+        </div>
         <DashboardTabs
           tabs={productTabs}
           activeValue={activeProduct}
           onChange={setActiveProduct}
           ariaLabel="LMP products"
-          className="border-b border-gray-800 pb-2"
+          variant="secondary"
+          className="border-b border-gray-800 py-2"
         />
         <DashboardTabs
           tabs={viewTabs}
@@ -1955,9 +2465,15 @@ export default function PjmDaLmps({
         />
       </div>
 
-      {activeProduct !== "da" && activeView !== "daily-settles" && (
-        <RtDatasetCard value={rtSource} onChange={setRtSource} />
+      {activeProduct !== "da" && (
+        <RtDatasetCard iso={activeIso} value={rtSource} onChange={setRtSource} />
       )}
+
+      <SelectedLmpSource
+        feeds={currentSourceFeeds}
+        sourceTable={data.source}
+        onOpenAll={() => setSourceLinksOpen(true)}
+      />
 
       {activeView === "daily-settles" && (
         <>
@@ -2001,14 +2517,11 @@ export default function PjmDaLmps({
 
           <LmpComponentCard
             value={settlesComponent}
+            components={activeComponents}
             onChange={(value) => {
               if (value !== "all") setSettlesComponent(value);
             }}
           />
-
-          {activeProduct !== "da" && (
-            <RtDatasetCard value={rtSource} onChange={setRtSource} />
-          )}
 
           {settlesError && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -2021,26 +2534,18 @@ export default function PjmDaLmps({
             subtitle={`${displayedSettleDays.length.toLocaleString()} of ${settleDays.length.toLocaleString()} dates | ${settleComponentConfig.label} | ${settleMetricLabel} | click cells to aggregate`}
             action={
               <div className="flex flex-wrap items-center justify-end gap-2">
-                <div className="flex flex-wrap gap-1" role="group" aria-label="Day type filter">
-                  {(Object.keys(SETTLE_DAY_TYPE_LABELS) as SettleDayType[]).map((type) => {
-                    const active = settlesDayType === type;
-                    return (
-                      <button
-                        key={type}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => setSettlesDayType(type)}
-                        className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
-                          active
-                            ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
-                            : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                        }`}
-                      >
-                        {SETTLE_DAY_TYPE_LABELS[type]}
-                      </button>
-                    );
-                  })}
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setSettleColumnFilters({})}
+                  disabled={!hasSettleColumnFilters}
+                  className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                    hasSettleColumnFilters
+                      ? "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-white"
+                      : "cursor-not-allowed border-gray-800 bg-gray-950/40 text-gray-600"
+                  }`}
+                >
+                  Clear Filters
+                </button>
                 {tableHeatmapAction}
               </div>
             }
@@ -2049,39 +2554,62 @@ export default function PjmDaLmps({
               <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
                 <thead className="bg-gray-950 text-gray-500">
                   <tr>
-                    <th className="sticky left-0 z-20 w-10 bg-gray-950 px-2 py-2 text-center font-semibold uppercase tracking-wide">
-                      <span className="sr-only">Day type</span>
+                    <th className="sticky left-0 z-20 w-20 bg-gray-950 px-2 py-2 text-center font-semibold uppercase tracking-wide">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <span className="text-[10px]">Type</span>
+                        <LmpColumnFilterMenu
+                          label="Day Type"
+                          options={settleColumnFilterOptions.dayType}
+                          selected={settleColumnFilters.dayType ?? EMPTY_COLUMN_FILTER}
+                          onChange={(values) => updateSettleColumnFilter("dayType", values)}
+                        />
+                      </div>
                     </th>
-                    <th className="sticky left-10 z-20 bg-gray-950 px-3 py-2 text-left">
-                      <SettleHeaderButton
+                    <th className="sticky left-20 z-20 bg-gray-950 px-3 py-2 text-left">
+                      <FilteredSettleHeader
                         label="Date"
                         sortKey="date"
                         activeSort={settlesSort}
                         onSort={toggleSettleSort}
+                        filterOptions={settleColumnFilterOptions.date}
+                        selectedFilters={settleColumnFilters.date ?? EMPTY_COLUMN_FILTER}
+                        onFilterChange={(values) => updateSettleColumnFilter("date", values)}
                       />
                     </th>
                     <th className="border-l border-gray-700 px-3 py-2 text-right">
-                      <SettleHeaderButton
+                      <FilteredSettleHeader
                         label="OnPeak"
                         sortKey="onpeak"
                         activeSort={settlesSort}
                         onSort={toggleSettleSort}
+                        filterOptions={settleColumnFilterOptions.onpeak}
+                        selectedFilters={settleColumnFilters.onpeak ?? EMPTY_COLUMN_FILTER}
+                        onFilterChange={(values) => updateSettleColumnFilter("onpeak", values)}
+                        align="right"
                       />
                     </th>
                     <th className="px-3 py-2 text-right">
-                      <SettleHeaderButton
+                      <FilteredSettleHeader
                         label="OffPeak"
                         sortKey="offpeak"
                         activeSort={settlesSort}
                         onSort={toggleSettleSort}
+                        filterOptions={settleColumnFilterOptions.offpeak}
+                        selectedFilters={settleColumnFilters.offpeak ?? EMPTY_COLUMN_FILTER}
+                        onFilterChange={(values) => updateSettleColumnFilter("offpeak", values)}
+                        align="right"
                       />
                     </th>
                     <th className="px-3 py-2 text-right">
-                      <SettleHeaderButton
+                      <FilteredSettleHeader
                         label="Flat"
                         sortKey="flat"
                         activeSort={settlesSort}
                         onSort={toggleSettleSort}
+                        filterOptions={settleColumnFilterOptions.flat}
+                        selectedFilters={settleColumnFilters.flat ?? EMPTY_COLUMN_FILTER}
+                        onFilterChange={(values) => updateSettleColumnFilter("flat", values)}
+                        align="right"
                       />
                     </th>
                     {HOURS.map((hour) => (
@@ -2089,13 +2617,22 @@ export default function PjmDaLmps({
                         key={hour}
                         className={`px-2 py-2 text-right ${
                           hour === 1 ? "border-l border-gray-700" : ""
-                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                        } ${isOnPeakHour(activeIso, hour) ? "bg-sky-500/10 text-sky-200" : ""}`}
                       >
-                        <SettleHeaderButton
+                        <FilteredSettleHeader
                           label={`HE${hour}`}
                           sortKey={`he${hour}` as SettleSortKey}
                           activeSort={settlesSort}
                           onSort={toggleSettleSort}
+                          filterOptions={settleColumnFilterOptions[`he${hour}` as SettleFilterKey]}
+                          selectedFilters={
+                            settleColumnFilters[`he${hour}` as SettleFilterKey] ??
+                            EMPTY_COLUMN_FILTER
+                          }
+                          onFilterChange={(values) =>
+                            updateSettleColumnFilter(`he${hour}` as SettleFilterKey, values)
+                          }
+                          align="right"
                         />
                       </th>
                     ))}
@@ -2116,7 +2653,7 @@ export default function PjmDaLmps({
                         key={day.date}
                         className={day.isNercHoliday ? "bg-amber-500/[0.06]" : "hover:bg-gray-900/40"}
                       >
-                        <td className="sticky left-0 z-10 w-10 bg-[#0d1119] px-2 py-2 text-center">
+                        <td className="sticky left-0 z-10 w-20 bg-[#0d1119] px-2 py-2 text-center">
                           {day.isNercHoliday ? (
                             <span
                               title={day.holidayName ?? "NERC holiday"}
@@ -2137,7 +2674,7 @@ export default function PjmDaLmps({
                             </span>
                           )}
                         </td>
-                        <td className="sticky left-10 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
+                        <td className="sticky left-20 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
                           {day.date}
                         </td>
                         <SettleCell
@@ -2183,8 +2720,14 @@ export default function PjmDaLmps({
                               heatRange={settleHeatRange}
                               onSelect={toggleSettleCell}
                               extraClass={`${hour === 1 ? "border-l border-gray-700" : ""} ${
-                                hour === 8 ? "border-l border-dotted border-sky-700/70" : ""
-                              } ${hour === 23 ? "border-r border-dotted border-sky-700/70" : ""}`}
+                                hour === PEAK_WINDOW_BY_ISO[activeIso].start
+                                  ? "border-l border-dotted border-sky-700/70"
+                                  : ""
+                              } ${
+                                hour === PEAK_WINDOW_BY_ISO[activeIso].end
+                                  ? "border-r border-dotted border-sky-700/70"
+                                  : ""
+                              }`}
                             />
                           );
                         })}
@@ -2258,7 +2801,7 @@ export default function PjmDaLmps({
 
       {activeView === "single-day" && (
         <>
-      <SectionCard title="Date Selection" subtitle={`Source: ${data.source}`}>
+      <SectionCard title="Date Selection" subtitle="Market date">
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
@@ -2326,6 +2869,7 @@ export default function PjmDaLmps({
         value={singleComponent}
         onChange={setSingleComponent}
         allowAll
+        components={activeComponents}
       />
 
       <PlotCard
@@ -2365,7 +2909,7 @@ export default function PjmDaLmps({
                     key={hour}
                     className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
                       hour === 1 ? "border-l border-gray-700" : ""
-                    } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                    } ${isOnPeakHour(activeIso, hour) ? "bg-sky-500/10 text-sky-200" : ""}`}
                   >
                     HE{hour}
                   </th>
@@ -2498,6 +3042,7 @@ export default function PjmDaLmps({
 
           <LmpComponentCard
             value={compareComponent}
+            components={activeComponents}
             onChange={(value) => {
               if (value !== "all") setCompareComponent(value);
             }}
@@ -2559,7 +3104,7 @@ export default function PjmDaLmps({
                         key={hour}
                         className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
                           hour === 1 ? "border-l border-gray-700" : ""
-                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                        } ${isOnPeakHour(activeIso, hour) ? "bg-sky-500/10 text-sky-200" : ""}`}
                       >
                         HE{hour}
                       </th>
@@ -2656,7 +3201,7 @@ export default function PjmDaLmps({
 
       {activeView === "compare-hubs" && (
         <>
-          <SectionCard title="Date Selection" subtitle={`Source: ${data.source}`}>
+          <SectionCard title="Date Selection" subtitle="Market date for hub comparison">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
@@ -2721,6 +3266,7 @@ export default function PjmDaLmps({
 
           <LmpComponentCard
             value={compareHubComponent}
+            components={activeComponents}
             onChange={(value) => {
               if (value !== "all") setCompareHubComponent(value);
             }}
@@ -2770,7 +3316,7 @@ export default function PjmDaLmps({
                         key={hour}
                         className={`px-2 py-2 text-right font-semibold uppercase tracking-wide ${
                           hour === 1 ? "border-l border-gray-700" : ""
-                        } ${hour >= 8 && hour <= 23 ? "bg-sky-500/10 text-sky-200" : ""}`}
+                        } ${isOnPeakHour(activeIso, hour) ? "bg-sky-500/10 text-sky-200" : ""}`}
                       >
                         HE{hour}
                       </th>

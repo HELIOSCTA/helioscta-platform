@@ -24,8 +24,12 @@ import PjmDaLmps, {
   type LmpProduct as PjmLmpProduct,
   type LmpView as PjmLmpView,
   type PjmDaLmpsFreshnessSummary,
+  type PowerIso as PjmLmpIso,
   type RtLmpSource as PjmLmpRtSource,
 } from "@/components/pjm/PjmDaLmps";
+import PowerLmpAdders, {
+  type PowerLmpAddersFreshnessSummary,
+} from "@/components/pjm/PowerLmpAdders";
 import PjmDaModel, {
   type PjmDaModelFreshnessSummary,
 } from "@/components/pjm/PjmDaModel";
@@ -61,6 +65,15 @@ const DEFAULT_PJM_DA_LMPS_FRESHNESS: PjmDaLmpsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "LMP day --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_POWER_LMP_ADDERS_FRESHNESS: PowerLmpAddersFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "LMP adders --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -206,6 +219,7 @@ function parseInitialSection(
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
   }
+  if (value === "power-lmp-adders") return "power-lmp-adders";
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
@@ -278,6 +292,10 @@ function parsePjmLmpProductParam(value: string | null): PjmLmpProduct | undefine
   return value === "da" || value === "rt" || value === "dart" ? value : undefined;
 }
 
+function parsePjmLmpIsoParam(value: string | null): PjmLmpIso | undefined {
+  return value === "pjm" || value === "ercot" || value === "isone" ? value : undefined;
+}
+
 function parsePjmLmpRtSourceParam(value: string | null): PjmLmpRtSource | undefined {
   return value === "verified" || value === "unverified" ? value : undefined;
 }
@@ -312,6 +330,7 @@ export default function HomePageClient({
     parseInitialSection(searchParams.get("section"), showLocalDevFeatures),
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
+  const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
   const [pjmDaModelRefreshToken, setPjmDaModelRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
   const [pjmPriceDistributionsRefreshToken, setPjmPriceDistributionsRefreshToken] =
@@ -329,6 +348,7 @@ export default function HomePageClient({
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
   const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
+  const [powerLmpAddersFreshnessOpen, setPowerLmpAddersFreshnessOpen] = useState(false);
   const [pjmDaModelFreshnessOpen, setPjmDaModelFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
   const [pjmPriceDistributionsFreshnessOpen, setPjmPriceDistributionsFreshnessOpen] =
@@ -349,6 +369,8 @@ export default function HomePageClient({
     useState(false);
   const [pjmDaLmpsFreshness, setPjmDaLmpsFreshness] =
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
+  const [powerLmpAddersFreshness, setPowerLmpAddersFreshness] =
+    useState<PowerLmpAddersFreshnessSummary>(DEFAULT_POWER_LMP_ADDERS_FRESHNESS);
   const [pjmDaModelFreshness, setPjmDaModelFreshness] =
     useState<PjmDaModelFreshnessSummary>(DEFAULT_PJM_DA_MODEL_FRESHNESS);
   const [pjmPriceDurationFreshness, setPjmPriceDurationFreshness] =
@@ -389,6 +411,7 @@ export default function HomePageClient({
     );
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
+  const initialPjmDaLmpIso = parsePjmLmpIsoParam(searchParams.get("iso"));
   const initialPjmDaLmpView = parsePjmLmpViewParam(searchParams.get("view"));
   const initialPjmDaLmpProduct = parsePjmLmpProductParam(searchParams.get("product"));
   const initialPjmDaLmpRtSource = parsePjmLmpRtSourceParam(
@@ -583,10 +606,18 @@ export default function HomePageClient({
         footer: "Weather | Source: WSI + NOAA AviationWeather / Azure PostgreSQL",
       };
     }
+    if (activeSection === "power-lmp-adders") {
+      return {
+        title: "LMP Adders & Reserves",
+        subtitle:
+          "ISO-specific price adders, reserve market results, and source contracts alongside LMPs.",
+        footer: "LMP Adders | Source: promoted reserve/adders tables and source contracts",
+      };
+    }
     return {
       title: "Power LMPs",
       subtitle:
-        "PJM day-ahead and real-time LMPs with hourly component breakdowns and hub summaries.",
+        "PJM, ERCOT, and ISO-NE day-ahead, real-time, and DART power prices.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
   }, [activeSection, showLocalDevFeatures]);
@@ -648,6 +679,28 @@ export default function HomePageClient({
                 onToggle={() => setPjmDaLmpsFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
                 onAction={() => setPjmDaLmpsRefreshToken((value) => value + 1)}
+              />
+            )}
+
+            {activeSection === "power-lmp-adders" && (
+              <FreshnessCard
+                statusLabel={powerLmpAddersFreshness.status}
+                statusClass={powerLmpAddersFreshness.statusClass}
+                summary={powerLmpAddersFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: powerLmpAddersFreshness.status,
+                    className: powerLmpAddersFreshness.statusClass,
+                  },
+                  { label: "Selected Day", value: powerLmpAddersFreshness.targetDateLabel },
+                  { label: "Latest Day", value: powerLmpAddersFreshness.latestDateLabel },
+                  { label: "Source Update", value: powerLmpAddersFreshness.latestUpdateLabel },
+                ]}
+                open={powerLmpAddersFreshnessOpen}
+                onToggle={() => setPowerLmpAddersFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPowerLmpAddersRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -965,6 +1018,7 @@ export default function HomePageClient({
 
           {activeSection === "pjm-da-lmps" && (
             <PjmDaLmps
+              initialIso={initialPjmDaLmpIso}
               initialDate={initialPjmDaLmpDate}
               initialView={initialPjmDaLmpView}
               initialProduct={initialPjmDaLmpProduct}
@@ -973,6 +1027,12 @@ export default function HomePageClient({
               initialComponent={initialPjmDaLmpComponent}
               refreshToken={pjmDaLmpsRefreshToken + (initialPjmDaLmpRefresh ? 1 : 0)}
               onFreshnessChange={setPjmDaLmpsFreshness}
+            />
+          )}
+          {activeSection === "power-lmp-adders" && (
+            <PowerLmpAdders
+              refreshToken={powerLmpAddersRefreshToken}
+              onFreshnessChange={setPowerLmpAddersFreshness}
             />
           )}
           {showLocalDevFeatures && activeSection === "pjm-da-model" && (

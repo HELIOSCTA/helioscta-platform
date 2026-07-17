@@ -4,6 +4,7 @@ import { useState } from "react";
 
 export type ActiveSection =
   | "pjm-da-lmps"
+  | "power-lmp-adders"
   | "pjm-da-model"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
@@ -63,6 +64,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     label: "POWER",
     navItems: [
       { id: "pjm-da-lmps", label: "LMPs" },
+      { id: "power-lmp-adders", label: "LMP Adders" },
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
       { id: "pjm-ops-summary", label: "Ops Sum" },
       { id: "pjm-outages", label: "Outages" },

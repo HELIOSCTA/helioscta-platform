@@ -40,6 +40,10 @@ The production route is `/`. The active compatibility API routes are:
 
 ```text
 GET /api/ops/readiness
+GET /api/power-lmps?iso=pjm&product=da&date=YYYY-MM-DD
+GET /api/power-lmps?iso=ercot&product=rt&date=YYYY-MM-DD&source=unverified
+GET /api/power-lmps?iso=isone&product=rt&date=YYYY-MM-DD&source=verified
+GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
@@ -62,8 +66,16 @@ Email/report links can open the PJM DA LMP page directly into the single-day
 view:
 
 ```text
-/?section=pjm-da-lmps&view=single-day&product=rt&source=verified&date=YYYY-MM-DD&hub=WESTERN%20HUB&component=all&refresh=1
+/?section=pjm-da-lmps&iso=pjm&view=single-day&product=rt&source=verified&date=YYYY-MM-DD&hub=WESTERN%20HUB&component=all&refresh=1
 ```
+
+The Power LMPs page accepts `iso=pjm|ercot|isone` and exposes ISO tabs in the
+order `PJM | ERCOT | ISO-NE` before the `DA LMPs | RT | DART` product tabs.
+PJM links without `iso` still default to PJM. ERCOT uses total settlement point
+prices only, so component controls are constrained to `Total`; ERCOT RT is
+hourly-averaged from promoted 15-minute settlement point prices. ISO-NE RT
+maps `source=verified` to final hourly LMPs and `source=unverified` to
+preliminary hourly LMPs.
 
 Local development also exposes a clearly separated `DEV` sidebar section:
 
