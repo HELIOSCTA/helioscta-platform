@@ -77,6 +77,7 @@ def pull_lmps(
     run_id: str | None = None,
     database: str | None = None,
     metadata: dict | None = None,
+    log_fetch: bool = True,
 ) -> pd.DataFrame:
     """Pull and normalize CAISO OASIS LMP rows for one Pacific trading date."""
     nodes = tuple(nodes or DEFAULT_TRADING_HUB_NODES)
@@ -101,6 +102,7 @@ def pull_lmps(
             **(metadata or {}),
         },
         database=database,
+        log_fetch=log_fetch,
     )
     return format_oasis_lmp_rows(
         raw_df,

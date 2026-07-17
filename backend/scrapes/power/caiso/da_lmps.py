@@ -79,6 +79,7 @@ def _pull(
     run_id: str | None = None,
     database: str | None = None,
     metadata: dict | None = None,
+    log_fetch: bool = True,
 ) -> pd.DataFrame:
     """Pull CAISO day-ahead LMPs for one Pacific trading date."""
     return _lmp.pull_lmps(
@@ -92,6 +93,7 @@ def _pull(
         run_id=run_id,
         database=database,
         metadata=metadata,
+        log_fetch=log_fetch,
     )
 
 

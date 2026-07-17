@@ -36,6 +36,7 @@ def fetch_single_zip_csv(
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
     retry_delay_seconds: float = DEFAULT_RETRY_DELAY_SECONDS,
+    log_fetch: bool = True,
 ) -> pd.DataFrame:
     """Fetch one CAISO OASIS SingleZip CSV response into a DataFrame."""
     params = {
@@ -78,6 +79,30 @@ def fetch_single_zip_csv(
                 content=response.content,
             ):
                 df, csv_filename = parse_single_zip_csv(response.content)
+                if log_fetch:
+                    _log_fetch_attempt(
+                        parsed_url=parsed_url,
+                        pipeline_name=pipeline_name,
+                        run_id=run_id,
+                        operation_name=operation,
+                        feed_name=feed_name,
+                        target_table=target_table,
+                        status="success",
+                        http_status=response.status_code,
+                        elapsed_ms=elapsed_ms,
+                        attempt=attempt,
+                        max_attempts=max_attempts,
+                        rows_returned=len(df),
+                        metadata={**fetch_metadata, "csv_filename": csv_filename},
+                        database=database,
+                    )
+                return df
+
+            last_error = (
+                f"status={response.status_code}, content_type={content_type}, "
+                f"bytes={len(response.content)}"
+            )
+            if log_fetch:
                 _log_fetch_attempt(
                     parsed_url=parsed_url,
                     pipeline_name=pipeline_name,
@@ -85,58 +110,37 @@ def fetch_single_zip_csv(
                     operation_name=operation,
                     feed_name=feed_name,
                     target_table=target_table,
-                    status="success",
+                    status="failure",
                     http_status=response.status_code,
                     elapsed_ms=elapsed_ms,
                     attempt=attempt,
                     max_attempts=max_attempts,
-                    rows_returned=len(df),
-                    metadata={**fetch_metadata, "csv_filename": csv_filename},
+                    error_type="UnexpectedResponse",
+                    error_message=last_error,
+                    metadata=fetch_metadata,
                     database=database,
                 )
-                return df
-
-            last_error = (
-                f"status={response.status_code}, content_type={content_type}, "
-                f"bytes={len(response.content)}"
-            )
-            _log_fetch_attempt(
-                parsed_url=parsed_url,
-                pipeline_name=pipeline_name,
-                run_id=run_id,
-                operation_name=operation,
-                feed_name=feed_name,
-                target_table=target_table,
-                status="failure",
-                http_status=response.status_code,
-                elapsed_ms=elapsed_ms,
-                attempt=attempt,
-                max_attempts=max_attempts,
-                error_type="UnexpectedResponse",
-                error_message=last_error,
-                metadata=fetch_metadata,
-                database=database,
-            )
         except (requests.RequestException, RuntimeError, BadZipFile) as exc:
             elapsed_ms = round((time.perf_counter() - started) * 1000)
             last_error = str(exc)
-            _log_fetch_attempt(
-                parsed_url=parsed_url,
-                pipeline_name=pipeline_name,
-                run_id=run_id,
-                operation_name=operation,
-                feed_name=feed_name,
-                target_table=target_table,
-                status="failure",
-                http_status=response.status_code if response is not None else None,
-                elapsed_ms=elapsed_ms,
-                attempt=attempt,
-                max_attempts=max_attempts,
-                error_type=type(exc).__name__,
-                error_message=redact_secrets(last_error),
-                metadata=fetch_metadata,
-                database=database,
-            )
+            if log_fetch:
+                _log_fetch_attempt(
+                    parsed_url=parsed_url,
+                    pipeline_name=pipeline_name,
+                    run_id=run_id,
+                    operation_name=operation,
+                    feed_name=feed_name,
+                    target_table=target_table,
+                    status="failure",
+                    http_status=response.status_code if response is not None else None,
+                    elapsed_ms=elapsed_ms,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                    error_type=type(exc).__name__,
+                    error_message=redact_secrets(last_error),
+                    metadata=fetch_metadata,
+                    database=database,
+                )
 
         if attempt < max_attempts:
             delay = _retry_delay_seconds(

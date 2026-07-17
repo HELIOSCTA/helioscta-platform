@@ -19,6 +19,20 @@ def test_caiso_da_lmp_event_key_and_expected_periods():
     assert da_lmps._expected_period_count_for_date(date(2026, 11, 1)) == 25
 
 
+def test_caiso_da_lmps_scheduled_target_is_next_pacific_trading_date():
+    before_publication = pd.Timestamp(
+        "2026-07-17T12:50:00",
+        tz=da_lmps.LOCAL_MARKET_TIMEZONE,
+    )
+    after_publication = pd.Timestamp(
+        "2026-07-17T13:20:00",
+        tz=da_lmps.LOCAL_MARKET_TIMEZONE,
+    )
+
+    assert da_lmps._target_market_date(now=before_publication) == date(2026, 7, 18)
+    assert da_lmps._target_market_date(now=after_publication) == date(2026, 7, 18)
+
+
 def test_caiso_rt_lmp_expected_periods():
     assert rt_lmps._expected_period_count_for_date(date(2026, 7, 16)) == 288
     assert rt_lmps._expected_period_count_for_date(date(2026, 3, 8)) == 276
@@ -99,6 +113,92 @@ def test_caiso_rt_lmps_skips_readiness_when_a_hub_is_missing(monkeypatch):
 
     assert events == []
     assert captured == []
+
+
+def test_caiso_da_lmps_fetch_complete_market_day_suppresses_per_attempt_logs(
+    monkeypatch,
+):
+    captured: dict[str, object] = {}
+
+    def fake_pull(**kwargs):
+        captured.update(kwargs)
+        return _availability_frame(
+            business_date=date(2026, 7, 18),
+            periods=24,
+            interval_minutes=60,
+            nodes=da_lmps.DEFAULT_NODES,
+        )
+
+    monkeypatch.setattr(da_lmps.scrape, "_pull", fake_pull)
+
+    df = da_lmps._fetch_complete_market_day(
+        trading_date=date(2026, 7, 18),
+        nodes=da_lmps.DEFAULT_NODES,
+        run_id="run-1",
+        database="stage_db",
+        metadata={"run_mode": "scheduled"},
+    )
+
+    assert len(df) == 48
+    assert captured["trading_date"] == date(2026, 7, 18)
+    assert captured["nodes"] == da_lmps.DEFAULT_NODES
+    assert captured["run_id"] == "run-1"
+    assert captured["database"] == "stage_db"
+    assert captured["metadata"] == {"run_mode": "scheduled"}
+    assert captured["log_fetch"] is False
+
+
+def test_caiso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
+    logs: list[dict[str, object]] = []
+    attempts = {"count": 0}
+
+    def fake_fetch_complete_market_day(**kwargs):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise da_lmps.DataNotYetAvailable("not yet published")
+        return _availability_frame(
+            business_date=date(2026, 7, 18),
+            periods=24,
+            interval_minutes=60,
+            nodes=da_lmps.DEFAULT_NODES,
+        )
+
+    monkeypatch.setattr(
+        da_lmps,
+        "_fetch_complete_market_day",
+        fake_fetch_complete_market_day,
+    )
+    monkeypatch.setattr(da_lmps.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(da_lmps, "log_api_fetch", lambda **kwargs: logs.append(kwargs))
+
+    df = da_lmps._wait_for_complete_data_logged(
+        trading_date=date(2026, 7, 18),
+        nodes=da_lmps.DEFAULT_NODES,
+        run_id="run-1",
+        database="stage_db",
+        metadata={"run_mode": "scheduled"},
+        poll_ceiling_seconds=60,
+        poll_wait_seconds=1,
+    )
+
+    assert len(df) == 48
+    assert attempts["count"] == 2
+    assert len(logs) == 1
+    log = logs[0]
+    assert log["provider"] == "caiso"
+    assert log["pipeline_name"] == "da_lmps"
+    assert log["operation_name"] == "da_lmps_poll"
+    assert log["target_table"] == "caiso.da_lmps"
+    assert log["status"] == "success"
+    assert log["rows_returned"] == 48
+    assert log["attempt"] == 2
+    assert log["database"] == "stage_db"
+    assert log["metadata"]["run_mode"] == "scheduled"
+    assert log["metadata"]["target_trading_date"] == "2026-07-18"
+    assert log["metadata"]["poll_count"] == 2
+    assert log["metadata"]["expected_period_count"] == 24
+    assert log["metadata"]["period_count"] == 24
+    assert log["metadata"]["entity_count"] == 2
 
 
 def _availability_frame(

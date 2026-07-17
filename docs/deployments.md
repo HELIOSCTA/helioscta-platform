@@ -487,8 +487,11 @@ LIMIT 10;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-caiso-da-lmps.service`.
-- Schedule: daily at `13:20 America/Los_Angeles` with
-  `RandomizedDelaySec=5min`.
+- Schedule: daily at `12:50 America/Los_Angeles` with
+  `RandomizedDelaySec=5min`. The service polls every two minutes for up to
+  four hours so it can start before CAISO's 1:00 p.m. day-ahead OASIS
+  publication window and continue until the complete next trading date is
+  available.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-caiso-da-lmps.lock`.
@@ -511,6 +514,9 @@ LIMIT 10;
   trading date `2026-07-17`, upserted 48 rows, and observed existing readiness
   event `caiso_da_lmps:data_ready:2026-07-17:trading_hubs_np15_sp15`.
 - Next scheduled run observed: `2026-07-17 20:20:40 UTC`.
+- Polling correction pending deployment: update `helios-caiso-da-lmps.timer`
+  from post-publication `13:20 America/Los_Angeles` to pre-publication
+  `12:50 America/Los_Angeles`, and update the service timeout to 5 hours.
 
 Verification SQL for CAISO DA hourly LMP coverage:
 
