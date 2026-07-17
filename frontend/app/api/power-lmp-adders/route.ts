@@ -23,7 +23,7 @@ const ROUTE_CONFIG = {
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const forceRefresh = searchParams.get("refresh") === "1";
-  const iso = parsePowerLmpAdderIso();
+  const iso = parsePowerLmpAdderIso(searchParams.get("iso"));
   const dataset = parsePowerLmpAdderDataset(searchParams.get("dataset"), iso);
   const result = await buildPowerLmpAddersPayload({
     iso,

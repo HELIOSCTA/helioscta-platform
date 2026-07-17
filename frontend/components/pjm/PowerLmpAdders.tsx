@@ -13,11 +13,13 @@ import LmpColumnFilterMenu, {
 } from "@/components/pjm/LmpColumnFilterMenu";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type PowerIso = "pjm";
+type PowerIso = "pjm" | "ercot";
 type DatasetStatus = "live" | "pending" | "reference";
 type LmpAdderDataset =
   | "pjm-da-reserve-mcp"
-  | "pjm-rt-reserve-mcp";
+  | "pjm-rt-reserve-mcp"
+  | "ercot-rt-price-adders-sced"
+  | "ercot-rt-price-adders-15min";
 type LmpAdderView = "daily-settles";
 
 interface DatasetContract {
@@ -111,14 +113,31 @@ interface AddersPayload {
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-type AdderFilterKey = "date" | "onPeakAvg" | "offPeakAvg" | `dimension:${string}` | `he${number}`;
+type AdderDimensionKey = `dimension:${string}`;
+type AdderHourKey = `he${number}`;
+type AdderFilterKey =
+  | "dayType"
+  | "date"
+  | "onPeakAvg"
+  | "offPeakAvg"
+  | AdderDimensionKey
+  | AdderHourKey;
+type AdderSortDirection = "asc" | "desc";
+type AdderSortKey = Exclude<AdderFilterKey, "dayType">;
+
+interface AdderSortState {
+  key: AdderSortKey;
+  direction: AdderSortDirection;
+}
 
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
+  ercot: { start: 7, end: 22 },
 };
 
 const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
   { value: "pjm", label: "PJM" },
+  { value: "ercot", label: "ERCOT" },
 ];
 
 const DATASET_TABS_BY_ISO: Record<PowerIso, Array<DashboardTabOption<LmpAdderDataset>>> = {
@@ -126,15 +145,26 @@ const DATASET_TABS_BY_ISO: Record<PowerIso, Array<DashboardTabOption<LmpAdderDat
     { value: "pjm-da-reserve-mcp", label: "DA Reserves" },
     { value: "pjm-rt-reserve-mcp", label: "RT Reserves" },
   ],
+  ercot: [
+    { value: "ercot-rt-price-adders-sced", label: "RT Adders SCED" },
+    { value: "ercot-rt-price-adders-15min", label: "RT Adders 15-Min" },
+  ],
 };
 
 const DEFAULT_DATASET_BY_ISO: Record<PowerIso, LmpAdderDataset> = {
   pjm: "pjm-da-reserve-mcp",
+  ercot: "ercot-rt-price-adders-sced",
 };
 
 const VIEW_TABS: Array<DashboardTabOption<LmpAdderView>> = [
   { value: "daily-settles", label: "Daily Settles" },
 ];
+
+const ADDER_DAY_TYPE_LABELS = {
+  weekday: "Weekday",
+  weekend: "Weekend",
+  holiday: "Holiday",
+} as const;
 
 function fmtPrice(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return "-";
@@ -171,15 +201,16 @@ function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
   return hourEnding >= window.start && hourEnding <= window.end;
 }
 
-function adderDimensionFilterKey(key: string): AdderFilterKey {
+function adderDimensionFilterKey(key: string): AdderDimensionKey {
   return `dimension:${key}`;
 }
 
-function adderHourFilterKey(hour: number): AdderFilterKey {
-  return `he${hour}`;
+function adderHourFilterKey(hour: number): AdderHourKey {
+  return `he${hour}` as AdderHourKey;
 }
 
 function adderFilterValue(row: DailySettleRow, key: AdderFilterKey): string {
+  if (key === "dayType") return adderDayTypeLabel(row);
   if (key === "date") return row.date;
   if (key === "onPeakAvg") return fmtPrice(row.onPeakAvg);
   if (key === "offPeakAvg") return fmtPrice(row.offPeakAvg);
@@ -188,6 +219,51 @@ function adderFilterValue(row: DailySettleRow, key: AdderFilterKey): string {
   }
   const hour = Number(key.slice(2));
   return fmtPrice(Number.isFinite(hour) ? row.hourly[hour - 1] ?? null : null);
+}
+
+function isWeekendDate(value: string): boolean {
+  const day = new Date(`${value}T00:00:00Z`).getUTCDay();
+  return day === 0 || day === 6;
+}
+
+function adderDayTypeLabel(row: DailySettleRow): string {
+  return isWeekendDate(row.date) ? ADDER_DAY_TYPE_LABELS.weekend : ADDER_DAY_TYPE_LABELS.weekday;
+}
+
+function adderSortValue(row: DailySettleRow, key: AdderSortKey): string | number | null {
+  if (key === "date") return row.date;
+  if (key === "onPeakAvg") return row.onPeakAvg;
+  if (key === "offPeakAvg") return row.offPeakAvg;
+  if (key.startsWith("dimension:")) {
+    return row.dimensions[key.slice("dimension:".length)] ?? "";
+  }
+  const hour = Number(key.slice(2));
+  return Number.isFinite(hour) ? row.hourly[hour - 1] ?? null : null;
+}
+
+function compareAdderRows(
+  left: DailySettleRow,
+  right: DailySettleRow,
+  sort: AdderSortState,
+): number {
+  const direction = sort.direction === "asc" ? 1 : -1;
+  const leftValue = adderSortValue(left, sort.key);
+  const rightValue = adderSortValue(right, sort.key);
+
+  if (leftValue === null && rightValue === null) return 0;
+  if (leftValue === null) return 1;
+  if (rightValue === null) return -1;
+
+  if (typeof leftValue === "number" && typeof rightValue === "number") {
+    return (leftValue - rightValue) * direction;
+  }
+
+  const valueCompare = String(leftValue).localeCompare(String(rightValue));
+  if (valueCompare !== 0) return valueCompare * direction;
+
+  const dateCompare = left.date.localeCompare(right.date);
+  if (dateCompare !== 0) return dateCompare;
+  return JSON.stringify(left.dimensions).localeCompare(JSON.stringify(right.dimensions));
 }
 
 function todayDate(): string {
@@ -563,24 +639,40 @@ function SourceDescriptionModal({
 
 function FilteredAdderHeader({
   label,
+  sortKey,
+  activeSort,
   options,
   selected,
+  onSort,
   onChange,
   align = "left",
 }: {
   label: string;
+  sortKey: AdderSortKey;
+  activeSort: AdderSortState;
   options: string[];
   selected: string[];
+  onSort: (key: AdderSortKey) => void;
   onChange: (values: string[]) => void;
   align?: "left" | "right";
 }) {
+  const active = activeSort.key === sortKey;
   return (
     <div
       className={`flex min-w-[72px] items-center gap-1.5 ${
         align === "right" ? "justify-end" : "justify-between"
       }`}
     >
-      <span className="truncate">{label}</span>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className="inline-flex min-w-0 items-center gap-1 font-semibold uppercase tracking-wide transition-colors hover:text-gray-200"
+      >
+        <span className="truncate">{label}</span>
+        <span className={`text-[9px] ${active ? "text-sky-300" : "text-gray-700"}`} aria-hidden="true">
+          {active ? (activeSort.direction === "asc" ? "^" : "v") : "-"}
+        </span>
+      </button>
       <LmpColumnFilterMenu
         label={label}
         options={options}
@@ -610,6 +702,10 @@ export default function PowerLmpAdders({
   const [sourceLinksOpen, setSourceLinksOpen] = useState(false);
   const [sourceDetailsOpen, setSourceDetailsOpen] = useState(false);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters<AdderFilterKey>>({});
+  const [adderSort, setAdderSort] = useState<AdderSortState>({
+    key: "date",
+    direction: "desc",
+  });
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const rangeSeededRef = useRef(false);
   const effectiveRefreshToken = refreshToken + latestRefreshToken;
@@ -618,6 +714,7 @@ export default function PowerLmpAdders({
     setDataset(DEFAULT_DATASET_BY_ISO[activeIso]);
     setStartDate("");
     setEndDate("");
+    setData(null);
     setColumnFilters({});
     rangeSeededRef.current = false;
   }, [activeIso]);
@@ -709,7 +806,7 @@ export default function PowerLmpAdders({
   const datasetTabs = DATASET_TABS_BY_ISO[activeIso];
   const activeDataset = data?.datasetOptions.find((option) => option.dataset === dataset);
   const tablePeakWindow = data ? PEAK_WINDOW_BY_ISO[data.iso] : PEAK_WINDOW_BY_ISO[activeIso];
-  const tableColumnCount = data ? 1 + data.dimensionColumns.length + 2 + HOURS.length : 27;
+  const tableColumnCount = data ? 2 + data.dimensionColumns.length + 2 + HOURS.length : 28;
   const hasColumnFilters = Object.values(columnFilters).some((values) => values && values.length > 0);
   const updateAdderColumnFilter = (key: AdderFilterKey, values: string[]) => {
     setColumnFilters((filters) => updateColumnFilter(filters, key, values));
@@ -717,7 +814,12 @@ export default function PowerLmpAdders({
   const columnFilterOptions = useMemo(() => {
     if (!data) return {} as Record<AdderFilterKey, string[]>;
     const options: Record<string, string[]> = {
-      date: uniqueColumnOptions(data.rows.map((row) => row.date)),
+      dayType: [
+        ADDER_DAY_TYPE_LABELS.weekday,
+        ADDER_DAY_TYPE_LABELS.weekend,
+        ADDER_DAY_TYPE_LABELS.holiday,
+      ],
+      date: uniqueColumnOptions(data.rows.map((row) => row.date), "desc"),
       onPeakAvg: uniqueColumnOptions(data.rows.map((row) => fmtPrice(row.onPeakAvg))),
       offPeakAvg: uniqueColumnOptions(data.rows.map((row) => fmtPrice(row.offPeakAvg))),
     };
@@ -746,15 +848,27 @@ export default function PowerLmpAdders({
       )
     );
   }, [columnFilters, data]);
+  const displayedRows = useMemo(() => {
+    const rows = [...filteredRows];
+    rows.sort((left, right) => compareAdderRows(left, right, adderSort));
+    return rows;
+  }, [adderSort, filteredRows]);
   const heatRange = useMemo(() => {
-    const values = filteredRows
+    const values = displayedRows
       .flatMap((row) => [row.onPeakAvg, row.offPeakAvg, ...row.hourly])
       .filter((value): value is number => value !== null && Number.isFinite(value));
     return {
       min: values.length > 0 ? Math.min(...values) : 0,
       max: values.length > 0 ? Math.max(...values) : 0,
     };
-  }, [filteredRows]);
+  }, [displayedRows]);
+  const toggleAdderSort = (key: AdderSortKey) => {
+    setAdderSort((prev) =>
+      prev.key === key
+        ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "desc" }
+    );
+  };
 
   return (
     <div className="space-y-4">
@@ -780,7 +894,15 @@ export default function PowerLmpAdders({
           <DashboardTabs
             tabs={ISO_TABS}
             activeValue={activeIso}
-            onChange={setActiveIso}
+            onChange={(value) => {
+              setActiveIso(value);
+              setDataset(DEFAULT_DATASET_BY_ISO[value]);
+              setStartDate("");
+              setEndDate("");
+              setData(null);
+              setColumnFilters({});
+              rangeSeededRef.current = false;
+            }}
             ariaLabel="LMP adder ISO"
           />
         </div>
@@ -791,6 +913,7 @@ export default function PowerLmpAdders({
             setDataset(value);
             setStartDate("");
             setEndDate("");
+            setData(null);
             setColumnFilters({});
             rangeSeededRef.current = false;
           }}
@@ -877,11 +1000,25 @@ export default function PowerLmpAdders({
           <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
             <thead className="bg-gray-950 text-gray-500">
               <tr>
-                <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
+                <th className="sticky left-0 z-20 w-20 bg-gray-950 px-2 py-2 text-center font-semibold uppercase tracking-wide">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <span className="text-[10px]">Type</span>
+                    <LmpColumnFilterMenu
+                      label="Day Type"
+                      options={columnFilterOptions.dayType ?? EMPTY_COLUMN_FILTER}
+                      selected={columnFilters.dayType ?? EMPTY_COLUMN_FILTER}
+                      onChange={(values) => updateAdderColumnFilter("dayType", values)}
+                    />
+                  </div>
+                </th>
+                <th className="sticky left-20 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
                   <FilteredAdderHeader
                     label="Date"
+                    sortKey="date"
+                    activeSort={adderSort}
                     options={columnFilterOptions.date ?? EMPTY_COLUMN_FILTER}
                     selected={columnFilters.date ?? EMPTY_COLUMN_FILTER}
+                    onSort={toggleAdderSort}
                     onChange={(values) => updateAdderColumnFilter("date", values)}
                   />
                 </th>
@@ -892,6 +1029,8 @@ export default function PowerLmpAdders({
                   >
                     <FilteredAdderHeader
                       label={column.label}
+                      sortKey={adderDimensionFilterKey(column.key)}
+                      activeSort={adderSort}
                       options={
                         columnFilterOptions[adderDimensionFilterKey(column.key)] ??
                         EMPTY_COLUMN_FILTER
@@ -900,6 +1039,7 @@ export default function PowerLmpAdders({
                         columnFilters[adderDimensionFilterKey(column.key)] ??
                         EMPTY_COLUMN_FILTER
                       }
+                      onSort={toggleAdderSort}
                       onChange={(values) =>
                         updateAdderColumnFilter(adderDimensionFilterKey(column.key), values)
                       }
@@ -909,8 +1049,11 @@ export default function PowerLmpAdders({
                 <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
                   <FilteredAdderHeader
                     label="OnPeak"
+                    sortKey="onPeakAvg"
+                    activeSort={adderSort}
                     options={columnFilterOptions.onPeakAvg ?? EMPTY_COLUMN_FILTER}
                     selected={columnFilters.onPeakAvg ?? EMPTY_COLUMN_FILTER}
+                    onSort={toggleAdderSort}
                     onChange={(values) => updateAdderColumnFilter("onPeakAvg", values)}
                     align="right"
                   />
@@ -918,8 +1061,11 @@ export default function PowerLmpAdders({
                 <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
                   <FilteredAdderHeader
                     label="OffPeak"
+                    sortKey="offPeakAvg"
+                    activeSort={adderSort}
                     options={columnFilterOptions.offPeakAvg ?? EMPTY_COLUMN_FILTER}
                     selected={columnFilters.offPeakAvg ?? EMPTY_COLUMN_FILTER}
+                    onSort={toggleAdderSort}
                     onChange={(values) => updateAdderColumnFilter("offPeakAvg", values)}
                     align="right"
                   />
@@ -933,8 +1079,11 @@ export default function PowerLmpAdders({
                   >
                     <FilteredAdderHeader
                       label={`HE${hour}`}
+                      sortKey={adderHourFilterKey(hour)}
+                      activeSort={adderSort}
                       options={columnFilterOptions[adderHourFilterKey(hour)] ?? EMPTY_COLUMN_FILTER}
                       selected={columnFilters[adderHourFilterKey(hour)] ?? EMPTY_COLUMN_FILTER}
+                      onSort={toggleAdderSort}
                       onChange={(values) => updateAdderColumnFilter(adderHourFilterKey(hour), values)}
                       align="right"
                     />
@@ -943,7 +1092,7 @@ export default function PowerLmpAdders({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
-              {filteredRows.length === 0 && (
+              {displayedRows.length === 0 && (
                 <tr>
                   <td colSpan={tableColumnCount} className="px-3 py-8 text-center text-sm text-gray-500">
                     {data.rows.length === 0
@@ -952,14 +1101,28 @@ export default function PowerLmpAdders({
                   </td>
                 </tr>
               )}
-              {filteredRows.map((row) => (
+              {displayedRows.map((row) => (
                 <tr
                   key={`${row.date}|${data.dimensionColumns
                     .map((column) => row.dimensions[column.key] ?? "")
                     .join("|")}`}
                   className="hover:bg-gray-900/60"
                 >
-                  <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-100">
+                  <td className="sticky left-0 z-10 w-20 bg-[#0d1119] px-2 py-2 text-center">
+                    {isWeekendDate(row.date) ? (
+                      <span
+                        title="Weekend"
+                        className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-500/40 bg-slate-500/10 text-[10px] font-bold text-slate-300"
+                      >
+                        W
+                      </span>
+                    ) : (
+                      <span className="text-gray-700" aria-hidden="true">
+                        .
+                      </span>
+                    )}
+                  </td>
+                  <td className="sticky left-20 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-100">
                     {row.date}
                   </td>
                   {data.dimensionColumns.map((column) => (

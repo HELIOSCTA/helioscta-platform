@@ -7,8 +7,10 @@ export const EMPTY_COLUMN_FILTER: string[] = [];
 
 export type ColumnFilters<TKey extends string> = Partial<Record<TKey, string[]>>;
 
-export function uniqueColumnOptions(values: string[]): string[] {
-  return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+export function uniqueColumnOptions(values: string[], direction: "asc" | "desc" = "asc"): string[] {
+  return Array.from(new Set(values)).sort((left, right) =>
+    direction === "asc" ? left.localeCompare(right) : right.localeCompare(left),
+  );
 }
 
 export function filterValueLabel(value: string | number | null | undefined): string {
@@ -97,6 +99,7 @@ export default function LmpColumnFilterMenu({
     normalizedQuery.length === 0
       ? options
       : options.filter((option) => option.toLowerCase().includes(normalizedQuery));
+  const allValuesSelected = draftSelected.length === 0;
 
   const toggleValue = (option: string) => {
     setDraftSelected((values) =>
@@ -115,6 +118,10 @@ export default function LmpColumnFilterMenu({
     onChange([]);
     setDraftSelected([]);
     setOpen(false);
+  };
+
+  const selectAllValues = () => {
+    setDraftSelected([]);
   };
 
   const cancelDraft = () => {
@@ -140,8 +147,24 @@ export default function LmpColumnFilterMenu({
             placeholder="Search"
             className="h-7 w-full rounded border border-gray-700 bg-gray-950 px-2 text-xs font-medium normal-case tracking-normal text-gray-200 outline-none placeholder:text-gray-600 focus:border-gray-500"
           />
-          <div className="mt-1 text-[10px] font-semibold normal-case tracking-normal text-gray-500">
-            {draftSelected.length.toLocaleString()} selected
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="min-w-0 text-[10px] font-semibold normal-case tracking-normal text-gray-500">
+              {allValuesSelected
+                ? `All ${options.length.toLocaleString()} values`
+                : `${draftSelected.length.toLocaleString()} selected`}
+            </div>
+            <button
+              type="button"
+              onClick={selectAllValues}
+              disabled={allValuesSelected}
+              className={`shrink-0 rounded border px-2 py-0.5 text-[10px] font-semibold transition-colors ${
+                allValuesSelected
+                  ? "cursor-not-allowed border-gray-800 bg-gray-950/40 text-gray-600"
+                  : "border-gray-700 bg-gray-900 text-gray-300 hover:bg-gray-800 hover:text-white"
+              }`}
+            >
+              Select All
+            </button>
           </div>
         </div>
         <div className="max-h-56 overflow-y-auto py-1">

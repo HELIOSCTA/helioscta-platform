@@ -2,10 +2,12 @@ import "server-only";
 
 import { query } from "@/lib/server/db";
 
-export type PowerLmpAdderIso = "pjm";
+export type PowerLmpAdderIso = "pjm" | "ercot";
 export type PowerLmpAdderDataset =
   | "pjm-da-reserve-mcp"
-  | "pjm-rt-reserve-mcp";
+  | "pjm-rt-reserve-mcp"
+  | "ercot-rt-price-adders-sced"
+  | "ercot-rt-price-adders-15min";
 
 type DatasetStatus = "live" | "pending" | "reference";
 
@@ -36,6 +38,7 @@ interface DatasetContract {
 interface DatasetConfig {
   dataset: PowerLmpAdderDataset;
   iso: PowerLmpAdderIso;
+  sourceMode: "pjm-reserve" | "ercot-sced" | "ercot-15min";
   isoLabel: string;
   market: "da" | "rt" | "reference";
   label: string;
@@ -106,10 +109,67 @@ const PJM_RT_RESERVE_METRICS: MetricColumn[] = [
   { key: "reg_pcp", label: "Reg PCP", sourceField: "reg_pcp" },
 ];
 
+const ERCOT_SCED_PRICE_ADDER_FIELDS = [
+  "scedtimestamp",
+  "repeathourflag",
+  "systemlambda",
+  "rtrdpa",
+  "rtrdparus",
+  "rtrdpards",
+  "rtrdparrs",
+  "rtrdpaecrs",
+  "rtrdpanss",
+  "rtrruc",
+  "rtrrmr",
+  "rtdnclr",
+  "rtders",
+  "rtdctieimport",
+  "rtdctieexport",
+  "rtbltimport",
+  "rtbltexport",
+  "rtollsl",
+  "rtolhsl",
+] as const;
+
+const ERCOT_15MIN_PRICE_ADDER_FIELDS = [
+  "deliverydate",
+  "deliveryhour",
+  "deliveryinterval",
+  "rtrdpa",
+  "rtrdpru",
+  "rtrdprd",
+  "rtrdprrs",
+  "rtrdpecrs",
+  "rtrdpns",
+  "repeathourflag",
+] as const;
+
+const ERCOT_SCED_PRICE_ADDER_METRICS: MetricColumn[] = [
+  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa" },
+  { key: "rtrdparus", label: "RTRDPA RUS", sourceField: "rtrdparus" },
+  { key: "rtrdpards", label: "RTRDPA RDS", sourceField: "rtrdpards" },
+  { key: "rtrdparrs", label: "RTRDPA RRS", sourceField: "rtrdparrs" },
+  { key: "rtrdpaecrs", label: "RTRDPA ECRS", sourceField: "rtrdpaecrs" },
+  { key: "rtrdpanss", label: "RTRDPA NSS", sourceField: "rtrdpanss" },
+  { key: "rtrruc", label: "RTRRUC", sourceField: "rtrruc" },
+  { key: "rtrrmr", label: "RTRRMR", sourceField: "rtrrmr" },
+  { key: "systemlambda", label: "System Lambda", sourceField: "systemlambda" },
+];
+
+const ERCOT_15MIN_PRICE_ADDER_METRICS: MetricColumn[] = [
+  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa" },
+  { key: "rtrdpru", label: "RTRDPRU", sourceField: "rtrdpru" },
+  { key: "rtrdprd", label: "RTRDPRD", sourceField: "rtrdprd" },
+  { key: "rtrdprrs", label: "RTRDPRRS", sourceField: "rtrdprrs" },
+  { key: "rtrdpecrs", label: "RTRDPECRS", sourceField: "rtrdpecrs" },
+  { key: "rtrdpns", label: "RTRDPNS", sourceField: "rtrdpns" },
+];
+
 const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
   "pjm-da-reserve-mcp": {
     dataset: "pjm-da-reserve-mcp",
     iso: "pjm",
+    sourceMode: "pjm-reserve",
     isoLabel: "PJM",
     market: "da",
     label: "DA Reserve MCP",
@@ -145,6 +205,7 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
   "pjm-rt-reserve-mcp": {
     dataset: "pjm-rt-reserve-mcp",
     iso: "pjm",
+    sourceMode: "pjm-reserve",
     isoLabel: "PJM",
     market: "rt",
     label: "RT Reserve MCP",
@@ -176,15 +237,81 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     metricColumns: PJM_RT_RESERVE_METRICS,
     defaultColumnFilters: { metric: ["MCP"] },
   },
+  "ercot-rt-price-adders-sced": {
+    dataset: "ercot-rt-price-adders-sced",
+    iso: "ercot",
+    sourceMode: "ercot-sced",
+    isoLabel: "ERCOT",
+    market: "rt",
+    label: "RT Adders SCED",
+    valueLabel: "RT Price Adder",
+    sourceLabel: "ERCOT NP6-323-CD",
+    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-323-CD",
+    sourceTable: "ercot.rt_price_adders_sced",
+    status: "live",
+    description:
+      "One row per date and metric; SCED interval rows are averaged into hourly buckets.",
+    contract: {
+      grain: "SCED timestamp x repeat-hour flag",
+      timeBasis: "ERCOT market time, SCED interval",
+      valueField: "selectable real-time price adder metric; default rtrdpa",
+      aggregation: "SCED interval values are averaged to HE1-HE24 by market date and metric",
+      peakBlock: "ERCOT block: HE7-HE22",
+      refresh: "Daily ERCOT price adders batch; promoted table is live",
+      dimensions: [],
+      fields: [...ERCOT_SCED_PRICE_ADDER_FIELDS],
+      notes: [
+        "This dataset is ERCOT real-time price adders by SCED interval, not an LMP table.",
+        "Use the Metric column filter to inspect RTRDPA components or System Lambda.",
+      ],
+    },
+    dimensionColumns: [],
+    metricColumns: ERCOT_SCED_PRICE_ADDER_METRICS,
+    defaultColumnFilters: { metric: ["RTRDPA"] },
+  },
+  "ercot-rt-price-adders-15min": {
+    dataset: "ercot-rt-price-adders-15min",
+    iso: "ercot",
+    sourceMode: "ercot-15min",
+    isoLabel: "ERCOT",
+    market: "rt",
+    label: "RT Adders 15-Min",
+    valueLabel: "RT Price Adder",
+    sourceLabel: "ERCOT NP6-324-CD",
+    sourceUrl: "https://www.ercot.com/mp/data-products/data-product-details?id=NP6-324-CD",
+    sourceTable: "ercot.rt_price_adders_15min",
+    status: "live",
+    description:
+      "One row per date and metric; 15-minute settlement intervals are averaged into hourly buckets.",
+    contract: {
+      grain: "delivery date x delivery hour x delivery interval x repeat-hour flag",
+      timeBasis: "ERCOT market time, 15-minute settlement interval",
+      valueField: "selectable real-time price adder metric; default rtrdpa",
+      aggregation: "15-minute interval values are averaged to HE1-HE24 by market date and metric",
+      peakBlock: "ERCOT block: HE7-HE22",
+      refresh: "Daily ERCOT price adders batch; promoted table is live",
+      dimensions: [],
+      fields: [...ERCOT_15MIN_PRICE_ADDER_FIELDS],
+      notes: [
+        "This dataset is ERCOT real-time price adders at settlement interval grain.",
+        "The hourly table averages four delivery intervals when all intervals are present.",
+      ],
+    },
+    dimensionColumns: [],
+    metricColumns: ERCOT_15MIN_PRICE_ADDER_METRICS,
+    defaultColumnFilters: { metric: ["RTRDPA"] },
+  },
 };
 
 const DATASETS_BY_ISO: Record<PowerLmpAdderIso, PowerLmpAdderDataset[]> = {
   pjm: ["pjm-da-reserve-mcp", "pjm-rt-reserve-mcp"],
+  ercot: ["ercot-rt-price-adders-sced", "ercot-rt-price-adders-15min"],
 };
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
 const PEAK_WINDOW_BY_ISO: Record<PowerLmpAdderIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
+  ercot: { start: 7, end: 22 },
 };
 
 function onPeakHoursForIso(iso: PowerLmpAdderIso): number[] {
@@ -197,8 +324,8 @@ function offPeakHoursForIso(iso: PowerLmpAdderIso): number[] {
   return HOURS.filter((hour) => hour < window.start || hour > window.end);
 }
 
-export function parsePowerLmpAdderIso(): PowerLmpAdderIso {
-  return "pjm";
+export function parsePowerLmpAdderIso(raw: string | null): PowerLmpAdderIso {
+  return raw === "ercot" ? "ercot" : "pjm";
 }
 
 export function parsePowerLmpAdderDataset(
@@ -249,11 +376,30 @@ function inclusiveDayCount(start: string, end: string): number {
   return Math.floor((endTime - startTime) / 86_400_000) + 1;
 }
 
-async function latestLiveDate(sourceTable: string): Promise<string | null> {
+async function latestLiveDate(config: DatasetConfig): Promise<string | null> {
+  if (!config.sourceTable) return null;
+  if (config.sourceMode === "ercot-sced") {
+    const rows = await query<{ target_date: string | null }>(
+      `
+        select max(scedtimestamp::date)::text as target_date
+        from ${config.sourceTable}
+      `,
+    );
+    return rows[0]?.target_date ?? null;
+  }
+  if (config.sourceMode === "ercot-15min") {
+    const rows = await query<{ target_date: string | null }>(
+      `
+        select max(deliverydate)::text as target_date
+        from ${config.sourceTable}
+      `,
+    );
+    return rows[0]?.target_date ?? null;
+  }
   const rows = await query<{ target_date: string | null }>(
     `
       select max(datetime_beginning_ept::date)::text as target_date
-      from ${sourceTable}
+      from ${config.sourceTable}
     `,
   );
   return rows[0]?.target_date ?? null;
@@ -270,21 +416,24 @@ function datasetDimensionColumns(config: DatasetConfig): DimensionColumn[] {
 }
 
 async function hourlyRows({
-  sourceTable,
+  config,
   metrics,
   startDate,
   endDate,
 }: {
-  sourceTable: string;
+  config: DatasetConfig;
   metrics: MetricColumn[];
   startDate: string;
   endDate: string;
 }): Promise<HourValueRow[]> {
+  if (!config.sourceTable) {
+    throw new Error(`No live source table configured for ${config.dataset}`);
+  }
   const liveMetrics = metrics.filter(
     (metric): metric is MetricColumn & { sourceField: string } => Boolean(metric.sourceField),
   );
   if (liveMetrics.length === 0) {
-    throw new Error(`No live metric fields configured for ${sourceTable}`);
+    throw new Error(`No live metric fields configured for ${config.sourceTable}`);
   }
   const metricValuesSql = liveMetrics
     .map(
@@ -292,6 +441,66 @@ async function hourlyRows({
         `(${sqlText(metric.key)}, ${sqlText(metric.label)}, ${metric.sourceField})`,
     )
     .join(",\n          ");
+
+  if (config.sourceMode === "ercot-sced") {
+    return query<HourValueRow>(
+      `
+        select
+          scedtimestamp::date::text as market_date,
+          metric.metric_label as metric,
+          (extract(hour from scedtimestamp)::int + 1) as hour_ending,
+          avg(metric.value)::float8 as value,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of,
+          count(*)::int as source_row_count
+        from ${config.sourceTable}
+        cross join lateral (
+          values
+            ${metricValuesSql}
+        ) as metric(metric_key, metric_label, value)
+        where scedtimestamp::date between $1::date and $2::date
+        group by
+          scedtimestamp::date,
+          metric.metric_key,
+          metric.metric_label,
+          extract(hour from scedtimestamp)
+        order by
+          scedtimestamp::date,
+          metric.metric_key,
+          extract(hour from scedtimestamp)
+      `,
+      [startDate, endDate],
+    );
+  }
+
+  if (config.sourceMode === "ercot-15min") {
+    return query<HourValueRow>(
+      `
+        select
+          deliverydate::text as market_date,
+          metric.metric_label as metric,
+          deliveryhour as hour_ending,
+          avg(metric.value)::float8 as value,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of,
+          count(*)::int as source_row_count
+        from ${config.sourceTable}
+        cross join lateral (
+          values
+            ${metricValuesSql}
+        ) as metric(metric_key, metric_label, value)
+        where deliverydate between $1::date and $2::date
+        group by
+          deliverydate,
+          metric.metric_key,
+          metric.metric_label,
+          deliveryhour
+        order by
+          deliverydate,
+          metric.metric_key,
+          deliveryhour
+      `,
+      [startDate, endDate],
+    );
+  }
 
   return query<HourValueRow>(
     `
@@ -304,7 +513,7 @@ async function hourlyRows({
         max(metric.value)::float8 as value,
         to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of,
         count(*)::int as source_row_count
-      from ${sourceTable}
+      from ${config.sourceTable}
       cross join lateral (
         values
           ${metricValuesSql}
@@ -455,7 +664,7 @@ export async function buildPowerLmpAddersPayload({
   }
 
   const latestDate =
-    config.status === "live" && config.sourceTable ? await latestLiveDate(config.sourceTable) : null;
+    config.status === "live" && config.sourceTable ? await latestLiveDate(config) : null;
   const fallbackDate = latestDate ?? new Date().toISOString().slice(0, 10);
   const startDate = start ?? fallbackDate;
   const endDate = end ?? startDate;
@@ -482,7 +691,7 @@ export async function buildPowerLmpAddersPayload({
 
   const dimensionColumns = datasetDimensionColumns(config);
   const rows = await hourlyRows({
-    sourceTable: config.sourceTable,
+    config,
     metrics: config.metricColumns,
     startDate,
     endDate,
