@@ -488,6 +488,12 @@ export default function PjmHistoricalSettlements({
   );
 
   useEffect(() => {
+    if (activeTab !== "settlements") {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
     const controller = new AbortController();
     let active = true;
     setLoading(true);
@@ -535,6 +541,7 @@ export default function PjmHistoricalSettlements({
       controller.abort();
     };
   }, [
+    activeTab,
     effectiveEndYear,
     effectiveStartYear,
     fromLocation,
@@ -578,10 +585,10 @@ export default function PjmHistoricalSettlements({
 
   useEffect(() => {
     setActiveTab(initialTab);
-    if (initialTab === "term-bible" && strip === "all") {
-      setStrip("5x16");
+    if (initialTab === "term-bible") {
+      setStrip((currentStrip) => (currentStrip === "all" ? "5x16" : currentStrip));
     }
-  }, [initialTab, strip]);
+  }, [initialTab]);
 
   return (
     <div className="space-y-4">
@@ -596,10 +603,13 @@ export default function PjmHistoricalSettlements({
               key={tab.key}
               type="button"
               onClick={() => {
-                if (tab.key === "term-bible" && strip === "all") {
-                  setStrip("5x16");
+                const nextTab = tab.key as HistoricalTab;
+                if (nextTab === "term-bible") {
+                  setStrip((currentStrip) => (
+                    currentStrip === "all" ? "5x16" : currentStrip
+                  ));
                 }
-                setActiveTab(tab.key as HistoricalTab);
+                setActiveTab(nextTab);
               }}
               className={`h-9 rounded-md px-3 text-xs font-semibold transition-colors ${
                 selected
