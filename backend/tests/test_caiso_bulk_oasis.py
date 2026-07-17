@@ -166,6 +166,50 @@ def test_signed_s3_headers_include_request_payer_and_session_token():
     assert "SignedHeaders=" in headers["Authorization"]
 
 
+def test_filter_lmp_files_for_prefix_skips_rtm_non_hourly_group_file():
+    files = (
+        bulk_oasis.BulkOasisFile(
+            key="RTM_LMP/2020/01/02/20200102_20200102_RTM_LMP_GRP_01_N_v3_csv.zip",
+            size=1,
+            file_name="hourly.zip",
+            group_name="RTM_LMP",
+            operating_date="02-Jan-2020",
+            operating_hour="01",
+        ),
+        bulk_oasis.BulkOasisFile(
+            key="RTM_LMP/2020/01/20200102_20200102_RTM_LMP_GRP_N_N_v3_csv.zip",
+            size=1,
+            file_name="non-hourly.zip",
+            group_name="RTM_LMP",
+            operating_date="02-Jan-2020",
+            operating_hour=None,
+        ),
+    )
+
+    assert bulk_oasis._filter_lmp_files_for_prefix(
+        prefix="RTM_LMP",
+        files=files,
+    ) == (files[0],)
+
+
+def test_filter_lmp_files_for_prefix_keeps_da_non_hourly_group_file():
+    files = (
+        bulk_oasis.BulkOasisFile(
+            key="DAM_LMP/2020/01/20200101_20200101_DAM_LMP_GRP_N_N_v12_csv.zip",
+            size=1,
+            file_name="da.zip",
+            group_name="DAM_LMP",
+            operating_date="01-Jan-2020",
+            operating_hour=None,
+        ),
+    )
+
+    assert bulk_oasis._filter_lmp_files_for_prefix(
+        prefix="DAM_LMP",
+        files=files,
+    ) == files
+
+
 def test_requests_verify_prefers_caiso_bulk_ca_bundle(monkeypatch):
     monkeypatch.setenv("REQUESTS_CA_BUNDLE", "/tmp/system-ca.pem")
     monkeypatch.setenv("CAISO_BULK_CA_BUNDLE", "/tmp/caiso-ca.pem")

@@ -174,6 +174,7 @@ def pull_bulk_lmps_for_trading_date(
         metadata=metadata,
         database=database,
     )
+    files = _filter_lmp_files_for_prefix(prefix=prefix, files=files)
     if not files:
         return pd.DataFrame(columns=_lmp.TARGET_COLUMNS)
 
@@ -346,6 +347,16 @@ def _bulk_file_from_row(row: dict) -> BulkOasisFile:
             str(row["lastModified"]) if row.get("lastModified") is not None else None
         ),
     )
+
+
+def _filter_lmp_files_for_prefix(
+    *,
+    prefix: str,
+    files: tuple[BulkOasisFile, ...],
+) -> tuple[BulkOasisFile, ...]:
+    if prefix.upper() != "RTM_LMP":
+        return files
+    return tuple(file_info for file_info in files if file_info.operating_hour)
 
 
 def _filter_bulk_nodes(
