@@ -18,6 +18,8 @@ def test_default_workflows_cover_promoted_lmp_sources():
         "isone_rt_hrl_lmps_prelim",
         "ercot_dam_stlmnt_pnt_prices",
         "ercot_settlement_point_prices",
+        "ercot_rt_price_adders_sced",
+        "ercot_rt_price_adders_15min",
     ]
 
 
@@ -243,6 +245,48 @@ def test_pjm_main_backfill_calls_scrape_main_with_backfill_metadata():
     assert calls[0]["run_mode"] == "backfill"
     assert calls[0]["metadata"]["repair_family"] == "lmp_price_backfill_7_day"
     assert calls[0]["metadata"]["backfill_business_date"] == "2026-07-09"
+
+
+def test_ercot_public_report_main_backfill_calls_scrape_main_with_backfill_metadata():
+    calls: list[dict[str, object]] = []
+
+    class FakeErcotPublicReportScrape:
+        API_SCRAPE_NAME = "fake_ercot_adder_source"
+
+        @staticmethod
+        def main(**kwargs):
+            calls.append(kwargs)
+            return pd.DataFrame({"row_id": [1, 2, 3, 4]})
+
+    result = lmp_price_backfill_7_day._run_ercot_public_report_main_backfill(
+        module=FakeErcotPublicReportScrape,
+        start_date=date(2026, 7, 9),
+        end_date=date(2026, 7, 10),
+        database="stage_db",
+    )
+
+    assert result == lmp_price_backfill_7_day.BackfillResult(
+        pipeline_name="fake_ercot_adder_source",
+        start_date=date(2026, 7, 9),
+        end_date=date(2026, 7, 10),
+        days_requested=2,
+        rows_processed=8,
+        status="success",
+    )
+    assert calls[0]["start_date"] == datetime(2026, 7, 9)
+    assert calls[0]["end_date"] == datetime(2026, 7, 9)
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["metadata"] == {
+        "run_mode": "backfill",
+        "backfill_workflow": "fake_ercot_adder_source",
+        "backfill_start_date": "2026-07-09",
+        "backfill_end_date": "2026-07-10",
+        "repair_family": "lmp_price_backfill_7_day",
+        "backfill_business_date": "2026-07-09",
+    }
+    assert calls[1]["start_date"] == datetime(2026, 7, 10)
+    assert calls[1]["end_date"] == datetime(2026, 7, 10)
+    assert calls[1]["metadata"]["backfill_business_date"] == "2026-07-10"
 
 
 def test_pjm_rt_fivemin_backfill_calls_pull_and_upsert_with_metadata(monkeypatch):

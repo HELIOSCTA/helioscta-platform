@@ -182,16 +182,17 @@ helios-lmp-price-backfill-7-day.timer
 ```
 
 It runs `backend.backfills.power.lmp_price_backfill_7_day`, which executes
-seven-day repairs for promoted PJM, ISO-NE, and ERCOT LMP price sources. The
-job writes to canonical price tables through existing idempotent upsert keys
-and stamps API telemetry with `run_mode=backfill` metadata in
+seven-day repairs for promoted PJM, ISO-NE, and ERCOT LMP price sources plus
+the ERCOT real-time price-adder companion feeds. The job writes to canonical
+price tables through existing idempotent upsert keys and stamps API telemetry
+with `run_mode=backfill` metadata in
 `ops.api_fetch_log`.
 
 The timer runs daily at `22:15 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
-DA feeds through the current Eastern market date, unverified/preliminary RT
-feeds through the prior market date, and verified/final RT feeds through two
-market dates back. The service uses `flock` with
+DA feeds through the current Eastern market date, unverified/preliminary RT and
+ERCOT price-adder feeds through the prior market date, and verified/final RT
+feeds through two market dates back. The service uses `flock` with
 `/tmp/helios-lmp-price-backfill-7-day.lock`.
 
 ## PJM Hourly Bucket

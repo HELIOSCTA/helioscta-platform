@@ -149,7 +149,7 @@ Current criticality decision:
   PJM feeds to this bucket only when they share the same simple hourly cadence
   and safe rerun behavior.
 - Nightly repair timer: `lmp_price_backfill_7_day` reruns recent promoted
-  PJM, ISO-NE, and ERCOT LMP scrape/backfill repairs with feed-specific
+  PJM, ISO-NE, and ERCOT LMP/price-adder scrape repairs with feed-specific
   publication lags and logs backfill telemetry in `ops.api_fetch_log`.
 - Dedicated dashboard-context timer: `ops_sum` runs at 05:05, 06:05, 07:05,
   and 08:05 EPT after PJM's morning Operations Summary refresh postings.

@@ -509,8 +509,9 @@ repair over the promoted PJM, ISO-NE, and ERCOT LMP price tables:
 The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
 `22:15 UTC` after the current daily ISO-NE, ERCOT, and PJM price timers. It
 uses feed-specific publication lags: DA feeds through the current Eastern
-market date, unverified/preliminary RT feeds through the prior market date, and
-verified/final RT feeds through two market dates back. It stamps API fetch
+market date, unverified/preliminary RT and ERCOT price-adder feeds through the
+prior market date, and verified/final RT feeds through two market dates back.
+It stamps API fetch
 telemetry with `run_mode=backfill`, `backfill_workflow`, backfill window
 fields, and `repair_family=lmp_price_backfill_7_day`, then relies on existing
 primary-key upsert paths for safe reruns. Release email and data-readiness

@@ -19,6 +19,12 @@ from backend.scrapes.power.ercot import (
     dam_stlmnt_pnt_prices as ercot_dam_stlmnt_pnt_prices,
 )
 from backend.scrapes.power.ercot import (
+    rt_price_adders_15min as ercot_rt_price_adders_15min,
+)
+from backend.scrapes.power.ercot import (
+    rt_price_adders_sced as ercot_rt_price_adders_sced,
+)
+from backend.scrapes.power.ercot import (
     settlement_point_prices as ercot_settlement_point_prices,
 )
 from backend.scrapes.power.isone import da_hrl_lmps as isone_da_hrl_lmps
@@ -153,6 +159,50 @@ def _run_pjm_main_scrape_backfill(
             kwargs["pnode_types"] = pnode_types
 
         frame = module.main(**kwargs)
+        total_rows += _rows_processed(frame)
+        current_date += timedelta(days=1)
+
+    return BackfillResult(
+        pipeline_name=pipeline_name,
+        start_date=start_date,
+        end_date=end_date,
+        days_requested=(end_date - start_date).days + 1,
+        rows_processed=total_rows,
+        status="success",
+    )
+
+
+def _run_ercot_public_report_main_backfill(
+    *,
+    module: Any,
+    start_date: date,
+    end_date: date,
+    dry_run: bool = False,
+    database: str | None = None,
+) -> BackfillResult:
+    pipeline_name = module.API_SCRAPE_NAME
+    if dry_run:
+        return _dry_run_result(
+            pipeline_name=pipeline_name,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    total_rows = 0
+    current_date = start_date
+    while current_date <= end_date:
+        scrape_date = _start_of_day(current_date)
+        frame = module.main(
+            start_date=scrape_date,
+            end_date=scrape_date,
+            database=database,
+            metadata=_backfill_metadata(
+                start_date=start_date,
+                end_date=end_date,
+                workflow=pipeline_name,
+                business_date=current_date,
+            ),
+        )
         total_rows += _rows_processed(frame)
         current_date += timedelta(days=1)
 
@@ -324,6 +374,20 @@ def _run_ercot_settlement_point_prices_backfill(**kwargs: Any) -> BackfillResult
     )
 
 
+def _run_ercot_rt_price_adders_sced_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_ercot_public_report_main_backfill(
+        module=ercot_rt_price_adders_sced,
+        **kwargs,
+    )
+
+
+def _run_ercot_rt_price_adders_15min_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_ercot_public_report_main_backfill(
+        module=ercot_rt_price_adders_15min,
+        **kwargs,
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="pjm_da_hrl_lmps",
@@ -368,6 +432,16 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="ercot_settlement_point_prices",
         runner=_run_ercot_settlement_point_prices_backfill,
+        end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="ercot_rt_price_adders_sced",
+        runner=_run_ercot_rt_price_adders_sced_backfill,
+        end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="ercot_rt_price_adders_15min",
+        runner=_run_ercot_rt_price_adders_15min_backfill,
         end_lag_days=1,
     ),
 )

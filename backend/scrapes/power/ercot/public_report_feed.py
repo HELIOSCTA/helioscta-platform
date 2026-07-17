@@ -109,6 +109,7 @@ def run_public_report(
     end_date: datetime | None = None,
     delta: relativedelta = relativedelta(days=1),
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame | None:
     """Run a configured ERCOT report with default day-by-day windows."""
     now = datetime.now()
@@ -137,6 +138,7 @@ def run_public_report(
                 params=params,
                 run_id=run_id,
                 database=database,
+                metadata=metadata,
             )
             if df.empty:
                 run_logger.section(f"No data returned for {current_date:%Y-%m-%d}.")

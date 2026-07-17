@@ -34,6 +34,7 @@ def main(
     end_date: datetime | None = None,
     delta: relativedelta = DEFAULT_DELTA,
     database: str | None = None,
+    metadata: dict | None = None,
 ) -> pd.DataFrame | None:
     """Run the ERCOT real-time 15-minute settlement price adder scrape."""
     return run_public_report(
@@ -42,6 +43,7 @@ def main(
         end_date=end_date,
         delta=delta,
         database=database,
+        metadata=metadata,
     )
 
 

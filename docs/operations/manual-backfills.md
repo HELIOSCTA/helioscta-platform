@@ -57,6 +57,9 @@ replays seven market dates per promoted LMP feed:
 - ISO-NE preliminary RT hourly LMPs through the prior market date.
 - ERCOT DAM settlement point prices through the current Eastern market date.
 - ERCOT RT settlement point prices through the prior market date.
+- ERCOT RT price adders by SCED interval through the prior market date.
+- ERCOT RT price adders by 15-minute settlement interval through the prior
+  market date.
 
 This scheduled repair writes to the same canonical tables and uses
 `ops.api_fetch_log.metadata` backfill fields. It intentionally leaves

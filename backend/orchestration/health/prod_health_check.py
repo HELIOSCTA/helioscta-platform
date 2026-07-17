@@ -183,6 +183,8 @@ LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
     "isone.rt_hrl_lmps_prelim",
     "ercot.dam_stlmnt_pnt_prices",
     "ercot.settlement_point_prices",
+    "ercot.rt_price_adders_sced",
+    "ercot.rt_price_adders_15min",
 )
 
 

@@ -1123,6 +1123,8 @@ FROM isone.seven_day_solar_forecast;
   - `isone.rt_hrl_lmps_prelim`
   - `ercot.dam_stlmnt_pnt_prices`
   - `ercot.settlement_point_prices`
+  - `ercot.rt_price_adders_sced`
+  - `ercot.rt_price_adders_15min`
 - API telemetry: `ops.api_fetch_log` with `run_mode=backfill`,
   `backfill_workflow`, backfill window fields, and
   `repair_family=lmp_price_backfill_7_day` metadata.
@@ -1143,10 +1145,12 @@ FROM isone.seven_day_solar_forecast;
 - Latest VM verification: manual one-shot service run exited
   `status=0/SUCCESS` at `2026-07-17 17:15:20 UTC`; journal summary reported
   `9 succeeded, 0 failed`.
-- Backfill telemetry verification: `ops.api_fetch_log` showed successful
-  `repair_family=lmp_price_backfill_7_day` rows for all nine target LMP feeds
-  after the manual run. The production health check's `LMP repair freshness`
-  section reported `Coverage: 9/9 successful target-table repairs`.
+- Initial backfill telemetry verification: `ops.api_fetch_log` showed
+  successful `repair_family=lmp_price_backfill_7_day` rows for the original
+  nine target LMP feeds after the manual run. The production health check's
+  `LMP repair freshness` section reported
+  `Coverage: 9/9 successful target-table repairs` before ERCOT price adders
+  were added to the repair set.
 - ISO-NE final RT repair result: the run filled full final rows for
   `2026-07-10`, `2026-07-11`, and `2026-07-15`; earlier missing dates
   `2026-07-02` and `2026-07-03` remain outside the rolling seven-day repair
@@ -1173,6 +1177,10 @@ FROM isone.seven_day_solar_forecast;
     days back.
   - ERCOT RT settlement point prices: prior market date through seven days
     back.
+  - ERCOT RT price adders by SCED interval: prior market date through seven
+    days back.
+  - ERCOT RT price adders by 15-minute settlement interval: prior market date
+    through seven days back.
 
 ## helios-pjm-hourly-price-backfill-7-day
 
