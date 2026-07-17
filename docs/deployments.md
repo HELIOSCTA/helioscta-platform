@@ -41,6 +41,35 @@ boundary, or log path changes.
   `200` with `Cache-Control: no-store` when called with the Vercel protection
   bypass header.
 
+## da-lmp-release-email-peak-profiles
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-07-17`.
+- Workflow: shared backend DA LMP release email peak/off-peak profile
+  configuration.
+- Runtime code: `backend.utils.email_notifications`.
+- Affected scheduled release emails:
+  - `helios-pjm-da-hrl-lmps`
+  - `helios-isone-da-hrl-lmps`
+  - `helios-ercot-dam-stlmnt-pnt-prices`
+  - `helios-caiso-da-lmps`
+- Deployed commit: `542d4125691834c22a555e54568cbf9cd9d666e5` on
+  `deploy/caiso-da-lmps`. `main` contains the equivalent fix as
+  `2ce5c98ea1e261e241e4398da0b62a2ed37f7abf`.
+- Behavior: PJM and NEPOOL email summary/component tables label and calculate
+  `Peak HE8-23` and `OffPeak HE1-7,24`; ERCOT and CAISO label and calculate
+  `Peak HE7-22` and `OffPeak HE1-6,23-24`.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded from `5a92d4f` to
+  `542d412`, backend package reinstall completed, and
+  `helios-pjm-da-hrl-lmps.timer`, `helios-isone-da-hrl-lmps.timer`,
+  `helios-ercot-dam-stlmnt-pnt-prices.timer`, and
+  `helios-caiso-da-lmps.timer` were restarted.
+- Verification: deploy-branch `pytest backend/tests` passed with `505` tests;
+  VM import check confirmed the four ISO peak profiles; affected DA LMP timers
+  were `active/waiting` after restart.
+- Residual note: ERCOT release emails sent before this deployment retain the
+  previous HE8-23 summary averages. The hourly tables in those emails were
+  correct. No correction email was sent during deployment.
+
 ## helios-pjm-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
