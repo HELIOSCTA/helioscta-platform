@@ -1,0 +1,7 @@
+{{
+  config(
+    materialized='ephemeral'
+  )
+}}
+
+SELECT * FROM {{ ref('staging_pjm_lmps_da_hourly') }}

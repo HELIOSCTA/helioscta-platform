@@ -1,0 +1,58 @@
+name: helioscta_platform
+version: "0.1.0"
+config-version: 2
+
+profile: helioscta_platform
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  helioscta_platform:
+    +enabled: false
+    clear_street_eod_transactions_v1:
+      utils:
+        +enabled: true
+        +schema: clear_street_eod_transactions_v1
+        +materialized: ephemeral
+      trades_cleaned:
+        +enabled: true
+        +schema: clear_street_eod_transactions_v1
+        +materialized: ephemeral
+
+    clear_street_eod_transactions_v2:
+      utils:
+        +enabled: true
+        +schema: clear_street_eod_transactions_v2
+        +materialized: ephemeral
+      source:
+        +enabled: true
+        +schema: clear_street_eod_transactions_v2
+        +materialized: ephemeral
+      intermediate:
+        +enabled: true
+        +schema: clear_street_eod_transactions_v2
+        +materialized: ephemeral
+
+    positions_and_trades_v2:
+      utils:
+        +enabled: true
+        +schema: positions_and_trades_v2
+        +materialized: ephemeral
+      clear_street_eod_transactions:
+        +enabled: true
+        +schema: positions_and_trades_v2
+        +materialized: ephemeral
+      nav_positions:
+        +enabled: true
+        +schema: positions_and_trades_v2
+        +materialized: ephemeral

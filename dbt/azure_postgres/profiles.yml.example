@@ -1,0 +1,14 @@
+helioscta_platform:
+  target: readonly
+  outputs:
+    readonly:
+      type: postgres
+      host: "{{ env_var('DBT_POSTGRES_HOST') }}"
+      user: "{{ env_var('DBT_POSTGRES_READONLY_USER') }}"
+      password: "{{ env_var('DBT_POSTGRES_READONLY_PASSWORD') }}"
+      port: "{{ env_var('DBT_POSTGRES_PORT', 5432) | int }}"
+      dbname: "{{ env_var('DBT_POSTGRES_DBNAME') }}"
+      schema: positions_and_trades
+      threads: 4
+      connect_timeout: 30
+      sslmode: require

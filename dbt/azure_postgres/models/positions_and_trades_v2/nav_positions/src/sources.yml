@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: nav_v1
+    schema: nav
+    description: Raw NAV position valuation rows loaded from SFTP workbooks.
+    tables:
+      - name: positions
+        description: Raw NAV position rows at fund/date/upload/file-row grain.

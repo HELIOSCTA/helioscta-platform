@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: clear_street_v1
+    schema: clear_street
+    description: Clear Street trade source tables.
+    tables:
+      - name: eod_transactions
+        description: Clear Street end-of-day transaction rows.
