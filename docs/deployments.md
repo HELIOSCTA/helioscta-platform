@@ -682,6 +682,63 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
+## caiso-historical-lmp-backfill
+
+- Status: implemented as an operator-run backfill path; not scheduled.
+- Workflow: CAISO historical DA/RT LMP replay for dates outside recent OASIS
+  `SingleZip` retention, including 2020-to-present backfills.
+- Runtime module: `backend.backfills.power.caiso.historical_lmps`.
+- Bulk downloader helper: `backend.scrapes.power.caiso.bulk_oasis`.
+- Source system: CAISO Historical OASIS Data Downloader search endpoint plus
+  requester-pays S3 bucket `caiso-oasis-s3-prod-groupzips`.
+- Bulk groups: `DAM_LMP` for day-ahead LMPs and `RTM_LMP` for real-time LMPs.
+- Destination tables: `caiso.da_lmps` and `caiso.rt_lmps`.
+- API telemetry: `ops.api_fetch_log` with
+  `backfill_family=caiso_lmp_historical_backfill`.
+- Data readiness and release notifications: intentionally not emitted for
+  historical replay. Scheduled DA/RT CAISO jobs remain the freshness and
+  notification owners.
+- Scope: trading hubs `TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`.
+- Grain: `interval_start_time_utc x node_id x market_run_id`.
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Credential boundary: real writes require requester-pays AWS credentials
+  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional
+  `AWS_SESSION_TOKEN`, `AWS_DEFAULT_REGION=us-west-1`). If CAISO's bulk search
+  endpoint fails TLS verification on the VM, set `CAISO_BULK_CA_BUNDLE` or
+  `REQUESTS_CA_BUNDLE` to a trusted CA bundle that includes CAISO's missing
+  intermediate certificate and standard public roots.
+- Safe rerun story: primary-key upserts through the existing CAISO DA/RT table
+  writers; loader defaults to `dry_run=True` and chunks each feed into 31-day
+  windows.
+- Local verification: focused tests passed on `2026-07-17`; a metadata-only
+  CAISO bulk search smoke found
+  `DAM_LMP/2020/01/20200101_20200101_DAM_LMP_GRP_N_N_v12_csv.zip` with a
+  temporary CA bundle. S3 object smoke remains pending production AWS
+  requester-pays credentials.
+
+Verification SQL for CAISO historical backfill telemetry:
+
+```sql
+SELECT
+    target_table,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata->>'backfill_workflow' AS workflow,
+    metadata->>'backfill_business_date' AS business_date,
+    metadata->>'bulk_key' AS bulk_key,
+    created_at
+FROM ops.api_fetch_log
+WHERE provider = 'caiso'
+  AND metadata->>'backfill_family' = 'caiso_lmp_historical_backfill'
+ORDER BY created_at DESC
+LIMIT 30;
+```
+
 ## helios-isone-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest VM run succeeded.

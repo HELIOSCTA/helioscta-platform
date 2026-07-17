@@ -13,6 +13,7 @@ Covered workflows:
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
 - `backend.backfills.power.caiso.da_lmps`
 - `backend.backfills.power.caiso.rt_lmps`
+- `backend.backfills.power.caiso.historical_lmps`
 - `backend.backfills.power.lmp_price_backfill_7_day`
 - `backend.backfills.power.pjm.hrl_load_metered`
 - `backend.backfills.power.pjm.hrl_load_prelim`
@@ -48,6 +49,14 @@ orchestration paths and emit complete-day readiness events while suppressing
 scheduled-only release emails. WSI hourly observed backfills call the existing
 WSI orchestration path and emit the same weather freshness event as scheduled
 runs.
+
+CAISO historical LMP backfills use
+`backend.backfills.power.caiso.historical_lmps`. This path calls raw CAISO
+bulk search and requester-pays S3 download helpers instead of orchestration, so
+it does not emit historical data-readiness events or release emails. It stamps
+telemetry with
+`backfill_family=caiso_lmp_historical_backfill`, separate from the scheduled
+seven-day repair's `repair_family=lmp_price_backfill_7_day`.
 
 ## Scheduled Price Repair
 
@@ -86,6 +95,8 @@ or non-price feeds.
   - RT unverified hourly LMPs: `30` days.
   - CAISO DA hourly LMPs: `31` days.
   - CAISO RT five-minute LMPs: `31` days.
+  - CAISO historical LMP loader: chunked into `31` days per OASIS request
+    window by default.
   - PJM metered hourly load: `31` days.
   - PJM preliminary hourly load: `31` days.
   - Generation outages by type: `31` execution dates.
@@ -151,6 +162,89 @@ PY
 sudo systemd-run --unit=helios-rt-unverified-hrl-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios_rt-unverified-hrl-backfill.py
 rm -f /tmp/helios_rt-unverified-hrl-backfill.py
 ```
+
+## CAISO Historical LMP Backfill
+
+Historical CAISO data older than the recent `SingleZip` retention window comes
+from CAISO's requester-pays S3 bucket
+`caiso-oasis-s3-prod-groupzips`. Before real writes, install standard AWS
+credentials in `/etc/helioscta/backend.env`:
+
+```text
+AWS_ACCESS_KEY_ID=<requester-pays-enabled access key>
+AWS_SECRET_ACCESS_KEY=<secret>
+AWS_DEFAULT_REGION=us-west-1
+# Optional when CAISO's bulk endpoint TLS chain is incomplete on the VM:
+CAISO_BULK_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
+```
+
+Use `AWS_SESSION_TOKEN=<token>` as well when using temporary credentials. Do
+not commit these values. The AWS account that owns the key is charged for
+requester-pays transfer and request costs.
+
+If Python or `curl` fails TLS verification against
+`https://oasis-bulk.caiso.com/prod/search`, install the missing CAISO
+intermediate into the VM trust store and point the loader at the system bundle:
+
+```bash
+curl -fsSL http://crt.sectigo.com/SectigoPublicServerAuthenticationCAEVR36.crt -o /tmp/sectigo-ev-r36.der
+sudo openssl x509 -inform DER -in /tmp/sectigo-ev-r36.der -out /usr/local/share/ca-certificates/sectigo-public-server-authentication-ca-ev-r36.crt
+sudo update-ca-certificates
+```
+
+After editing the env file, verify only the names are present:
+
+```bash
+sudo grep -E '^(AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY|SESSION_TOKEN|DEFAULT_REGION|REGION)|CAISO_BULK_CA_BUNDLE|REQUESTS_CA_BUNDLE)=' /etc/helioscta/backend.env | cut -d= -f1
+```
+
+The historical loader defaults to `dry_run=True`; pass `dry_run=False` only
+after a small smoke window succeeds.
+
+```bash
+cat > /tmp/helios-caiso-historical-lmps-backfill.py <<'PY'
+from backend.backfills.power.caiso.historical_lmps import main
+
+print(
+    main(
+        start_date="2020-01-01",
+        da_end_date="2026-07-17",
+        rt_end_date="2026-07-16",
+        dry_run=True,
+    )
+)
+PY
+
+sudo systemd-run --unit=helios-caiso-historical-lmps-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-caiso-historical-lmps-backfill.py
+rm -f /tmp/helios-caiso-historical-lmps-backfill.py
+```
+
+Smoke one week before the full historical load:
+
+```bash
+cat > /tmp/helios-caiso-historical-lmps-backfill.py <<'PY'
+from backend.backfills.power.caiso.historical_lmps import main
+
+print(
+    main(
+        start_date="2020-01-01",
+        da_end_date="2020-01-07",
+        rt_end_date="2020-01-07",
+        dry_run=False,
+        request_delay_seconds=8.0,
+    )
+)
+PY
+
+sudo systemd-run --unit=helios-caiso-historical-lmps-backfill-smoke --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-caiso-historical-lmps-backfill.py
+rm -f /tmp/helios-caiso-historical-lmps-backfill.py
+```
+
+Run the full 2020-to-present replay in a long systemd unit only after the
+smoke succeeds. DA bulk history is one group ZIP per operating date; RT bulk
+history is 24 hourly group ZIPs per operating date. The default eight-second
+inter-day delay means DA plus RT from 2020 can take many hours, and S3 transfer
+volume is materially larger than the recent NP15/SP15 `SingleZip` pulls.
 
 ## PJM Metered Hourly Load Backfill
 
@@ -239,6 +333,52 @@ FROM ops.api_fetch_log
 WHERE metadata->>'run_mode' = 'backfill'
 ORDER BY created_at DESC
 LIMIT 20;
+```
+
+Check CAISO historical telemetry:
+
+```sql
+SELECT
+    target_table,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata->>'backfill_workflow' AS workflow,
+    metadata->>'backfill_business_date' AS business_date,
+    metadata->>'bulk_key' AS bulk_key,
+    created_at
+FROM ops.api_fetch_log
+WHERE provider = 'caiso'
+  AND metadata->>'backfill_family' = 'caiso_lmp_historical_backfill'
+ORDER BY created_at DESC
+LIMIT 30;
+```
+
+Check CAISO LMP coverage:
+
+```sql
+SELECT
+    'caiso_da_lmps' AS feed,
+    operating_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT node_id) AS nodes,
+    MIN(interval_start_time_utc) AS min_interval_utc,
+    MAX(interval_start_time_utc) AS max_interval_utc
+FROM caiso.da_lmps
+GROUP BY operating_date
+UNION ALL
+SELECT
+    'caiso_rt_lmps' AS feed,
+    operating_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT node_id) AS nodes,
+    MIN(interval_start_time_utc) AS min_interval_utc,
+    MAX(interval_start_time_utc) AS max_interval_utc
+FROM caiso.rt_lmps
+GROUP BY operating_date
+ORDER BY operating_date DESC, feed
+LIMIT 60;
 ```
 
 Check hourly LMP source coverage:
