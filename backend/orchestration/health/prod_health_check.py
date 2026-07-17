@@ -23,6 +23,7 @@ CRITICAL_SERVICES: tuple[str, ...] = (
     "helios-ercot-settlement-point-prices.service",
 )
 SUPPORT_SERVICES: tuple[str, ...] = (
+    "helios-lmp-price-backfill-7-day.service",
     "helios-pjm-data-miner-batch.service",
     "helios-pjm-hourly-bucket.service",
     "helios-pjm-hrl-dmd-bids.service",
@@ -39,6 +40,7 @@ SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-ercot-outage-capacity-batch.service",
 )
 KNOWN_TIMERS: tuple[str, ...] = (
+    "helios-lmp-price-backfill-7-day.timer",
     "helios-pjm-da-hrl-lmps.timer",
     "helios-pjm-rt-fivemin-hrl-lmps.timer",
     "helios-prod-health-check.timer",
@@ -168,7 +170,20 @@ MAX_RT_BUSINESS_DATE_LAG_DAYS = 4
 MAX_ERCOT_DAM_BUSINESS_DATE_LAG_DAYS = 1
 MAX_ERCOT_RT_BUSINESS_DATE_LAG_DAYS = 2
 MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
+MAX_LMP_REPAIR_SUCCESS_LAG_HOURS = 36
 MAX_RECOVERED_API_FAILURE_RATE = 0.5
+LMP_REPAIR_FAMILY = "lmp_price_backfill_7_day"
+LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
+    "pjm.da_hrl_lmps",
+    "pjm.rt_hrl_lmps",
+    "pjm.rt_fivemin_hrl_lmps",
+    "pjm.rt_unverified_hrl_lmps",
+    "isone.da_hrl_lmps",
+    "isone.rt_hrl_lmps_final",
+    "isone.rt_hrl_lmps_prelim",
+    "ercot.dam_stlmnt_pnt_prices",
+    "ercot.settlement_point_prices",
+)
 
 
 @dataclass(frozen=True)
@@ -236,6 +251,7 @@ def collect_health(
         lookback_hours=lookback_hours,
         database=database,
     )
+    lmp_repair_summary = _lmp_repair_freshness_summary(database=database)
     support_table_summary = _support_table_summary(database=database)
     duplicate_key_count = _rt_fivemin_hrl_duplicate_key_count(database=database)
     service_statuses = (
@@ -255,6 +271,7 @@ def collect_health(
         duplicate_key_count=duplicate_key_count,
         api_summary=api_summary,
         support_api_summary=support_api_summary,
+        lmp_repair_summary=lmp_repair_summary,
         support_table_summary=support_table_summary,
         service_statuses=service_statuses,
         timers=timers,
@@ -270,6 +287,7 @@ def collect_health(
         "duplicate_key_count": duplicate_key_count,
         "api_summary": api_summary,
         "support_api_summary": support_api_summary,
+        "lmp_repair_summary": lmp_repair_summary,
         "support_table_summary": support_table_summary,
         "service_statuses": service_statuses,
         "timers": timers,
@@ -300,6 +318,9 @@ def format_health_report(
         "",
         "API fetch health",
         *_format_api_summary(checks["api_summary"]),
+        "",
+        "LMP repair freshness",
+        *_format_lmp_repair_summary(checks["lmp_repair_summary"]),
         "",
         "Support batch health",
         *_format_support_batch_summary(
@@ -460,6 +481,76 @@ def _api_fetch_summary(
     return rows or []
 
 
+def _lmp_repair_freshness_summary(database: str | None) -> list[dict[str, Any]]:
+    rows = db.execute_sql(
+        """
+        WITH expected AS (
+            SELECT unnest(%s::text[]) AS target_table
+        ),
+        repair_logs AS (
+            SELECT
+                target_table,
+                status,
+                http_status,
+                rows_returned,
+                created_at,
+                metadata
+            FROM ops.api_fetch_log
+            WHERE target_table = ANY(%s)
+              AND metadata ->> 'run_mode' = 'backfill'
+              AND metadata ->> 'repair_family' = %s
+        ),
+        latest_attempt AS (
+            SELECT DISTINCT ON (target_table)
+                target_table,
+                status AS latest_status,
+                http_status AS latest_http_status,
+                rows_returned AS latest_rows_returned,
+                created_at AS last_attempt_at,
+                metadata ->> 'backfill_start_date' AS latest_start_date,
+                metadata ->> 'backfill_end_date' AS latest_end_date
+            FROM repair_logs
+            ORDER BY target_table, created_at DESC
+        ),
+        latest_success AS (
+            SELECT DISTINCT ON (target_table)
+                target_table,
+                rows_returned AS last_success_rows_returned,
+                created_at AS last_success_at,
+                metadata ->> 'backfill_start_date' AS last_success_start_date,
+                metadata ->> 'backfill_end_date' AS last_success_end_date
+            FROM repair_logs
+            WHERE status = 'success'
+            ORDER BY target_table, created_at DESC
+        )
+        SELECT
+            expected.target_table,
+            latest_attempt.latest_status,
+            latest_attempt.latest_http_status,
+            latest_attempt.latest_rows_returned,
+            latest_attempt.last_attempt_at,
+            latest_attempt.latest_start_date,
+            latest_attempt.latest_end_date,
+            latest_success.last_success_rows_returned,
+            latest_success.last_success_at,
+            latest_success.last_success_start_date,
+            latest_success.last_success_end_date
+        FROM expected
+        LEFT JOIN latest_attempt USING (target_table)
+        LEFT JOIN latest_success USING (target_table)
+        ORDER BY expected.target_table;
+        """,
+        params=(
+            list(LMP_REPAIR_TARGET_TABLES),
+            list(LMP_REPAIR_TARGET_TABLES),
+            LMP_REPAIR_FAMILY,
+        ),
+        database=database,
+        fetch=True,
+    )
+    return rows or []
+
+
 def _support_table_summary(database: str | None) -> list[dict[str, Any]]:
     union_sql = " UNION ALL\n".join(
         (
@@ -574,6 +665,7 @@ def _evaluate_health(
     service_statuses: list[dict[str, str]],
     generated_at: datetime,
     timers: list[str] | None = None,
+    lmp_repair_summary: list[dict[str, Any]] | None = None,
     ercot_dam_readiness: dict[str, Any] | None = None,
     ercot_rt_readiness: dict[str, Any] | None = None,
     require_ercot_readiness: bool = False,
@@ -677,6 +769,14 @@ def _evaluate_health(
                     "No API fetch telemetry in the health window.",
                 )
             )
+
+    if lmp_repair_summary is not None:
+        issues.extend(
+            _evaluate_lmp_repair_freshness(
+                rows=lmp_repair_summary,
+                generated_at=generated_at,
+            )
+        )
 
     support_api_by_pipeline = {
         str(row["pipeline_name"]): row for row in support_api_summary
@@ -782,6 +882,87 @@ def _evaluate_health(
                 ),
             )
         )
+
+    return issues
+
+
+def _evaluate_lmp_repair_freshness(
+    *,
+    rows: list[dict[str, Any]],
+    generated_at: datetime,
+) -> list[HealthIssue]:
+    if not rows:
+        return [
+            HealthIssue(
+                "WARN",
+                "LMP repair freshness",
+                "No LMP repair telemetry summary returned.",
+            )
+        ]
+
+    issues: list[HealthIssue] = []
+    observed_targets = {str(row["target_table"]) for row in rows}
+    for target_table in LMP_REPAIR_TARGET_TABLES:
+        if target_table not in observed_targets:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    target_table,
+                    "Missing from LMP repair freshness summary.",
+                )
+            )
+
+    for row in rows:
+        target_table = str(row["target_table"])
+        latest_status = row.get("latest_status")
+        last_success_at = row.get("last_success_at")
+        if latest_status is None:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    target_table,
+                    (
+                        "No global LMP repair telemetry found for "
+                        f"{LMP_REPAIR_FAMILY}."
+                    ),
+                )
+            )
+            continue
+
+        if latest_status != "success":
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    target_table,
+                    (
+                        "Latest global LMP repair status is "
+                        f"{latest_status} (HTTP {row.get('latest_http_status')})."
+                    ),
+                )
+            )
+
+        if last_success_at is None:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    target_table,
+                    "No successful global LMP repair telemetry found.",
+                )
+            )
+            continue
+
+        lag_hours = _hours_between(generated_at, last_success_at)
+        if lag_hours > MAX_LMP_REPAIR_SUCCESS_LAG_HOURS:
+            issues.append(
+                HealthIssue(
+                    "WARN",
+                    target_table,
+                    (
+                        "Latest successful global LMP repair is "
+                        f"{lag_hours:.1f} hours behind digest generation."
+                    ),
+                )
+            )
 
     return issues
 
@@ -899,6 +1080,40 @@ def _format_api_summary(rows: list[dict[str, Any]]) -> list[str]:
     ]
 
 
+def _format_lmp_repair_summary(rows: list[dict[str, Any]]) -> list[str]:
+    if not rows:
+        return ["- No LMP repair telemetry summary returned."]
+    lines = [
+        (
+            "- Coverage: "
+            f"{len([row for row in rows if row.get('last_success_at') is not None])}/"
+            f"{len(LMP_REPAIR_TARGET_TABLES)} successful target-table repairs"
+        )
+    ]
+    for row in rows:
+        latest_window = _format_window(
+            row.get("latest_start_date"),
+            row.get("latest_end_date"),
+        )
+        success_window = _format_window(
+            row.get("last_success_start_date"),
+            row.get("last_success_end_date"),
+        )
+        lines.append(
+            (
+                f"- {row['target_table']}: latest_status="
+                f"{row.get('latest_status') or 'missing'}, "
+                f"last_attempt_at={_format_value(row.get('last_attempt_at'))}, "
+                f"latest_rows={_format_value(row.get('latest_rows_returned'))}, "
+                f"latest_window={latest_window}, "
+                f"last_success_at={_format_value(row.get('last_success_at'))}, "
+                f"success_rows={_format_value(row.get('last_success_rows_returned'))}, "
+                f"success_window={success_window}"
+            )
+        )
+    return lines
+
+
 def _format_support_batch_summary(
     api_rows: list[dict[str, Any]],
     table_rows: list[dict[str, Any]],
@@ -993,6 +1208,12 @@ def _format_value(value: Any) -> str:
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     return str(value)
+
+
+def _format_window(start: Any, end: Any) -> str:
+    if start is None and end is None:
+        return "NULL"
+    return f"{_format_value(start)}..{_format_value(end)}"
 
 
 def _hours_between(generated_at: datetime, value: Any) -> float:

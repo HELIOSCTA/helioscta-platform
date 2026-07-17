@@ -46,14 +46,17 @@ A backend workflow is production-ready when it has:
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `16:15 UTC`. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
+| ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `17:10 UTC`. |
+| ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
+| ISO-NE RT final hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-final.timer` runs daily at `20:10 UTC`. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 23 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
-| PJM price repair | In place | `helios-pjm-hourly-price-backfill-7-day.timer` reruns seven-day DA, verified RT hourly, verified RT five-minute HRL, and unverified RT hourly LMP backfills nightly at `02:00 America/New_York`. |
+| LMP price repair | Ready to deploy | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, and ERCOT LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | Scheduled PJM and ERCOT API scrapes write `ops.api_fetch_log`. |
-| Data readiness | In place | Critical PJM and ERCOT price orchestration write `ops.data_availability_events`. |
+| API telemetry | In place | Scheduled PJM, ERCOT, and ISO-NE API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | Critical PJM, ERCOT, and ISO-NE price orchestration write `ops.data_availability_events`. |
 | Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, and ERCOT DAM SPPs queue backend HTML email release notices with inline DA LMP hub/hour tables and Vercel report links. PJM DA still sends Slack during the transition. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual PJM backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
@@ -145,10 +148,9 @@ Current criticality decision:
   dashboard-facing RT prices do not wait for the next overnight job. Add other
   PJM feeds to this bucket only when they share the same simple hourly cadence
   and safe rerun behavior.
-- Nightly repair timer: `hourly_price_backfill_7_day` reruns recent promoted
-  PJM LMP price backfills with feed-specific publication lags, logs backfill
-  telemetry in `ops.api_fetch_log`, and emits verified RT five-minute
-  complete-day readiness events when repaired dates are complete.
+- Nightly repair timer: `lmp_price_backfill_7_day` reruns recent promoted
+  PJM, ISO-NE, and ERCOT LMP scrape/backfill repairs with feed-specific
+  publication lags and logs backfill telemetry in `ops.api_fetch_log`.
 - Dedicated dashboard-context timer: `ops_sum` runs at 05:05, 06:05, 07:05,
   and 08:05 EPT after PJM's morning Operations Summary refresh postings.
 - Support batch: all other currently promoted PJM Data Miner feeds, including
@@ -205,10 +207,9 @@ scheduled jobs, and tag PJM API telemetry with `run_mode=backfill` in
 `ops.api_fetch_log.metadata`. Scheduled orchestrators remain responsible for
 polling and readiness events; manual backfill wrappers call lower-level scrape
 modules where available. Use `docs/operations/manual-backfills.md` for exact VM
-commands and verification SQL. The DA, verified RT hourly, verified RT
-five-minute HRL, and unverified RT hourly price repairs also run through the
-nightly `helios-pjm-hourly-price-backfill-7-day.timer` repair job; other
-backfills remain on demand only.
+commands and verification SQL. Promoted LMP price repairs run through the
+nightly `helios-lmp-price-backfill-7-day.timer` repair job; other backfills
+remain on demand only.
 
 RT verified five-minute HRL LMP API note:
 

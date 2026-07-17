@@ -41,9 +41,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `RandomizedDelaySec=5min`.
   - `helios-pjm-hourly-bucket.timer`, hourly at minute `15` UTC,
     `Persistent=false`, `RandomizedDelaySec=2min`.
-  - `helios-pjm-hourly-price-backfill-7-day.timer`, daily at
-    `02:00 America/New_York`, `Persistent=true`,
-    `RandomizedDelaySec=10min`.
+  - `helios-lmp-price-backfill-7-day.timer`, daily at `22:15 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=10min`.
   - `helios-pjm-da-transconstraints.timer`, daily at `17:00 UTC`
     (`13:00 America/New_York` during daylight saving time), `Persistent=true`,
     `AccuracySec=1min`.
@@ -97,9 +96,8 @@ five minutes after each 05:00-08:00 EPT source update.
 `helios-pjm-hourly-bucket.timer` refreshes short-retention unverified hourly
 RT LMPs throughout the operating day and is the extension point for other PJM
 scrapes that need the same simple hourly cadence.
-`helios-pjm-hourly-price-backfill-7-day.timer` repairs recent DA, verified RT
-hourly, verified RT five-minute HRL, and unverified RT hourly LMP gaps every
-night at `02:00 America/New_York`.
+`helios-lmp-price-backfill-7-day.timer` repairs recent PJM, ISO-NE, and ERCOT
+LMP gaps every night at `22:15 UTC`.
 `helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health
 digest in journald, including support-batch API and table freshness.
 
@@ -334,7 +332,7 @@ sudo systemctl restart helios-pjm-da-hrl-lmps.timer
 sudo systemctl restart helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl restart helios-pjm-data-miner-batch.timer
 sudo systemctl restart helios-pjm-hourly-bucket.timer
-sudo systemctl restart helios-pjm-hourly-price-backfill-7-day.timer
+sudo systemctl restart helios-lmp-price-backfill-7-day.timer
 sudo systemctl restart helios-pjm-da-transconstraints.timer
 sudo systemctl restart helios-pjm-gen-outages-by-type.timer
 sudo systemctl restart helios-pjm-hrl-load-prelim.timer

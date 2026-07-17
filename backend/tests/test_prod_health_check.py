@@ -360,6 +360,37 @@ def test_unmanaged_helios_timers_parses_timer_lines():
     ) == ["helios-old-feed.timer"]
 
 
+def test_lmp_repair_freshness_passes_for_recent_successes():
+    generated_at = datetime(2026, 6, 13, 23, tzinfo=timezone.utc)
+
+    issues = prod_health_check._evaluate_lmp_repair_freshness(
+        rows=_lmp_repair_summary(datetime(2026, 6, 13, 22, tzinfo=timezone.utc)),
+        generated_at=generated_at,
+    )
+
+    assert issues == []
+
+
+def test_lmp_repair_freshness_warns_for_stale_failed_and_missing_targets():
+    rows = _lmp_repair_summary(datetime(2026, 6, 13, 22, tzinfo=timezone.utc))
+    rows[1]["last_success_at"] = datetime(2026, 6, 11, 10, tzinfo=timezone.utc)
+    rows[2]["latest_status"] = "failed"
+    rows[2]["latest_http_status"] = 500
+    rows[2]["last_success_at"] = None
+    rows.pop()
+
+    issues = prod_health_check._evaluate_lmp_repair_freshness(
+        rows=rows,
+        generated_at=datetime(2026, 6, 13, 23, tzinfo=timezone.utc),
+    )
+
+    warnings = [issue.message for issue in issues if issue.severity == "WARN"]
+    assert any("61.0 hours behind" in message for message in warnings)
+    assert any("Latest global LMP repair status is failed" in message for message in warnings)
+    assert any("No successful global LMP repair telemetry" in message for message in warnings)
+    assert any("Missing from LMP repair freshness summary" in message for message in warnings)
+
+
 def _readiness(
     dataset: str,
     business_date: date,
@@ -417,4 +448,23 @@ def _support_table_summary() -> list[dict[str, object]]:
             "latest_updated_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
         }
         for pipeline_name in prod_health_check.SUPPORT_BATCH_PIPELINES
+    ]
+
+
+def _lmp_repair_summary(last_success_at: datetime) -> list[dict[str, object]]:
+    return [
+        {
+            "target_table": target_table,
+            "latest_status": "success",
+            "latest_http_status": 200,
+            "latest_rows_returned": 1440,
+            "last_attempt_at": last_success_at,
+            "latest_start_date": "2026-06-07",
+            "latest_end_date": "2026-06-13",
+            "last_success_rows_returned": 1440,
+            "last_success_at": last_success_at,
+            "last_success_start_date": "2026-06-07",
+            "last_success_end_date": "2026-06-13",
+        }
+        for target_table in prod_health_check.LMP_REPAIR_TARGET_TABLES
     ]

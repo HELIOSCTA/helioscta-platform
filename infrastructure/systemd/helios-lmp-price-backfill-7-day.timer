@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA global LMP price seven-day backfill repair timer
+
+[Timer]
+OnCalendar=*-*-* 22:15:00 UTC
+Persistent=true
+AccuracySec=5min
+RandomizedDelaySec=10min
+Unit=helios-lmp-price-backfill-7-day.service
+
+[Install]
+WantedBy=timers.target

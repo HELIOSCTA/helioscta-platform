@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA global LMP price seven-day backfill repair
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-lmp-price-backfill-7-day.lock /opt/helioscta-platform/.venv/bin/python -m backend.backfills.power.lmp_price_backfill_7_day
+TimeoutStartSec=6h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-lmp-price-backfill-7-day
+
+[Install]
+WantedBy=multi-user.target

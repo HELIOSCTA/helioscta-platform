@@ -1,7 +1,7 @@
 # Manual Backfills
 
-Use this runbook for controlled PJM source-table replays. Backfills write to
-the same canonical production tables as the scheduled jobs and rely on the same
+Use this runbook for controlled source-table replays. Backfills write to the
+same canonical production tables as the scheduled jobs and rely on the same
 idempotent upsert keys.
 
 ## Scope
@@ -11,12 +11,13 @@ Covered workflows:
 - `backend.backfills.power.pjm.da_hrl_lmps`
 - `backend.backfills.power.pjm.rt_hrl_lmps`
 - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
+- `backend.backfills.power.lmp_price_backfill_7_day`
 - `backend.backfills.power.pjm.hrl_load_metered`
 - `backend.backfills.power.pjm.hrl_load_prelim`
 - `backend.backfills.power.pjm.gen_outages_by_type`
 - `backend.backfills.weather.wsi.hourly_observed`
-- `backend.orchestration.power.pjm.hourly_price_backfill_7_day` for the
-  scheduled seven-day LMP price repair wrapper.
+- `backend.backfills.power.lmp_price_backfill_7_day` for the scheduled
+  seven-day LMP price repair wrapper.
 
 Destination tables:
 
@@ -24,6 +25,11 @@ Destination tables:
 - `pjm.rt_hrl_lmps`
 - `pjm.rt_fivemin_hrl_lmps`
 - `pjm.rt_unverified_hrl_lmps`
+- `isone.da_hrl_lmps`
+- `isone.rt_hrl_lmps_final`
+- `isone.rt_hrl_lmps_prelim`
+- `ercot.dam_stlmnt_pnt_prices`
+- `ercot.settlement_point_prices`
 - `pjm.hrl_load_metered`
 - `pjm.hrl_load_prelim`
 - `pjm.gen_outages_by_type`
@@ -38,24 +44,25 @@ orchestration path and emit the same weather freshness event as scheduled runs.
 
 ## Scheduled Price Repair
 
-`helios-pjm-hourly-price-backfill-7-day.timer` runs
-`backend.orchestration.power.pjm.hourly_price_backfill_7_day` nightly at
-`02:00 America/New_York`. It replays seven market dates per feed:
+`helios-lmp-price-backfill-7-day.timer` runs
+`backend.backfills.power.lmp_price_backfill_7_day` nightly at `22:15 UTC`. It
+replays seven market dates per promoted LMP feed:
 
-- DA hourly LMPs through the current PJM market date.
-- Verified RT hourly LMPs through two market dates back, because the verified
-  source posts later in the day.
-- Verified RT five-minute HRL LMPs through two market dates back, using the
-  same hub, zone, and interface scope as the dedicated workflow.
-- Unverified RT hourly LMPs through the prior market date. The PJM hourly
-  bucket is the freshness path; this repair remains the recent-window
-  gap-catcher for a short-retention source.
+- PJM DA hourly LMPs through the current Eastern market date.
+- PJM verified RT hourly LMPs through two market dates back.
+- PJM verified RT five-minute HRL LMPs through two market dates back.
+- PJM unverified RT hourly LMPs through the prior market date.
+- ISO-NE DA hourly LMPs through the current Eastern market date.
+- ISO-NE final RT hourly LMPs through two market dates back.
+- ISO-NE preliminary RT hourly LMPs through the prior market date.
+- ERCOT DAM settlement point prices through the current Eastern market date.
+- ERCOT RT settlement point prices through the prior market date.
 
-This scheduled repair writes to the same canonical `pjm` tables and uses the
-same `ops.api_fetch_log.metadata` backfill fields as manual runs. The verified
-RT five-minute repair also emits complete-day readiness events when a repaired
-date is complete. It does not replace the one-off manual command pattern below
-for older ranges or non-price PJM feeds.
+This scheduled repair writes to the same canonical tables and uses
+`ops.api_fetch_log.metadata` backfill fields. It intentionally leaves
+data-readiness and release-notification side effects owned by the normal
+scheduled jobs. It does not replace one-off manual commands for older ranges
+or non-price feeds.
 
 ## Safety Rules
 

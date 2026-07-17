@@ -1024,59 +1024,69 @@ FROM isone.seven_day_solar_forecast;
 - Safe rerun story: upsert on `(datetime_beginning_utc, pnode_id, pnode_name,
   row_is_current, version_nbr)`.
 
-## helios-pjm-hourly-price-backfill-7-day
+## helios-lmp-price-backfill-7-day
 
-- Status: deployed; timer enabled and initial VM repair run succeeded.
-- Workflow: PJM LMP price seven-day backfill repair.
-- Runtime module:
-  `backend.orchestration.power.pjm.hourly_price_backfill_7_day`.
-- Backfill modules:
-  - `backend.backfills.power.pjm.da_hrl_lmps`
-  - `backend.backfills.power.pjm.rt_hrl_lmps`
-  - `backend.backfills.power.pjm.rt_unverified_hrl_lmps`
-  - `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps` via the repair
-    workflow adapter.
-- Source system: PJM Data Miner 2 LMP feeds.
+- Status: ready to deploy; global timer replaces the older PJM-only
+  `helios-pjm-hourly-price-backfill-7-day.timer`.
+- Workflow: PJM, ISO-NE, and ERCOT LMP price seven-day backfill repair.
+- Runtime module: `backend.backfills.power.lmp_price_backfill_7_day`.
+- Source systems: PJM Data Miner 2, ISO-NE ISO Express CSV reports, and ERCOT
+  public reports.
 - Destination tables:
   - `pjm.da_hrl_lmps`
   - `pjm.rt_hrl_lmps`
   - `pjm.rt_fivemin_hrl_lmps`
   - `pjm.rt_unverified_hrl_lmps`
-- API telemetry: `ops.api_fetch_log` with `run_mode=backfill` metadata.
-- Data readiness: the verified RT five-minute leg emits complete-day
-  `ops.data_availability_events` through the existing orchestration path.
+  - `isone.da_hrl_lmps`
+  - `isone.rt_hrl_lmps_final`
+  - `isone.rt_hrl_lmps_prelim`
+  - `ercot.dam_stlmnt_pnt_prices`
+  - `ercot.settlement_point_prices`
+- API telemetry: `ops.api_fetch_log` with `run_mode=backfill`,
+  `backfill_workflow`, backfill window fields, and
+  `repair_family=lmp_price_backfill_7_day` metadata.
+- Data readiness: not emitted by this repair; normal scheduled orchestrations
+  remain responsible for readiness events and release emails.
 - Unit files:
-  - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service`
-  - `infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer`
+  - `infrastructure/systemd/helios-lmp-price-backfill-7-day.service`
+  - `infrastructure/systemd/helios-lmp-price-backfill-7-day.timer`
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
-- Journal logs:
-  `journalctl -u helios-pjm-hourly-price-backfill-7-day.service`.
-- Schedule: daily at `02:00 America/New_York` with
-  `RandomizedDelaySec=10min`.
+- Journal logs: `journalctl -u helios-lmp-price-backfill-7-day.service`.
+- Schedule: daily at `22:15 UTC` with `RandomizedDelaySec=10min`.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
-  `/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
-- Safe rerun story: each backfill uses the destination table's existing
+  `/tmp/helios-lmp-price-backfill-7-day.lock`.
+- Safe rerun story: each repair uses the destination table's existing
   primary-key upsert.
+- Deployment transition: disable
+  `helios-pjm-hourly-price-backfill-7-day.timer` when enabling this global
+  timer so PJM repairs do not run twice.
 - Repair windows:
-  - DA hourly LMPs: current PJM market date through six days back.
-  - Verified RT hourly LMPs: two market dates back through eight days back.
-  - Verified RT five-minute HRL LMPs: two market dates back through eight days
+  - PJM DA hourly LMPs: current Eastern market date through six days back.
+  - PJM verified RT hourly LMPs: two market dates back through eight days back.
+  - PJM verified RT five-minute HRL LMPs: two market dates back through eight
+    days back.
+  - PJM unverified RT hourly LMPs: prior market date through seven days back.
+  - ISO-NE DA hourly LMPs: current Eastern market date through six days back.
+  - ISO-NE final RT hourly LMPs: two market dates back through eight days back.
+  - ISO-NE preliminary RT hourly LMPs: prior market date through seven days
     back.
-  - Unverified RT hourly LMPs: prior market date through seven days back.
+  - ERCOT DAM settlement point prices: current Eastern market date through six
+    days back.
+  - ERCOT RT settlement point prices: prior market date through seven days
+    back.
+
+## helios-pjm-hourly-price-backfill-7-day
+
+- Status: superseded by `helios-lmp-price-backfill-7-day`; keep historical
+  deployment notes here for audit only.
 - Deployed commit: `09911a1`.
 - Deployed at: `2026-06-29 15:15 UTC`.
 - Latest VM verification: manual service run exited `status=0/SUCCESS` on
   `2026-06-29 15:20 UTC`; journal summary reported `4 succeeded, 0 failed`.
-  The run upserted 2,016 DA hourly rows for `2026-06-23` through
-  `2026-06-29`, 2,016 verified RT hourly rows for `2026-06-21` through
-  `2026-06-27`, 84,672 verified RT five-minute HRL rows for `2026-06-21`
-  through `2026-06-27`, and 6,765 unverified RT hourly rows for `2026-06-22`
-  through `2026-06-28`.
-- Next scheduled run observed: `2026-06-30 06:04:29 UTC`.
 - Deployment note: prior VM untracked forecast files that conflicted with the
   fast-forward pull were preserved under
   `/tmp/helioscta-untracked-backup-20260629T142628Z`.

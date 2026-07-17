@@ -491,21 +491,27 @@ It emits `ops.api_fetch_log` telemetry through the shared ICE orchestration
 runtime and reports source-missing symbols without failing the whole family
 backfill.
 
-## Scheduled PJM Price Repair
+## Scheduled LMP Price Repair
 
-`backend.orchestration.power.pjm.hourly_price_backfill_7_day` runs a nightly
-seven-day repair over the promoted PJM LMP price tables:
+`backend.backfills.power.lmp_price_backfill_7_day` runs a nightly seven-day
+repair over the promoted PJM, ISO-NE, and ERCOT LMP price tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
 - `pjm.rt_fivemin_hrl_lmps`
 - `pjm.rt_unverified_hrl_lmps`
+- `isone.da_hrl_lmps`
+- `isone.rt_hrl_lmps_final`
+- `isone.rt_hrl_lmps_prelim`
+- `ercot.dam_stlmnt_pnt_prices`
+- `ercot.settlement_point_prices`
 
-The VM timer is `helios-pjm-hourly-price-backfill-7-day.timer`, scheduled at
-`02:00 America/New_York`. It uses feed-specific publication lags: DA through
-the current PJM market date, unverified RT hourly through the prior market
-date, and verified RT hourly and verified RT five-minute through two market
-dates back. Each underlying backfill writes
-`run_mode=backfill` metadata to `ops.api_fetch_log` and uses the existing
-primary-key upsert path. The verified RT five-minute repair also emits the
-same complete-day readiness events as its dedicated scheduled workflow.
+The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
+`22:15 UTC` after the current daily ISO-NE, ERCOT, and PJM price timers. It
+uses feed-specific publication lags: DA feeds through the current Eastern
+market date, unverified/preliminary RT feeds through the prior market date, and
+verified/final RT feeds through two market dates back. It stamps API fetch
+telemetry with `run_mode=backfill`, `backfill_workflow`, backfill window
+fields, and `repair_family=lmp_price_backfill_7_day`, then relies on existing
+primary-key upsert paths for safe reruns. Release email and data-readiness
+side effects remain owned by the normal scheduled workflows.

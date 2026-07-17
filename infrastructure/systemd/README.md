@@ -172,29 +172,27 @@ of the hour from 05:00 through 08:00 EPT, so the timer runs daily at `05:05`,
 Before enabling the timer, apply the required table and index DDL for the Ops
 Sum tables.
 
-## PJM Price Backfill Repair
+## LMP Price Backfill Repair
 
-The promoted LMP price repair workflow has one daily timer:
+The promoted LMP price repair workflow has one daily global timer:
 
 ```text
-helios-pjm-hourly-price-backfill-7-day.service
-helios-pjm-hourly-price-backfill-7-day.timer
+helios-lmp-price-backfill-7-day.service
+helios-lmp-price-backfill-7-day.timer
 ```
 
-It runs `backend.orchestration.power.pjm.hourly_price_backfill_7_day`, which
-executes seven-day backfills for `da_hrl_lmps`, `rt_hrl_lmps`,
-`rt_fivemin_hrl_lmps`, and `rt_unverified_hrl_lmps`. The job writes to the
-canonical `pjm` price tables through the existing idempotent upsert keys and
-stamps PJM API telemetry with `run_mode=backfill` metadata in
-`ops.api_fetch_log`. The verified RT five-minute leg also emits complete-day
-readiness events through the existing orchestration path.
+It runs `backend.backfills.power.lmp_price_backfill_7_day`, which executes
+seven-day repairs for promoted PJM, ISO-NE, and ERCOT LMP price sources. The
+job writes to canonical price tables through existing idempotent upsert keys
+and stamps API telemetry with `run_mode=backfill` metadata in
+`ops.api_fetch_log`.
 
-The timer runs daily at `02:00 America/New_York` with `Persistent=true` and
+The timer runs daily at `22:15 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
-DA through the current PJM market date, unverified RT hourly through the prior
-market date, and verified RT hourly and verified RT five-minute through two
+DA feeds through the current Eastern market date, unverified/preliminary RT
+feeds through the prior market date, and verified/final RT feeds through two
 market dates back. The service uses `flock` with
-`/tmp/helios-pjm-hourly-price-backfill-7-day.lock`.
+`/tmp/helios-lmp-price-backfill-7-day.lock`.
 
 ## PJM Hourly Bucket
 
@@ -213,7 +211,7 @@ fuel mix rows into `pjm.gen_by_fuel`. Both write API telemetry to
 `Persistent=false` and `RandomizedDelaySec=2min`; bucket members should pull a
 rolling recent window or current snapshot so missed hourly starts do not need
 replay on VM boot. The nightly
-`helios-pjm-hourly-price-backfill-7-day.timer` remains the repair path for
+`helios-lmp-price-backfill-7-day.timer` remains the repair path for
 recent posted LMP market dates, while `gen_by_fuel` uses its rolling
 generation-by-fuel window as the repair path.
 
@@ -531,9 +529,8 @@ Deploy them with the repo, but do not install persistent `.service` or
 `/etc/helioscta/backend.env` is loaded by systemd instead of shell-sourced.
 This avoids corrupting secrets that contain characters such as `$`. See
 `docs/operations/manual-backfills.md` for exact commands and verification SQL.
-The exception is `backend.orchestration.power.pjm.hourly_price_backfill_7_day`,
-which is a promoted scheduled repair wrapper around the hourly LMP backfill
-modules.
+The exception is `backend.backfills.power.lmp_price_backfill_7_day`, which is
+the promoted scheduled repair wrapper around the LMP scrape/backfill paths.
 
 ## NOAA METAR Weather
 
@@ -736,8 +733,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.se
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.timer /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-price-backfill-7-day.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-lmp-price-backfill-7-day.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-lmp-price-backfill-7-day.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.service /etc/systemd/system/
@@ -795,7 +792,8 @@ sudo systemctl enable --now helios-pjm-da-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-hourly-bucket.timer
-sudo systemctl enable --now helios-pjm-hourly-price-backfill-7-day.timer
+sudo systemctl disable --now helios-pjm-hourly-price-backfill-7-day.timer || true
+sudo systemctl enable --now helios-lmp-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
 sudo systemctl enable --now helios-pjm-da-transconstraints.timer
 sudo systemctl enable --now helios-pjm-da-reserve-market-results.timer
@@ -834,7 +832,7 @@ sudo systemctl start helios-pjm-da-hrl-lmps.service
 sudo systemctl start helios-pjm-rt-fivemin-hrl-lmps.service
 sudo systemctl start helios-pjm-rt-hrl-lmps.service
 sudo systemctl start helios-pjm-hourly-bucket.service
-sudo systemctl start helios-pjm-hourly-price-backfill-7-day.service
+sudo systemctl start helios-lmp-price-backfill-7-day.service
 sudo systemctl start helios-pjm-hrl-dmd-bids.service
 sudo systemctl start helios-pjm-da-transconstraints.service
 sudo systemctl start helios-pjm-da-reserve-market-results.service
@@ -971,12 +969,12 @@ systemctl status helios-pjm-hourly-bucket.timer
 journalctl -u helios-pjm-hourly-bucket.service -n 200 --no-pager
 ```
 
-For the PJM hourly price seven-day backfill repair:
+For the global LMP price seven-day backfill repair:
 
 ```bash
-systemctl status helios-pjm-hourly-price-backfill-7-day.service
-systemctl status helios-pjm-hourly-price-backfill-7-day.timer
-journalctl -u helios-pjm-hourly-price-backfill-7-day.service -n 240 --no-pager
+systemctl status helios-lmp-price-backfill-7-day.service
+systemctl status helios-lmp-price-backfill-7-day.timer
+journalctl -u helios-lmp-price-backfill-7-day.service -n 240 --no-pager
 ```
 
 For the production health digest:
