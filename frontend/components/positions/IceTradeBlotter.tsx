@@ -1711,8 +1711,8 @@ function sameStringValues(first: readonly string[], second: readonly string[]): 
 function rowMatchesQuickFilters(
   row: QuickFilterRow,
   traderFilter: string,
-  assetFilters: string[],
-  regionFilters: string[]
+  assetFilters: readonly string[],
+  regionFilters: readonly string[]
 ): boolean {
   if (traderFilter !== "All" && row.trader !== traderFilter) return false;
   if (assetFilters.length > 0 && !assetFilters.includes(String(row.asset_class ?? ""))) {
@@ -6414,10 +6414,13 @@ export default function IceTradeBlotter({
     setQuickTraderFilter((trader) =>
       trader === "All" || tradeQuickTraderOptions.includes(trader) ? trader : "All"
     );
-    setQuickRegionFilters((filters) =>
-      filters.filter((region) => tradeQuickRegionOptions.includes(region))
+    const nextRegionFilters = quickRegionFilters.filter((region) =>
+      tradeQuickRegionOptions.includes(region)
     );
-  }, [tradeQuickRegionOptions, tradeQuickTraderOptions, view]);
+    if (!sameStringValues(quickRegionFilters, nextRegionFilters)) {
+      setQuickRegionFilters(nextRegionFilters);
+    }
+  }, [quickRegionFilters, tradeQuickRegionOptions, tradeQuickTraderOptions, view]);
   const quickFilteredRows = useMemo(
     () =>
       rows.filter((row) =>
@@ -6967,20 +6970,19 @@ export default function IceTradeBlotter({
       ),
     [quickAssetFilters, rawDailySettlementRows]
   );
-  useEffect(() => {
-    if (view !== "settles") return;
-    setQuickRegionFilters((filters) => {
-      const filtered = filters.filter((region) => settleQuickRegionOptions.includes(region));
-      const next = filtered.length > 0 ? filtered : [...DEFAULT_SETTLE_REGION_FILTERS];
-      return sameStringValues(filters, next) ? filters : next;
-    });
-  }, [settleQuickRegionOptions, view]);
+  const effectiveQuickRegionFilters = useMemo<readonly string[]>(() => {
+    if (view !== "settles") return quickRegionFilters;
+    const filtered = quickRegionFilters.filter((region) =>
+      settleQuickRegionOptions.includes(region)
+    );
+    return filtered.length > 0 ? filtered : DEFAULT_SETTLE_REGION_FILTERS;
+  }, [quickRegionFilters, settleQuickRegionOptions, view]);
   const dailySettlementRows = useMemo(
     () =>
       rawDailySettlementRows.filter((row) =>
-        rowMatchesQuickFilters(row, "All", quickAssetFilters, quickRegionFilters)
+        rowMatchesQuickFilters(row, "All", quickAssetFilters, effectiveQuickRegionFilters)
       ),
-    [quickAssetFilters, quickRegionFilters, rawDailySettlementRows]
+    [effectiveQuickRegionFilters, quickAssetFilters, rawDailySettlementRows]
   );
   const dailySettlementColumnByLabel = useMemo(
     () =>
@@ -7038,9 +7040,9 @@ export default function IceTradeBlotter({
   const debugDailySettlementRows = useMemo(
     () =>
       rawDebugDailySettlementRows.filter((row) =>
-        rowMatchesQuickFilters(row, "All", quickAssetFilters, quickRegionFilters)
+        rowMatchesQuickFilters(row, "All", quickAssetFilters, effectiveQuickRegionFilters)
       ),
-    [quickAssetFilters, quickRegionFilters, rawDebugDailySettlementRows]
+    [effectiveQuickRegionFilters, quickAssetFilters, rawDebugDailySettlementRows]
   );
   const debugDailySettlementsSubtitle = settlesDebugData
     ? `Trade Date ${fmtDate(settlesDebugData.endDate)}`
@@ -7276,10 +7278,13 @@ export default function IceTradeBlotter({
   );
   useEffect(() => {
     if (view !== "products") return;
-    setQuickRegionFilters((filters) =>
-      filters.filter((region) => productQuickRegionOptions.includes(region))
+    const nextRegionFilters = quickRegionFilters.filter((region) =>
+      productQuickRegionOptions.includes(region)
     );
-  }, [productQuickRegionOptions, view]);
+    if (!sameStringValues(quickRegionFilters, nextRegionFilters)) {
+      setQuickRegionFilters(nextRegionFilters);
+    }
+  }, [productQuickRegionOptions, quickRegionFilters, view]);
   const filteredProductDictionaryData = useMemo(() => {
     if (!productDictionaryData) return null;
     const filteredRows = productDictionaryRows.filter((row) =>
@@ -7338,8 +7343,7 @@ export default function IceTradeBlotter({
           : 0;
   const defaultSettleRegionSelected =
     view === "settles" &&
-    quickRegionFilters.length === DEFAULT_SETTLE_REGION_FILTERS.length &&
-    DEFAULT_SETTLE_REGION_FILTERS.every((region) => quickRegionFilters.includes(region));
+    sameStringValues(effectiveQuickRegionFilters, DEFAULT_SETTLE_REGION_FILTERS);
   const quickFilterActive =
     quickTraderFilter !== "All" ||
     quickAssetFilters.length > 0 ||
@@ -7349,18 +7353,26 @@ export default function IceTradeBlotter({
     if (view !== "trades" && quickTraderFilter !== "All") {
       setQuickTraderFilter("All");
     }
-    setQuickAssetFilters((filters) =>
-      filters.filter((asset) => quickFilterAssetOptions.includes(asset))
+    const nextAssetFilters = quickAssetFilters.filter((asset) =>
+      quickFilterAssetOptions.includes(asset)
     );
-    if (quickFilterRegionOptions.length > 0) {
-      setQuickRegionFilters((filters) =>
-        filters.filter((region) => quickFilterRegionOptions.includes(region))
+    if (!sameStringValues(quickAssetFilters, nextAssetFilters)) {
+      setQuickAssetFilters(nextAssetFilters);
+    }
+    if (view !== "settles" && quickFilterRegionOptions.length > 0) {
+      const nextRegionFilters = quickRegionFilters.filter((region) =>
+        quickFilterRegionOptions.includes(region)
       );
+      if (!sameStringValues(quickRegionFilters, nextRegionFilters)) {
+        setQuickRegionFilters(nextRegionFilters);
+      }
     }
   }, [
+    quickAssetFilters,
     quickFilterAssetOptions,
     quickFilterRegionOptions,
     quickFiltersVisible,
+    quickRegionFilters,
     quickTraderFilter,
     view,
   ]);
@@ -8314,7 +8326,10 @@ export default function IceTradeBlotter({
                 const active =
                   region === "All"
                     ? quickRegionFilters.length === 0
-                    : quickRegionFilters.includes(region);
+                    : (view === "settles"
+                        ? effectiveQuickRegionFilters
+                        : quickRegionFilters
+                      ).includes(region);
                 return (
                   <button
                     key={region}

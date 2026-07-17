@@ -215,50 +215,118 @@ function normalizeMetricStats(row: MetricStatsSourceRow) {
 
 const RTO_ROW_SQL = `
   select
-    projected_peak_datetime_ept::date::text as peak_date,
+    peak_date,
     area,
-    to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
-    to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
-    load_forecast::float8 as load_forecast,
-    internal_scheduled_capacity::float8 as internal_scheduled_capacity,
-    total_scheduled_capacity::float8 as total_scheduled_capacity,
-    operating_reserve::float8 as operating_reserve,
-    scheduled_tie_flow_total::float8 as scheduled_tie_flow_total,
-    unscheduled_steam_capacity::float8 as unscheduled_steam_capacity,
-    capacity_adjustments::float8 as capacity_adjustments
-  from pjm.ops_sum_frcst_peak_rto
+    generated_at_ept,
+    projected_peak_datetime_ept,
+    load_forecast,
+    internal_scheduled_capacity,
+    total_scheduled_capacity,
+    operating_reserve,
+    scheduled_tie_flow_total,
+    unscheduled_steam_capacity,
+    capacity_adjustments,
+    latest_rank
+  from (
+    select
+      projected_peak_datetime_ept::date::text as peak_date,
+      area,
+      to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
+      to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
+      load_forecast::float8 as load_forecast,
+      internal_scheduled_capacity::float8 as internal_scheduled_capacity,
+      total_scheduled_capacity::float8 as total_scheduled_capacity,
+      operating_reserve::float8 as operating_reserve,
+      scheduled_tie_flow_total::float8 as scheduled_tie_flow_total,
+      unscheduled_steam_capacity::float8 as unscheduled_steam_capacity,
+      capacity_adjustments::float8 as capacity_adjustments,
+      row_number() over (
+        partition by projected_peak_datetime_ept::date, area
+        order by generated_at_ept desc nulls last,
+                 updated_at desc nulls last,
+                 projected_peak_datetime_ept desc nulls last
+      ) as latest_rank
+    from pjm.ops_sum_frcst_peak_rto
+  ) as ranked_rto_rows
 `;
 
 const AREA_ROW_SQL = `
   select
-    projected_peak_datetime_ept::date::text as peak_date,
+    peak_date,
     area,
-    to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
-    to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
-    pjm_load_forecast::float8 as pjm_load_forecast,
-    internal_scheduled_capacity::float8 as internal_scheduled_capacity,
-    unscheduled_steam_capacity::float8 as unscheduled_steam_capacity
-  from pjm.ops_sum_frcst_peak_area
+    generated_at_ept,
+    projected_peak_datetime_ept,
+    pjm_load_forecast,
+    internal_scheduled_capacity,
+    unscheduled_steam_capacity,
+    latest_rank
+  from (
+    select
+      projected_peak_datetime_ept::date::text as peak_date,
+      area,
+      to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
+      to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
+      pjm_load_forecast::float8 as pjm_load_forecast,
+      internal_scheduled_capacity::float8 as internal_scheduled_capacity,
+      unscheduled_steam_capacity::float8 as unscheduled_steam_capacity,
+      row_number() over (
+        partition by projected_peak_datetime_ept::date, area
+        order by generated_at_ept desc nulls last,
+                 updated_at desc nulls last,
+                 projected_peak_datetime_ept desc nulls last
+      ) as latest_rank
+    from pjm.ops_sum_frcst_peak_area
+  ) as ranked_area_rows
 `;
 
 const TRANSFER_LIMIT_ROW_SQL = `
   select
-    projected_peak_datetime_ept::date::text as peak_date,
+    peak_date,
     transfer_limit_name,
-    to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
-    to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
-    transfer_limit_mw::float8 as transfer_limit_mw
-  from pjm.ops_sum_frcstd_tran_lim
+    generated_at_ept,
+    projected_peak_datetime_ept,
+    transfer_limit_mw,
+    latest_rank
+  from (
+    select
+      projected_peak_datetime_ept::date::text as peak_date,
+      transfer_limit_name,
+      to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
+      to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
+      transfer_limit_mw::float8 as transfer_limit_mw,
+      row_number() over (
+        partition by projected_peak_datetime_ept::date, transfer_limit_name
+        order by generated_at_ept desc nulls last,
+                 updated_at desc nulls last,
+                 projected_peak_datetime_ept desc nulls last
+      ) as latest_rank
+    from pjm.ops_sum_frcstd_tran_lim
+  ) as ranked_transfer_limit_rows
 `;
 
 const PROJECTED_TIE_FLOW_ROW_SQL = `
   select
-    projected_peak_datetime_ept::date::text as peak_date,
+    peak_date,
     interface,
-    to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
-    to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
-    scheduled_tie_flow::float8 as scheduled_tie_flow
-  from pjm.ops_sum_prjctd_tie_flow
+    generated_at_ept,
+    projected_peak_datetime_ept,
+    scheduled_tie_flow,
+    latest_rank
+  from (
+    select
+      projected_peak_datetime_ept::date::text as peak_date,
+      interface,
+      to_char(generated_at_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as generated_at_ept,
+      to_char(projected_peak_datetime_ept, 'YYYY-MM-DD"T"HH24:MI:SS') as projected_peak_datetime_ept,
+      scheduled_tie_flow::float8 as scheduled_tie_flow,
+      row_number() over (
+        partition by projected_peak_datetime_ept::date, interface
+        order by generated_at_ept desc nulls last,
+                 updated_at desc nulls last,
+                 projected_peak_datetime_ept desc nulls last
+      ) as latest_rank
+    from pjm.ops_sum_prjctd_tie_flow
+  ) as ranked_projected_tie_flow_rows
 `;
 
 const PREV_PERIOD_BASE_SQL = `
@@ -398,8 +466,10 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     query<RtoPeakSourceRow>(
       `
         ${RTO_ROW_SQL}
-        where projected_peak_datetime_ept::date = $1::date
-        order by projected_peak_datetime_ept desc
+        where latest_rank = 1
+          and peak_date::date = $1::date
+        order by generated_at_ept desc nulls last,
+                 projected_peak_datetime_ept desc
         limit 1
       `,
       [selectedDate],
@@ -407,8 +477,9 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     query<RtoPeakSourceRow>(
       `
         ${RTO_ROW_SQL}
-        where projected_peak_datetime_ept::date <= $1::date
-        order by projected_peak_datetime_ept desc
+        where latest_rank = 1
+          and peak_date::date <= $1::date
+        order by peak_date::date desc
         limit 7
       `,
       [selectedDate],
@@ -417,7 +488,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         with history as (
           select
-            projected_peak_datetime_ept::date as peak_date,
+            peak_date::date as peak_date,
             internal_scheduled_capacity::float8 as internal_scheduled_capacity_mw,
             scheduled_tie_flow_total::float8 as scheduled_tie_flow_total_mw,
             capacity_adjustments::float8 as capacity_adjustments_mw,
@@ -425,8 +496,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
             load_forecast::float8 as load_forecast_mw,
             operating_reserve::float8 as operating_reserve_mw,
             unscheduled_steam_capacity::float8 as unscheduled_steam_capacity_mw
-          from pjm.ops_sum_frcst_peak_rto
-          where projected_peak_datetime_ept::date <= $1::date
+          from (
+            ${RTO_ROW_SQL}
+          ) as latest_rto_rows
+          where latest_rank = 1
+            and peak_date::date <= $1::date
         ),
         metric_values as (
           select metric.metric_key, history.peak_date, metric.value
@@ -469,7 +543,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     query<AreaPeakSourceRow>(
       `
         ${AREA_ROW_SQL}
-        where projected_peak_datetime_ept::date = $1::date
+        where latest_rank = 1
+          and peak_date::date = $1::date
         order by pjm_load_forecast desc nulls last, area
       `,
       [selectedDate],
@@ -477,7 +552,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     query<TransferLimitSourceRow>(
       `
         ${TRANSFER_LIMIT_ROW_SQL}
-        where projected_peak_datetime_ept::date = $1::date
+        where latest_rank = 1
+          and peak_date::date = $1::date
         order by transfer_limit_name
       `,
       [selectedDate],
@@ -486,21 +562,25 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         with selected_names as (
           select transfer_limit_name
-          from pjm.ops_sum_frcstd_tran_lim
-          where projected_peak_datetime_ept::date = $1::date
+          from (
+            ${TRANSFER_LIMIT_ROW_SQL}
+          ) as selected_transfer_limit_rows
+          where latest_rank = 1
+            and peak_date::date = $1::date
         ),
         ranked as (
           select
             transfer_rows.*,
             row_number() over (
               partition by transfer_limit_name
-              order by projected_peak_datetime_ept desc
+              order by peak_date::date desc
             ) as recent_rank
           from (
             ${TRANSFER_LIMIT_ROW_SQL}
           ) as transfer_rows
           where transfer_limit_name in (select transfer_limit_name from selected_names)
-            and projected_peak_datetime_ept::date <= $1::date
+            and latest_rank = 1
+            and peak_date::date <= $1::date
         )
         select
           peak_date,
@@ -518,18 +598,24 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         with selected_names as (
           select transfer_limit_name
-          from pjm.ops_sum_frcstd_tran_lim
-          where projected_peak_datetime_ept::date = $1::date
+          from (
+            ${TRANSFER_LIMIT_ROW_SQL}
+          ) as selected_transfer_limit_rows
+          where latest_rank = 1
+            and peak_date::date = $1::date
         ),
         metric_values as (
           select
             transfer_limit_name as area,
             'transferLimitMw'::text as metric_key,
-            projected_peak_datetime_ept::date as peak_date,
+            peak_date::date as peak_date,
             transfer_limit_mw::float8 as value
-          from pjm.ops_sum_frcstd_tran_lim
+          from (
+            ${TRANSFER_LIMIT_ROW_SQL}
+          ) as latest_transfer_limit_rows
           where transfer_limit_name in (select transfer_limit_name from selected_names)
-            and projected_peak_datetime_ept::date <= $1::date
+            and latest_rank = 1
+            and peak_date::date <= $1::date
             and transfer_limit_mw is not null
         ),
         ranked as (
@@ -565,7 +651,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     query<ProjectedTieFlowSourceRow>(
       `
         ${PROJECTED_TIE_FLOW_ROW_SQL}
-        where projected_peak_datetime_ept::date = $1::date
+        where latest_rank = 1
+          and peak_date::date = $1::date
         order by interface
       `,
       [selectedDate],
@@ -574,21 +661,25 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         with selected_interfaces as (
           select interface
-          from pjm.ops_sum_prjctd_tie_flow
-          where projected_peak_datetime_ept::date = $1::date
+          from (
+            ${PROJECTED_TIE_FLOW_ROW_SQL}
+          ) as selected_projected_tie_flow_rows
+          where latest_rank = 1
+            and peak_date::date = $1::date
         ),
         ranked as (
           select
             tie_rows.*,
             row_number() over (
               partition by interface
-              order by projected_peak_datetime_ept desc
+              order by peak_date::date desc
             ) as recent_rank
           from (
             ${PROJECTED_TIE_FLOW_ROW_SQL}
           ) as tie_rows
           where interface in (select interface from selected_interfaces)
-            and projected_peak_datetime_ept::date <= $1::date
+            and latest_rank = 1
+            and peak_date::date <= $1::date
         )
         select
           peak_date,
@@ -606,18 +697,24 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       `
         with selected_interfaces as (
           select interface
-          from pjm.ops_sum_prjctd_tie_flow
-          where projected_peak_datetime_ept::date = $1::date
+          from (
+            ${PROJECTED_TIE_FLOW_ROW_SQL}
+          ) as selected_projected_tie_flow_rows
+          where latest_rank = 1
+            and peak_date::date = $1::date
         ),
         metric_values as (
           select
             interface as area,
             'scheduledTieFlowMw'::text as metric_key,
-            projected_peak_datetime_ept::date as peak_date,
+            peak_date::date as peak_date,
             scheduled_tie_flow::float8 as value
-          from pjm.ops_sum_prjctd_tie_flow
+          from (
+            ${PROJECTED_TIE_FLOW_ROW_SQL}
+          ) as latest_projected_tie_flow_rows
           where interface in (select interface from selected_interfaces)
-            and projected_peak_datetime_ept::date <= $1::date
+            and latest_rank = 1
+            and peak_date::date <= $1::date
             and scheduled_tie_flow is not null
         ),
         ranked as (
@@ -670,13 +767,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
                 area_rows.*,
                 row_number() over (
                   partition by area
-                  order by projected_peak_datetime_ept desc
+                  order by peak_date::date desc
                 ) as recent_rank
               from (
                 ${AREA_ROW_SQL}
               ) as area_rows
               where area = any($2::text[])
-                and projected_peak_datetime_ept::date <= $1::date
+                and latest_rank = 1
+                and peak_date::date <= $1::date
             )
             select
               peak_date,
@@ -697,14 +795,17 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
             with history as (
               select
                 area,
-                projected_peak_datetime_ept::date as peak_date,
+                peak_date::date as peak_date,
                 internal_scheduled_capacity::float8 as internal_scheduled_capacity_mw,
                 pjm_load_forecast::float8 as load_forecast_mw,
                 unscheduled_steam_capacity::float8 as unscheduled_steam_capacity_mw,
                 (internal_scheduled_capacity - pjm_load_forecast)::float8 as capacity_margin_mw
-              from pjm.ops_sum_frcst_peak_area
+              from (
+                ${AREA_ROW_SQL}
+              ) as latest_area_rows
               where area = any($2::text[])
-                and projected_peak_datetime_ept::date <= $1::date
+                and latest_rank = 1
+                and peak_date::date <= $1::date
             ),
             metric_values as (
               select history.area, metric.metric_key, history.peak_date, metric.value

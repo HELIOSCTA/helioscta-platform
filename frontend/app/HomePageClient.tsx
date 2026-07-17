@@ -263,7 +263,7 @@ function parseInitialSection(
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
-  return "pjm-da-lmps";
+  return showLocalDevFeatures ? "ice-settlements" : "pjm-da-lmps";
 }
 
 function parseInitialForecastType(
@@ -483,19 +483,19 @@ export default function HomePageClient({
     }
     if (showLocalDevFeatures && activeSection === "ice-settlements") {
       return {
-        title: "ICE Power Settles",
+        title: "Power ICE Settles",
         subtitle:
           "PJM short-term and monthly power settlement marks with source context.",
         footer:
-          "ICE Power Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
+          "Power ICE Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "spark-spreads") {
       return {
-        title: "Power Forwards/Sparks",
+        title: "Power Sparks",
         subtitle:
           "Outright, calendar, and spark spread curve history with heat-rate context.",
-        footer: "Power Forwards/Sparks | Source: ice_python.settlements / Azure PostgreSQL",
+        footer: "Power Sparks | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {
