@@ -1146,11 +1146,16 @@ FROM isone.seven_day_solar_forecast;
 - Journal logs: `journalctl -u helios-lmp-price-backfill-7-day.service`.
 - Schedule: daily at `22:15 UTC` with `RandomizedDelaySec=10min`.
 - Deployed runtime commit:
-  `724e46d5f4e08fae3456eb5d8222c08966674f47`.
-- Deployed at: `2026-07-17 17:08 UTC`.
-- Latest VM verification: manual one-shot service run exited
-  `status=0/SUCCESS` at `2026-07-17 17:15:20 UTC`; journal summary reported
-  `9 succeeded, 0 failed`.
+  `971c7a7e1996b1fcb43291b29411ac9777ea4a36`.
+- Deployed at: `2026-07-17 17:30 UTC`; original global repair deployment was
+  `2026-07-17 17:08 UTC`.
+- Latest VM verification: ERCOT price-adder repair smoke run exited
+  `status=0/SUCCESS` at `2026-07-17 17:27 UTC`; journal summary reported
+  `2 succeeded, 0 failed`, with `2030` SCED rows and `672` 15-minute rows
+  processed for `2026-07-10` through `2026-07-16`. The production health
+  check's `LMP repair freshness` section reported
+  `Coverage: 11/11 successful target-table repairs` at
+  `2026-07-17 17:30 UTC`.
 - Initial backfill telemetry verification: `ops.api_fetch_log` showed
   successful `repair_family=lmp_price_backfill_7_day` rows for the original
   nine target LMP feeds after the manual run. The production health check's
