@@ -58,7 +58,8 @@ with product_aliases(
         (49, 'nav', 'exact', 'ICE NGAS NYM PG&E', 'PGE', null),
         (50, 'nav', 'exact', 'ICE TETCO SWP', 'TMT', null),
         (51, 'nav', 'exact', 'ICE TRANSCO STATION 85 ZONE 4', 'TRZ', null),
-        (52, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null)
+        (52, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null),
+        (53, 'nav', 'exact', 'ICE SDP', 'SDP', null)
 )
 
 select * from product_aliases

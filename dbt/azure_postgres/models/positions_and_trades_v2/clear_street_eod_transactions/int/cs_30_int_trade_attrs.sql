@@ -83,7 +83,11 @@ select
         coalesce(prepared_trades.quantity, 0) = 0
         and coalesce(prepared_trades.contract_year_month, 0) = 0
         and upper(coalesce(prepared_trades.security_description_clean, '')) = 'UNITED STATES DOLLAR'
-        and upper(coalesce(prepared_trades.instrument_description_clean, '')) like 'RESID ADJ%'
+        and (
+            upper(coalesce(prepared_trades.instrument_description_clean, '')) like 'RESID ADJ%'
+            or upper(coalesce(prepared_trades.instrument_description_clean, '')) = 'APS RES'
+            or upper(coalesce(prepared_trades.instrument_description_clean, '')) like '%EXCHANGE FEE ADJ%'
+        )
     ) as is_non_product_cash_adjustment,
 
     -- Options can be indicated by put/call, security type, or instrument type.

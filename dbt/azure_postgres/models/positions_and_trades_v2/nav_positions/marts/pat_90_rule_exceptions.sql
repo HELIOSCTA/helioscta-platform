@@ -34,9 +34,14 @@ nav_exceptions as (
         rule_pattern as rule_match_pattern
     from {{ ref('nav_30_int_rules') }}
     where rule_status <> 'ok'
+),
+
+FINAL as (
+    select * from clear_street_exceptions
+    union all
+    select * from nav_exceptions
 )
 
-select * from clear_street_exceptions
-union all
-select * from nav_exceptions
+select *
+from FINAL
 order by source, source_date desc, rule_status, source_product

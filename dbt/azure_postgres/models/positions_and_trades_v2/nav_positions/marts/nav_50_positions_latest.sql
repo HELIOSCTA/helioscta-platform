@@ -20,20 +20,25 @@ latest_upload_by_fund as (
         on latest_nav_by_fund.fund_code = positions.fund_code
        and latest_nav_by_fund.nav_date = positions.nav_date
     group by positions.fund_code, positions.nav_date
+),
+
+FINAL as (
+    select positions.*
+    from positions
+    inner join latest_upload_by_fund
+        on latest_upload_by_fund.fund_code = positions.fund_code
+       and latest_upload_by_fund.nav_date = positions.nav_date
+       and latest_upload_by_fund.sftp_upload_timestamp = positions.sftp_upload_timestamp
 )
 
-select positions.*
-from positions
-inner join latest_upload_by_fund
-    on latest_upload_by_fund.fund_code = positions.fund_code
-   and latest_upload_by_fund.nav_date = positions.nav_date
-   and latest_upload_by_fund.sftp_upload_timestamp = positions.sftp_upload_timestamp
+select *
+from FINAL
 order by
-    positions.nav_date desc,
-    positions.sftp_upload_timestamp desc,
-    positions.fund_code,
-    positions.account_group,
-    positions.account,
-    positions.product_code,
-    positions.contract_yyyymm,
-    positions.contract_day
+    nav_date desc,
+    sftp_upload_timestamp desc,
+    fund_code,
+    account_group,
+    account,
+    product_code,
+    contract_yyyymm,
+    contract_day

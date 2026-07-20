@@ -1,5 +1,14 @@
+with positions as (
+    select * from {{ ref('nav_30_int_rules') }}
+),
+
+FINAL as (
+    select *
+    from positions
+)
+
 select *
-from {{ ref('nav_30_int_rules') }}
+from FINAL
 order by
     nav_date desc,
     sftp_upload_timestamp desc,
