@@ -499,9 +499,9 @@ LIMIT 10;
 - Service user: `helios`.
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-caiso-da-lmps.service`.
-- Schedule: daily at `12:50 America/Los_Angeles` with
+- Schedule: daily at `12:00 America/Los_Angeles` with
   `RandomizedDelaySec=5min`. The service polls every two minutes for up to
-  four hours so it can start before CAISO's 1:00 p.m. day-ahead OASIS
+  four hours so it can start one hour before CAISO's 1:00 p.m. day-ahead OASIS
   publication window and continue until the complete next trading date is
   available.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
@@ -532,6 +532,9 @@ LIMIT 10;
   `12:50 America/Los_Angeles` schedule and a 5-hour service timeout. The VM was
   later observed at `d338197`, which includes the CAISO polling commit plus
   unrelated ERCOT deployment-register work.
+- Timer timing update: CAISO DA now starts at `12:00 America/Los_Angeles`, one
+  hour before the documented 1:00 p.m. OASIS publication window, and continues
+  polling every two minutes for up to four hours.
 - Polling smoke verification: `2026-07-17 17:32 UTC`; a systemd-run smoke test
   executed the scheduled polling path for already-published trading date
   `2026-07-17`, exited `status=0/SUCCESS`, upserted 48 rows, observed existing

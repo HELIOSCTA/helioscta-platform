@@ -131,8 +131,9 @@ readiness events for the selected trading hubs.
 The CAISO DA hourly LMP production path is
 `backend.orchestration.power.caiso.da_lmps`, with manual backfills at
 `backend.backfills.power.caiso.da_lmps`. The VM timer is
-`helios-caiso-da-lmps.timer`, scheduled daily at `13:20 America/Los_Angeles`,
-after CAISO's published 1:00 p.m. day-ahead results window. The CAISO RT
+`helios-caiso-da-lmps.timer`, scheduled daily at `12:00 America/Los_Angeles`,
+one hour before CAISO's published 1:00 p.m. day-ahead results window. The
+scheduled path polls until the complete next trading date is available. The CAISO RT
 five-minute LMP production path is
 `backend.orchestration.power.caiso.rt_lmps`; `helios-caiso-rt-lmps.timer`
 runs daily at `09:20 America/Los_Angeles` and defaults to the previous

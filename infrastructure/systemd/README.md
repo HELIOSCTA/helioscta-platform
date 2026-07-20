@@ -364,9 +364,9 @@ CAISO OASIS `PRC_LMP` day-ahead prices for `TH_NP15_GEN-APND` and
 `TH_SP15_GEN-APND`, upserts `caiso.da_lmps`, writes OASIS fetch telemetry to
 `ops.api_fetch_log`, emits complete-day readiness events to
 `ops.data_availability_events`, and queues CAISO DA release email
-notifications. The timer starts daily at `12:50 America/Los_Angeles` and the
-service polls for up to four hours so it can catch CAISO's day-ahead OASIS
-publication window. The service uses `flock` with
+notifications. The timer starts daily at `12:00 America/Los_Angeles`, one hour
+before CAISO's documented 1:00 p.m. day-ahead OASIS publication window, and
+polls for up to four hours. The service uses `flock` with
 `/tmp/helios-caiso-da-lmps.lock`.
 
 The RT service runs `backend.orchestration.power.caiso.rt_lmps`, which pulls
