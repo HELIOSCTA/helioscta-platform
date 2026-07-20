@@ -340,7 +340,7 @@ helios-ercot-settlement-point-prices.timer
 ```
 
 The DAM workflow runs `backend.orchestration.power.ercot.dam_stlmnt_pnt_prices`
-daily at `11:15 America/Chicago`, upserts current-delivery-date hub settlement point
+daily at `11:15 America/Chicago`, upserts next-delivery-date hub settlement point
 prices, and emits complete delivery-date readiness events. The RT workflow runs
 `backend.orchestration.power.ercot.settlement_point_prices` every 15 minutes,
 upserts published hub intervals, and emits readiness only when a full delivery
@@ -399,7 +399,7 @@ helios-isone-external-interface-metered-data.timer
 ```
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
-current Eastern operating-date ISO Express hourly day-ahead `.H.INTERNAL_HUB`
+next Eastern operating-date ISO Express hourly day-ahead `.H.INTERNAL_HUB`
 LMP CSV rows into `isone.da_hrl_lmps`,
 writes API telemetry to `ops.api_fetch_log`, and emits complete-date readiness
 events when all 24 hourly hub rows are present. The timer runs daily at

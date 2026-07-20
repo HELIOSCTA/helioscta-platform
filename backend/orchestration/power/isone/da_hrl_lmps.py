@@ -30,7 +30,7 @@ DATA_SCOPE = "internal_hub"
 DATA_GRAIN = "date_hour_location"
 LOCAL_MARKET_TIMEZONE = "America/New_York"
 DEFAULT_DELTA = relativedelta(days=1)
-DEFAULT_LOOKAHEAD_DAYS = 0
+DEFAULT_LOOKAHEAD_DAYS = 1
 
 logger = logging.getLogger(__name__)
 

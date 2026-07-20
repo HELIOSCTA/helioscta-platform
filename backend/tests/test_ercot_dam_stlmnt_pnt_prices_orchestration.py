@@ -7,6 +7,10 @@ import pandas as pd
 from backend.orchestration.power.ercot import dam_stlmnt_pnt_prices
 
 
+def test_ercot_dam_spp_scheduled_default_targets_next_delivery_date():
+    assert dam_stlmnt_pnt_prices.DEFAULT_LOOKAHEAD_DAYS == 1
+
+
 def test_ercot_dam_spp_expected_period_count_handles_normal_and_dst_days():
     assert dam_stlmnt_pnt_prices._expected_period_count_for_date(date(2026, 6, 13)) == 24
     assert dam_stlmnt_pnt_prices._expected_period_count_for_date(date(2026, 3, 8)) == 23

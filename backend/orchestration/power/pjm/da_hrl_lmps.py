@@ -41,6 +41,7 @@ DATA_AVAILABILITY_TYPE = "data_ready"
 DATA_SCOPE = "hub"
 DATA_GRAIN = "date_hour_hub"
 LOCAL_MARKET_TIMEZONE = "America/New_York"
+DEFAULT_LOOKAHEAD_DAYS = 1
 
 logger = logging.getLogger(__name__)
 
@@ -515,7 +516,7 @@ def main(
     metadata: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
 
-    target_day = datetime.now() + relativedelta(days=1)
+    target_day = datetime.now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
     start_date = start_date or target_day.strftime("%Y-%m-%d 00:00")
     end_date = end_date or target_day.strftime("%Y-%m-%d 23:00")
     database = database or credentials.AZURE_POSTGRESQL_DB_NAME

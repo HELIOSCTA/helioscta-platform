@@ -70,7 +70,8 @@ boundary, or log path changes.
 - File log path: `/var/log/helioscta`.
 - Journal logs: `journalctl -u helios-pjm-da-hrl-lmps.service`.
 - Schedule: daily at `15:30 UTC` (`11:30 America/New_York` during daylight
-  saving time), polling every `60` seconds for up to `5` hours.
+  saving time), polling every `60` seconds for up to `5` hours; scheduled
+  defaults pull the next Eastern market date.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-da-hrl-lmps.lock`.
@@ -405,7 +406,7 @@ Operational notes:
 - Environment file: `/etc/helioscta/backend.env`.
 - Journal logs: `journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service`.
 - Schedule: daily at `11:15 America/Chicago` with
-  `RandomizedDelaySec=5min`.
+  `RandomizedDelaySec=5min`; scheduled defaults pull the next delivery date.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-dam-stlmnt-pnt-prices.lock`.
@@ -698,7 +699,8 @@ LIMIT 20;
 - Unit files:
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.timer`
-- Schedule: daily at `17:10 UTC` with `RandomizedDelaySec=5min`.
+- Schedule: daily at `17:10 UTC` with `RandomizedDelaySec=5min`; scheduled
+  defaults pull the next Eastern operating date.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-da-hrl-lmps.lock`.

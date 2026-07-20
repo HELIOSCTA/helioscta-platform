@@ -26,6 +26,7 @@ def test_build_request_keeps_pjm_key_out_of_url(monkeypatch):
 
 
 def test_da_lmp_polling_policy_uses_minute_interval_and_five_hour_ceiling():
+    assert orchestrated_da_hrl_lmps.DEFAULT_LOOKAHEAD_DAYS == 1
     assert orchestrated_da_hrl_lmps.POLL_CEILING_SECONDS == 5 * 60 * 60
     assert orchestrated_da_hrl_lmps.POLL_WAIT_SECONDS == 60
 

@@ -7,6 +7,10 @@ import pandas as pd
 from backend.orchestration.power.isone import da_hrl_lmps
 
 
+def test_isone_da_hrl_lmps_scheduled_default_targets_next_operating_date():
+    assert da_hrl_lmps.DEFAULT_LOOKAHEAD_DAYS == 1
+
+
 def test_isone_da_hrl_lmps_expected_period_count_handles_normal_and_dst_days():
     assert da_hrl_lmps._expected_period_count_for_date(date(2026, 6, 13)) == 24
     assert da_hrl_lmps._expected_period_count_for_date(date(2026, 3, 8)) == 23

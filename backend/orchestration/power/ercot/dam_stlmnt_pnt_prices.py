@@ -32,7 +32,7 @@ DATA_GRAIN = "date_hour_settlementpoint"
 LOCAL_MARKET_TIMEZONE = "America/Chicago"
 DEFAULT_SETTLEMENT_POINTS = scrape.DEFAULT_SETTLEMENT_POINTS
 DEFAULT_DELTA = relativedelta(days=1)
-DEFAULT_LOOKAHEAD_DAYS = 0
+DEFAULT_LOOKAHEAD_DAYS = scrape.DEFAULT_LOOKAHEAD_DAYS
 
 logger = logging.getLogger(__name__)
 
