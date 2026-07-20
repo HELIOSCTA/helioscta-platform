@@ -67,6 +67,7 @@ product_catalog(
         ('NEZ', 'Power', 'NEPOOL', null, null, 'IFED'),
         ('NEP', 'Power', 'NEPOOL', null, null, 'IFED'),
         ('SPM', 'Power', 'CAISO', null, null, 'IFED'),
+        ('SDP', 'Power', 'CAISO', null, null, 'IFED'),
         ('NPM', 'Power', 'CAISO', null, null, 'IFED'),
         ('MDC', 'Power', 'Mid-C', null, null, 'IFED'),
         ('AEC', 'Basis', 'AECO', null, null, 'IFED'),
@@ -199,7 +200,11 @@ normalized_base as (
             coalesce(p.quantity, 0) = 0
             and coalesce(p.contract_year_month, 0) = 0
             and upper(coalesce(p.security_description, '')) = 'UNITED STATES DOLLAR'
-            and upper(coalesce(p.instrument_description, '')) like 'RESID ADJ%'
+            and (
+                upper(coalesce(p.instrument_description, '')) like 'RESID ADJ%'
+                or upper(coalesce(p.instrument_description, '')) = 'APS RES'
+                or upper(coalesce(p.instrument_description, '')) like '%EXCHANGE FEE ADJ%'
+            )
         ) as is_non_product_cash_adjustment
     from prepared_trades as p
 ),

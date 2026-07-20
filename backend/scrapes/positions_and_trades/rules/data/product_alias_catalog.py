@@ -121,6 +121,7 @@ POWER_ALIASES = (
         match_type="regex",
     ),
     nav("^ICE SP 15 PEAK([_-][0-9]+)?$", "SPM", match_type="regex"),
+    nav("ICE SDP", "SDP"),
     nav("^ICE NP 15 PEAK([_-][0-9]+)?$", "NPM", match_type="regex"),
     nav("^ICE MID-C PEAK([_-][0-9]+)?$", "MDC", match_type="regex"),
 )

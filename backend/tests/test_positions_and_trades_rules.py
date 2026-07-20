@@ -602,6 +602,7 @@ def test_write_generated_sql_writes_clear_street_mufg_file(tmp_path):
     written = sql_generator.write_generated_sql(output_dir=tmp_path)
 
     assert {path.relative_to(tmp_path).as_posix() for path in written} == {
+        "clear_street_trades/all_history_validation.sql",
         "clear_street_trades/mufg/latest.sql",
         "clear_street_trades/mufg/all_history.sql",
         "nav_positions/latest.sql",

@@ -122,6 +122,30 @@ def build_clear_street_trades_mufg_all_history_sql(
     )
 
 
+def build_clear_street_trades_all_history_validation_sql(
+    source_table: str = DEFAULT_SOURCE_TABLE,
+    alias_source: str = DEFAULT_ALIAS_SOURCE,
+    rule_set: ProductRuleSet = DEFAULT_RULE_SET,
+) -> str:
+    """Return all-history Clear Street rows with rule fields for validation."""
+    header = CLEAR_STREET_GENERATED_HEADER.replace(
+        "Purpose: read-only latest MUFG Clear Street trade extract.",
+        "Purpose: read-only all-history Clear Street product-rule validation.",
+    ).replace(
+        "the legacy export shape.",
+        "all loaded rows with generated rule fields.",
+    )
+    return _with_header(
+        "clear_street_trades/all_history_validation.sql",
+        _clear_street_trades_all_history_validation_query(
+            source_table,
+            alias_source,
+            rule_set,
+        ),
+        header,
+    )
+
+
 def build_nav_positions_latest_sql(
     source_table: str = DEFAULT_NAV_SOURCE_TABLE,
     alias_source: str = DEFAULT_NAV_ALIAS_SOURCE,
@@ -181,6 +205,28 @@ def _clear_street_trades_mufg_all_history_query(
         "but does not restrict results to the latest SFTP trade date."
     ),
 )}"""
+
+
+def _clear_street_trades_all_history_validation_query(
+    source_table: str,
+    alias_source: str,
+    rule_set: ProductRuleSet,
+) -> str:
+    return f"""{_clear_street_rule_ctes(source_table, alias_source, rule_set)},
+{_sql_comment(
+    "CTE 11 - final",
+    "Keeps every Clear Street source row with generated product-rule fields for validation.",
+)}
+final as (
+    select *
+    from trades_with_rules
+    order by
+        trade_date_from_sftp desc,
+        sftp_upload_timestamp desc,
+        row_number_for_trades
+)
+select * from final;
+"""
 
 
 def _clear_street_export_code_ctes() -> str:
@@ -1288,6 +1334,13 @@ def generated_files(
                 rule_set,
             )
         ),
+        resolved_output_dir / "clear_street_trades" / "all_history_validation.sql": (
+            build_clear_street_trades_all_history_validation_sql(
+                source_table,
+                alias_source,
+                rule_set,
+            )
+        ),
         resolved_output_dir / "nav_positions" / "latest.sql": (
             build_nav_positions_latest_sql(
                 nav_source_table,
@@ -1663,7 +1716,11 @@ normalized_base as (
             coalesce(p.quantity, 0) = 0
             and coalesce(p.contract_year_month, 0) = 0
             and upper(coalesce(p.security_description, '')) = 'UNITED STATES DOLLAR'
-            and upper(coalesce(p.instrument_description, '')) like 'RESID ADJ%'
+            and (
+                upper(coalesce(p.instrument_description, '')) like 'RESID ADJ%'
+                or upper(coalesce(p.instrument_description, '')) = 'APS RES'
+                or upper(coalesce(p.instrument_description, '')) like '%EXCHANGE FEE ADJ%'
+            )
         ) as is_non_product_cash_adjustment
     from prepared_trades as p
 )"""

@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
 import subprocess
+import sys
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any
@@ -108,7 +113,6 @@ PJM_SUPPORT_FEEDS: tuple[SupportFeed, ...] = (
     SupportFeed("hrl_load_metered", "pjm", "hrl_load_metered"),
     SupportFeed("hrl_load_prelim", "pjm", "hrl_load_prelim"),
     SupportFeed("load_frcstd_7_day", "pjm", "load_frcstd_7_day"),
-    SupportFeed("load_frcstd_hist", "pjm", "load_frcstd_hist"),
     SupportFeed("ops_sum_frcstd_tran_lim", "pjm", "ops_sum_frcstd_tran_lim"),
     SupportFeed("ops_sum_frcst_peak_area", "pjm", "ops_sum_frcst_peak_area"),
     SupportFeed("ops_sum_frcst_peak_rto", "pjm", "ops_sum_frcst_peak_rto"),
@@ -175,6 +179,26 @@ MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
 MAX_LMP_REPAIR_SUCCESS_LAG_HOURS = 36
 MAX_RECOVERED_API_FAILURE_RATE = 0.5
 LMP_REPAIR_FAMILY = "lmp_price_backfill_7_day"
+DBT_PRODUCT_MATCHING_SELECT = "tag:product_matching"
+DBT_PRODUCT_MATCHING_TIMEOUT_SECONDS = 180
+PRODUCT_MATCHING_GENERATED_SQL_CHECKS: tuple[tuple[str, str, str], ...] = (
+    (
+        "nav",
+        "scrapes/positions_and_trades/sql/generated/nav_positions/all_history.sql",
+        "rule_status IS DISTINCT FROM 'ok'",
+    ),
+    (
+        "clear_street",
+        (
+            "scrapes/positions_and_trades/sql/generated/"
+            "clear_street_trades/all_history_validation.sql"
+        ),
+        (
+            "rule_status IS DISTINCT FROM 'ok' "
+            "AND rule_status IS DISTINCT FROM 'non_product_cash_adjustment'"
+        ),
+    ),
+)
 LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
     "pjm.da_hrl_lmps",
     "pjm.rt_hrl_lmps",
@@ -259,6 +283,7 @@ def collect_health(
     )
     lmp_repair_summary = _lmp_repair_freshness_summary(database=database)
     support_table_summary = _support_table_summary(database=database)
+    product_matching_test = _dbt_product_matching_test(database=database)
     duplicate_key_count = _rt_fivemin_hrl_duplicate_key_count(database=database)
     service_statuses = (
         _systemd_service_statuses(CRITICAL_SERVICES + SUPPORT_SERVICES)
@@ -279,6 +304,7 @@ def collect_health(
         support_api_summary=support_api_summary,
         lmp_repair_summary=lmp_repair_summary,
         support_table_summary=support_table_summary,
+        product_matching_test=product_matching_test,
         service_statuses=service_statuses,
         timers=timers,
         generated_at=generated_at,
@@ -295,6 +321,7 @@ def collect_health(
         "support_api_summary": support_api_summary,
         "lmp_repair_summary": lmp_repair_summary,
         "support_table_summary": support_table_summary,
+        "product_matching_test": product_matching_test,
         "service_statuses": service_statuses,
         "timers": timers,
         "issues": issues,
@@ -333,6 +360,9 @@ def format_health_report(
             checks["support_api_summary"],
             checks["support_table_summary"],
         ),
+        "",
+        "Positions/trades product matching",
+        _format_product_matching_test(checks.get("product_matching_test")),
         "",
         "Service status",
         *_format_service_statuses(checks["service_statuses"]),
@@ -580,6 +610,204 @@ def _support_table_summary(database: str | None) -> list[dict[str, Any]]:
     return rows or []
 
 
+def _dbt_product_matching_test(database: str | None = None) -> dict[str, Any]:
+    repo_root = Path(__file__).resolve().parents[3]
+    dbt_project_dir = repo_root / "dbt" / "azure_postgres"
+    command = [
+        _resolve_dbt_executable(),
+        "test",
+        "--profiles-dir",
+        ".",
+        "--select",
+        DBT_PRODUCT_MATCHING_SELECT,
+    ]
+
+    if not dbt_project_dir.exists():
+        return _product_matching_fallback_result(
+            reason=f"dbt project directory not found: {dbt_project_dir}",
+            command=command,
+            database=database,
+        )
+
+    env = _dbt_test_environment()
+    missing = [
+        name
+        for name in (
+            "DBT_POSTGRES_HOST",
+            "DBT_POSTGRES_READONLY_USER",
+            "DBT_POSTGRES_READONLY_PASSWORD",
+            "DBT_POSTGRES_DBNAME",
+        )
+        if not env.get(name)
+    ]
+    if missing:
+        return _product_matching_fallback_result(
+            reason="Missing dbt read-only environment variables: " + ", ".join(missing),
+            command=command,
+            database=database,
+        )
+
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=dbt_project_dir,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=DBT_PRODUCT_MATCHING_TIMEOUT_SECONDS,
+        )
+    except FileNotFoundError:
+        return _product_matching_fallback_result(
+            reason="dbt executable not found in the Python environment or on PATH.",
+            command=command,
+            database=database,
+        )
+    except subprocess.TimeoutExpired as exc:
+        fallback = _product_matching_fallback_result(
+            reason=(
+                "dbt product matching test timed out after "
+                f"{DBT_PRODUCT_MATCHING_TIMEOUT_SECONDS} seconds."
+            ),
+            command=command,
+            database=database,
+        )
+        fallback["stdout_tail"] = "\n".join(
+            line
+            for line in (
+                _tail_lines(_strip_ansi(exc.stdout or "")),
+                str(fallback.get("stdout_tail") or ""),
+            )
+            if line
+        )
+        fallback["stderr_tail"] = "\n".join(
+            line
+            for line in (
+                _tail_lines(_strip_ansi(exc.stderr or "")),
+                str(fallback.get("stderr_tail") or ""),
+            )
+            if line
+        )
+        return fallback
+
+    return {
+        "status": "pass" if completed.returncode == 0 else "fail",
+        "command": " ".join(command),
+        "message": (
+            "dbt product matching tests passed."
+            if completed.returncode == 0
+            else "dbt product matching tests failed."
+        ),
+        "returncode": completed.returncode,
+        "stdout_tail": _tail_lines(_strip_ansi(completed.stdout)),
+        "stderr_tail": _tail_lines(_strip_ansi(completed.stderr)),
+    }
+
+
+def _product_matching_fallback_result(
+    *,
+    reason: str,
+    command: list[str],
+    database: str | None,
+) -> dict[str, Any]:
+    fallback = _generated_product_matching_sql_test(database=database)
+    status_label = "passed" if fallback["status"] == "pass" else "failed"
+    return {
+        "status": fallback["status"],
+        "command": " ".join(command),
+        "message": (
+            f"dbt unavailable ({reason}); generated SQL fallback {status_label}: "
+            f"{fallback['message']}"
+        ),
+        "returncode": None,
+        "stdout_tail": fallback.get("stdout_tail", ""),
+        "stderr_tail": fallback.get("stderr_tail", ""),
+    }
+
+
+def _generated_product_matching_sql_test(database: str | None = None) -> dict[str, Any]:
+    failing_counts: list[tuple[str, int]] = []
+    commands: list[str] = []
+
+    for label, relative_path, predicate in PRODUCT_MATCHING_GENERATED_SQL_CHECKS:
+        source_sql = _strip_trailing_sql_semicolon(_load_generated_sql(relative_path))
+        check_sql = f"""
+        SELECT COUNT(*)::bigint AS failing_row_count
+        FROM (
+        {source_sql}
+        ) AS generated_product_matching_rows
+        WHERE {predicate};
+        """
+        commands.append(f"{label}: generated SQL where {predicate}")
+        rows = db.execute_sql(check_sql, database=database, fetch=True)
+        failing_row_count = int(rows[0]["failing_row_count"]) if rows else 0
+        failing_counts.append((label, failing_row_count))
+
+    total_failing_rows = sum(count for _, count in failing_counts)
+    detail = ", ".join(f"{label}={count}" for label, count in failing_counts)
+    return {
+        "status": "pass" if total_failing_rows == 0 else "fail",
+        "command": " | ".join(commands),
+        "message": (
+            "generated product matching SQL found no failing rows"
+            if total_failing_rows == 0
+            else f"generated product matching SQL found {total_failing_rows} failing rows"
+        ),
+        "returncode": 0 if total_failing_rows == 0 else 1,
+        "stdout_tail": f"failing_row_counts: {detail}",
+        "stderr_tail": "",
+    }
+
+
+def _load_generated_sql(relative_path: str) -> str:
+    backend_root = Path(__file__).resolve().parents[2]
+    sql_path = backend_root / relative_path
+    return sql_path.read_text(encoding="utf-8")
+
+
+def _strip_trailing_sql_semicolon(sql: str) -> str:
+    return re.sub(r";\s*$", "", sql.strip())
+
+
+def _dbt_test_environment() -> dict[str, str]:
+    env = os.environ.copy()
+    defaults = {
+        "DBT_POSTGRES_HOST": credentials.AZURE_POSTGRESQL_DB_HOST,
+        "DBT_POSTGRES_PORT": credentials.AZURE_POSTGRESQL_DB_PORT,
+        "DBT_POSTGRES_DBNAME": credentials.AZURE_POSTGRESQL_DB_NAME,
+        "DBT_POSTGRES_SSLMODE": credentials.AZURE_POSTGRESQL_DB_SSLMODE,
+        "DBT_POSTGRES_READONLY_USER": "helios_readonly",
+    }
+    for name, value in defaults.items():
+        if value and not env.get(name):
+            env[name] = str(value)
+    return env
+
+
+def _resolve_dbt_executable() -> str:
+    python_dir = Path(sys.executable).parent
+    candidates = [
+        python_dir / "dbt",
+        python_dir / "dbt.exe",
+        python_dir / "Scripts" / "dbt",
+        python_dir / "Scripts" / "dbt.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+
+    return shutil.which("dbt") or "dbt"
+
+
+def _strip_ansi(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
+
+
+def _tail_lines(text: str, line_count: int = 25) -> str:
+    lines = text.splitlines()
+    return "\n".join(lines[-line_count:])
+
+
 def _systemd_service_statuses(service_names: tuple[str, ...]) -> list[dict[str, str]]:
     statuses: list[dict[str, str]] = []
     for service_name in service_names:
@@ -675,6 +903,7 @@ def _evaluate_health(
     ercot_dam_readiness: dict[str, Any] | None = None,
     ercot_rt_readiness: dict[str, Any] | None = None,
     require_ercot_readiness: bool = False,
+    product_matching_test: dict[str, Any] | None = None,
 ) -> list[HealthIssue]:
     issues: list[HealthIssue] = []
     today = generated_at.date()
@@ -850,6 +1079,15 @@ def _evaluate_health(
                     ),
                 )
             )
+
+    if product_matching_test is not None and product_matching_test.get("status") != "pass":
+        issues.append(
+            HealthIssue(
+                "FAIL",
+                "positions/trades product matching",
+                str(product_matching_test.get("message") or "dbt product matching test failed."),
+            )
+        )
 
     for status in service_statuses:
         service_name = status["service"]
@@ -1158,6 +1396,22 @@ def _format_support_batch_summary(
             )
         )
     return lines
+
+
+def _format_product_matching_test(result: dict[str, Any] | None) -> str:
+    if result is None:
+        return "- not collected"
+
+    line = (
+        f"- {result.get('status', 'unknown')}: {result.get('message', '')} "
+        f"command={result.get('command', '')}"
+    )
+    stdout_tail = str(result.get("stdout_tail") or "").strip()
+    stderr_tail = str(result.get("stderr_tail") or "").strip()
+    details = stdout_tail or stderr_tail
+    if details:
+        line = f"{line}\n  tail: {details.replace(chr(10), chr(10) + '  ')}"
+    return line
 
 
 def _format_service_statuses(rows: list[dict[str, str]]) -> list[str]:

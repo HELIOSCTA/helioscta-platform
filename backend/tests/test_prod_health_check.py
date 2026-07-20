@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 from backend.orchestration.health import prod_health_check
 
@@ -275,6 +276,149 @@ def test_health_evaluation_warns_for_support_batch_gaps_only():
     assert any("Support table has zero rows" in message for message in warnings)
     assert any("latest updated_at" in message for message in warnings)
     assert any("support batch systemd result is exit-code" in message for message in warnings)
+
+
+def test_health_evaluation_fails_for_product_matching_test_failure():
+    issues = prod_health_check._evaluate_health(
+        da_readiness=_readiness("pjm_da_hrl_lmps", date(2026, 6, 13), 288, 12, 24),
+        rt_readiness=_readiness(
+            "pjm_rt_fivemin_hrl_lmps",
+            date(2026, 6, 11),
+            12096,
+            42,
+            288,
+        ),
+        rt_shape={
+            "business_date": date(2026, 6, 11),
+            "row_count": 12096,
+            "pnode_count": 42,
+            "type_count": 3,
+            "period_count": 288,
+            "min_utc": datetime(2026, 6, 11, 10, tzinfo=timezone.utc),
+            "max_utc": datetime(2026, 6, 12, 9, 55, tzinfo=timezone.utc),
+        },
+        duplicate_key_count=0,
+        api_summary=[
+            {
+                "pipeline_name": "da_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 288,
+                "latest_status": "success",
+                "latest_http_status": 200,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+            {
+                "pipeline_name": "rt_fivemin_hrl_lmps",
+                "failure_count": 0,
+                "fetch_count": 1,
+                "rows_returned": 12096,
+                "latest_status": "success",
+                "latest_http_status": 200,
+                "last_fetch_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+            },
+        ],
+        support_api_summary=_support_api_summary(),
+        support_table_summary=_support_table_summary(),
+        product_matching_test={
+            "status": "fail",
+            "message": "dbt product matching tests failed.",
+            "command": "dbt test --profiles-dir . --select tag:product_matching",
+        },
+        service_statuses=[
+            _service("helios-pjm-da-hrl-lmps.service", "success"),
+            _service("helios-pjm-rt-fivemin-hrl-lmps.service", "success"),
+        ],
+        generated_at=datetime(2026, 6, 13, 13, tzinfo=timezone.utc),
+    )
+
+    failures = [issue for issue in issues if issue.severity == "FAIL"]
+    assert any(
+        issue.subject == "positions/trades product matching"
+        and "dbt product matching tests failed" in issue.message
+        for issue in failures
+    )
+
+
+def test_resolve_dbt_executable_prefers_python_environment_scripts(monkeypatch, tmp_path):
+    python_exe = tmp_path / "python.exe"
+    scripts_dir = tmp_path / "Scripts"
+    scripts_dir.mkdir()
+    dbt_exe = scripts_dir / "dbt.exe"
+    dbt_exe.write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(prod_health_check.sys, "executable", str(python_exe))
+    monkeypatch.setattr(prod_health_check.shutil, "which", lambda _: None)
+
+    assert Path(prod_health_check._resolve_dbt_executable()) == dbt_exe
+
+
+def test_generated_product_matching_sql_test_passes_when_no_failures(monkeypatch):
+    executed_sql: list[str] = []
+
+    monkeypatch.setattr(
+        prod_health_check,
+        "_load_generated_sql",
+        lambda _: "select 'ok'::text as rule_status;",
+    )
+
+    def fake_execute_sql(sql, **kwargs):
+        executed_sql.append(sql)
+        assert kwargs["database"] == "helios_prod"
+        assert kwargs["fetch"] is True
+        return [{"failing_row_count": 0}]
+
+    monkeypatch.setattr(prod_health_check.db, "execute_sql", fake_execute_sql)
+
+    result = prod_health_check._generated_product_matching_sql_test(
+        database="helios_prod",
+    )
+
+    assert result["status"] == "pass"
+    assert "no failing rows" in result["message"]
+    assert "nav=0" in result["stdout_tail"]
+    assert "clear_street=0" in result["stdout_tail"]
+    assert len(executed_sql) == len(prod_health_check.PRODUCT_MATCHING_GENERATED_SQL_CHECKS)
+
+
+def test_dbt_product_matching_uses_generated_sql_fallback_when_dbt_missing(monkeypatch):
+    monkeypatch.setattr(
+        prod_health_check,
+        "_resolve_dbt_executable",
+        lambda: "missing-dbt-command",
+    )
+    monkeypatch.setattr(
+        prod_health_check,
+        "_dbt_test_environment",
+        lambda: {
+            "DBT_POSTGRES_HOST": "example.postgres.database.azure.com",
+            "DBT_POSTGRES_READONLY_USER": "helios_readonly",
+            "DBT_POSTGRES_READONLY_PASSWORD": "secret",
+            "DBT_POSTGRES_DBNAME": "helios_prod",
+        },
+    )
+
+    def raise_missing(*_args, **_kwargs):
+        raise FileNotFoundError("missing dbt")
+
+    monkeypatch.setattr(prod_health_check.subprocess, "run", raise_missing)
+    monkeypatch.setattr(
+        prod_health_check,
+        "_generated_product_matching_sql_test",
+        lambda database=None: {
+            "status": "pass",
+            "message": "generated product matching SQL found no failing rows",
+            "stdout_tail": "failing_row_counts: nav=0, clear_street=0",
+            "stderr_tail": "",
+        },
+    )
+
+    result = prod_health_check._dbt_product_matching_test(database="helios_prod")
+
+    assert result["status"] == "pass"
+    assert "dbt unavailable" in result["message"]
+    assert "generated SQL fallback passed" in result["message"]
+    assert "nav=0" in result["stdout_tail"]
 
 
 def test_health_evaluation_warns_for_unmanaged_helios_timers():

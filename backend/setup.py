@@ -8,6 +8,7 @@ setup(
     include_package_data=True,
     package_data={
         "backend.scrapes.positions_and_trades": [
+            "sql/generated/clear_street_trades/*.sql",
             "sql/generated/clear_street_trades/mufg/*.sql",
             "sql/generated/nav_positions/checks/*.sql",
             "sql/generated/nav_positions/drilldowns/*.sql",

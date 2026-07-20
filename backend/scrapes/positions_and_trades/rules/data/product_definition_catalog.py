@@ -83,6 +83,7 @@ POWER_PRODUCTS = (
     product("NEZ", "Power", "NEPOOL", exchange="IFED"),
     product("NEP", "Power", "NEPOOL", exchange="IFED"),
     product("SPM", "Power", "CAISO", exchange="IFED"),
+    product("SDP", "Power", "CAISO", exchange="IFED"),
     product("NPM", "Power", "CAISO", exchange="IFED"),
     product("MDC", "Power", "Mid-C", exchange="IFED"),
 )
