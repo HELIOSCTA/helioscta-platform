@@ -44,11 +44,11 @@ A backend workflow is production-ready when it has:
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |
-| ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago`. |
+| ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago` and polls for complete next-day DAM hub prices. |
 | CAISO DA LMP schedule | In place | `helios-caiso-da-lmps.timer` runs daily at `12:50 America/Los_Angeles` and polls for CAISO's day-ahead OASIS publication. |
 | CAISO RT LMP schedule | In place | `helios-caiso-rt-lmps.timer` runs daily at `09:20 America/Los_Angeles` for the previous complete Pacific trading date. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
-| ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `17:10 UTC`. |
+| ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `17:10 UTC` and polls for the complete next Eastern operating date. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
 | ISO-NE RT final hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-final.timer` runs daily at `20:10 UTC`. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |

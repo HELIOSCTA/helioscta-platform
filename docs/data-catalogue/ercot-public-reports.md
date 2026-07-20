@@ -22,7 +22,8 @@ workspace.
 - Production schedule: daily at `11:15 America/Chicago` with
   `Persistent=true` and
   `RandomizedDelaySec=5min`; the scheduled default pulls the next delivery
-  date.
+  date and polls every two minutes for up to four hours until all configured
+  hubs are complete.
 - Manual smoke: conda env `helioscta-platform-backend` ran the orchestration
   for `2026-06-13` on `2026-06-13 16:52 UTC`, upserted 96 hub rows, and
   emitted the complete readiness event.

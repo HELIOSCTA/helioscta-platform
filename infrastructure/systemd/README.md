@@ -340,11 +340,13 @@ helios-ercot-settlement-point-prices.timer
 ```
 
 The DAM workflow runs `backend.orchestration.power.ercot.dam_stlmnt_pnt_prices`
-daily at `11:15 America/Chicago`, upserts next-delivery-date hub settlement point
-prices, and emits complete delivery-date readiness events. The RT workflow runs
-`backend.orchestration.power.ercot.settlement_point_prices` every 15 minutes,
-upserts published hub intervals, and emits readiness only when a full delivery
-date is present. Both services use `flock` to avoid overlap.
+daily at `11:15 America/Chicago`, polls every two minutes for up to four hours
+until the next-delivery-date hub settlement point prices are complete, upserts
+the complete day, and emits complete delivery-date readiness events. The RT
+workflow runs `backend.orchestration.power.ercot.settlement_point_prices`
+every 15 minutes, upserts published hub intervals, and emits readiness only
+when a full delivery date is present. Both services use `flock` to avoid
+overlap.
 
 ## CAISO LMPs
 
@@ -400,10 +402,11 @@ helios-isone-external-interface-metered-data.timer
 
 The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
 next Eastern operating-date ISO Express hourly day-ahead `.H.INTERNAL_HUB`
-LMP CSV rows into `isone.da_hrl_lmps`,
-writes API telemetry to `ops.api_fetch_log`, and emits complete-date readiness
-events when all 24 hourly hub rows are present. The timer runs daily at
-`17:10 UTC` with `Persistent=true` and `RandomizedDelaySec=5min`.
+LMP CSV rows into `isone.da_hrl_lmps`, writes API telemetry to
+`ops.api_fetch_log`, and emits complete-date readiness events when all hourly
+hub rows are present. The timer runs daily at `17:10 UTC` with
+`Persistent=true` and `RandomizedDelaySec=5min`; scheduled runs poll every two
+minutes for up to four hours until the next operating date is complete.
 
 The final RT workflow runs
 `backend.orchestration.power.isone.rt_hrl_lmps_final`, upserts finalized

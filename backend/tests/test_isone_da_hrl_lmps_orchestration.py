@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from backend.orchestration.power.isone import da_hrl_lmps
 
@@ -85,6 +86,69 @@ def test_isone_da_hrl_lmps_skips_readiness_event_for_incomplete_rows(monkeypatch
 
     assert events == []
     assert captured == []
+
+
+def test_isone_da_hrl_lmps_fetch_complete_market_day_rejects_incomplete_rows(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        da_hrl_lmps.scrape,
+        "_pull",
+        lambda **_kwargs: _availability_frame(hours=23, locations=(4000,)),
+    )
+
+    with pytest.raises(da_hrl_lmps.DataNotYetAvailable):
+        da_hrl_lmps._fetch_complete_market_day(
+            operating_date=date(2026, 6, 13),
+            run_id="run-1",
+            database="stage_db",
+            metadata={"run_mode": "scheduled"},
+        )
+
+
+def test_isone_da_hrl_lmps_wait_retries_until_complete_and_logs_result(monkeypatch):
+    complete = _availability_frame(hours=24, locations=(4000,))
+    calls = {"count": 0}
+    telemetry: list[dict[str, object]] = []
+    sleeps: list[float] = []
+
+    def fake_fetch_complete_market_day(**_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise da_hrl_lmps.DataNotYetAvailable("not yet published")
+        return complete
+
+    monkeypatch.setattr(
+        da_hrl_lmps,
+        "_fetch_complete_market_day",
+        fake_fetch_complete_market_day,
+    )
+    monkeypatch.setattr(da_hrl_lmps.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        da_hrl_lmps,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    result = da_hrl_lmps._wait_for_complete_data_logged(
+        operating_date=date(2026, 6, 13),
+        run_id="run-1",
+        database="stage_db",
+        metadata={"run_mode": "scheduled"},
+        poll_ceiling_seconds=60,
+        poll_wait_seconds=5,
+    )
+
+    assert result is complete
+    assert calls["count"] == 2
+    assert sleeps == [5]
+    assert len(telemetry) == 1
+    assert telemetry[0]["provider"] == "isone"
+    assert telemetry[0]["operation_name"] == "da_hrl_lmps_poll"
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["attempt"] == 2
+    assert telemetry[0]["rows_returned"] == 24
+    assert telemetry[0]["metadata"]["target_operating_date"] == "2026-06-13"
 
 
 def test_isone_da_release_email_notifications_are_idempotent_and_sent(monkeypatch):

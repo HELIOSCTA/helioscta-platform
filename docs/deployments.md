@@ -407,6 +407,9 @@ Operational notes:
 - Journal logs: `journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service`.
 - Schedule: daily at `11:15 America/Chicago` with
   `RandomizedDelaySec=5min`; scheduled defaults pull the next delivery date.
+- Polling policy: scheduled runs poll every `120` seconds for up to `4` hours
+  until all configured ERCOT hubs have a complete next-delivery-date DAM
+  market day, then upsert and queue release email notifications.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-ercot-dam-stlmnt-pnt-prices.lock`.
@@ -701,6 +704,9 @@ LIMIT 20;
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.timer`
 - Schedule: daily at `17:10 UTC` with `RandomizedDelaySec=5min`; scheduled
   defaults pull the next Eastern operating date.
+- Polling policy: scheduled runs poll every `120` seconds for up to `4` hours
+  until the next Eastern operating date has complete internal-hub DA hourly
+  LMP rows, then upsert and queue release email notifications.
 - Timer behavior: `Persistent=true`; missed runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-isone-da-hrl-lmps.lock`.

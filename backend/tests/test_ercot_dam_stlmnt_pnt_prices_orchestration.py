@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date
 
 import pandas as pd
+import pytest
 
 from backend.orchestration.power.ercot import dam_stlmnt_pnt_prices
 
@@ -92,6 +93,69 @@ def test_ercot_dam_spp_skips_readiness_event_for_incomplete_rows(monkeypatch):
 
     assert events == []
     assert captured == []
+
+
+def test_ercot_dam_spp_fetch_complete_market_day_rejects_incomplete_rows(monkeypatch):
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices.scrape,
+        "_pull",
+        lambda **_kwargs: _dam_spp_availability_frame(hours=23),
+    )
+
+    with pytest.raises(dam_stlmnt_pnt_prices.DataNotYetAvailable):
+        dam_stlmnt_pnt_prices._fetch_complete_market_day(
+            delivery_date=date(2026, 6, 13),
+            settlement_points=dam_stlmnt_pnt_prices.DEFAULT_SETTLEMENT_POINTS,
+            run_id="run-1",
+            database="stage_db",
+            metadata={"run_mode": "scheduled"},
+        )
+
+
+def test_ercot_dam_spp_wait_retries_until_complete_and_logs_result(monkeypatch):
+    complete = _dam_spp_availability_frame(hours=24)
+    calls = {"count": 0}
+    telemetry: list[dict[str, object]] = []
+    sleeps: list[float] = []
+
+    def fake_fetch_complete_market_day(**_kwargs):
+        calls["count"] += 1
+        if calls["count"] == 1:
+            raise dam_stlmnt_pnt_prices.DataNotYetAvailable("not yet published")
+        return complete
+
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices,
+        "_fetch_complete_market_day",
+        fake_fetch_complete_market_day,
+    )
+    monkeypatch.setattr(dam_stlmnt_pnt_prices.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        dam_stlmnt_pnt_prices,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    result = dam_stlmnt_pnt_prices._wait_for_complete_data_logged(
+        delivery_date=date(2026, 6, 13),
+        settlement_points=dam_stlmnt_pnt_prices.DEFAULT_SETTLEMENT_POINTS,
+        run_id="run-1",
+        database="stage_db",
+        metadata={"run_mode": "scheduled"},
+        poll_ceiling_seconds=60,
+        poll_wait_seconds=5,
+    )
+
+    assert result is complete
+    assert calls["count"] == 2
+    assert sleeps == [5]
+    assert len(telemetry) == 1
+    assert telemetry[0]["provider"] == "ercot"
+    assert telemetry[0]["operation_name"] == "dam_stlmnt_pnt_prices_poll"
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["attempt"] == 2
+    assert telemetry[0]["rows_returned"] == 96
+    assert telemetry[0]["metadata"]["target_delivery_date"] == "2026-06-13"
 
 
 def test_ercot_dam_release_email_notifications_are_idempotent_and_sent(monkeypatch):
