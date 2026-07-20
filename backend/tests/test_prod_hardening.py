@@ -31,6 +31,19 @@ def test_da_lmp_polling_policy_uses_minute_interval_and_five_hour_ceiling():
     assert orchestrated_da_hrl_lmps.POLL_WAIT_SECONDS == 60
 
 
+def test_orchestrated_da_default_target_uses_pjm_market_date():
+    late_utc_before_eastern_midnight = pd.Timestamp(
+        "2026-07-02 03:30:00",
+        tz="UTC",
+    )
+
+    target = orchestrated_da_hrl_lmps._target_market_datetime(
+        now=late_utc_before_eastern_midnight,
+    )
+
+    assert target.date() == date(2026, 7, 2)
+
+
 def test_wait_for_data_http_error_does_not_expose_request_url(monkeypatch):
     class FakeResponse:
         content = b""

@@ -9,6 +9,7 @@ import sys
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -48,6 +49,22 @@ logger = logging.getLogger(__name__)
 
 POLL_CEILING_SECONDS = 5 * 60 * 60
 POLL_WAIT_SECONDS = 60
+
+
+def _target_market_datetime(now: datetime | pd.Timestamp | None = None) -> datetime:
+    local_now = (
+        pd.Timestamp.now(tz=ZoneInfo(LOCAL_MARKET_TIMEZONE))
+        if now is None
+        else pd.Timestamp(now)
+    )
+    if local_now.tzinfo is None:
+        local_now = local_now.tz_localize(LOCAL_MARKET_TIMEZONE)
+    else:
+        local_now = local_now.tz_convert(LOCAL_MARKET_TIMEZONE)
+    return (
+        local_now.to_pydatetime().replace(tzinfo=None)
+        + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
+    )
 
 
 def _build_request(
@@ -516,7 +533,7 @@ def main(
     metadata: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
 
-    target_day = datetime.now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
+    target_day = _target_market_datetime()
     start_date = start_date or target_day.strftime("%Y-%m-%d 00:00")
     end_date = end_date or target_day.strftime("%Y-%m-%d 23:00")
     database = database or credentials.AZURE_POSTGRESQL_DB_NAME

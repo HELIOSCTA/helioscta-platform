@@ -12,6 +12,19 @@ def test_ercot_dam_spp_scheduled_default_targets_next_delivery_date():
     assert dam_stlmnt_pnt_prices.DEFAULT_LOOKAHEAD_DAYS == 1
 
 
+def test_ercot_dam_spp_default_target_uses_ercot_market_date():
+    late_utc_before_central_midnight = pd.Timestamp(
+        "2026-07-02 04:30:00",
+        tz="UTC",
+    )
+
+    target = dam_stlmnt_pnt_prices._target_market_datetime(
+        now=late_utc_before_central_midnight,
+    )
+
+    assert target.date() == date(2026, 7, 2)
+
+
 def test_ercot_dam_spp_expected_period_count_handles_normal_and_dst_days():
     assert dam_stlmnt_pnt_prices._expected_period_count_for_date(date(2026, 6, 13)) == 24
     assert dam_stlmnt_pnt_prices._expected_period_count_for_date(date(2026, 3, 8)) == 23

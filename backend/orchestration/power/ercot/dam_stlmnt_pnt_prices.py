@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
@@ -46,6 +47,22 @@ class DataNotYetAvailable(Exception):
     """Raised when ERCOT has not published a complete DAM market day."""
 
 
+def _target_market_datetime(now: datetime | pd.Timestamp | None = None) -> datetime:
+    local_now = (
+        pd.Timestamp.now(tz=ZoneInfo(LOCAL_MARKET_TIMEZONE))
+        if now is None
+        else pd.Timestamp(now)
+    )
+    if local_now.tzinfo is None:
+        local_now = local_now.tz_localize(LOCAL_MARKET_TIMEZONE)
+    else:
+        local_now = local_now.tz_convert(LOCAL_MARKET_TIMEZONE)
+    return (
+        local_now.to_pydatetime().replace(tzinfo=None)
+        + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
+    )
+
+
 def main(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
@@ -58,9 +75,7 @@ def main(
     poll_wait_seconds: int = POLL_WAIT_SECONDS,
 ) -> pd.DataFrame | None:
     """Run the ERCOT DAM SPP workflow and emit readiness events."""
-    start_date = start_date or (
-        datetime.now() + relativedelta(days=DEFAULT_LOOKAHEAD_DAYS)
-    )
+    start_date = start_date or _target_market_datetime()
     end_date = end_date or start_date
     database = database or credentials.AZURE_POSTGRESQL_DB_NAME
     run_logger = script_logging.init_logging(
