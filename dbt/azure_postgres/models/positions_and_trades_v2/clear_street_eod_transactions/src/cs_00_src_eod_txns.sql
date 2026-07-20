@@ -7,9 +7,10 @@
 
 with source_rows as (
     select * from {{ source('clear_street_v1', 'eod_transactions') }}
-)
+),
 
-select
+FINAL as (
+    select
     -- Loader grain and source freshness fields.
     trade_date_from_sftp,
     to_date(trade_date_from_sftp, 'YYYYMMDD') as sftp_date,
@@ -108,3 +109,7 @@ select
     created_at::timestamp as created_at,
     updated_at::timestamp as updated_at
 from source_rows
+)
+
+select *
+from FINAL

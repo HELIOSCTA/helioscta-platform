@@ -12,6 +12,8 @@ interface MultiSelectProps {
   placeholder?: string;
   width?: string;
   maxSelected?: number;
+  tone?: "dark" | "light";
+  showLabel?: boolean;
 }
 
 export default function MultiSelect({
@@ -22,10 +24,13 @@ export default function MultiSelect({
   placeholder = "Select...",
   width = "w-64",
   maxSelected,
+  tone = "dark",
+  showLabel = true,
 }: MultiSelectProps) {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const ref = useRef<HTMLDivElement>(null);
+  const light = tone === "light";
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -65,49 +70,76 @@ export default function MultiSelect({
 
   return (
     <div className={`${width} relative flex flex-col gap-1`} ref={ref}>
-      <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-        {label}
-      </label>
+      {showLabel && (
+        <label className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+          {label}
+        </label>
+      )}
       <button
         onClick={() => setOpen(!open)}
-        className="w-full truncate rounded-md border border-gray-600 bg-gray-950 px-3 py-1.5 text-left text-sm text-gray-100 shadow-inner shadow-black/30 focus:border-gray-400 focus:outline-none"
+        aria-label={label}
+        className={`w-full truncate rounded-md border px-3 py-1.5 text-left text-sm shadow-inner focus:outline-none ${
+          light
+            ? "border-gray-700 bg-white text-black shadow-black/10 focus:border-sky-500/60"
+            : "border-gray-600 bg-gray-950 text-gray-100 shadow-black/30 focus:border-gray-400"
+        }`}
       >
         {selected.length === 0 ? (
-          <span className="text-gray-600">{placeholder}</span>
+          <span className={light ? "text-gray-500" : "text-gray-600"}>{placeholder}</span>
         ) : (
           buttonText
         )}
       </button>
       {open && (
         <div
-          className="absolute left-0 top-full z-50 mt-1 w-full rounded-md border border-gray-600 bg-gray-950 shadow-2xl shadow-black/50"
+          className={`absolute left-0 top-full z-50 mt-1 w-full rounded-md border shadow-2xl ${
+            light ? "border-gray-300 bg-white shadow-black/20" : "border-gray-600 bg-gray-950 shadow-black/50"
+          }`}
         >
-          <div className="sticky top-0 border-b border-gray-700 bg-gray-950 p-2">
+          <div
+            className={`sticky top-0 border-b p-2 ${
+              light ? "border-gray-200 bg-white" : "border-gray-700 bg-gray-950"
+            }`}
+          >
             <input
               type="text"
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Search..."
-              className="w-full rounded border border-gray-600 bg-[#0d1119] px-2 py-1 text-xs text-gray-100 placeholder-gray-600 focus:border-gray-400 focus:outline-none"
+              className={`w-full rounded border px-2 py-1 text-xs focus:outline-none ${
+                light
+                  ? "border-gray-300 bg-white text-black placeholder-gray-500 focus:border-sky-500/60"
+                  : "border-gray-600 bg-[#0d1119] text-gray-100 placeholder-gray-600 focus:border-gray-400"
+              }`}
               autoFocus
             />
           </div>
           {selected.length > 0 && (
             <button
               onClick={() => onChange([])}
-              className="w-full border-b border-gray-700 px-3 py-1.5 text-left text-xs text-gray-400 hover:bg-gray-900 hover:text-gray-100"
+              className={`w-full border-b px-3 py-1.5 text-left text-xs ${
+                light
+                  ? "border-gray-200 text-gray-700 hover:bg-gray-100 hover:text-black"
+                  : "border-gray-700 text-gray-400 hover:bg-gray-900 hover:text-gray-100"
+              }`}
             >
               Clear all ({selected.length})
             </button>
           )}
           <div className="max-h-56 overflow-y-auto">
             {filtered.length === 0 ? (
-              <div className="px-3 py-3 text-xs text-gray-600">No matches</div>
+              <div className={`px-3 py-3 text-xs ${light ? "text-gray-500" : "text-gray-600"}`}>
+                No matches
+              </div>
             ) : (
               filtered.map((option) => (
                 <label
                   key={option.value}
-                  className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs text-gray-200 hover:bg-sky-500/15 hover:text-white"
+                  className={`flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs ${
+                    light
+                      ? "text-black hover:bg-sky-100"
+                      : "text-gray-200 hover:bg-sky-500/15 hover:text-white"
+                  }`}
                 >
                   <input
                     type="checkbox"

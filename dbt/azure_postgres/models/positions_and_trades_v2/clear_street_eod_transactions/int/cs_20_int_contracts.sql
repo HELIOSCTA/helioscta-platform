@@ -33,9 +33,10 @@ contract_base as (
         -- Prompt day is only meaningful for daily/swing-style contracts.
         case when trades.prompt_day between 1 and 31 then trades.prompt_day end as contract_day
     from trades
-)
+),
 
-select
+FINAL as (
+    select
     contract_base.*,
 
     -- Split YYYYMM once so later product/export models do not repeat parsing.
@@ -58,3 +59,7 @@ left join month_codes
             then right(contract_base.contract_yyyymm, 2)::integer
         end
     )
+)
+
+select *
+from FINAL

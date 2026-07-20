@@ -7,9 +7,10 @@
 
 with trades as (
     select * from {{ ref('cs_00_src_eod_txns') }}
-)
+),
 
-select
+FINAL as (
+    select
     trades.*,
 
     -- Account and side fields used by downstream account and quantity logic.
@@ -36,3 +37,7 @@ select
     case when lower(trim(trades.instrument_description)) = 'nan' then null else nullif(trim(trades.instrument_description), '') end as instrument_description_clean,
     case when lower(trim(trades.trade_date)) = 'nan' then null else nullif(trim(trades.trade_date), '') end as trade_date_clean
 from trades
+)
+
+select *
+from FINAL

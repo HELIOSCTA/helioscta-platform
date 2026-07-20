@@ -100,3 +100,15 @@ dbt compile --profiles-dir . --select path:models/positions_and_trades_v2
 dbt show --profiles-dir . --select cs_80_mufg_latest --limit 5
 dbt show --profiles-dir . --select nav_50_positions_latest --limit 5
 ```
+
+After compiling positions/trades models, promote the compiled standalone SQL
+artifacts consumed by the frontend and backend:
+
+```powershell
+python scripts/promote_positions_trades_sql.py
+```
+
+The copied SQL under `frontend/sql/...` and
+`backend/scrapes/positions_and_trades/sql/generated/...` is generated output.
+Do not edit those files directly; change the dbt source/int/mart models and
+promote compiled SQL again.

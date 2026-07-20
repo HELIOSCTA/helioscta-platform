@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
@@ -14,18 +15,76 @@ export interface ClearStreetTradesFreshnessSummary {
   latestUpdateLabel: string;
 }
 
+type ReviewStatus = "matched" | "vendor_warning" | "needs_review";
+type CellValue = string | number | boolean | null;
+type ViewMode = "latest" | "review" | "history" | "raw";
+
+interface ReviewSummary {
+  rowCount: number;
+  signatureCount: number;
+  matchedRowCount: number;
+  vendorWarningRowCount: number;
+  needsReviewRowCount: number;
+  newSignatureCount: number;
+  historicalSignatureCount: number;
+}
+
+interface HistorySummary {
+  rowCount: number;
+  signatureCount: number;
+  matchedRowCount: number;
+  vendorWarningRowCount: number;
+  needsReviewRowCount: number;
+  historyRowCap: number | null;
+  historyRowLimitReached: boolean;
+}
+
+interface SignatureSummary {
+  signatureKey: string;
+  sourceProduct: string | null;
+  exchangeCodeInput: string | null;
+  exchangeNameInput: string | null;
+  putCall: string | null;
+  securityType: string | null;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  status: ReviewStatus;
+  reviewReason: string;
+  firstSeenDate: string | null;
+  lastSeenDate: string | null;
+  latestRowCount: number;
+  priorRowCount: number;
+  historyRowCount: number;
+  latestNetQuantity: number;
+  historyNetQuantity: number;
+  matchedRowCount: number;
+  vendorWarningRowCount: number;
+  needsReviewRowCount: number;
+  accounts: string[];
+  sampleRows: Array<Record<string, CellValue>>;
+}
+
 interface ClearStreetTradesPayload {
-  source: "clear_street.eod_transactions";
+  source: string;
   ruleEngine: string;
   rulesSource: string;
+  promotedSql: string;
+  compiledSql: string;
+  nullCheckCriteria: string;
   latestSftpDate: string | null;
   latestUploadAt: string | null;
   requestedLimit: number;
   search: string | null;
   rowCount: number;
   returnedRowCount: number;
+  latestSummary: ReviewSummary;
+  historySummary: HistorySummary;
+  latestSignatures: SignatureSummary[];
+  reviewSignatures: SignatureSummary[];
+  historySignatures: SignatureSummary[];
   columns: string[];
-  rows: Array<Record<string, string | number | boolean | null>>;
+  rows: Array<Record<string, CellValue>>;
   derivedFields: string[];
 }
 
@@ -66,7 +125,25 @@ function fmtDateTime(value: string | null | undefined): string {
   return value.replace("T", " ").replace("Z", "").slice(0, 19);
 }
 
-function fmtCell(value: string | number | boolean | null | undefined): string {
+function fmtNumber(value: number | null | undefined, digits = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: digits,
+  });
+}
+
+function fmtQuantity(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const abs = Math.abs(value);
+  const digits = abs >= 100 ? 0 : abs >= 1 ? 2 : 4;
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  });
+}
+
+function fmtCell(value: CellValue | undefined): string {
   if (value === null || value === undefined || value === "") return "-";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") {
@@ -83,41 +160,244 @@ function columnLabel(column: string): string {
   return column.replaceAll("_", " ");
 }
 
+function statusLabel(status: ReviewStatus): string {
+  if (status === "needs_review") return "Needs Review";
+  if (status === "vendor_warning") return "Warning";
+  return "Matched";
+}
+
+function statusTone(status: ReviewStatus): "good" | "warn" | "bad" {
+  if (status === "needs_review") return "bad";
+  if (status === "vendor_warning") return "warn";
+  return "good";
+}
+
 function freshnessFromPayload(payload: ClearStreetTradesPayload | null): ClearStreetTradesFreshnessSummary {
   if (!payload) return DEFAULT_FRESHNESS;
-  const hasRows = payload.rowCount > 0;
+  const latest = payload.latestSummary;
+  const hasRows = latest.rowCount > 0;
   if (!hasRows) {
     return {
       status: "No Data",
       statusClass: "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
       summary: "Trades | 0 rows",
-      targetDateLabel: payload.search || "Latest MUFG",
+      targetDateLabel: "Latest file",
       latestDateLabel: "--",
+      latestUpdateLabel: fmtDateTime(payload.latestUploadAt),
+    };
+  }
+  if (latest.needsReviewRowCount > 0) {
+    return {
+      status: "Needs Review",
+      statusClass: "border-red-500/40 bg-red-500/10 text-red-200",
+      summary: `Trades | ${latest.needsReviewRowCount.toLocaleString()} rows need review | ${fmtDate(payload.latestSftpDate)}`,
+      targetDateLabel: "Latest file",
+      latestDateLabel: fmtDate(payload.latestSftpDate),
+      latestUpdateLabel: fmtDateTime(payload.latestUploadAt),
+    };
+  }
+  if (latest.vendorWarningRowCount > 0) {
+    return {
+      status: "Warning",
+      statusClass: "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
+      summary: `Trades | ${latest.vendorWarningRowCount.toLocaleString()} warning rows | ${fmtDate(payload.latestSftpDate)}`,
+      targetDateLabel: "Latest file",
+      latestDateLabel: fmtDate(payload.latestSftpDate),
       latestUpdateLabel: fmtDateTime(payload.latestUploadAt),
     };
   }
 
   return {
-    status: "Loaded",
+    status: "All Mapped",
     statusClass: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
-    summary: `Trades | ${payload.rowCount.toLocaleString()} rows | ${fmtDate(payload.latestSftpDate)}`,
-    targetDateLabel: payload.search || "Latest MUFG",
+    summary: `Trades | ${latest.rowCount.toLocaleString()} rows | ${latest.signatureCount.toLocaleString()} signatures`,
+    targetDateLabel: "Latest file",
     latestDateLabel: fmtDate(payload.latestSftpDate),
     latestUpdateLabel: fmtDateTime(payload.latestUploadAt),
   };
 }
 
-function StatusBadge({ label, tone }: { label: string; tone: "good" | "warn" | "neutral" }) {
+function StatusBadge({
+  label,
+  tone,
+}: {
+  label: string;
+  tone: "good" | "warn" | "bad" | "neutral";
+}) {
   const className =
     tone === "good"
       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
       : tone === "warn"
         ? "border-yellow-500/40 bg-yellow-500/10 text-yellow-200"
-        : "border-gray-700 bg-gray-900 text-gray-400";
+        : tone === "bad"
+          ? "border-red-500/40 bg-red-500/10 text-red-200"
+          : "border-gray-700 bg-gray-900 text-gray-400";
   return (
     <span className={`max-w-full break-all rounded-md border px-2.5 py-1 text-[11px] font-semibold ${className}`}>
       {label}
     </span>
+  );
+}
+
+function MetricCard({
+  label,
+  value,
+  detail,
+  tone = "neutral",
+}: {
+  label: string;
+  value: string;
+  detail: string;
+  tone?: "good" | "warn" | "bad" | "neutral";
+}) {
+  const toneClass =
+    tone === "good"
+      ? "border-emerald-500/30"
+      : tone === "warn"
+        ? "border-yellow-500/30"
+        : tone === "bad"
+          ? "border-red-500/30"
+          : "border-gray-800";
+  return (
+    <div className={`rounded-lg border ${toneClass} bg-[#0d1119] px-3 py-2`}>
+      <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</div>
+      <div className="mt-1 text-lg font-semibold text-gray-100">{value}</div>
+      <div className="mt-0.5 text-xs text-gray-500">{detail}</div>
+    </div>
+  );
+}
+
+function signatureSearchText(signature: SignatureSummary): string {
+  return [
+    signature.sourceProduct,
+    signature.exchangeCodeInput,
+    signature.exchangeNameInput,
+    signature.putCall,
+    signature.securityType,
+    signature.productCode,
+    signature.productGroup,
+    signature.productRegion,
+    signature.accounts.join(" "),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
+function signatureMatchesSearch(signature: SignatureSummary, search: string): boolean {
+  const needle = search.trim().toLowerCase();
+  return !needle || signatureSearchText(signature).includes(needle);
+}
+
+function HistoryBadge({ signature }: { signature: SignatureSummary }) {
+  if (signature.priorRowCount === 0) {
+    return <StatusBadge label="New" tone="warn" />;
+  }
+  return <StatusBadge label={`Seen ${signature.priorRowCount.toLocaleString()}`} tone="neutral" />;
+}
+
+function SignatureTable({
+  signatures,
+  emptyMessage,
+  mode,
+}: {
+  signatures: SignatureSummary[];
+  emptyMessage: string;
+  mode: "latest" | "history" | "review";
+}) {
+  return (
+    <table className="w-full min-w-[1120px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+      <thead className="sticky top-0 z-30 bg-gray-950 text-gray-500">
+        <tr>
+          {[
+            "Status",
+            "Source Product",
+            "Input Code",
+            "Mapped",
+            "Latest Rows",
+            "Prior Rows",
+            "Net Qty",
+            "History",
+            "Accounts",
+            "Reason",
+          ].map((label, index) => (
+            <th
+              key={label}
+              className={`px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left ${
+                index === 1 ? "min-w-[320px] text-left" : ""
+              }`}
+            >
+              {label}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-800">
+        {signatures.map((signature) => (
+          <tr
+            key={`${mode}-${signature.signatureKey}`}
+            className={signature.status === "needs_review" ? "bg-red-500/[0.04] hover:bg-red-500/[0.08]" : "hover:bg-gray-900/60"}
+          >
+            <td className="px-3 py-2 text-left">
+              <StatusBadge label={statusLabel(signature.status)} tone={statusTone(signature.status)} />
+            </td>
+            <td className="max-w-[420px] px-3 py-2 text-left">
+              <div className="truncate font-semibold text-gray-100" title={signature.sourceProduct ?? "-"}>
+                {signature.sourceProduct ?? "-"}
+              </div>
+              <div className="mt-0.5 truncate text-[11px] text-gray-500">
+                {[
+                  signature.exchangeNameInput,
+                  signature.securityType,
+                  signature.putCall,
+                ]
+                  .filter(Boolean)
+                  .join(" | ") || "-"}
+              </div>
+            </td>
+            <td className="px-3 py-2 text-right font-semibold text-gray-100">
+              {signature.exchangeCodeInput ?? "-"}
+            </td>
+            <td className="px-3 py-2 text-right">
+              <div className="font-semibold text-gray-100">{signature.productCode ?? "-"}</div>
+              <div className="mt-0.5 text-[11px] text-gray-500">
+                {[signature.productGroup, signature.productRegion].filter(Boolean).join(" | ") || "-"}
+              </div>
+            </td>
+            <td className="px-3 py-2 text-right tabular-nums">
+              {signature.latestRowCount.toLocaleString()}
+            </td>
+            <td className="px-3 py-2 text-right tabular-nums">
+              {signature.priorRowCount.toLocaleString()}
+            </td>
+            <td className="px-3 py-2 text-right tabular-nums">
+              {fmtQuantity(mode === "history" ? signature.historyNetQuantity : signature.latestNetQuantity)}
+            </td>
+            <td className="px-3 py-2 text-right">
+              <div className="flex justify-end">
+                <HistoryBadge signature={signature} />
+              </div>
+              <div className="mt-1 text-[11px] text-gray-500">
+                {fmtDate(signature.firstSeenDate)} to {fmtDate(signature.lastSeenDate)}
+              </div>
+            </td>
+            <td className="max-w-[160px] truncate px-3 py-2 text-right" title={signature.accounts.join(", ")}>
+              {signature.accounts.join(", ") || "-"}
+            </td>
+            <td className="max-w-[260px] truncate px-3 py-2 text-right text-gray-400" title={signature.reviewReason}>
+              {signature.reviewReason}
+            </td>
+          </tr>
+        ))}
+        {!signatures.length && (
+          <tr>
+            <td colSpan={10} className="px-3 py-10 text-center text-sm text-gray-500">
+              {emptyMessage}
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
   );
 }
 
@@ -190,6 +470,7 @@ export default function ClearStreetTrades({
   const [limit, setLimit] = useState(DEFAULT_LIMIT);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [viewMode, setViewMode] = useState<ViewMode>("latest");
   const [data, setData] = useState<ClearStreetTradesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -222,7 +503,7 @@ export default function ClearStreetTrades({
           status: "Error",
           statusClass: "border-red-500/40 bg-red-500/10 text-red-200",
           summary: "Trades query failed",
-          targetDateLabel: search || "Latest MUFG",
+          targetDateLabel: search || "Latest file",
           latestDateLabel: "--",
           latestUpdateLabel: "--",
         });
@@ -234,15 +515,32 @@ export default function ClearStreetTrades({
     return () => controller.abort();
   }, [limit, onFreshnessChange, refreshToken, search]);
 
+  const latestSignatures = useMemo(
+    () => (data?.latestSignatures ?? []).filter((signature) => signatureMatchesSearch(signature, search)),
+    [data, search],
+  );
+
+  const reviewSignatures = useMemo(
+    () => (data?.reviewSignatures ?? []).filter((signature) => signatureMatchesSearch(signature, search)),
+    [data, search],
+  );
+
+  const historySignatures = useMemo(
+    () => (data?.historySignatures ?? []).filter((signature) => signatureMatchesSearch(signature, search)),
+    [data, search],
+  );
+
   const returnedLabel = useMemo(() => {
-    if (!data) return "0 rows";
+    if (!data) return "0 raw rows";
     if (data.returnedRowCount === data.rowCount) {
-      return `${data.returnedRowCount.toLocaleString()} rows`;
+      return `${data.returnedRowCount.toLocaleString()} raw rows`;
     }
-    return `${data.returnedRowCount.toLocaleString()} of ${data.rowCount.toLocaleString()} rows`;
+    return `${data.returnedRowCount.toLocaleString()} of ${data.rowCount.toLocaleString()} raw rows`;
   }, [data]);
 
   const submitSearch = () => setSearch(searchInput.trim());
+  const latest = data?.latestSummary;
+  const history = data?.historySummary;
 
   return (
     <div className="space-y-4">
@@ -256,12 +554,12 @@ export default function ClearStreetTrades({
               onKeyDown={(event) => {
                 if (event.key === "Enter") submitSearch();
               }}
-              placeholder="Account, product, symbol, broker"
+              placeholder="Product, code, account, broker"
               className={FIELD_CONTROL_CLASS}
             />
           </label>
           <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Rows</span>
+            <span className={FIELD_LABEL_CLASS}>Raw Rows</span>
             <select
               value={limit}
               onChange={(event) => setLimit(Number(event.target.value))}
@@ -296,11 +594,58 @@ export default function ClearStreetTrades({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <StatusBadge label={returnedLabel} tone={data?.rowCount ? "good" : "warn"} />
-          <StatusBadge label={`SFTP ${fmtDate(data?.latestSftpDate)}`} tone="neutral" />
+          <StatusBadge
+            label={`Latest file ${fmtDate(data?.latestSftpDate)}`}
+            tone={data?.latestSummary.needsReviewRowCount ? "bad" : "good"}
+          />
           <StatusBadge label={`Upload ${fmtDateTime(data?.latestUploadAt)}`} tone="neutral" />
-          <StatusBadge label={data?.rulesSource ?? "JSON rules"} tone="neutral" />
+          <StatusBadge label={`Review ${fmtNumber(latest?.needsReviewRowCount)}`} tone={latest?.needsReviewRowCount ? "bad" : "good"} />
+          <StatusBadge label={`New signatures ${fmtNumber(latest?.newSignatureCount)}`} tone={latest?.newSignatureCount ? "warn" : "neutral"} />
+          <StatusBadge label={returnedLabel} tone={data?.rowCount ? "good" : "warn"} />
+          <StatusBadge label={data?.promotedSql ?? "promoted dbt SQL"} tone="neutral" />
         </div>
+
+        {data && (
+          <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              label="Latest Rows"
+              value={data.latestSummary.rowCount.toLocaleString()}
+              detail={`${data.latestSummary.signatureCount.toLocaleString()} signatures`}
+              tone={data.latestSummary.rowCount ? "good" : "warn"}
+            />
+            <MetricCard
+              label="Needs Review"
+              value={data.latestSummary.needsReviewRowCount.toLocaleString()}
+              detail={`${data.latestSummary.vendorWarningRowCount.toLocaleString()} warning rows`}
+              tone={data.latestSummary.needsReviewRowCount ? "bad" : "good"}
+            />
+            <MetricCard
+              label="New Signatures"
+              value={data.latestSummary.newSignatureCount.toLocaleString()}
+              detail={`${data.latestSummary.historicalSignatureCount.toLocaleString()} seen before`}
+              tone={data.latestSummary.newSignatureCount ? "warn" : "neutral"}
+            />
+            <MetricCard
+              label="History"
+              value={data.historySummary.signatureCount.toLocaleString()}
+              detail={`${data.historySummary.rowCount.toLocaleString()} rows${data.historySummary.historyRowLimitReached ? " capped" : ""}`}
+              tone={data.historySummary.historyRowLimitReached ? "warn" : "neutral"}
+            />
+          </div>
+        )}
+
+        <DashboardTabs<ViewMode>
+          className="mt-4"
+          ariaLabel="Clear Street trade review views"
+          activeValue={viewMode}
+          onChange={setViewMode}
+          tabs={[
+            { value: "latest", label: `Latest Review (${fmtNumber(latest?.signatureCount)})` },
+            { value: "review", label: `Review Items (${fmtNumber(data?.reviewSignatures.length)})` },
+            { value: "history", label: `All History (${fmtNumber(history?.signatureCount)})` },
+            { value: "raw", label: "Raw Rows" },
+          ]}
+        />
       </section>
 
       {error && (
@@ -315,9 +660,51 @@ export default function ClearStreetTrades({
         </div>
       )}
 
-      {data && !loading && (
+      {data && !loading && viewMode === "latest" && (
         <DataTableShell
-          title="TypeScript Rule Result"
+          title="Latest File Review"
+          subtitle={`${fmtDate(data.latestSftpDate)} | ${latestSignatures.length.toLocaleString()} of ${data.latestSignatures.length.toLocaleString()} signatures shown.`}
+          bodyClassName="max-h-[70vh] overflow-auto"
+        >
+          <SignatureTable
+            mode="latest"
+            signatures={latestSignatures}
+            emptyMessage="No latest-file signatures matched the current search."
+          />
+        </DataTableShell>
+      )}
+
+      {data && !loading && viewMode === "review" && (
+        <DataTableShell
+          title="Review Items"
+          subtitle={`${reviewSignatures.length.toLocaleString()} of ${data.reviewSignatures.length.toLocaleString()} latest-file exception signatures shown.`}
+          bodyClassName="max-h-[70vh] overflow-auto"
+        >
+          <SignatureTable
+            mode="review"
+            signatures={reviewSignatures}
+            emptyMessage="No latest-file review items."
+          />
+        </DataTableShell>
+      )}
+
+      {data && !loading && viewMode === "history" && (
+        <DataTableShell
+          title="All History Matching"
+          subtitle={`${historySignatures.length.toLocaleString()} of ${data.historySignatures.length.toLocaleString()} historical product signatures shown.`}
+          bodyClassName="max-h-[72vh] overflow-auto"
+        >
+          <SignatureTable
+            mode="history"
+            signatures={historySignatures}
+            emptyMessage="No historical signatures matched the current search."
+          />
+        </DataTableShell>
+      )}
+
+      {data && !loading && viewMode === "raw" && (
+        <DataTableShell
+          title="Latest Upload Raw Rows"
           subtitle={`${data.columns.length.toLocaleString()} columns using ${data.ruleEngine}.`}
           bodyClassName="max-h-[75vh] overflow-auto"
         >

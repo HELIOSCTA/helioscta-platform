@@ -1,69 +1,47 @@
 # NAV Positions SQL
 
-These are standalone, read-only SQL scripts for local validation of
-`nav.positions`.
+These are standalone, read-only SQL scripts promoted from the Azure Postgres
+dbt project for local validation of `nav.positions`.
 
-Generate them from the shared JSON rule files:
-
-```powershell
-cd frontend
-python scripts\generate-nav-position-sql.py
-```
-
-Generate and verify against Postgres:
+Generate the dbt SQL first:
 
 ```powershell
-cd frontend
-python scripts\verify-nav-position-sql.py
+cd dbt\azure_postgres
+dbt compile --profiles-dir . --select path:models/positions_and_trades_v2
 ```
 
-The npm aliases are:
+Promote the compiled positions/trades SQL to the frontend and backend:
 
 ```powershell
-npm run sql:nav-positions
-npm run verify:nav-positions-sql
+cd dbt\azure_postgres
+python scripts\promote_positions_trades_sql.py
 ```
 
-## Rule Source
+## Source
 
-The product rules live here:
+The source of truth is:
 
 ```text
-frontend/lib/positionsAndTrades/rules/product_definitions.json
-frontend/lib/positionsAndTrades/rules/product_aliases.json
+dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_40_positions_all_history.sql
+dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_50_positions_latest.sql
+dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/pat_90_rule_exceptions.sql
 ```
 
-TypeScript reads those JSON files for the UI/API rule logic. Python reads the
-same JSON files to generate the local SQL files.
-
-## Shape
-
-Each SQL file includes the same inline staging CTEs:
+The frontend API reads:
 
 ```text
-params
-product_catalog
-product_aliases
-source_positions
-latest_positions
-positions_with_rules
-filtered_positions
-final
+frontend/sql/nav-positions/marts/all_history.sql
+frontend/sql/nav-positions/marts/latest.sql
+frontend/sql/nav-positions/checks/rule_exceptions.sql
+frontend/sql/nav-positions/checks/rule_exceptions_latest.sql
 ```
 
-There is no separate staging SQL file to run. The mart/check/drilldown scripts
-depend on staging conceptually, but the staging logic is embedded in each
-standalone script so the file can be pasted into a SQL editor and run by itself.
+Do not edit promoted SQL files directly. Change the dbt model or upstream
+int/util models, run `dbt compile`, then promote the compiled SQL.
 
 ## Files
 
-- `marts/grouped_latest.sql`: grouped positions across funds.
-- `marts/grouped_with_raw_examples.sql`: grouped positions with raw NAV values and matched rule evidence.
-- `marts/account_breakout.sql`: grouped positions split by fund/account.
-- `checks/rule_exceptions.sql`: unresolved or incomplete rule mappings.
-- `checks/grouped_vs_raw_totals.sql`: proves grouped totals reconcile to raw rows.
-- `drilldowns/raw_rows_for_group.sql`: raw rows with rule columns for inspection.
-- `rules_manifest.json`: generated snapshot of the JSON rule files.
-
-Only change values in the `params` CTE when validating filters manually. Do not
-edit generated SQL files directly.
+- `marts/all_history.sql`: every loaded NAV source row with dbt-derived rule fields.
+- `marts/latest.sql`: latest NAV date and upload per fund with dbt-derived rule fields.
+- `checks/rule_exceptions.sql`: combined Clear Street and NAV unresolved rule rows.
+- `checks/rule_exceptions_latest.sql`: latest NAV unresolved rule rows for dbt-promoted diagnostics.

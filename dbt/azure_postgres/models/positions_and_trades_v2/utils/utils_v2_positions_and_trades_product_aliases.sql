@@ -60,6 +60,11 @@ with product_aliases(
         (51, 'nav', 'exact', 'ICE TRANSCO STATION 85 ZONE 4', 'TRZ', null),
         (52, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null),
         (53, 'nav', 'exact', 'ICE SDP', 'SDP', null)
+),
+
+FINAL as (
+    select * from product_aliases
 )
 
-select * from product_aliases
+select *
+from FINAL

@@ -143,9 +143,10 @@ export_base as (
             then strike_base.product_code || ' ' || strike_base.futures_month_code_yy || '-IUS'
         end as ice_product_code
     from strike_base
-)
+),
 
-select
+FINAL as (
+    select
     export_base.*,
 
     -- CME Excel codes are only available for products covered by the legacy map.
@@ -211,3 +212,7 @@ select
             || substring(product_code from 3) || ' ' || strike_text || ' Comdty'
     end as bbg_product_code
 from export_base
+)
+
+select *
+from FINAL

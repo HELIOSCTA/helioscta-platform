@@ -5,9 +5,10 @@ with positions as (
 accounts as (
     select * from {{ ref('utils_v2_positions_and_trades_account_lookup') }}
     where source = 'nav'
-)
+),
 
-select
+FINAL as (
+    select
     positions.*,
     accounts.account_name,
     upper(regexp_replace(coalesce(positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
@@ -36,3 +37,7 @@ select
 from positions
 left join accounts
     on positions.account = accounts.account
+)
+
+select *
+from FINAL

@@ -26,6 +26,11 @@ with account_lookup(account_name, account, source, source_label) as (
         -- ITITA ... ADU, 905
         ('TITAN', 'ADU', 'clear_street', 'Clear Street Trades'),
         ('TITAN', '905', 'clear_street', 'Clear Street Trades')
+),
+
+FINAL as (
+    select * from account_lookup
 )
 
-select * from account_lookup
+select *
+from FINAL

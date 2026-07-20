@@ -1,8 +1,9 @@
 with source_rows as (
     select * from {{ source('nav_v1', 'positions') }}
-)
+),
 
-select
+FINAL as (
+    select
     fund_code,
     source_legal_entity,
     source_file_name,
@@ -47,3 +48,7 @@ select
     created_at::timestamp as created_at,
     updated_at::timestamp as updated_at
 from source_rows
+)
+
+select *
+from FINAL

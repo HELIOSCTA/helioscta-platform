@@ -5,9 +5,10 @@ with positions as (
 product_aliases as (
     select * from {{ ref('utils_v2_positions_and_trades_product_aliases') }}
     where source = 'nav'
-)
+),
 
-select
+FINAL as (
+    select
     positions.*,
     matched_alias.source_priority as rule_priority,
     matched_alias.match_type as rule_match_type,
@@ -34,3 +35,7 @@ left join lateral (
     order by product_aliases.source_priority
     limit 1
 ) as matched_alias on true
+)
+
+select *
+from FINAL

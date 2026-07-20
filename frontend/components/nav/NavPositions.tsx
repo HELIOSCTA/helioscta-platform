@@ -7,13 +7,12 @@ import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/Col
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
-import {
-  buildNavPositionSqlDownloads,
-  normalizeNavPositionProduct,
-  type NavPositionSqlDownload,
-  type NavPositionSqlParams,
-  type ProductRuleResult,
-} from "@/lib/positionsAndTrades";
+import type {
+  NavPositionDebugRow,
+  NavPositionsDebugPayload,
+  NavPositionsPayload,
+  ProductSummaryRow,
+} from "@/lib/positionsAndTrades/navPositionsTypes";
 
 export interface NavPositionsFreshnessSummary {
   status: string;
@@ -24,208 +23,44 @@ export interface NavPositionsFreshnessSummary {
   latestUpdateLabel: string;
 }
 
-interface AvailableDate {
-  navDate: string;
-  fundCount: number;
-  rowCount: number;
-  latestUploadAt: string | null;
-}
-
-interface NavPositionsSummary {
-  rowCount: number;
-  fundCount: number;
-  accountGroupCount: number;
-  accountCount: number;
-  productGroupCount: number;
-  costBase: number | null;
-  marketValueBase: number | null;
-  unrealizedPnlBase: number | null;
-  netQuantity: number | null;
-  grossQuantity: number | null;
-  rawLimit: number;
-}
-
-interface ProductSummaryRow {
-  productCode: string | null;
-  productGroup: string | null;
-  productRegion: string | null;
-  underlyingProductCode: string | null;
-  contractYyyymm: string | null;
-  contractDay: number | null;
-  putCall: string | null;
-  strikePrice: number | null;
-  fundCodes: string | null;
-  accountGroups: string | null;
-  fundCount: number;
-  accountGroupCount: number;
-  rowCount: number;
-  accountCount: number;
-  netQuantity: number | null;
-  grossQuantity: number | null;
-  costBase: number | null;
-  marketValueBase: number | null;
-  unrealizedPnlBase: number | null;
-  avgTradePrice: number | null;
-  avgSettlementPrice: number | null;
-}
-
-interface ProductGroupFilter {
-  productCode: string | null;
-  productGroup: string | null;
-  productRegion: string | null;
-  underlyingProductCode: string | null;
-  contractYyyymm: string | null;
-  contractDay: number | null;
-  putCall: string | null;
-  strikePrice: number | null;
-}
-
-interface RawPositionRow {
-  fundCode: string;
-  sourceLegalEntity: string;
-  sourceFileName: string;
-  sourceFileRowNumber: number;
-  navDate: string;
-  sftpUploadTimestamp: string | null;
-  brokerName: string | null;
-  accountGroup: string | null;
-  account: string | null;
-  tradeDate: string | null;
-  productIdInternal: string | null;
-  product: string | null;
-  type: string | null;
-  monthYear: string | null;
-  clientSymbol: string | null;
-  strikePrice: number | null;
-  callPut: string | null;
-  productCurrency1: string | null;
-  longShort: string | null;
-  quantity1: number | null;
-  counterCurrencyCcy2: string | null;
-  ccy2LongShort: string | null;
-  ccy2Quantity2: number | null;
-  tradePrice: number | null;
-  multiplierAndTickValue: number | null;
-  costInNativeCurrency: number | null;
-  openExchangeRate: number | null;
-  costInBaseCurrency: number | null;
-  marketSettlementPrice: number | null;
-  marketValueInNativeCurrency: number | null;
-  closeExchangeRate: number | null;
-  marketValueInBaseCurrency: number | null;
-  sector: string | null;
-  subSector: string | null;
-  country: string | null;
-  exchangeName: string | null;
-  source1Symbol: string | null;
-  source3Symbol: string | null;
-  oneChicagoSymbol: string | null;
-  fasLevel: string | null;
-  optionStyle: string | null;
-  productCode: string | null;
-  productGroup: string | null;
-  productRegion: string | null;
-  underlyingProductCode: string | null;
-  contractYyyymm: string | null;
-  contractDay: number | null;
-  putCall: string | null;
-  normalizedStrikePrice: number | null;
-  normalizationStatus: string | null;
-  updatedAt: string | null;
-}
-
-interface NavPositionsPayload {
-  source: "nav.positions";
-  selectedDate: string | null;
-  latestDate: string | null;
-  selectedDateRange: {
-    min: string | null;
-    max: string | null;
-  };
-  requestedDate: string | null;
-  asOf: string | null;
-  latestUploadAt: string | null;
-  availableDates: AvailableDate[];
-  filters: {
-    fund: string;
-    accountGroup: string;
-    productSearch: string;
-    group: ProductGroupFilter | null;
-  };
-  summary: NavPositionsSummary;
-  productSummary: ProductSummaryRow[];
-  rawRows: RawPositionRow[];
-  metadata: {
-    funds: string[];
-    accountGroups: string[];
-    products: string[];
-    aggregationGrain: string[];
-    rawColumns: string[];
-    productSummaryLimit: number;
-    maxRawLimit: number;
-    units: {
-      valuation: string;
-      quantity: string;
-    };
-  };
-}
-
-type ViewMode = "summary" | "raw" | "rules";
 type ColumnAlign = "left" | "right";
 type SortState<Key extends string> = { key: Key; direction: SortDirection };
 type ColumnFilters<Key extends string> = Partial<Record<Key, string[]>>;
 
-type ProductSummaryColumnKey =
+type DebugRowColumnKey =
+  | "fundCode"
+  | "navDate"
+  | "accountGroup"
+  | "account"
+  | "sourceFileRowNumber"
+  | "product"
+  | "type"
+  | "monthYear"
+  | "exchangeName"
+  | "clientSymbol"
+  | "quantity1"
+  | "marketValueInBaseCurrency"
   | "productCode"
   | "productGroup"
   | "productRegion"
-  | "underlyingProductCode"
   | "contractYyyymm"
   | "contractDay"
   | "putCall"
-  | "strikePrice"
-  | "funds"
-  | "accounts"
-  | "netQuantity"
-  | "costBase"
-  | "marketValueBase"
-  | "unrealizedPnlBase"
-  | "avgTradePrice"
-  | "avgSettlementPrice"
-  | "rows";
+  | "normalizedStrikePrice"
+  | "normalizationStatus";
 
-type RawColumnKey =
-  | "product"
-  | "productCode"
-  | "productGroup"
-  | "productRegion"
-  | "contract"
-  | "normalizationStatus"
-  | "fundCode"
-  | "navDate"
-  | "sftpUploadTimestamp"
-  | "brokerName"
-  | "accountGroup"
-  | "account"
-  | "tradeDate"
-  | "type"
-  | "monthYear"
-  | "clientSymbol"
-  | "source1Symbol"
-  | "source3Symbol"
-  | "longShort"
-  | "quantity1"
-  | "ccy2Quantity2"
-  | "tradePrice"
-  | "marketSettlementPrice"
-  | "costInNativeCurrency"
-  | "costInBaseCurrency"
-  | "marketValueInNativeCurrency"
-  | "marketValueInBaseCurrency"
-  | "sector"
-  | "subSector"
-  | "exchangeName"
-  | "sourceFileRowNumber";
+type PositionLadderColumnKey =
+  | "prior"
+  | "bal-day"
+  | "next-day"
+  | "bal-week"
+  | "weekend"
+  | "next-week"
+  | "2nd-week"
+  | "3rd-week"
+  | "4th-week"
+  | "other"
+  | `month:${string}`;
 
 interface TableColumn<Key extends string> {
   key: Key;
@@ -235,10 +70,72 @@ interface TableColumn<Key extends string> {
   minClass?: string;
 }
 
+interface PositionLadderColumn {
+  key: PositionLadderColumnKey;
+  label: string;
+  dateLabel: string;
+  startIso: string | null;
+  endIso: string | null;
+  includeWhenEmpty: boolean;
+  kind: "bucket" | "month" | "other";
+  monthYyyymm: string | null;
+}
+
+interface PositionLadderCell {
+  netQuantity: number;
+  grossQuantity: number;
+  marketValueBase: number;
+  unrealizedPnlBase: number;
+  rowCount: number;
+  contractLabels: string[];
+}
+
+interface PositionLadderRow {
+  key: string;
+  productLabel: string;
+  subtitle: string;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  underlyingProductCode: string | null;
+  putCall: string | null;
+  strikePrice: number | null;
+  cells: Partial<Record<PositionLadderColumnKey, PositionLadderCell>>;
+  rowCount: number;
+  netQuantity: number;
+  marketValueBase: number;
+}
+
+interface PositionLadderModel {
+  columns: PositionLadderColumn[];
+  rows: PositionLadderRow[];
+  visibleEndIso: string | null;
+}
+
+interface PositionLadderDrilldown {
+  productLabel: string;
+  bucketLabel: string;
+  bucketDateLabel: string;
+  productCode: string | null;
+  productGroup: string | null;
+  productRegion: string | null;
+  underlyingProductCode: string | null;
+  putCall: string | null;
+  strikePrice: number | null;
+  bucketKey: PositionLadderColumnKey;
+  startIso: string | null;
+  endIso: string | null;
+  anchorDate: string | null;
+  visibleEndIso: string | null;
+  monthYyyymm: string | null;
+  label: string;
+}
+
 const API_CACHE_TTL_MS = 2 * 60 * 1000;
-const FIELD_LABEL_CLASS = "mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500";
-const FIELD_CONTROL_CLASS =
-  "w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-not-allowed disabled:text-gray-600";
+const DEBUG_ROW_LIMIT = 500;
+const FILTER_LABEL_CLASS = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
+const PILL_DROPDOWN_CLASS =
+  "h-8 rounded-full border border-gray-700 bg-white px-3 text-xs font-semibold text-black outline-none transition-colors hover:border-gray-500 focus:border-sky-500/60 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
 const DEFAULT_FRESHNESS: NavPositionsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
@@ -250,80 +147,252 @@ const DEFAULT_FRESHNESS: NavPositionsFreshnessSummary = {
 
 function buildApiUrl({
   selectedDate,
-  fund,
-  accountGroup,
-  productSearch,
-  rawLimit,
+  accountFilter,
   refresh,
-  group,
 }: {
   selectedDate: string;
-  fund: string;
-  accountGroup: string;
-  productSearch: string;
-  rawLimit: number;
+  accountFilter: string;
   refresh: boolean;
-  group?: ProductGroupFilter | null;
 }): string {
-  const params = new URLSearchParams({ rawLimit: String(rawLimit) });
+  const params = new URLSearchParams();
   if (selectedDate) params.set("date", selectedDate);
-  if (group) {
-    params.set("group", JSON.stringify(group));
-  } else {
-    if (fund !== "all") params.set("fund", fund);
-    if (accountGroup !== "all") params.set("accountGroup", accountGroup);
-    if (productSearch.trim()) params.set("product", productSearch.trim());
-  }
+  if (accountFilter !== "all") params.set("fund", accountFilter);
   if (refresh) params.set("refresh", "1");
+  return `/api/dev/nav-positions?${params.toString()}`;
+}
+
+function buildDebugApiUrl({
+  selectedDate,
+  accountFilter,
+  limit,
+  drilldown,
+}: {
+  selectedDate: string;
+  accountFilter: string;
+  limit: number;
+  drilldown?: PositionLadderDrilldown | null;
+}): string {
+  const params = new URLSearchParams({ mode: "debug", limit: String(limit) });
+  if (selectedDate) params.set("date", selectedDate);
+  if (accountFilter !== "all") params.set("fund", accountFilter);
+  if (drilldown) params.set("drilldown", JSON.stringify(drilldown));
   return `/api/dev/nav-positions?${params.toString()}`;
 }
 
 function cacheKey({
   selectedDate,
-  fund,
-  accountGroup,
-  productSearch,
-  rawLimit,
+  accountFilter,
 }: {
   selectedDate: string;
-  fund: string;
-  accountGroup: string;
-  productSearch: string;
-  rawLimit: number;
+  accountFilter: string;
 }): string {
   return [
     "api:dev:nav-positions",
     selectedDate || "latest",
-    fund,
-    accountGroup,
-    productSearch.trim() || "all",
-    rawLimit,
+    accountFilter,
   ].join(":");
 }
 
-function groupFilterFromRow(row: ProductSummaryRow): ProductGroupFilter {
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
+function parseIsoDate(value: string | null | undefined): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value ?? "");
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function addUtcDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * MS_PER_DAY);
+}
+
+function isoFromDate(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function localTodayIso(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function compactDateLabel(date: Date): string {
+  const dayName = WEEKDAY_LABELS[date.getUTCDay()];
+  const monthName = MONTH_LABELS[date.getUTCMonth()];
+  return `${dayName} ${monthName}-${String(date.getUTCDate()).padStart(2, "0")}`;
+}
+
+function compactIsoDateLabel(value: string | null | undefined): string {
+  const date = parseIsoDate(value);
+  return date ? compactDateLabel(date) : "--";
+}
+
+function compactRangeLabel(startIso: string | null, endIso: string | null): string {
+  const start = parseIsoDate(startIso);
+  const end = parseIsoDate(endIso);
+  if (!start || !end || startIso === null || endIso === null || startIso > endIso) return "--";
+  if (startIso === endIso) return compactDateLabel(start);
+  return `${compactDateLabel(start)}-${compactDateLabel(end)}`;
+}
+
+function nextBusinessDay(date: Date): Date {
+  let next = addUtcDays(date, 1);
+  while (next.getUTCDay() === 0 || next.getUTCDay() === 6) {
+    next = addUtcDays(next, 1);
+  }
+  return next;
+}
+
+function fridayOfWeek(date: Date): Date {
+  return addUtcDays(date, (5 - date.getUTCDay() + 7) % 7);
+}
+
+function weekendStartOnOrAfter(date: Date): Date {
+  const day = date.getUTCDay();
+  if (day === 0) return addUtcDays(date, -1);
+  if (day === 6) return date;
+  return addUtcDays(date, 6 - day);
+}
+
+function weekColumn(
+  key: PositionLadderColumnKey,
+  label: string,
+  start: Date,
+): PositionLadderColumn {
+  const startIso = isoFromDate(start);
+  const endIso = isoFromDate(addUtcDays(start, 4));
   return {
-    productCode: row.productCode,
-    productGroup: row.productGroup,
-    productRegion: row.productRegion,
-    underlyingProductCode: row.underlyingProductCode,
-    contractYyyymm: row.contractYyyymm,
-    contractDay: row.contractDay,
-    putCall: row.putCall,
-    strikePrice: row.strikePrice,
+    key,
+    label,
+    dateLabel: compactRangeLabel(startIso, endIso),
+    startIso,
+    endIso,
+    includeWhenEmpty: true,
+    kind: "bucket",
+    monthYyyymm: null,
   };
 }
 
-function groupCacheKey(selectedDate: string, row: ProductSummaryRow): string {
-  return [
-    "api:dev:nav-positions:group",
-    selectedDate || "latest",
-    JSON.stringify(groupFilterFromRow(row)),
-  ].join(":");
-}
+function buildBasePositionLadderColumns(anchorDateValue: string | null | undefined): PositionLadderColumn[] {
+  const anchorDate = parseIsoDate(anchorDateValue);
+  if (!anchorDate) {
+    return [
+      {
+        key: "other",
+        label: "Other",
+        dateLabel: "Unparsed",
+        startIso: null,
+        endIso: null,
+        includeWhenEmpty: true,
+        kind: "other",
+        monthYyyymm: null,
+      },
+    ];
+  }
 
-function fmtDate(value: string | null | undefined): string {
-  return value ? value.slice(0, 10) : "-";
+  const anchorIso = isoFromDate(anchorDate);
+  const nextDay = nextBusinessDay(anchorDate);
+  const nextDayIso = isoFromDate(nextDay);
+  const balWeekStart = addUtcDays(nextDay, 1);
+  const balWeekStartIso = isoFromDate(balWeekStart);
+  const balWeekEndIso = isoFromDate(fridayOfWeek(nextDay));
+  const weekendStart = weekendStartOnOrAfter(anchorDate);
+  const weekendStartIso = isoFromDate(weekendStart);
+  const weekendEndIso = isoFromDate(addUtcDays(weekendStart, 1));
+  const nextWeekStart = addUtcDays(fridayOfWeek(nextDay), 3);
+
+  return [
+    {
+      key: "prior",
+      label: "Expired",
+      dateLabel: `Before ${compactIsoDateLabel(anchorIso)}`,
+      startIso: null,
+      endIso: isoFromDate(addUtcDays(anchorDate, -1)),
+      includeWhenEmpty: false,
+      kind: "bucket",
+      monthYyyymm: null,
+    },
+    {
+      key: "bal-day",
+      label: "Bal Day",
+      dateLabel: compactIsoDateLabel(anchorIso),
+      startIso: anchorIso,
+      endIso: anchorIso,
+      includeWhenEmpty: true,
+      kind: "bucket",
+      monthYyyymm: null,
+    },
+    {
+      key: "next-day",
+      label: "Next Day",
+      dateLabel: compactIsoDateLabel(nextDayIso),
+      startIso: nextDayIso,
+      endIso: nextDayIso,
+      includeWhenEmpty: true,
+      kind: "bucket",
+      monthYyyymm: null,
+    },
+    {
+      key: "bal-week",
+      label: "Bal Week",
+      dateLabel: compactRangeLabel(balWeekStartIso, balWeekEndIso),
+      startIso: balWeekStartIso <= balWeekEndIso ? balWeekStartIso : null,
+      endIso: balWeekStartIso <= balWeekEndIso ? balWeekEndIso : null,
+      includeWhenEmpty: true,
+      kind: "bucket",
+      monthYyyymm: null,
+    },
+    {
+      key: "weekend",
+      label: "Weekend",
+      dateLabel: compactRangeLabel(weekendStartIso, weekendEndIso),
+      startIso: weekendStartIso,
+      endIso: weekendEndIso,
+      includeWhenEmpty: true,
+      kind: "bucket",
+      monthYyyymm: null,
+    },
+    weekColumn("next-week", "Next Week", nextWeekStart),
+    weekColumn("2nd-week", "2nd Week", addUtcDays(nextWeekStart, 7)),
+    weekColumn("3rd-week", "3rd Week", addUtcDays(nextWeekStart, 14)),
+    weekColumn("4th-week", "4th Week", addUtcDays(nextWeekStart, 21)),
+    {
+      key: "other",
+      label: "Other",
+      dateLabel: "Unparsed",
+      startIso: null,
+      endIso: null,
+      includeWhenEmpty: false,
+      kind: "other",
+      monthYyyymm: null,
+    },
+  ];
 }
 
 function fmtDateTime(value: string | null | undefined): string {
@@ -361,12 +430,6 @@ function fmtPrice(value: number | null | undefined): string {
 
 function displayText(value: string | null | undefined): string {
   return value && value.trim() ? value : "-";
-}
-
-function displayRuleValue(value: string | number | boolean | null | undefined): string {
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "-";
-  return displayText(value);
 }
 
 function dateRangeLabel(payload: NavPositionsPayload): string {
@@ -419,27 +482,14 @@ function StatusBadge({ label, tone }: { label: string; tone: "good" | "warn" | "
   );
 }
 
-function SegmentedButton({
-  active,
-  children,
-  onClick,
-}: {
-  active: boolean;
-  children: ReactNode;
-  onClick: () => void;
-}) {
+function ControlCard({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`min-w-[84px] rounded-sm px-3 py-1.5 text-xs font-semibold transition-colors ${
-        active
-          ? "bg-gray-200 text-gray-950"
-          : "text-gray-400 hover:bg-gray-800 hover:text-gray-100"
-      }`}
-    >
+    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+        {title}
+      </h2>
       {children}
-    </button>
+    </section>
   );
 }
 
@@ -457,10 +507,10 @@ function QuickFilterChip({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`rounded-sm border px-2.5 py-1 text-xs font-semibold transition-colors ${
+      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
         active
           ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
-          : "border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+          : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
       }`}
     >
       {children}
@@ -521,516 +571,433 @@ function tableHeaderInnerClass(column: TableColumn<string>): string {
   }`;
 }
 
-const PRODUCT_SUMMARY_COLUMNS: Array<TableColumn<ProductSummaryColumnKey>> = [
-  { key: "productCode", label: "Code", align: "left", sticky: true, minClass: "min-w-[160px]" },
-  { key: "productGroup", label: "Group" },
-  { key: "productRegion", label: "Region" },
-  { key: "underlyingProductCode", label: "Underlying" },
-  { key: "contractYyyymm", label: "Contract" },
-  { key: "contractDay", label: "Day" },
-  { key: "putCall", label: "C/P" },
-  { key: "strikePrice", label: "Strike" },
-  { key: "funds", label: "Funds" },
-  { key: "accounts", label: "Accounts" },
-  { key: "netQuantity", label: "Net Qty" },
-  { key: "costBase", label: "Cost Base" },
-  { key: "marketValueBase", label: "MV Base" },
-  { key: "unrealizedPnlBase", label: "P&L Base" },
-  { key: "avgTradePrice", label: "Trade" },
-  { key: "avgSettlementPrice", label: "Settle" },
-  { key: "rows", label: "Rows" },
-];
+function positionLadderRowKey(row: ProductSummaryRow): string {
+  return JSON.stringify([
+    row.productCode,
+    row.productGroup,
+    row.productRegion,
+    row.underlyingProductCode,
+    row.putCall,
+    row.strikePrice,
+  ]);
+}
 
-const RAW_COLUMNS: Array<TableColumn<RawColumnKey>> = [
-  { key: "product", label: "Product", align: "left", sticky: true, minClass: "min-w-[300px]" },
+function positionLadderProductLabel(row: ProductSummaryRow): string {
+  const base = row.productCode?.trim() || row.underlyingProductCode?.trim() || "Unmapped";
+  const optionParts = [
+    row.putCall,
+    row.strikePrice === null || row.strikePrice === undefined ? null : fmtPrice(row.strikePrice),
+  ].filter((value): value is string => Boolean(value && value.trim() && value !== "-"));
+  return optionParts.length > 0 ? `${base} ${optionParts.join(" ")}` : base;
+}
+
+function positionLadderSubtitle(row: ProductSummaryRow): string {
+  const underlying =
+    row.underlyingProductCode && row.underlyingProductCode !== row.productCode
+      ? `Underlying ${row.underlyingProductCode}`
+      : null;
+  const parts = [row.productGroup, row.productRegion, underlying].filter(
+    (value): value is string => Boolean(value && value.trim()),
+  );
+  return parts.length > 0 ? parts.join(" | ") : "Unmapped";
+}
+
+function contractIsoFromSummaryRow(row: ProductSummaryRow): string | null {
+  const yyyymm = row.contractYyyymm?.trim();
+  if (!yyyymm || !/^\d{6}$/.test(yyyymm)) return null;
+  if (row.contractDay === null || row.contractDay === undefined) return null;
+
+  const year = Number(yyyymm.slice(0, 4));
+  const month = Number(yyyymm.slice(4, 6));
+  const day = Math.trunc(row.contractDay);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return isoFromDate(date);
+}
+
+function validContractYyyymm(row: ProductSummaryRow): string | null {
+  const yyyymm = row.contractYyyymm?.trim();
+  return yyyymm && /^\d{6}$/.test(yyyymm) ? yyyymm : null;
+}
+
+function monthColumnKey(yyyymm: string): PositionLadderColumnKey {
+  return `month:${yyyymm}`;
+}
+
+function formatYyyymm(value: string): string {
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}`;
+}
+
+function contractLabelForSummaryRow(row: ProductSummaryRow, contractIso: string | null): string {
+  if (contractIso) return compactIsoDateLabel(contractIso);
+  if (row.contractYyyymm && row.contractDay !== null && row.contractDay !== undefined) {
+    return `${row.contractYyyymm} day ${fmtNumber(row.contractDay, 0)}`;
+  }
+  return row.contractYyyymm ?? "No contract";
+}
+
+function bucketForContractIso(
+  contractIso: string | null,
+  columns: PositionLadderColumn[],
+  anchorDateValue: string | null | undefined,
+): PositionLadderColumnKey {
+  const anchorDate = parseIsoDate(anchorDateValue);
+  const anchorIso = anchorDate ? isoFromDate(anchorDate) : null;
+  if (!contractIso) return "other";
+  if (anchorIso && contractIso < anchorIso) return "prior";
+
+  const matchingColumn = columns.find(
+    (column) =>
+      column.startIso !== null &&
+      column.endIso !== null &&
+      contractIso >= column.startIso &&
+      contractIso <= column.endIso,
+  );
+  return matchingColumn?.key ?? "other";
+}
+
+function bucketForSummaryRow({
+  row,
+  columns,
+  anchorDateValue,
+  visibleEndIso,
+}: {
+  row: ProductSummaryRow;
+  columns: PositionLadderColumn[];
+  anchorDateValue: string | null | undefined;
+  visibleEndIso: string | null;
+}): PositionLadderColumnKey {
+  const yyyymm = validContractYyyymm(row);
+  const contractIso = contractIsoFromSummaryRow(row);
+
+  if (!yyyymm) return "other";
+  if (!contractIso) return monthColumnKey(yyyymm);
+
+  const bucketKey = bucketForContractIso(contractIso, columns, anchorDateValue);
+  if (bucketKey !== "other") return bucketKey;
+  if (visibleEndIso && contractIso > visibleEndIso) return monthColumnKey(yyyymm);
+  return monthColumnKey(yyyymm);
+}
+
+function emptyPositionLadderCell(): PositionLadderCell {
+  return {
+    netQuantity: 0,
+    grossQuantity: 0,
+    marketValueBase: 0,
+    unrealizedPnlBase: 0,
+    rowCount: 0,
+    contractLabels: [],
+  };
+}
+
+function addContractLabel(cell: PositionLadderCell, label: string): void {
+  if (!cell.contractLabels.includes(label)) cell.contractLabels.push(label);
+}
+
+function buildPositionLadder(
+  rows: ProductSummaryRow[],
+  anchorDateValue: string | null | undefined,
+): PositionLadderModel {
+  const baseColumns = buildBasePositionLadderColumns(anchorDateValue);
+  const otherColumn = baseColumns.find((column) => column.key === "other") ?? null;
+  const bucketColumns = baseColumns.filter((column) => column.key !== "other");
+  const visibleEndIso =
+    bucketColumns
+      .map((column) => column.endIso)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+  const monthColumns = new Map<string, PositionLadderColumn>();
+  const rowMap = new Map<string, PositionLadderRow>();
+  const activeColumnKeys = new Set<PositionLadderColumnKey>();
+
+  for (const sourceRow of rows) {
+    const key = positionLadderRowKey(sourceRow);
+    const existing = rowMap.get(key);
+    const ladderRow =
+      existing ??
+      {
+        key,
+        productLabel: positionLadderProductLabel(sourceRow),
+        subtitle: positionLadderSubtitle(sourceRow),
+        productCode: sourceRow.productCode,
+        productGroup: sourceRow.productGroup,
+        productRegion: sourceRow.productRegion,
+        underlyingProductCode: sourceRow.underlyingProductCode,
+        putCall: sourceRow.putCall,
+        strikePrice: sourceRow.strikePrice,
+        cells: {},
+        rowCount: 0,
+        netQuantity: 0,
+        marketValueBase: 0,
+      };
+
+    const contractIso = contractIsoFromSummaryRow(sourceRow);
+    const bucketKey = bucketForSummaryRow({
+      row: sourceRow,
+      columns: bucketColumns,
+      anchorDateValue,
+      visibleEndIso,
+    });
+    const cell = ladderRow.cells[bucketKey] ?? emptyPositionLadderCell();
+    const monthYyyymm = bucketKey.startsWith("month:")
+      ? bucketKey.slice("month:".length)
+      : null;
+
+    const netQuantity = sourceRow.netQuantity ?? 0;
+    const grossQuantity = sourceRow.grossQuantity ?? Math.abs(netQuantity);
+    const marketValueBase = sourceRow.marketValueBase ?? 0;
+    const unrealizedPnlBase = sourceRow.unrealizedPnlBase ?? 0;
+
+    cell.netQuantity += netQuantity;
+    cell.grossQuantity += grossQuantity;
+    cell.marketValueBase += marketValueBase;
+    cell.unrealizedPnlBase += unrealizedPnlBase;
+    cell.rowCount += sourceRow.rowCount;
+    addContractLabel(cell, contractLabelForSummaryRow(sourceRow, contractIso));
+
+    ladderRow.cells[bucketKey] = cell;
+    ladderRow.rowCount += sourceRow.rowCount;
+    ladderRow.netQuantity += netQuantity;
+    ladderRow.marketValueBase += marketValueBase;
+    activeColumnKeys.add(bucketKey);
+    if (monthYyyymm && !monthColumns.has(bucketKey)) {
+      monthColumns.set(bucketKey, {
+        key: bucketKey,
+        label: formatYyyymm(monthYyyymm),
+        dateLabel: "",
+        startIso: null,
+        endIso: null,
+        includeWhenEmpty: false,
+        kind: "month",
+        monthYyyymm,
+      });
+    }
+    rowMap.set(key, ladderRow);
+  }
+
+  const visibleBucketColumns = bucketColumns.filter(
+    (column) => column.includeWhenEmpty || activeColumnKeys.has(column.key),
+  );
+  const visibleMonthColumns = Array.from(monthColumns.values()).sort((left, right) =>
+    (left.monthYyyymm ?? "").localeCompare(right.monthYyyymm ?? ""),
+  );
+  const visibleColumns = [
+    ...visibleBucketColumns,
+    ...visibleMonthColumns,
+    ...(otherColumn && activeColumnKeys.has("other") ? [otherColumn] : []),
+  ];
+  const ladderRows = Array.from(rowMap.values()).sort((left, right) => {
+    const productCompare = left.productLabel.localeCompare(right.productLabel, undefined, {
+      numeric: true,
+    });
+    if (productCompare !== 0) return productCompare;
+    const regionCompare = displayText(left.productRegion).localeCompare(
+      displayText(right.productRegion),
+      undefined,
+      { numeric: true },
+    );
+    if (regionCompare !== 0) return regionCompare;
+    return Math.abs(right.marketValueBase) - Math.abs(left.marketValueBase);
+  });
+
+  for (const row of ladderRows) {
+    for (const cell of Object.values(row.cells)) {
+      if (!cell) continue;
+      cell.contractLabels.sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+    }
+  }
+
+  return {
+    columns: visibleColumns,
+    rows: ladderRows,
+    visibleEndIso,
+  };
+}
+
+function positionLadderCellTitle(cell: PositionLadderCell): string {
+  const contracts = cell.contractLabels.slice(0, 10).join(", ");
+  const contractSuffix =
+    cell.contractLabels.length > 10 ? `, +${cell.contractLabels.length - 10} more` : "";
+  return [
+    `Net qty ${fmtQuantity(cell.netQuantity)}`,
+    `Gross qty ${fmtQuantity(cell.grossQuantity)}`,
+    `MV base ${fmtNumber(cell.marketValueBase, 0)}`,
+    `P&L base ${fmtNumber(cell.unrealizedPnlBase, 0)}`,
+    `${cell.rowCount.toLocaleString()} source rows`,
+    contracts ? `Contracts: ${contracts}${contractSuffix}` : null,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" | ");
+}
+
+function positionLadderColumnWidthClass(column: PositionLadderColumn): string {
+  if (column.kind === "month") return "w-[62px]";
+  if (column.kind === "other") return "w-[68px]";
+  return "w-[82px]";
+}
+
+function positionLadderCellClass(
+  cell: PositionLadderCell | undefined,
+  column: PositionLadderColumn,
+): string {
+  const padding = column.kind === "month" ? "px-1.5" : "px-2";
+  const base = `h-11 ${positionLadderColumnWidthClass(column)} ${padding} py-1.5 text-right align-middle text-[11px] tabular-nums transition-colors`;
+  if (!cell || cell.rowCount === 0) return `${base} text-gray-700`;
+  if (cell.netQuantity > 0) {
+    return `${base} cursor-pointer bg-emerald-500/[0.04] font-semibold text-emerald-100 outline outline-1 -outline-offset-1 outline-emerald-500/60 hover:bg-emerald-500/[0.1]`;
+  }
+  if (cell.netQuantity < 0) {
+    return `${base} cursor-pointer bg-red-500/[0.04] font-semibold text-red-100 outline outline-1 -outline-offset-1 outline-red-500/60 hover:bg-red-500/[0.1]`;
+  }
+  return `${base} cursor-pointer bg-sky-500/[0.04] font-semibold text-gray-100 outline outline-1 -outline-offset-1 outline-sky-500/50 hover:bg-sky-500/[0.1]`;
+}
+
+function renderPositionLadderCell(cell: PositionLadderCell | undefined): ReactNode {
+  if (!cell || cell.rowCount === 0) {
+    return <span className="text-gray-700">--</span>;
+  }
+
+  return (
+    <span className="block truncate" title={positionLadderCellTitle(cell)}>
+      {fmtQuantity(cell.netQuantity)}
+    </span>
+  );
+}
+
+const DEBUG_ROW_COLUMNS: Array<TableColumn<DebugRowColumnKey>> = [
+  { key: "product", label: "Product", align: "left", sticky: true, minClass: "min-w-[260px]" },
+  { key: "fundCode", label: "Fund", align: "left", minClass: "min-w-[80px]" },
+  { key: "navDate", label: "Date" },
+  { key: "accountGroup", label: "Account Group", align: "left", minClass: "min-w-[140px]" },
+  { key: "account", label: "Account", align: "left", minClass: "min-w-[110px]" },
+  { key: "sourceFileRowNumber", label: "Row" },
+  { key: "type", label: "Type" },
+  { key: "monthYear", label: "Month" },
+  { key: "exchangeName", label: "Exchange" },
+  { key: "clientSymbol", label: "Client Symbol", align: "left", minClass: "min-w-[130px]" },
+  { key: "quantity1", label: "Qty" },
+  { key: "marketValueInBaseCurrency", label: "MV Base" },
   { key: "productCode", label: "Code" },
   { key: "productGroup", label: "Group" },
   { key: "productRegion", label: "Region" },
-  { key: "contract", label: "Contract" },
-  { key: "normalizationStatus", label: "Status" },
-  { key: "fundCode", label: "Fund" },
-  { key: "navDate", label: "Position Date" },
-  { key: "sftpUploadTimestamp", label: "Upload" },
-  { key: "brokerName", label: "Broker" },
-  { key: "accountGroup", label: "Account Group" },
-  { key: "account", label: "Account" },
-  { key: "tradeDate", label: "Trade Date" },
-  { key: "type", label: "Type" },
-  { key: "monthYear", label: "Month" },
-  { key: "clientSymbol", label: "Client" },
-  { key: "source1Symbol", label: "Src 1" },
-  { key: "source3Symbol", label: "Src 3" },
-  { key: "longShort", label: "Long/Short" },
-  { key: "quantity1", label: "Qty 1" },
-  { key: "ccy2Quantity2", label: "CCY 2 Qty" },
-  { key: "tradePrice", label: "Trade" },
-  { key: "marketSettlementPrice", label: "Settle" },
-  { key: "costInNativeCurrency", label: "Cost Native" },
-  { key: "costInBaseCurrency", label: "Cost Base" },
-  { key: "marketValueInNativeCurrency", label: "MV Native" },
-  { key: "marketValueInBaseCurrency", label: "MV Base" },
-  { key: "sector", label: "Sector" },
-  { key: "subSector", label: "Sub Sector" },
-  { key: "exchangeName", label: "Exchange" },
-  { key: "sourceFileRowNumber", label: "File Row" },
+  { key: "contractYyyymm", label: "Contract" },
+  { key: "contractDay", label: "Day" },
+  { key: "putCall", label: "C/P" },
+  { key: "normalizedStrikePrice", label: "Strike" },
+  { key: "normalizationStatus", label: "Status", align: "left", minClass: "min-w-[150px]" },
 ];
 
-function productSummaryDisplayValue(row: ProductSummaryRow, key: ProductSummaryColumnKey): string {
+function debugRowDisplayValue(row: NavPositionDebugRow, key: DebugRowColumnKey): string {
   switch (key) {
+    case "fundCode":
+      return displayText(row.fundCode);
+    case "navDate":
+      return displayText(row.navDate);
+    case "accountGroup":
+      return displayText(row.accountGroup);
+    case "account":
+      return displayText(row.account);
+    case "sourceFileRowNumber":
+      return row.sourceFileRowNumber.toLocaleString();
+    case "product":
+      return displayText(row.product);
+    case "type":
+      return displayText(row.type);
+    case "monthYear":
+      return displayText(row.monthYear);
+    case "exchangeName":
+      return displayText(row.exchangeName);
+    case "clientSymbol":
+      return displayText(row.clientSymbol);
+    case "quantity1":
+      return fmtQuantity(row.quantity1);
+    case "marketValueInBaseCurrency":
+      return fmtNumber(row.marketValueInBaseCurrency, 0);
     case "productCode":
       return displayText(row.productCode);
     case "productGroup":
       return displayText(row.productGroup);
     case "productRegion":
       return displayText(row.productRegion);
-    case "underlyingProductCode":
-      return displayText(row.underlyingProductCode);
     case "contractYyyymm":
       return displayText(row.contractYyyymm);
     case "contractDay":
       return fmtNumber(row.contractDay, 0);
     case "putCall":
       return displayText(row.putCall);
-    case "strikePrice":
-      return fmtPrice(row.strikePrice);
-    case "funds":
-      return row.fundCount.toLocaleString();
-    case "accounts":
-      return row.accountCount.toLocaleString();
-    case "netQuantity":
-      return fmtQuantity(row.netQuantity);
-    case "costBase":
-      return fmtNumber(row.costBase, 0);
-    case "marketValueBase":
-      return fmtNumber(row.marketValueBase, 0);
-    case "unrealizedPnlBase":
-      return fmtNumber(row.unrealizedPnlBase, 0);
-    case "avgTradePrice":
-      return fmtPrice(row.avgTradePrice);
-    case "avgSettlementPrice":
-      return fmtPrice(row.avgSettlementPrice);
-    case "rows":
-      return row.rowCount.toLocaleString();
+    case "normalizedStrikePrice":
+      return fmtPrice(row.normalizedStrikePrice);
+    case "normalizationStatus":
+      return displayText(row.normalizationStatus);
   }
 }
 
-function productSummarySortValue(
-  row: ProductSummaryRow,
-  key: ProductSummaryColumnKey,
+function debugRowSortValue(
+  row: NavPositionDebugRow,
+  key: DebugRowColumnKey,
 ): string | number | null {
   switch (key) {
-    case "productCode":
-      return row.productCode;
-    case "productGroup":
-      return row.productGroup;
-    case "productRegion":
-      return row.productRegion;
-    case "underlyingProductCode":
-      return row.underlyingProductCode;
-    case "contractYyyymm":
-      return row.contractYyyymm;
+    case "sourceFileRowNumber":
+      return row.sourceFileRowNumber;
+    case "quantity1":
+      return row.quantity1;
+    case "marketValueInBaseCurrency":
+      return row.marketValueInBaseCurrency;
     case "contractDay":
       return row.contractDay;
-    case "putCall":
-      return row.putCall;
-    case "strikePrice":
-      return row.strikePrice;
-    case "funds":
-      return row.fundCount;
-    case "accounts":
-      return row.accountCount;
-    case "netQuantity":
-      return row.netQuantity;
-    case "costBase":
-      return row.costBase;
-    case "marketValueBase":
-      return row.marketValueBase;
-    case "unrealizedPnlBase":
-      return row.unrealizedPnlBase;
-    case "avgTradePrice":
-      return row.avgTradePrice;
-    case "avgSettlementPrice":
-      return row.avgSettlementPrice;
-    case "rows":
-      return row.rowCount;
+    case "normalizedStrikePrice":
+      return row.normalizedStrikePrice;
+    default:
+      return debugRowDisplayValue(row, key);
   }
 }
 
-function productSummaryRowMatchesFilter(
-  row: ProductSummaryRow,
-  key: ProductSummaryColumnKey,
+function debugRowMatchesFilter(
+  row: NavPositionDebugRow,
+  key: DebugRowColumnKey,
   selectedValues: string[],
 ): boolean {
   if (selectedValues.length === 0) return true;
-  const value = productSummaryDisplayValue(row, key).toLowerCase();
+  const value = debugRowDisplayValue(row, key).toLowerCase();
   return selectedValues.some((selected) => value === selected.trim().toLowerCase());
 }
 
-function productSummaryCellClass(row: ProductSummaryRow, column: TableColumn<ProductSummaryColumnKey>) {
+function debugRowCellClass(row: NavPositionDebugRow, column: TableColumn<DebugRowColumnKey>) {
   const align = column.align === "left" ? "text-left" : "text-right";
   const sticky = column.sticky
-    ? "sticky left-0 z-10 max-w-[160px] bg-[#0d1119] font-semibold text-gray-100"
+    ? "sticky left-0 z-10 max-w-[260px] bg-[#0d1119] font-semibold text-gray-100"
     : "";
   const numeric = [
-    "contractDay",
-    "strikePrice",
-    "funds",
-    "accounts",
-    "netQuantity",
-    "costBase",
-    "marketValueBase",
-    "unrealizedPnlBase",
-    "avgTradePrice",
-    "avgSettlementPrice",
-    "rows",
-  ].includes(column.key)
-    ? "tabular-nums"
-    : "";
-  const tone =
-    column.key === "unrealizedPnlBase"
-      ? row.unrealizedPnlBase === null
-        ? "font-semibold text-gray-300"
-        : row.unrealizedPnlBase >= 0
-          ? "font-semibold text-emerald-200"
-          : "font-semibold text-red-200"
-      : column.key === "marketValueBase"
-        ? "font-semibold text-gray-100"
-        : column.key === "productCode"
-          ? ""
-          : "text-gray-300";
-
-  return `px-3 py-2 ${align} ${sticky} ${numeric} ${tone}`;
-}
-
-function renderProductSummaryCell(
-  row: ProductSummaryRow,
-  key: ProductSummaryColumnKey,
-  onRowSelect: (row: ProductSummaryRow) => void,
-): ReactNode {
-  if (key === "rows") {
-    return (
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onRowSelect(row);
-        }}
-        className="rounded-md border border-gray-700 bg-gray-900 px-2 py-1 text-[11px] font-semibold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
-      >
-        {row.rowCount.toLocaleString()}
-      </button>
-    );
-  }
-
-  if (key === "productCode") {
-    return (
-      <span className="block truncate" title={row.productCode ?? undefined}>
-        {displayText(row.productCode)}
-      </span>
-    );
-  }
-
-  if (key === "funds") {
-    return <span title={row.fundCodes ?? undefined}>{row.fundCount.toLocaleString()}</span>;
-  }
-
-  if (key === "accounts") {
-    return <span title={row.accountGroups ?? undefined}>{row.accountCount.toLocaleString()}</span>;
-  }
-
-  return productSummaryDisplayValue(row, key);
-}
-
-function ProductSummaryTable({
-  rows,
-  onRowSelect,
-}: {
-  rows: ProductSummaryRow[];
-  onRowSelect: (row: ProductSummaryRow) => void;
-}) {
-  const [columnFilters, setColumnFilters] = useState<ColumnFilters<ProductSummaryColumnKey>>({});
-  const [sortState, setSortState] = useState<SortState<ProductSummaryColumnKey> | null>(null);
-
-  const updateColumnFilter = (key: ProductSummaryColumnKey, values: string[]) => {
-    setColumnFilters((filters) => {
-      const next = { ...filters };
-      if (values.length > 0) next[key] = values;
-      else delete next[key];
-      return next;
-    });
-  };
-
-  const filterOptions = useMemo(() => {
-    return Object.fromEntries(
-      PRODUCT_SUMMARY_COLUMNS.map((column) => {
-        const otherFilteredRows = rows.filter((row) =>
-          Object.entries(columnFilters).every(
-            ([key, selected]) =>
-              key === column.key ||
-              productSummaryRowMatchesFilter(row, key as ProductSummaryColumnKey, selected),
-          ),
-        );
-        const options = Array.from(
-          new Set(
-            otherFilteredRows
-              .map((row) => productSummaryDisplayValue(row, column.key))
-              .filter((value) => value.trim() !== "" && value !== "-"),
-          ),
-        ).sort(sortFilterOption);
-        return [column.key, options] as const;
-      }),
-    ) as Partial<Record<ProductSummaryColumnKey, string[]>>;
-  }, [columnFilters, rows]);
-
-  const displayedRows = useMemo(() => {
-    const activeFilters = Object.entries(columnFilters)
-      .map(([key, selected]) => [key as ProductSummaryColumnKey, selected] as const)
-      .filter(([, selected]) => selected.length > 0);
-    const filtered =
-      activeFilters.length === 0
-        ? rows
-        : rows.filter((row) =>
-            activeFilters.every(([key, selected]) =>
-              productSummaryRowMatchesFilter(row, key, selected),
-            ),
-          );
-
-    if (!sortState) return filtered;
-    return [...filtered].sort((left, right) =>
-      compareColumnValues(
-        productSummarySortValue(left, sortState.key),
-        productSummarySortValue(right, sortState.key),
-        sortState.direction,
-      ),
-    );
-  }, [columnFilters, rows, sortState]);
-
-  const toggleSort = (key: ProductSummaryColumnKey) => {
-    setSortState((current) =>
-      current?.key === key && current.direction === "asc"
-        ? { key, direction: "desc" }
-        : { key, direction: "asc" },
-    );
-  };
-
-  return (
-    <table className="w-full min-w-[1500px] border-collapse bg-[#0d1119] text-xs text-gray-200">
-      <thead className="bg-gray-950 text-gray-500">
-        <tr>
-          {PRODUCT_SUMMARY_COLUMNS.map((column) => {
-            const sortDirection = sortState?.key === column.key ? sortState.direction : null;
-            return (
-              <th
-                key={column.key}
-                className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}
-              >
-                <div className={tableHeaderInnerClass(column)}>
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={`flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 transition-colors hover:bg-gray-900 ${
-                      sortDirection ? "text-sky-200" : "text-gray-400"
-                    }`}
-                    aria-label={`Sort ${column.label}`}
-                  >
-                    <span className="truncate text-[10px] leading-3">{column.label}</span>
-                    <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
-                      {sortDirection === "asc" ? "\u2191" : sortDirection === "desc" ? "\u2193" : ""}
-                    </span>
-                  </button>
-                  <ColumnFilterMenu
-                    label={column.label}
-                    options={filterOptions[column.key] ?? []}
-                    selected={columnFilters[column.key] ?? []}
-                    sortDirection={sortDirection}
-                    onSort={(direction) => setSortState({ key: column.key, direction })}
-                    onChange={(values) => updateColumnFilter(column.key, values)}
-                  />
-                </div>
-            </th>
-            );
-          })}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-800">
-        {displayedRows.map((row) => (
-          <tr key={JSON.stringify(groupFilterFromRow(row))} className="hover:bg-gray-900/60">
-            {PRODUCT_SUMMARY_COLUMNS.map((column) => (
-              <td key={column.key} className={productSummaryCellClass(row, column)}>
-                {renderProductSummaryCell(row, column.key, onRowSelect)}
-              </td>
-            ))}
-          </tr>
-        ))}
-        {!displayedRows.length && (
-          <tr>
-            <td
-              colSpan={PRODUCT_SUMMARY_COLUMNS.length}
-              className="px-3 py-8 text-center text-sm text-gray-500"
-            >
-              No product groups match the selected filters.
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  );
-}
-
-function rawContractLabel(row: RawPositionRow): string {
-  return `${displayText(row.contractYyyymm)}${
-    row.contractDay !== null ? `-${String(row.contractDay).padStart(2, "0")}` : ""
-  }`;
-}
-
-function rawDisplayValue(row: RawPositionRow, key: RawColumnKey): string {
-  switch (key) {
-    case "product":
-      return displayText(row.product);
-    case "productCode":
-      return displayText(row.productCode);
-    case "productGroup":
-      return displayText(row.productGroup);
-    case "productRegion":
-      return displayText(row.productRegion);
-    case "contract":
-      return rawContractLabel(row);
-    case "normalizationStatus":
-      return displayText(row.normalizationStatus);
-    case "fundCode":
-      return displayText(row.fundCode);
-    case "navDate":
-      return fmtDate(row.navDate);
-    case "sftpUploadTimestamp":
-      return fmtDateTime(row.sftpUploadTimestamp);
-    case "brokerName":
-      return displayText(row.brokerName);
-    case "accountGroup":
-      return displayText(row.accountGroup);
-    case "account":
-      return displayText(row.account);
-    case "tradeDate":
-      return fmtDate(row.tradeDate);
-    case "type":
-      return displayText(row.type);
-    case "monthYear":
-      return displayText(row.monthYear);
-    case "clientSymbol":
-      return displayText(row.clientSymbol);
-    case "source1Symbol":
-      return displayText(row.source1Symbol);
-    case "source3Symbol":
-      return displayText(row.source3Symbol);
-    case "longShort":
-      return displayText(row.longShort);
-    case "quantity1":
-      return fmtQuantity(row.quantity1);
-    case "ccy2Quantity2":
-      return fmtQuantity(row.ccy2Quantity2);
-    case "tradePrice":
-      return fmtPrice(row.tradePrice);
-    case "marketSettlementPrice":
-      return fmtPrice(row.marketSettlementPrice);
-    case "costInNativeCurrency":
-      return fmtNumber(row.costInNativeCurrency, 0);
-    case "costInBaseCurrency":
-      return fmtNumber(row.costInBaseCurrency, 0);
-    case "marketValueInNativeCurrency":
-      return fmtNumber(row.marketValueInNativeCurrency, 0);
-    case "marketValueInBaseCurrency":
-      return fmtNumber(row.marketValueInBaseCurrency, 0);
-    case "sector":
-      return displayText(row.sector);
-    case "subSector":
-      return displayText(row.subSector);
-    case "exchangeName":
-      return displayText(row.exchangeName);
-    case "sourceFileRowNumber":
-      return row.sourceFileRowNumber.toLocaleString();
-  }
-}
-
-function rawSortValue(row: RawPositionRow, key: RawColumnKey): string | number | null {
-  switch (key) {
-    case "quantity1":
-      return row.quantity1;
-    case "ccy2Quantity2":
-      return row.ccy2Quantity2;
-    case "tradePrice":
-      return row.tradePrice;
-    case "marketSettlementPrice":
-      return row.marketSettlementPrice;
-    case "costInNativeCurrency":
-      return row.costInNativeCurrency;
-    case "costInBaseCurrency":
-      return row.costInBaseCurrency;
-    case "marketValueInNativeCurrency":
-      return row.marketValueInNativeCurrency;
-    case "marketValueInBaseCurrency":
-      return row.marketValueInBaseCurrency;
-    case "sourceFileRowNumber":
-      return row.sourceFileRowNumber;
-    case "navDate":
-      return row.navDate;
-    case "sftpUploadTimestamp":
-      return row.sftpUploadTimestamp;
-    case "tradeDate":
-      return row.tradeDate;
-    default:
-      return rawDisplayValue(row, key);
-  }
-}
-
-function rawRowMatchesFilter(row: RawPositionRow, key: RawColumnKey, selectedValues: string[]): boolean {
-  if (selectedValues.length === 0) return true;
-  const value = rawDisplayValue(row, key).toLowerCase();
-  return selectedValues.some((selected) => value === selected.trim().toLowerCase());
-}
-
-function rawCellClass(column: TableColumn<RawColumnKey>): string {
-  const align = column.align === "left" ? "text-left" : "text-right";
-  const sticky = column.sticky
-    ? "sticky left-0 z-10 max-w-[300px] bg-[#0d1119] font-semibold text-gray-100"
-    : "";
-  const numeric = [
-    "quantity1",
-    "ccy2Quantity2",
-    "tradePrice",
-    "marketSettlementPrice",
-    "costInNativeCurrency",
-    "costInBaseCurrency",
-    "marketValueInNativeCurrency",
-    "marketValueInBaseCurrency",
     "sourceFileRowNumber",
+    "quantity1",
+    "marketValueInBaseCurrency",
+    "contractDay",
+    "normalizedStrikePrice",
   ].includes(column.key)
     ? "tabular-nums"
     : "";
   const tone =
-    column.key === "marketValueInBaseCurrency"
-      ? "font-semibold text-gray-100"
-      : column.key === "product"
-        ? ""
+    column.key === "normalizationStatus" && row.normalizationStatus !== "ok"
+      ? "font-semibold text-yellow-200"
+      : column.key === "marketValueInBaseCurrency"
+        ? "font-semibold text-gray-100"
         : "text-gray-300";
 
   return `px-3 py-2 ${align} ${sticky} ${numeric} ${tone}`;
 }
 
-function renderRawCell(row: RawPositionRow, key: RawColumnKey): ReactNode {
-  if (key === "product") {
-    return (
-      <span className="block truncate" title={row.product ?? undefined}>
-        {displayText(row.product)}
-      </span>
-    );
-  }
-  return rawDisplayValue(row, key);
-}
+function DebugRowsTable({ rows }: { rows: NavPositionDebugRow[] }) {
+  const [columnFilters, setColumnFilters] = useState<ColumnFilters<DebugRowColumnKey>>({});
+  const [sortState, setSortState] = useState<SortState<DebugRowColumnKey> | null>(null);
 
-function RawRowsTable({ rows }: { rows: RawPositionRow[] }) {
-  const [columnFilters, setColumnFilters] = useState<ColumnFilters<RawColumnKey>>({});
-  const [sortState, setSortState] = useState<SortState<RawColumnKey> | null>(null);
-
-  const updateColumnFilter = (key: RawColumnKey, values: string[]) => {
+  const updateColumnFilter = (key: DebugRowColumnKey, values: string[]) => {
     setColumnFilters((filters) => {
       const next = { ...filters };
       if (values.length > 0) next[key] = values;
@@ -1041,47 +1008,47 @@ function RawRowsTable({ rows }: { rows: RawPositionRow[] }) {
 
   const filterOptions = useMemo(() => {
     return Object.fromEntries(
-      RAW_COLUMNS.map((column) => {
+      DEBUG_ROW_COLUMNS.map((column) => {
         const otherFilteredRows = rows.filter((row) =>
           Object.entries(columnFilters).every(
             ([key, selected]) =>
-              key === column.key || rawRowMatchesFilter(row, key as RawColumnKey, selected),
+              key === column.key || debugRowMatchesFilter(row, key as DebugRowColumnKey, selected),
           ),
         );
         const options = Array.from(
           new Set(
             otherFilteredRows
-              .map((row) => rawDisplayValue(row, column.key))
+              .map((row) => debugRowDisplayValue(row, column.key))
               .filter((value) => value.trim() !== "" && value !== "-"),
           ),
         ).sort(sortFilterOption);
         return [column.key, options] as const;
       }),
-    ) as Partial<Record<RawColumnKey, string[]>>;
+    ) as Partial<Record<DebugRowColumnKey, string[]>>;
   }, [columnFilters, rows]);
 
   const displayedRows = useMemo(() => {
     const activeFilters = Object.entries(columnFilters)
-      .map(([key, selected]) => [key as RawColumnKey, selected] as const)
+      .map(([key, selected]) => [key as DebugRowColumnKey, selected] as const)
       .filter(([, selected]) => selected.length > 0);
     const filtered =
       activeFilters.length === 0
         ? rows
         : rows.filter((row) =>
-            activeFilters.every(([key, selected]) => rawRowMatchesFilter(row, key, selected)),
+            activeFilters.every(([key, selected]) => debugRowMatchesFilter(row, key, selected)),
           );
 
     if (!sortState) return filtered;
     return [...filtered].sort((left, right) =>
       compareColumnValues(
-        rawSortValue(left, sortState.key),
-        rawSortValue(right, sortState.key),
+        debugRowSortValue(left, sortState.key),
+        debugRowSortValue(right, sortState.key),
         sortState.direction,
       ),
     );
   }, [columnFilters, rows, sortState]);
 
-  const toggleSort = (key: RawColumnKey) => {
+  const toggleSort = (key: DebugRowColumnKey) => {
     setSortState((current) =>
       current?.key === key && current.direction === "asc"
         ? { key, direction: "desc" }
@@ -1090,26 +1057,25 @@ function RawRowsTable({ rows }: { rows: RawPositionRow[] }) {
   };
 
   return (
-    <table className="w-full min-w-[2680px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+    <table className="w-full min-w-[1900px] border-collapse bg-[#0d1119] text-xs text-gray-200">
       <thead className="bg-gray-950 text-gray-500">
-        <tr>
-          {RAW_COLUMNS.map((column) => {
+        <tr className="border-b border-gray-800/80">
+          {DEBUG_ROW_COLUMNS.map((column) => {
             const sortDirection = sortState?.key === column.key ? sortState.direction : null;
             return (
-              <th
-                key={column.key}
-                className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}
-              >
+              <th key={column.key} className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}>
                 <div className={tableHeaderInnerClass(column)}>
                   <button
                     type="button"
                     onClick={() => toggleSort(column.key)}
-                    className={`flex min-w-0 items-center gap-1 rounded-sm px-1 py-0.5 transition-colors hover:bg-gray-900 ${
+                    className={`flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-900 ${
                       sortDirection ? "text-sky-200" : "text-gray-400"
                     }`}
                     aria-label={`Sort ${column.label}`}
                   >
-                    <span className="truncate text-[10px] leading-3">{column.label}</span>
+                    <span className="truncate whitespace-nowrap text-[10px]">
+                      {column.label}
+                    </span>
                     <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
                       {sortDirection === "asc" ? "\u2191" : sortDirection === "desc" ? "\u2193" : ""}
                     </span>
@@ -1123,449 +1089,229 @@ function RawRowsTable({ rows }: { rows: RawPositionRow[] }) {
                     onChange={(values) => updateColumnFilter(column.key, values)}
                   />
                 </div>
-            </th>
+              </th>
             );
           })}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-800">
-        {displayedRows.map((row) => (
-          <tr
-            key={`${row.sourceFileName}|${row.sourceFileRowNumber}`}
-            className="hover:bg-gray-900/60"
-          >
-            {RAW_COLUMNS.map((column) => (
-              <td key={column.key} className={rawCellClass(column)}>
-                {renderRawCell(row, column.key)}
-              </td>
-            ))}
-          </tr>
-        ))}
-        {!displayedRows.length && (
+        {displayedRows.length === 0 ? (
           <tr>
-            <td colSpan={RAW_COLUMNS.length} className="px-3 py-8 text-center text-sm text-gray-500">
-              No raw position rows match the selected filters.
+            <td
+              colSpan={DEBUG_ROW_COLUMNS.length}
+              className="px-3 py-8 text-center text-sm text-gray-500"
+            >
+              No debug rows found.
             </td>
           </tr>
+        ) : (
+          displayedRows.map((row) => (
+            <tr
+              key={`${row.sourceFileName}:${row.sourceFileRowNumber}:${row.fundCode}:${row.navDate}`}
+              className="hover:bg-gray-900/60"
+            >
+              {DEBUG_ROW_COLUMNS.map((column) => (
+                <td key={column.key} className={debugRowCellClass(row, column)}>
+                  {debugRowDisplayValue(row, column.key)}
+                </td>
+              ))}
+            </tr>
+          ))
         )}
       </tbody>
     </table>
   );
 }
 
-interface RulePreviewRow {
-  sourceRow: RawPositionRow;
-  result: ProductRuleResult;
-}
-
-type RuleExceptionIssue =
-  | "Unresolved product"
-  | "Unparsed contract"
-  | "Option missing C/P"
-  | "Option missing strike";
-
-interface RuleExceptionGroup {
-  key: string;
-  issue: RuleExceptionIssue;
-  product: string | null;
-  fundCode: string | null;
-  type: string | null;
-  monthYear: string | null;
-  exchangeName: string | null;
-  ruleCode: string | null;
-  contractMonth: string | null;
-  rowCount: number;
-  marketValueBase: number | null;
-  exampleRow: RawPositionRow;
-}
-
-function ruleIssues(row: RawPositionRow, result: ProductRuleResult): RuleExceptionIssue[] {
-  const issues: RuleExceptionIssue[] = [];
-  if (!result.exchangeCode) issues.push("Unresolved product");
-  if (row.monthYear && !result.contractMonth) issues.push("Unparsed contract");
-  if (result.isOption && !result.putCall) issues.push("Option missing C/P");
-  if (result.isOption && result.strikePrice === null) issues.push("Option missing strike");
-  return issues;
-}
-
-function addNullableNumber(left: number | null, right: number | null | undefined): number | null {
-  if (right === null || right === undefined || !Number.isFinite(right)) return left;
-  return (left ?? 0) + right;
-}
-
-function ruleExceptionKey(
-  issue: RuleExceptionIssue,
-  row: RawPositionRow,
-  result: ProductRuleResult
-): string {
-  return JSON.stringify([
-    issue,
-    row.product ?? null,
-    row.fundCode ?? null,
-    row.type ?? null,
-    row.monthYear ?? null,
-    row.exchangeName ?? null,
-    result.exchangeCode ?? null,
-    result.contractMonth ?? null,
-  ]);
-}
-
-function buildRuleExceptionGroups(rows: RulePreviewRow[]): RuleExceptionGroup[] {
-  const groups = new Map<string, RuleExceptionGroup>();
-
-  for (const row of rows) {
-    for (const issue of ruleIssues(row.sourceRow, row.result)) {
-      const key = ruleExceptionKey(issue, row.sourceRow, row.result);
-      const existing = groups.get(key);
-      if (existing) {
-        existing.rowCount += 1;
-        existing.marketValueBase = addNullableNumber(
-          existing.marketValueBase,
-          row.sourceRow.marketValueInBaseCurrency
-        );
-        continue;
-      }
-
-      groups.set(key, {
-        key,
-        issue,
-        product: row.sourceRow.product,
-        fundCode: row.sourceRow.fundCode,
-        type: row.sourceRow.type,
-        monthYear: row.sourceRow.monthYear,
-        exchangeName: row.sourceRow.exchangeName,
-        ruleCode: row.result.exchangeCode,
-        contractMonth: row.result.contractMonth,
-        rowCount: 1,
-        marketValueBase: addNullableNumber(null, row.sourceRow.marketValueInBaseCurrency),
-        exampleRow: row.sourceRow,
-      });
-    }
-  }
-
-  return Array.from(groups.values()).sort((left, right) => {
-    const marketDelta =
-      Math.abs(right.marketValueBase ?? 0) - Math.abs(left.marketValueBase ?? 0);
-    if (marketDelta !== 0) return marketDelta;
-    if (right.rowCount !== left.rowCount) return right.rowCount - left.rowCount;
-    return left.issue.localeCompare(right.issue);
-  });
-}
-
-function downloadTextFile(fileName: string, text: string) {
-  const blob = new Blob([text], { type: "text/sql;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
-function SqlDownloadsPanel({ downloads }: { downloads: NavPositionSqlDownload[] }) {
-  const downloadGroups = (["Marts", "Checks", "Drilldowns"] as const)
-    .map((group) => ({
-      group,
-      downloads: downloads.filter((download) => download.group === group),
-    }))
-    .filter((group) => group.downloads.length > 0);
+function DebugRowsModal({
+  debugDate,
+  debugData,
+  debugDrilldown,
+  debugError,
+  debugLoading,
+  onClose,
+  onDateChange,
+  onLoad,
+}: {
+  debugDate: string;
+  debugData: NavPositionsDebugPayload | null;
+  debugDrilldown: PositionLadderDrilldown | null;
+  debugError: string | null;
+  debugLoading: boolean;
+  onClose: () => void;
+  onDateChange: (date: string) => void;
+  onLoad: () => void;
+}) {
+  const rows = debugData?.rows ?? [];
+  const title = debugDrilldown ? "NAV Position Cell Rows" : "Raw NAV Position Rows";
+  const contextLabel = debugDrilldown
+    ? `${debugDrilldown.productLabel} | ${debugDrilldown.bucketLabel} ${debugDrilldown.bucketDateLabel}`
+    : null;
+  const subtitle = debugData
+    ? [
+        contextLabel,
+        `NAV snapshot ${displayText(debugData.selectedDate)}`,
+        `${debugData.summary.returnedRowCount.toLocaleString()} of ${debugData.summary.rowCount.toLocaleString()} rows`,
+      ]
+        .filter((value): value is string => Boolean(value))
+        .join(" | ")
+    : debugDate
+      ? [contextLabel, `NAV snapshot ${debugDate}`]
+          .filter((value): value is string => Boolean(value))
+          .join(" | ")
+      : undefined;
 
   return (
-    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-      <div className="mb-3">
-        <div>
-          <h2 className="text-sm font-semibold text-gray-100">SQL Downloads</h2>
-          <p className="mt-1 text-xs text-gray-500">
-            Standalone read-only SQL generated from the current product rules.
-          </p>
-        </div>
-      </div>
-      <div className="grid gap-3 lg:grid-cols-2">
-        {downloadGroups.map((group) => (
-          <div key={group.group} className="rounded-md border border-gray-800 bg-gray-950/40 p-3">
-            <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              {group.group}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {group.downloads.map((download) => (
-                <button
-                  key={download.fileName}
-                  type="button"
-                  onClick={() => downloadTextFile(download.fileName, download.sql)}
-                  className="rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
-                >
-                  {download.label}
-                </button>
-              ))}
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Raw NAV position rows debug"
+      onClick={onClose}
+    >
+      <div
+        className="max-h-[90vh] w-[calc(100vw-24px)] overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-2xl shadow-black/60"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <DataTableShell
+          title={title}
+          subtitle={subtitle}
+          className="border-0 bg-transparent shadow-none"
+          bodyClassName="max-h-[calc(90vh-116px)]"
+          action={
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                NAV Snapshot
+                <input
+                  type="date"
+                  value={debugDate}
+                  onChange={(event) => onDateChange(event.target.value)}
+                  className="h-8 rounded-md border border-gray-700 bg-gray-950 px-2 text-xs font-semibold normal-case tracking-normal text-gray-200 outline-none focus:border-sky-500/60"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={onLoad}
+                disabled={debugLoading}
+                className="rounded-md border border-sky-700/60 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100 transition-colors hover:bg-sky-500/20 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-950/40 disabled:text-gray-600"
+              >
+                {debugLoading ? "Loading..." : "Load"}
+              </button>
+              <div className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-1.5 text-xs text-gray-400">
+                {rows.length.toLocaleString()} rows
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:text-sky-100"
+              >
+                Close
+              </button>
             </div>
-          </div>
-        ))}
+          }
+        >
+          {debugError ? (
+            <div className="border-b border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-200">
+              {debugError}
+            </div>
+          ) : null}
+          {debugLoading && !debugData ? (
+            <div className="min-h-[360px] bg-[#0d1119] p-6 text-sm text-gray-500">
+              Loading raw position rows...
+            </div>
+          ) : (
+            <div className="min-h-[360px] bg-[#0d1119]">
+              <DebugRowsTable rows={rows} />
+            </div>
+          )}
+        </DataTableShell>
       </div>
-    </section>
+    </div>
   );
 }
 
-function RuleExceptionsTable({ groups }: { groups: RuleExceptionGroup[] }) {
+function PositionLadderTable({
+  columns,
+  rows,
+  onCellSelect,
+}: {
+  columns: PositionLadderColumn[];
+  rows: PositionLadderRow[];
+  onCellSelect: (
+    row: PositionLadderRow,
+    column: PositionLadderColumn,
+    cell: PositionLadderCell,
+  ) => void;
+}) {
   return (
-    <table className="w-full min-w-[1120px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+    <table className="w-full table-fixed border-collapse bg-[#0d1119] text-xs text-gray-200">
       <thead className="bg-gray-950 text-gray-500">
-        <tr>
-          {[
-            "Issue",
-            "Product",
-            "Fund",
-            "Type",
-            "Exchange",
-            "Month",
-            "Rule Code",
-            "Contract",
-            "Rows",
-            "Market Value",
-            "Example Row",
-          ].map((label, index) => (
+        <tr className="border-b border-gray-800/80">
+          <th className="sticky left-0 top-0 z-30 w-[190px] bg-gray-950 px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide">
+            Product
+          </th>
+          {columns.map((column) => (
             <th
-              key={label}
-              className={`px-3 py-2 font-semibold uppercase tracking-wide ${
-                index < 2 ? "text-left" : "text-right"
-              }`}
+              key={column.key}
+              className={`sticky top-0 z-20 ${positionLadderColumnWidthClass(column)} bg-gray-950 px-1.5 py-2 text-right align-bottom`}
             >
-              {label}
+              <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                {column.label}
+              </span>
+              {column.dateLabel ? (
+                <span className="mt-1 block truncate text-[9px] font-medium normal-case tracking-normal text-gray-500">
+                  {column.dateLabel}
+                </span>
+              ) : null}
             </th>
           ))}
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-800">
-        {groups.map((group) => (
-          <tr key={group.key} className="hover:bg-gray-900/60">
-            <td className="px-3 py-2 text-left font-semibold text-yellow-200">
-              {group.issue}
-            </td>
-            <td className="max-w-[360px] px-3 py-2 text-left font-semibold text-gray-100">
-              <span className="block truncate" title={group.product ?? undefined}>
-                {displayText(group.product)}
+        {rows.map((row) => (
+          <tr key={row.key} className="hover:bg-gray-900/60">
+            <td
+              className="sticky left-0 z-10 w-[190px] max-w-[190px] bg-[#0d1119] px-2 py-1.5 text-left"
+              title={`${row.productLabel} | ${row.subtitle} | ${row.rowCount.toLocaleString()} source rows | MV base ${fmtNumber(row.marketValueBase, 0)}`}
+            >
+              <span className="block truncate text-[11px] font-bold text-gray-100">
+                {row.productLabel}
               </span>
+              <span className="mt-0.5 block truncate text-[10px] text-gray-500">{row.subtitle}</span>
             </td>
-            <td className="px-3 py-2 text-right uppercase tabular-nums text-gray-300">
-              {displayText(group.fundCode)}
-            </td>
-            <td className="px-3 py-2 text-right text-gray-300">{displayText(group.type)}</td>
-            <td className="px-3 py-2 text-right text-gray-300">
-              {displayText(group.exchangeName)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-              {displayText(group.monthYear)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-100">
-              {displayRuleValue(group.ruleCode)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-300">
-              {displayRuleValue(group.contractMonth)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums font-semibold text-gray-100">
-              {group.rowCount.toLocaleString()}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-300">
-              {fmtNumber(group.marketValueBase, 0)}
-            </td>
-            <td className="px-3 py-2 text-right tabular-nums text-gray-500">
-              {group.exampleRow.sourceFileRowNumber.toLocaleString()}
-            </td>
+            {columns.map((column) => {
+              const cell = row.cells[column.key];
+              return (
+                <td key={column.key} className={positionLadderCellClass(cell, column)}>
+                  {cell && cell.rowCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => onCellSelect(row, column, cell)}
+                      className="block h-full w-full truncate text-right outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
+                      title={`${positionLadderCellTitle(cell)} | Click for source rows`}
+                    >
+                      {fmtQuantity(cell.netQuantity)}
+                    </button>
+                  ) : (
+                    renderPositionLadderCell(cell)
+                  )}
+                </td>
+              );
+            })}
           </tr>
         ))}
-        {!groups.length && (
+        {!rows.length && (
           <tr>
-            <td colSpan={11} className="px-3 py-8 text-center text-sm text-gray-500">
-              No rule exceptions for the loaded rows.
+            <td
+              colSpan={columns.length + 1}
+              className="px-3 py-8 text-center text-sm text-gray-500"
+            >
+              No position groups match the selected filters.
             </td>
           </tr>
         )}
       </tbody>
     </table>
-  );
-}
-
-function RulesView({
-  payload,
-  loading,
-  error,
-  sqlParams,
-}: {
-  payload: NavPositionsPayload | null;
-  loading: boolean;
-  error: string | null;
-  sqlParams: NavPositionSqlParams;
-}) {
-  const previewRows = useMemo<RulePreviewRow[]>(
-    () =>
-      (payload?.rawRows ?? []).map((row) => {
-        const result = normalizeNavPositionProduct({
-          product: row.product,
-          exchangeName: row.exchangeName,
-          monthYear: row.monthYear,
-          type: row.type,
-          callPut: row.callPut,
-          strikePrice: row.strikePrice,
-        });
-        return {
-          sourceRow: row,
-          result,
-        };
-      }),
-    [payload]
-  );
-  const exceptionGroups = useMemo(
-    () => buildRuleExceptionGroups(previewRows),
-    [previewRows]
-  );
-  const sqlDownloads = useMemo(() => buildNavPositionSqlDownloads(sqlParams), [sqlParams]);
-
-  return (
-    <div className="space-y-4">
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
-        </div>
-      )}
-
-      {loading && !payload && (
-        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-          Loading position rows...
-        </div>
-      )}
-
-      <SqlDownloadsPanel downloads={sqlDownloads} />
-
-      <DataTableShell
-        title="Exceptions"
-        subtitle="Only rows that need product-rule work are shown. Valid rows are hidden."
-      >
-        <RuleExceptionsTable groups={exceptionGroups} />
-      </DataTableShell>
-    </div>
-  );
-}
-
-function DetailStat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-gray-800 bg-gray-950/50 p-3">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className="mt-1 text-sm font-semibold tabular-nums text-gray-100">{value}</p>
-    </div>
-  );
-}
-
-function ProductDetailModal({
-  group,
-  payload,
-  loading,
-  error,
-  onClose,
-}: {
-  group: ProductSummaryRow;
-  payload: NavPositionsPayload | null;
-  loading: boolean;
-  error: string | null;
-  onClose: () => void;
-}) {
-  const rowCount = payload?.summary.rowCount ?? group.rowCount;
-  const shownRows = payload?.rawRows.length ?? 0;
-  const pnlTone =
-    group.unrealizedPnlBase === null
-      ? "text-gray-100"
-      : group.unrealizedPnlBase >= 0
-        ? "text-emerald-200"
-        : "text-red-200";
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-6">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="NAV position source rows"
-        className="flex max-h-[88vh] w-full max-w-[1500px] flex-col rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl shadow-black/60"
-      >
-        <div className="border-b border-gray-800 p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Source Rows
-              </p>
-              <h2 className="mt-1 truncate text-lg font-semibold text-gray-100">
-                {displayText(group.productCode)}
-              </h2>
-              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-gray-400">
-                <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.productGroup)}
-                </span>
-                <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.productRegion)}
-                </span>
-                <span className="rounded-sm bg-gray-900 px-2 py-1">
-                  {displayText(group.contractYyyymm)}
-                  {group.contractDay !== null ? `-${String(group.contractDay).padStart(2, "0")}` : ""}
-                </span>
-                {(group.putCall || group.strikePrice !== null) && (
-                  <span className="rounded-sm bg-gray-900 px-2 py-1">
-                    {displayText(group.putCall)} {fmtPrice(group.strikePrice)}
-                  </span>
-                )}
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-fit rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-200 transition-colors hover:border-gray-500 hover:bg-gray-800"
-            >
-              Close
-            </button>
-          </div>
-
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-            <DetailStat label="Rows" value={`${shownRows || "-"} / ${rowCount.toLocaleString()}`} />
-            <DetailStat label="Accounts" value={group.accountCount.toLocaleString()} />
-            <DetailStat label="Net Qty" value={fmtQuantity(group.netQuantity)} />
-            <DetailStat label="Cost Base" value={fmtNumber(group.costBase, 0)} />
-            <DetailStat label="MV Base" value={fmtNumber(group.marketValueBase, 0)} />
-            <div className="rounded-md border border-gray-800 bg-gray-950/50 p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                P&L Base
-              </p>
-              <p className={`mt-1 text-sm font-semibold tabular-nums ${pnlTone}`}>
-                {fmtNumber(group.unrealizedPnlBase, 0)}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {error && (
-            <div className="mb-3 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-              {error}
-            </div>
-          )}
-          {loading && (
-            <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-6 text-sm text-gray-500">
-              Loading source rows...
-            </div>
-          )}
-          {payload && !loading && (
-            <>
-              {payload.summary.rowCount > payload.rawRows.length && (
-                <div className="mb-3 rounded-md border border-yellow-500/30 bg-yellow-500/10 p-2 text-xs text-yellow-100">
-                  Showing {payload.rawRows.length.toLocaleString()} of{" "}
-                  {payload.summary.rowCount.toLocaleString()} matching rows.
-                </div>
-              )}
-              <div className="overflow-x-auto rounded-md border border-gray-800">
-                <RawRowsTable rows={payload.rawRows} />
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -1577,18 +1323,17 @@ export default function NavPositions({
   onFreshnessChange?: (freshness: NavPositionsFreshnessSummary) => void;
 }) {
   const [selectedDate, setSelectedDate] = useState("");
-  const [fund, setFund] = useState("all");
-  const [accountGroup, setAccountGroup] = useState("all");
-  const [productSearch, setProductSearch] = useState("");
-  const [rawLimit, setRawLimit] = useState(200);
-  const [viewMode, setViewMode] = useState<ViewMode>("summary");
+  const [anchorDate, setAnchorDate] = useState(() => localTodayIso());
+  const [accountFilter, setAccountFilter] = useState("all");
   const [data, setData] = useState<NavPositionsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [detailGroup, setDetailGroup] = useState<ProductSummaryRow | null>(null);
-  const [detailData, setDetailData] = useState<NavPositionsPayload | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [debugOpen, setDebugOpen] = useState(false);
+  const [debugDate, setDebugDate] = useState("");
+  const [debugData, setDebugData] = useState<NavPositionsDebugPayload | null>(null);
+  const [debugLoading, setDebugLoading] = useState(false);
+  const [debugError, setDebugError] = useState<string | null>(null);
+  const [debugDrilldown, setDebugDrilldown] = useState<PositionLadderDrilldown | null>(null);
   const [quickProductGroups, setQuickProductGroups] = useState<string[]>([]);
   const [quickProductRegions, setQuickProductRegions] = useState<string[]>([]);
   const [quickProductCodes, setQuickProductCodes] = useState<string[]>([]);
@@ -1601,10 +1346,7 @@ export default function NavPositions({
 
     const params = {
       selectedDate,
-      fund,
-      accountGroup,
-      productSearch,
-      rawLimit,
+      accountFilter,
     };
     const url = buildApiUrl({ ...params, refresh: refreshToken > 0 });
 
@@ -1642,94 +1384,13 @@ export default function NavPositions({
       active = false;
       controller.abort();
     };
-  }, [accountGroup, fund, onFreshnessChange, productSearch, rawLimit, refreshToken, selectedDate]);
+  }, [accountFilter, onFreshnessChange, refreshToken, selectedDate]);
 
-  useEffect(() => {
-    setDetailGroup(null);
-    setDetailData(null);
-    setDetailError(null);
-  }, [
-    accountGroup,
-    fund,
-    productSearch,
-    quickProductCodes,
-    quickProductGroups,
-    quickProductRegions,
-    selectedDate,
-  ]);
-
-  useEffect(() => {
-    if (!detailGroup) return;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setDetailGroup(null);
-        setDetailData(null);
-        setDetailError(null);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [detailGroup]);
-
-  useEffect(() => {
-    if (!detailGroup) return;
-
-    const controller = new AbortController();
-    let active = true;
-    const detailRawLimit = Math.min(Math.max(detailGroup.rowCount, 25), 500);
-    const group = groupFilterFromRow(detailGroup);
-
-    setDetailLoading(true);
-    setDetailError(null);
-    setDetailData(null);
-
-    fetchJsonWithCache<NavPositionsPayload>({
-      key: groupCacheKey(selectedDate, detailGroup),
-      url: buildApiUrl({
-        selectedDate,
-        fund: "all",
-        accountGroup: "all",
-        productSearch: "",
-        rawLimit: detailRawLimit,
-        refresh: refreshToken > 0,
-        group,
-      }),
-      ttlMs: API_CACHE_TTL_MS,
-      signal: controller.signal,
-      cacheMode: refreshToken > 0 ? "no-store" : "default",
-      forceRefresh: refreshToken > 0,
-    })
-      .then((payload) => {
-        if (!active) return;
-        setDetailData(payload);
-      })
-      .catch((err: Error) => {
-        if (!active || err.name === "AbortError") return;
-        setDetailError(err.message || "Failed to load source rows");
-      })
-      .finally(() => {
-        if (active) setDetailLoading(false);
-      });
-
-    return () => {
-      active = false;
-      controller.abort();
-    };
-  }, [detailGroup, refreshToken, selectedDate]);
-
-  const fundOptions = useMemo(() => {
+  const accountFilterOptions = useMemo(() => {
     const values = new Set(data?.metadata.funds ?? []);
-    if (fund !== "all") values.add(fund);
+    if (accountFilter !== "all") values.add(accountFilter);
     return Array.from(values).sort();
-  }, [data, fund]);
-
-  const accountGroupOptions = useMemo(() => {
-    const values = new Set(data?.metadata.accountGroups ?? []);
-    if (accountGroup !== "all") values.add(accountGroup);
-    return Array.from(values).sort();
-  }, [accountGroup, data]);
+  }, [accountFilter, data]);
 
   const productGroupOptions = useMemo(
     () => uniqueSortedText((data?.productSummary ?? []).map((row) => row.productGroup)),
@@ -1783,15 +1444,11 @@ export default function NavPositions({
     [data, quickProductCodes, quickProductGroups, quickProductRegions],
   );
 
-  const quickFilteredRawRows = useMemo(
-    () =>
-      (data?.rawRows ?? []).filter(
-        (row) =>
-          selectedTextMatches(row.productGroup, quickProductGroups) &&
-          selectedTextMatches(row.productRegion, quickProductRegions) &&
-          selectedTextMatches(row.productCode, quickProductCodes),
-      ),
-    [data, quickProductCodes, quickProductGroups, quickProductRegions],
+  const effectiveAnchorDate = anchorDate || data?.selectedDate || selectedDate;
+
+  const positionLadder = useMemo(
+    () => buildPositionLadder(quickFilteredProductSummary, effectiveAnchorDate),
+    [effectiveAnchorDate, quickFilteredProductSummary],
   );
 
   const activeQuickFilterCount =
@@ -1805,190 +1462,235 @@ export default function NavPositions({
     setQuickProductCodes([]);
   };
 
+  const drilldownFromCell = (
+    row: PositionLadderRow,
+    column: PositionLadderColumn,
+  ): PositionLadderDrilldown => ({
+    productLabel: row.productLabel,
+    bucketLabel: column.label,
+    bucketDateLabel: column.dateLabel,
+    productCode: row.productCode,
+    productGroup: row.productGroup,
+    productRegion: row.productRegion,
+    underlyingProductCode: row.underlyingProductCode,
+    putCall: row.putCall,
+    strikePrice: row.strikePrice,
+    bucketKey: column.key,
+    startIso: column.startIso,
+    endIso: column.endIso,
+    anchorDate: effectiveAnchorDate || null,
+    visibleEndIso: positionLadder.visibleEndIso,
+    monthYyyymm: column.monthYyyymm,
+    label: `${row.productLabel} | ${column.label} ${column.dateLabel}`,
+  });
+
+  const loadDebugRows = (
+    dateOverride?: string,
+    drilldownOverride?: PositionLadderDrilldown | null,
+  ) => {
+    const date = dateOverride ?? debugDate;
+    const drilldown = drilldownOverride === undefined ? debugDrilldown : drilldownOverride;
+    const controller = new AbortController();
+
+    setDebugLoading(true);
+    setDebugError(null);
+
+    void fetchJsonWithCache<NavPositionsDebugPayload>({
+      key: [
+        "api:dev:nav-positions",
+        "debug",
+        date || "latest",
+        accountFilter,
+        drilldown ? JSON.stringify(drilldown) : "all-rows",
+      ].join(":"),
+      url: buildDebugApiUrl({
+        selectedDate: date,
+        accountFilter,
+        limit: DEBUG_ROW_LIMIT,
+        drilldown,
+      }),
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: "no-store",
+      forceRefresh: true,
+    })
+      .then((payload) => {
+        setDebugData(payload);
+        setDebugDate(payload.selectedDate ?? date);
+      })
+      .catch((err: Error) => {
+        if (err.name === "AbortError") return;
+        setDebugError(err.message || "Failed to load raw position rows");
+      })
+      .finally(() => {
+        setDebugLoading(false);
+      });
+  };
+
+  const openDebugRows = () => {
+    const date = selectedDate || data?.selectedDate || data?.latestDate || "";
+    setDebugDate(date);
+    setDebugData(null);
+    setDebugError(null);
+    setDebugDrilldown(null);
+    setDebugOpen(true);
+    loadDebugRows(date, null);
+  };
+
+  const openCellDebugRows = (
+    row: PositionLadderRow,
+    column: PositionLadderColumn,
+    cell: PositionLadderCell,
+  ) => {
+    if (!cell.rowCount) return;
+    const date = selectedDate || data?.selectedDate || data?.latestDate || "";
+    const drilldown = drilldownFromCell(row, column);
+    setDebugDate(date);
+    setDebugData(null);
+    setDebugError(null);
+    setDebugDrilldown(drilldown);
+    setDebugOpen(true);
+    loadDebugRows(date, drilldown);
+  };
+
   return (
-    <div className="space-y-4">
-      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="grid gap-3 xl:grid-cols-[180px_150px_minmax(180px,260px)_minmax(220px,1fr)_130px] xl:items-end">
-          <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Position Date</span>
-            <select
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              disabled={!data?.availableDates.length && loading}
-              className={FIELD_CONTROL_CLASS}
-            >
-              <option value="">Latest</option>
-              {(data?.availableDates ?? []).map((date) => (
-                <option key={date.navDate} value={date.navDate}>
-                  {date.navDate}
-                </option>
-              ))}
-            </select>
-          </label>
+    <div className="w-full space-y-4">
+      <div className="mx-auto w-full max-w-4xl">
+        <ControlCard title="Positions">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                Filters
+              </span>
+              <span className="h-px flex-1 bg-gray-800" />
+              <span className="text-xs text-gray-500">
+                {positionLadder.rows.length.toLocaleString()} products |{" "}
+                {quickFilteredProductSummary.length.toLocaleString()} /{" "}
+                {(data?.productSummary.length ?? 0).toLocaleString()} groups
+              </span>
+            </div>
 
-          <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Fund</span>
-            <select
-              value={fund}
-              onChange={(event) => setFund(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
-            >
-              <option value="all">All</option>
-              {fundOptions.map((item) => (
-                <option key={item} value={item}>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={FILTER_LABEL_CLASS}>NAV Snapshot</span>
+              <select
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                disabled={!data?.availableDates.length && loading}
+                className={PILL_DROPDOWN_CLASS}
+              >
+                <option value="" className="text-black">
+                  Latest
+                </option>
+                {(data?.availableDates ?? []).map((date) => (
+                  <option key={date.navDate} value={date.navDate} className="text-black">
+                    {date.navDate}
+                  </option>
+                ))}
+              </select>
+              <span className={`${FILTER_LABEL_CLASS} ml-2`}>Anchor Date</span>
+              <input
+                type="date"
+                value={anchorDate}
+                onChange={(event) => setAnchorDate(event.target.value)}
+                className="h-8 rounded-full border border-gray-700 bg-transparent px-3 text-xs font-semibold text-gray-200 outline-none transition-colors hover:border-gray-600 focus:border-sky-500/60"
+                aria-label="Anchor Date"
+              />
+              <button
+                type="button"
+                onClick={() => setAnchorDate(localTodayIso())}
+                className="h-8 rounded-full border border-gray-700 bg-transparent px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-sky-500/50 hover:text-sky-100"
+              >
+                Today
+              </button>
+              <StatusBadge
+                label={`${data?.summary.rowCount.toLocaleString() ?? 0} rows`}
+                tone={data?.summary.rowCount ? "good" : "warn"}
+              />
+              <StatusBadge
+                label={`As of ${fmtDateTime(data?.latestUploadAt ?? data?.asOf)}`}
+                tone="neutral"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={FILTER_LABEL_CLASS}>Account</span>
+              <QuickFilterChip active={accountFilter === "all"} onClick={() => setAccountFilter("all")}>
+                All Accounts
+              </QuickFilterChip>
+              {accountFilterOptions.map((item) => (
+                <QuickFilterChip
+                  key={item}
+                  active={accountFilter === item}
+                  onClick={() => setAccountFilter(item)}
+                >
                   {item.toUpperCase()}
-                </option>
+                </QuickFilterChip>
               ))}
-            </select>
-          </label>
+            </div>
 
-          <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Account Group</span>
-            <select
-              value={accountGroup}
-              onChange={(event) => setAccountGroup(event.target.value)}
-              className={FIELD_CONTROL_CLASS}
-            >
-              <option value="all">All</option>
-              {accountGroupOptions.map((item) => (
-                <option key={item} value={item}>
-                  {item}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Product / Symbol / Account</span>
-            <input
-              value={productSearch}
-              onChange={(event) => setProductSearch(event.target.value)}
-              placeholder="Search"
-              className={FIELD_CONTROL_CLASS}
-            />
-          </label>
-
-          <label className="block min-w-0">
-            <span className={FIELD_LABEL_CLASS}>Raw Rows</span>
-            <select
-              value={rawLimit}
-              onChange={(event) => setRawLimit(Number(event.target.value))}
-              className={FIELD_CONTROL_CLASS}
-            >
-              {[100, 200, 300, 500].map((limit) => (
-                <option key={limit} value={limit}>
-                  {limit}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {data && (
-          <div className="mt-4 border-t border-gray-800 pt-3">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-              <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
-                <div className="min-w-0">
-                  <span className={FIELD_LABEL_CLASS}>Group</span>
-                  <div className="flex flex-wrap gap-1.5">
+            {data && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={FILTER_LABEL_CLASS}>Group</span>
+                <QuickFilterChip
+                  active={quickProductGroups.length === 0}
+                  onClick={() => setQuickProductGroups([])}
+                >
+                  All Groups
+                </QuickFilterChip>
+                {productGroupOptions.map((group) => {
+                  const active = quickProductGroups.includes(group);
+                  return (
                     <QuickFilterChip
-                      active={quickProductGroups.length === 0}
-                      onClick={() => setQuickProductGroups([])}
+                      key={group}
+                      active={active}
+                      onClick={() =>
+                        setQuickProductGroups((selected) =>
+                          active
+                            ? selected.filter((value) => value !== group)
+                            : [...selected, group],
+                        )
+                      }
                     >
-                      All
+                      {group}
                     </QuickFilterChip>
-                    {productGroupOptions.map((group) => {
-                      const active = quickProductGroups.includes(group);
-                      return (
-                        <QuickFilterChip
-                          key={group}
-                          active={active}
-                          onClick={() =>
-                            setQuickProductGroups((selected) =>
-                              active
-                                ? selected.filter((value) => value !== group)
-                                : [...selected, group],
-                            )
-                          }
-                        >
-                          {group}
-                        </QuickFilterChip>
-                      );
-                    })}
-                  </div>
-                </div>
-
+                  );
+                })}
+                <span className={`${FILTER_LABEL_CLASS} ml-2`}>Region</span>
                 <MultiSelect
                   label="Region"
                   options={productRegionOptions}
                   selected={quickProductRegions}
                   onChange={setQuickProductRegions}
                   placeholder="All regions"
-                  width="w-56"
+                  width="w-40"
+                  tone="light"
+                  showLabel={false}
                 />
+                <span className={`${FILTER_LABEL_CLASS} ml-2`}>Product Code</span>
                 <MultiSelect
-                  label="Code"
+                  label="Product Code"
                   options={productCodeOptions}
                   selected={quickProductCodes}
                   onChange={setQuickProductCodes}
                   placeholder="All codes"
-                  width="w-64"
+                  width="w-40"
+                  tone="light"
+                  showLabel={false}
                 />
-              </div>
-
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <span className="text-xs text-gray-500">
-                  {quickFilteredProductSummary.length.toLocaleString()} /{" "}
-                  {data.productSummary.length.toLocaleString()} groups |{" "}
-                  {quickFilteredRawRows.length.toLocaleString()} /{" "}
-                  {data.rawRows.length.toLocaleString()} loaded raw
-                </span>
                 {activeQuickFilterCount > 0 && (
                   <button
                     type="button"
                     onClick={clearQuickFilters}
                     className="rounded-md border border-gray-700 bg-gray-900 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-gray-600 hover:text-gray-100"
                   >
-                    Clear Quick Filters ({activeQuickFilterCount})
+                    Clear ({activeQuickFilterCount})
                   </button>
                 )}
               </div>
-            </div>
-            {activeQuickFilterCount > 0 && (
-              <p className="mt-2 text-xs text-gray-600">
-                Quick filters apply to Summary and Raw only. SQL downloads still use the server
-                filters above.
-              </p>
             )}
           </div>
-        )}
-
-        <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <StatusBadge
-              label={`${data?.summary.rowCount.toLocaleString() ?? 0} rows`}
-              tone={data?.summary.rowCount ? "good" : "warn"}
-            />
-            <StatusBadge
-              label={`${data?.summary.productGroupCount.toLocaleString() ?? 0} products`}
-              tone={data?.summary.productGroupCount ? "good" : "warn"}
-            />
-            <StatusBadge label={`As of ${fmtDateTime(data?.latestUploadAt ?? data?.asOf)}`} tone="neutral" />
-          </div>
-
-          <div className="inline-flex w-fit rounded-md border border-gray-800 bg-gray-950 p-1">
-            <SegmentedButton active={viewMode === "summary"} onClick={() => setViewMode("summary")}>
-              Summary
-            </SegmentedButton>
-            <SegmentedButton active={viewMode === "raw"} onClick={() => setViewMode("raw")}>
-              Raw
-            </SegmentedButton>
-            <SegmentedButton active={viewMode === "rules"} onClick={() => setViewMode("rules")}>
-              Rules
-            </SegmentedButton>
-          </div>
-        </div>
-      </section>
+        </ControlCard>
+      </div>
 
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -1996,97 +1698,48 @@ export default function NavPositions({
         </div>
       )}
 
-      {loading && viewMode !== "rules" && (
+      {loading && (
         <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
           Loading positions...
         </div>
       )}
 
-      {viewMode === "rules" && (
-        <RulesView
-          payload={data}
-          loading={loading}
-          error={error}
-          sqlParams={{
-            selectedDate,
-            fund,
-            accountGroup,
-            productSearch,
-          }}
-        />
+      {data && !loading && (
+        <DataTableShell
+          title="NAV Position Summary"
+          subtitle={`NAV snapshot ${data.selectedDate ?? "--"} | Anchor Date ${effectiveAnchorDate || "--"} | Net quantity by contract bucket from ${data.metadata.promotedSql}.`}
+          className="w-full"
+          bodyClassName="w-full max-h-[calc(100vh-260px)] overflow-y-auto"
+          action={
+            <button
+              type="button"
+              onClick={openDebugRows}
+              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+            >
+              Debug Rows
+            </button>
+          }
+        >
+          <div className="w-full bg-[#0d1119]">
+            <PositionLadderTable
+              columns={positionLadder.columns}
+              rows={positionLadder.rows}
+              onCellSelect={openCellDebugRows}
+            />
+          </div>
+        </DataTableShell>
       )}
 
-      {data && !loading && viewMode !== "rules" && (
-        <>
-          {viewMode === "summary" && (
-            <DataTableShell
-              title="Product Summary"
-              subtitle={`${quickFilteredProductSummary.length.toLocaleString()} of ${data.productSummary.length.toLocaleString()} groups shown. Grouped by ${data.metadata.aggregationGrain.join(", ")}.`}
-            >
-              <ProductSummaryTable rows={quickFilteredProductSummary} onRowSelect={setDetailGroup} />
-            </DataTableShell>
-          )}
-
-          {viewMode === "raw" && (
-            <DataTableShell
-              title="Raw Position Rows"
-              subtitle={`${quickFilteredRawRows.length.toLocaleString()} of ${data.rawRows.length.toLocaleString()} loaded rows shown. ${data.rawRows.length.toLocaleString()} of ${data.summary.rowCount.toLocaleString()} selected rows loaded.`}
-            >
-              <RawRowsTable rows={quickFilteredRawRows} />
-            </DataTableShell>
-          )}
-
-          <DataTableShell title="Available Position Dates" subtitle="Latest 90 dates in nav.positions.">
-            <table className="w-full min-w-[680px] border-collapse bg-[#0d1119] text-xs text-gray-200">
-              <thead className="bg-gray-950 text-gray-500">
-                <tr>
-                  {["Position Date", "Funds", "Rows", "Latest Upload"].map((label) => (
-                    <th
-                      key={label}
-                      className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:text-left"
-                    >
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {data.availableDates.slice(0, 12).map((row) => (
-                  <tr key={row.navDate} className="hover:bg-gray-900/60">
-                    <td className="px-3 py-2 text-left font-semibold text-gray-100">{row.navDate}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">{row.fundCount}</td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {row.rowCount.toLocaleString()}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-gray-400">
-                      {fmtDateTime(row.latestUploadAt)}
-                    </td>
-                  </tr>
-                ))}
-                {!data.availableDates.length && (
-                  <tr>
-                    <td colSpan={4} className="px-3 py-8 text-center text-sm text-gray-500">
-                      No NAV dates are available.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </DataTableShell>
-        </>
-      )}
-
-      {detailGroup && (
-        <ProductDetailModal
-          group={detailGroup}
-          payload={detailData}
-          loading={detailLoading}
-          error={detailError}
-          onClose={() => {
-            setDetailGroup(null);
-            setDetailData(null);
-            setDetailError(null);
-          }}
+      {debugOpen && (
+        <DebugRowsModal
+          debugDate={debugDate}
+          debugData={debugData}
+          debugDrilldown={debugDrilldown}
+          debugError={debugError}
+          debugLoading={debugLoading}
+          onClose={() => setDebugOpen(false)}
+          onDateChange={setDebugDate}
+          onLoad={() => loadDebugRows(undefined, debugDrilldown)}
         />
       )}
     </div>

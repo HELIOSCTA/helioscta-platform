@@ -57,6 +57,11 @@ with product_catalog(
         ('PGE', 'Basis', 'PG&E Citygate', null, null, 'IFED'),
         ('TMT', 'Basis', 'Tetco M3', null, null, 'IFED'),
         ('TRZ', 'Basis', 'Transco Zone 4', null, null, 'IFED')
+),
+
+FINAL as (
+    select * from product_catalog
 )
 
-select * from product_catalog
+select *
+from FINAL

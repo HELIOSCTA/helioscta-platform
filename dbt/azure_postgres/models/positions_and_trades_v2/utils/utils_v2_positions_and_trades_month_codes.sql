@@ -12,6 +12,11 @@ with month_codes(month_number, month_name, month_code) as (
         (10, 'Oct', 'V'),
         (11, 'Nov', 'X'),
         (12, 'Dec', 'Z')
+),
+
+FINAL as (
+    select * from month_codes
 )
 
-select * from month_codes
+select *
+from FINAL

@@ -38,9 +38,10 @@ prepared_trades as (
             when 'IFED' then 'IFED'
         end as exchange_name_normalized
     from trades
-)
+),
 
-select
+FINAL as (
+    select
     prepared_trades.*,
     accounts.account_name,
 
@@ -101,3 +102,7 @@ select
 from prepared_trades
 left join accounts
     on prepared_trades.give_in_out_firm_num_clean = accounts.account
+)
+
+select *
+from FINAL

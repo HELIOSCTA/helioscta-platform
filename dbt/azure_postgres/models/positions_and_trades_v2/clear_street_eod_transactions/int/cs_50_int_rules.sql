@@ -5,9 +5,10 @@
 
 with product_matches as (
     select * from {{ ref('cs_40_int_product_matches') }}
-)
+),
 
-select
+FINAL as (
+    select
     product_matches.*,
 
     -- Product identity is selected by the priority established in cs_40.
@@ -58,3 +59,7 @@ select
         then futures_month_code || right(contract_year::text, 2)
     end as futures_month_code_yy
 from product_matches
+)
+
+select *
+from FINAL

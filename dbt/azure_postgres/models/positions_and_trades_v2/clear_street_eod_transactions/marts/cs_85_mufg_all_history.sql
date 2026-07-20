@@ -1,0 +1,122 @@
+-- MUFG-shaped all-history Clear Street extract.
+--
+-- This keeps the same export-facing columns and give-in/out filter as
+-- cs_80_mufg_latest, without narrowing to the latest Clear Street upload.
+
+with trades as (
+    select * from {{ ref('cs_65_eod_all_history') }}
+),
+
+FINAL as (
+    select
+        -- Raw Clear Street columns in legacy outbound order.
+        record_id,
+        firm,
+        organization,
+        account_number,
+        account_type,
+        currency_symbol,
+        rr,
+        trade_date,
+        buy_sell,
+        quantity,
+        exchange,
+        futures_code,
+        symbol,
+        contract_year_month,
+        prompt_day,
+        strike_price,
+        put_call,
+        security_description,
+        trade_price,
+        printable_price,
+        trade_type,
+        order_number,
+        security_type_code,
+        cusip,
+        comment_code,
+        give_in_out_code,
+        give_in_out_firm_num,
+        spread_code,
+        open_close_code,
+        trace_num_or_unique_identifier,
+        round_turn_half_turn_account,
+        executing_broker,
+        opposing_broker,
+        oppos_firm,
+        commission,
+        comm_act_type,
+        fee_amt_1,
+        fee_1_atype,
+        fee_amt_2,
+        fee_2_atype,
+        fee_amt_3,
+        fee_3_atype,
+        brokerage,
+        brkrage_atype,
+        give_io_charge,
+        give_io_atype,
+        other_charges,
+        other_atype,
+        wire_charge,
+        wire_chg_atype,
+        fee_type_6,
+        fee_type_6_atype,
+        date,
+        option_exp_date,
+        last_trd_date,
+        net_amount,
+        traded_exchg,
+        sub_exchange,
+        exchange_name,
+        exch_comm_cd,
+        multiplication_factor,
+        subaccount,
+        instr_type,
+        cash_settled,
+        instrument_description,
+        fee_amt_4,
+        fee_4_atype,
+        fee_amt_5,
+        fee_5_atype,
+        fee_amt_7,
+        fee_7_atype,
+        fee_amt_8,
+        fee_8_atype,
+        fee_amt_9,
+        fee_9_atype,
+        fee_amt_10,
+        fee_10_atype,
+        fee_amt_11,
+        fee_11_atype,
+        fee_amt_12,
+        fee_12_atype,
+        fee_amt_13,
+        clearing_time_hhmmss,
+        settlement_price,
+        broker,
+        isin,
+        mic,
+
+        -- Derived fields appended for downstream review/export.
+        sftp_date,
+        sftp_upload_timestamp,
+        'New' as trade_status,
+        product_family as product_code_grouping,
+        market_name as product_code_region,
+        underlying_product_code as product_code_underlying,
+        ice_product_code,
+        cme_product_code,
+        bbg_product_code
+    from trades
+    -- MUFG handoff is limited to the legacy give-in/out firms.
+    where give_in_out_firm_num in ('ADU', '905')
+)
+
+select *
+from FINAL
+order by
+    sftp_date desc,
+    sftp_upload_timestamp desc,
+    product_code_grouping,
+    product_code_region

@@ -10,9 +10,10 @@ with trades as (
 
 product_catalog as (
     select * from {{ ref('utils_v2_positions_and_trades_product_catalog') }}
-)
+),
 
-select
+FINAL as (
+    select
     trades.*,
 
     -- Targeted CUSIP override handles PMI/P1X option rows where the CUSIP is
@@ -47,3 +48,7 @@ left join product_catalog as cusip_catalog
 left join product_catalog as explicit_catalog
     on cusip_catalog.product_code is null
     and explicit_catalog.product_code = upper(trades.exch_comm_cd_clean)
+)
+
+select *
+from FINAL

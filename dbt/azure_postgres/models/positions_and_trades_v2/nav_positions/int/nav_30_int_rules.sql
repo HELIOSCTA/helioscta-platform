@@ -4,9 +4,10 @@ with positions as (
 
 product_catalog as (
     select * from {{ ref('utils_v2_positions_and_trades_product_catalog') }}
-)
+),
 
-select
+FINAL as (
+    select
     positions.fund_code,
     positions.source_legal_entity,
     positions.source_file_name,
@@ -74,3 +75,7 @@ select
 from positions
 left join product_catalog
     on product_catalog.product_code = positions.matched_product_code
+)
+
+select *
+from FINAL
