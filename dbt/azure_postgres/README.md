@@ -6,7 +6,6 @@ insert, delete, or persist database objects.
 
 ```text
 models/clear_street_eod_transactions_v1/
-models/clear_street_eod_transactions_v2/
 models/positions_and_trades_v2/
 ```
 
