@@ -404,9 +404,10 @@ The DA workflow runs `backend.orchestration.power.isone.da_hrl_lmps`, upserts
 next Eastern operating-date ISO Express hourly day-ahead `.H.INTERNAL_HUB`
 LMP CSV rows into `isone.da_hrl_lmps`, writes API telemetry to
 `ops.api_fetch_log`, and emits complete-date readiness events when all hourly
-hub rows are present. The timer runs daily at `17:10 UTC` with
-`Persistent=true` and `RandomizedDelaySec=5min`; scheduled runs poll every two
-minutes for up to four hours until the next operating date is complete.
+hub rows are present. The timer runs daily at `11:55 America/New_York`
+(`15:55 UTC` during daylight saving time) with `Persistent=true` and
+`RandomizedDelaySec=5min`; scheduled runs poll every two minutes for up to four
+hours until the next operating date is complete.
 
 The final RT workflow runs
 `backend.orchestration.power.isone.rt_hrl_lmps_final`, upserts finalized

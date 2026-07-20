@@ -706,8 +706,9 @@ LIMIT 20;
 - Unit files:
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.service`
   - `infrastructure/systemd/helios-isone-da-hrl-lmps.timer`
-- Schedule: daily at `17:10 UTC` with `RandomizedDelaySec=5min`; scheduled
-  defaults pull the next Eastern operating date.
+- Schedule: daily at `11:55 America/New_York` (`15:55 UTC` during daylight
+  saving time) with `RandomizedDelaySec=5min`; scheduled defaults pull the
+  next Eastern operating date.
 - Polling policy: scheduled runs poll every `120` seconds for up to `4` hours
   until the next Eastern operating date has complete internal-hub DA hourly
   LMP rows, then upsert and queue release email notifications.
