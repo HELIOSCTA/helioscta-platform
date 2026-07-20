@@ -431,6 +431,10 @@ Operational notes:
 - Email deployment update: VM fast-forwarded to commit `e46a1d0` on
   `2026-07-10`; scheduled ERCOT DAM readiness now queues inline DA LMP release
   emails through `ops.email_notification_outbox`.
+- Polling deployment update: VM fast-forwarded to commit
+  `121f3de2b65f2ed3d19756fc0b0cde39f4d057fe` on `2026-07-20`; scheduled
+  ERCOT DAM runs now poll for complete next-delivery-date hub rows for up to
+  four hours, and the systemd service timeout is `5h`.
 
 Verification SQL for data-availability events:
 
@@ -727,6 +731,10 @@ LIMIT 20;
 - Email deployment update: VM fast-forwarded to commit `e46a1d0` on
   `2026-07-10`; scheduled NEPOOL DA readiness now queues inline DA LMP release
   emails through `ops.email_notification_outbox`.
+- Polling deployment update: VM fast-forwarded to commit
+  `121f3de2b65f2ed3d19756fc0b0cde39f4d057fe` on `2026-07-20`; scheduled
+  ISO-NE DA runs now poll for complete next-operating-date internal-hub rows
+  for up to four hours, and the systemd service timeout is `5h`.
 
 Verification SQL for data-availability events:
 
