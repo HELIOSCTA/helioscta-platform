@@ -1,8 +1,4 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
-import {
-  getNavPositionsAccessFromRequest,
-  navPositionsDeniedResponse,
-} from "@/lib/server/appAuth";
 import { query } from "@/lib/server/db";
 import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 import {
@@ -21,7 +17,7 @@ const MAX_DEBUG_ROW_LIMIT = 1_000;
 const ROUTE_CONFIG = {
   route: "/api/nav-positions",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "auth-protected-no-store",
+  cachePolicy: "deployment-protected-no-store",
   owner: "frontend",
   purpose: "NAV positions product summary and drilldown rows",
   p95TargetMs: 2_000,
@@ -32,7 +28,7 @@ function responseCacheHeaders(): HeadersInit {
   return {
     "Cache-Control": CACHE_HEADER,
     "Vercel-CDN-Cache-Control": NO_STORE_HEADER,
-    "X-Helios-Cache-Policy": "auth-protected no-store",
+    "X-Helios-Cache-Policy": "deployment-protected no-store",
   };
 }
 
@@ -932,10 +928,6 @@ export async function GET(request: Request): Promise<Response> {
       status: 404,
       headers: { "Cache-Control": NO_STORE_HEADER },
     });
-  }
-
-  if (!getNavPositionsAccessFromRequest(request).allowed) {
-    return navPositionsDeniedResponse();
   }
 
   return observedGET(request);

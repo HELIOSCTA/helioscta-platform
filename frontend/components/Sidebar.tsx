@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 
-import type { NavPositionsClientAuth } from "@/lib/appAuthTypes";
-
 export type ActiveSection =
   | "pjm-da-lmps"
   | "power-lmp-adders"
@@ -31,8 +29,6 @@ interface SidebarProps {
   activeSection: ActiveSection;
   onSectionChange: (section: ActiveSection) => void;
   showLocalDevFeatures: boolean;
-  showNavPositionsFeature: boolean;
-  navPositionsAuth: NavPositionsClientAuth;
 }
 
 interface NavItem {
@@ -41,7 +37,6 @@ interface NavItem {
   group?: string;
   disabled?: boolean;
   comingSoon?: boolean;
-  requiresSignIn?: boolean;
 }
 
 interface TopSection {
@@ -50,15 +45,7 @@ interface TopSection {
   navItems: NavItem[];
 }
 
-function getSections({
-  showLocalDevFeatures,
-  showNavPositionsFeature,
-  showNavPositionsSignIn,
-}: {
-  showLocalDevFeatures: boolean;
-  showNavPositionsFeature: boolean;
-  showNavPositionsSignIn: boolean;
-}): TopSection[] {
+function getSections(showLocalDevFeatures: boolean): TopSection[] {
   const sections: TopSection[] = [];
 
   sections.push({
@@ -84,19 +71,11 @@ function getSections({
     ],
   });
 
-  if (showNavPositionsFeature || showNavPositionsSignIn) {
-    sections.push({
-      key: "positions",
-      label: "POSITIONS",
-      navItems: [
-        {
-          id: "nav-positions",
-          label: "Positions",
-          requiresSignIn: showNavPositionsSignIn,
-        },
-      ],
-    });
-  }
+  sections.push({
+    key: "positions",
+    label: "POSITIONS",
+    navItems: [{ id: "nav-positions", label: "Positions" }],
+  });
 
   if (showLocalDevFeatures) {
     sections.push({
@@ -124,19 +103,8 @@ export default function Sidebar({
   activeSection,
   onSectionChange,
   showLocalDevFeatures,
-  showNavPositionsFeature,
-  navPositionsAuth,
 }: SidebarProps) {
-  const showNavPositionsSignIn =
-    navPositionsAuth.authConfigured &&
-    !navPositionsAuth.signedIn &&
-    !showNavPositionsFeature;
-  const topSections = getSections({
-    showLocalDevFeatures,
-    showNavPositionsFeature,
-    showNavPositionsSignIn,
-  });
-  const showAuthControl = navPositionsAuth.authConfigured || navPositionsAuth.signedIn;
+  const topSections = getSections(showLocalDevFeatures);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(topSections.map((s) => [s.key, true]))
   );
@@ -147,15 +115,6 @@ export default function Sidebar({
 
   const handleSectionChange = (section: ActiveSection) => {
     onSectionChange(section);
-  };
-
-  const handleNavItemClick = (item: NavItem) => {
-    if (item.disabled) return;
-    if (item.requiresSignIn) {
-      window.location.assign(navPositionsAuth.signInUrl);
-      return;
-    }
-    handleSectionChange(item.id);
   };
 
   return (
@@ -212,15 +171,9 @@ export default function Sidebar({
                           </div>
                         )}
                         <button
-                          onClick={() => handleNavItemClick(item)}
+                          onClick={() => !item.disabled && handleSectionChange(item.id)}
                           disabled={item.disabled}
-                          title={
-                            item.disabled
-                              ? `${item.label} is not available yet`
-                              : item.requiresSignIn
-                                ? "Sign in to view Positions"
-                                : undefined
-                          }
+                          title={item.disabled ? `${item.label} is not available yet` : undefined}
                           className={`flex w-full items-center rounded-md py-1.5 text-[13px] font-medium transition-colors ${
                             item.disabled
                               ? "cursor-not-allowed bg-transparent text-gray-600 opacity-55"
@@ -243,36 +196,6 @@ export default function Sidebar({
 
       {/* Footer */}
       <div className="border-t border-gray-800 px-4 py-3">
-        {showAuthControl && (
-          <div className="mb-3 rounded-md border border-gray-800 bg-gray-950/50 px-3 py-2">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">
-              Access
-            </p>
-            {navPositionsAuth.signedIn ? (
-              <div className="mt-1 flex min-w-0 items-center justify-between gap-2">
-                <span
-                  className="min-w-0 truncate text-[11px] text-gray-400"
-                  title={navPositionsAuth.userEmail ?? undefined}
-                >
-                  {navPositionsAuth.userEmail}
-                </span>
-                <a
-                  href={navPositionsAuth.signOutUrl}
-                  className="shrink-0 rounded border border-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:border-gray-600 hover:bg-gray-800 hover:text-white"
-                >
-                  Sign out
-                </a>
-              </div>
-            ) : (
-              <a
-                href={navPositionsAuth.signInUrl}
-                className="mt-2 inline-flex rounded border border-sky-700/70 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/20"
-              >
-                Sign in
-              </a>
-            )}
-          </div>
-        )}
         <p className="text-[10px] text-gray-600">Source: Azure PostgreSQL</p>
       </div>
     </aside>

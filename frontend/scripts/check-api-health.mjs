@@ -130,8 +130,6 @@ Environment:
   HELIOS_API_HEALTH_BASE_URL      Same as --base-url.
   HELIOS_API_HEALTH_FILTER        Same as --filter.
   HELIOS_API_HEALTH_BYPASS_TOKEN  Vercel protection bypass token. Appended as a query param.
-  HELIOS_NAV_POSITIONS_SERVICE_TOKEN
-                                  Optional app-level token for protected NAV checks.
 `.trim();
 }
 
@@ -212,10 +210,6 @@ function requestHeaders() {
   const bypassToken = process.env.HELIOS_API_HEALTH_BYPASS_TOKEN;
   if (bypassToken) {
     headers["x-vercel-protection-bypass"] = bypassToken;
-  }
-  const navPositionsToken = process.env.HELIOS_NAV_POSITIONS_SERVICE_TOKEN;
-  if (navPositionsToken) {
-    headers["x-helios-nav-positions-token"] = navPositionsToken;
   }
   return headers;
 }

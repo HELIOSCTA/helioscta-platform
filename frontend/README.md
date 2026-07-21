@@ -25,25 +25,10 @@ HELIOS_POSTGRES_READONLY_DBNAME=helios_prod
 HELIOS_POSTGRES_READONLY_SSLMODE=require
 ```
 
-NAV Positions uses app-level authorization in addition to any Vercel deployment
-protection. Configure Sign in with Vercel and an exact email allowlist:
-
-```text
-NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
-VERCEL_APP_CLIENT_SECRET=
-HELIOS_APP_AUTH_SECRET=
-HELIOS_NAV_POSITIONS_ALLOWED_EMAILS=kapil@example.com
-HELIOS_NAV_POSITIONS_SERVICE_TOKEN=
-HELIOS_NAV_POSITIONS_AUTH_LOCAL_BYPASS=1
-```
-
-`HELIOS_APP_AUTH_SECRET` signs the HttpOnly app session cookie; generate a
-32-byte or larger random value and keep it server-only. Omit Sunny's email from
-`HELIOS_NAV_POSITIONS_ALLOWED_EMAILS` to hide the Positions tab and return
-`404` from the NAV Positions APIs for that account. The optional service token
-is only for non-browser health checks and is sent as
-`x-helios-nav-positions-token`. Local development bypasses NAV auth by default;
-set `HELIOS_NAV_POSITIONS_AUTH_LOCAL_BYPASS=0` to test the OAuth flow locally.
+NAV Positions uses the same deployment-wide access boundary as the rest of the
+frontend. In production, manage access through Vercel Authentication or project
+membership; there is no separate Sign in with Vercel app session or
+per-Positions email allowlist.
 
 ## Local Development
 
@@ -222,9 +207,8 @@ the Historical Settlements page on the Term Bible tab.
 
 The Positions view reads NAV position valuation snapshots with
 `helios_readonly` from `nav.positions`. The page is production-visible at
-`/?section=nav-positions` only for users whose signed-in email is included in
-`HELIOS_NAV_POSITIONS_ALLOWED_EMAILS`. The production endpoints are
-`GET /api/nav-positions` for the summary ladder and
+`/?section=nav-positions` for users who can access the Vercel deployment. The
+production endpoints are `GET /api/nav-positions` for the summary ladder and
 `GET /api/nav-positions/drilldown` for bounded cell-level rows. The local-only
 compatibility alias `GET /api/dev/nav-positions` still returns the same handler
 only in local Next.js runs.
@@ -279,16 +263,15 @@ Drilldown rows are bounded cell investigations, not exports. The modal calls
 include NAV/trade dates, product identity, account, quantity, multiplier,
 trade/settle marks, `product_norm`, and dbt rule fields.
 
-Access control: the server-rendered home page hides the Positions tab for
-unauthorized users, and both NAV Positions APIs fail closed with `404` unless
-the request is from local development, an allowlisted signed-in user, or an
-operator request with `HELIOS_NAV_POSITIONS_SERVICE_TOKEN`. This is app-level
-authorization; Vercel deployment protection alone is not enough when one
-project user can see Positions and another cannot.
+Access control: NAV Positions is visible to users who can access the frontend
+deployment. Vercel Authentication or project membership owns the production
+access boundary. The app does not maintain a separate NAV Positions email
+allowlist.
 
-Caching: protected NAV Positions responses use `Cache-Control: private,
-no-store` and `Vercel-CDN-Cache-Control: no-store`. Do not re-enable public CDN
-caching for these endpoints unless the cache key is proven user-safe.
+Caching: NAV Positions responses use `Cache-Control: private, no-store` and
+`Vercel-CDN-Cache-Control: no-store`. Do not re-enable public CDN caching for
+these endpoints unless the deployment access and cache key behavior are proven
+safe.
 
 Index/operator note: as of July 21, 2026, live `nav.positions` indexes were
 verified as `positions_pkey`, `idx_nav_positions_fund_nav_date`,
@@ -801,21 +784,13 @@ npm run check:api -- --filter=NAV --base-url=https://frontend-helioscta.vercel.a
 The checker calls each production API route, parses `Server-Timing`, and fails
 when a route is broken or over its route latency budget. For protected Vercel
 deployments, set `HELIOS_API_HEALTH_BYPASS_TOKEN`; the checker sends it as the
-`x-vercel-protection-bypass` header. For protected NAV Positions checks, also
-set `HELIOS_NAV_POSITIONS_SERVICE_TOKEN`; the checker sends it as
-`x-helios-nav-positions-token`. Use `--filter=<text>` to run a focused subset
-of endpoints. Use `--require-timing` for local checks where `Server-Timing`
-should be present; production Vercel responses may omit that header, in which
-case the checker falls back to total request time.
+`x-vercel-protection-bypass` header. Use `--filter=<text>` to run a focused
+subset of endpoints. Use `--require-timing` for local checks where
+`Server-Timing` should be present; production Vercel responses may omit that
+header, in which case the checker falls back to total request time.
 
 ## Vercel
 
-Configure the Vercel project root as `frontend`. Deployment-wide access can be
-handled by Vercel Authentication, SSO, or project access, but NAV Positions has
-its own app-level allowlist. In the Vercel Sign in app settings, include both
-callback URLs:
-
-```text
-http://localhost:3000/api/auth/callback
-https://<production-domain>/api/auth/callback
-```
+Configure the Vercel project root as `frontend`. Deployment-wide access is
+handled by Vercel Authentication, SSO, or project access. NAV Positions does
+not have a second app-level login flow.

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
-import type { NavPositionsClientAuth } from "@/lib/appAuthTypes";
 import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
@@ -211,14 +210,11 @@ const DEFAULT_ICE_SETTLEMENTS_FRESHNESS: IceTradeBlotterFreshnessSummary = {
 
 interface HomePageClientProps {
   showLocalDevFeatures: boolean;
-  showNavPositionsFeature: boolean;
-  navPositionsAuth: NavPositionsClientAuth;
 }
 
 function parseInitialSection(
   value: string | null,
   showLocalDevFeatures: boolean,
-  showNavPositionsFeature: boolean,
 ): ActiveSection {
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
@@ -227,7 +223,7 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
-  if (showNavPositionsFeature && value === "nav-positions") {
+  if (value === "nav-positions") {
     return "nav-positions";
   }
   if (showLocalDevFeatures && value === "clear-street-trades") {
@@ -329,13 +325,11 @@ function parseRefreshParam(value: string | null): boolean {
 
 export default function HomePageClient({
   showLocalDevFeatures,
-  showNavPositionsFeature,
-  navPositionsAuth,
 }: HomePageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<ActiveSection>(
-    parseInitialSection(searchParams.get("section"), showLocalDevFeatures, showNavPositionsFeature),
+    parseInitialSection(searchParams.get("section"), showLocalDevFeatures),
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
@@ -472,7 +466,7 @@ export default function HomePageClient({
         footer: "Historical Settlements | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
-    if (showNavPositionsFeature && activeSection === "nav-positions") {
+    if (activeSection === "nav-positions") {
       return {
         title: "Positions",
         subtitle:
@@ -628,7 +622,7 @@ export default function HomePageClient({
         "PJM, ERCOT, ISO-NE, and CAISO day-ahead, real-time, and DART power prices.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
-  }, [activeSection, showLocalDevFeatures, showNavPositionsFeature]);
+  }, [activeSection, showLocalDevFeatures]);
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIceSettlements = activeSection === "ice-settlements";
@@ -644,8 +638,6 @@ export default function HomePageClient({
         activeSection={activeSection}
         onSectionChange={handleSectionChange}
         showLocalDevFeatures={showLocalDevFeatures}
-        showNavPositionsFeature={showNavPositionsFeature}
-        navPositionsAuth={navPositionsAuth}
       />
 
       <div className="min-w-0 flex-1 overflow-auto">
@@ -803,7 +795,7 @@ export default function HomePageClient({
               />
             )}
 
-            {showNavPositionsFeature && activeSection === "nav-positions" && (
+            {activeSection === "nav-positions" && (
               <FreshnessCard
                 statusLabel={navPositionsFreshness.status}
                 statusClass={navPositionsFreshness.statusClass}
@@ -1065,7 +1057,7 @@ export default function HomePageClient({
               initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
             />
           )}
-          {showNavPositionsFeature && activeSection === "nav-positions" && (
+          {activeSection === "nav-positions" && (
             <NavPositions
               refreshToken={navPositionsRefreshToken}
               onFreshnessChange={setNavPositionsFreshness}
