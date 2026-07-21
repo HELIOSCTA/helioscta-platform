@@ -36,10 +36,18 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
+  const oauthError = request.nextUrl.searchParams.get("error");
+  const oauthErrorDescription = request.nextUrl.searchParams.get("error_description");
   const storedState = request.cookies.get(OAUTH_STATE_COOKIE)?.value;
   const codeVerifier = request.cookies.get(OAUTH_CODE_VERIFIER_COOKIE)?.value;
   const returnTo = safeReturnTo(request.cookies.get(OAUTH_RETURN_TO_COOKIE)?.value);
 
+  if (oauthError) {
+    return redirectToAuthError(request, "oauth-error", {
+      oauthError: sanitizeLogValue(oauthError),
+      oauthErrorDescription: sanitizeLogValue(oauthErrorDescription),
+    });
+  }
   if (!code) return redirectToAuthError(request, "missing-code", { hasState: Boolean(state) });
   if (!state) return redirectToAuthError(request, "missing-state", { hasCode: true });
   if (!storedState) return redirectToAuthError(request, "missing-state-cookie");
@@ -174,4 +182,9 @@ function redirectToAuthError(
   const url = new URL("/auth/error", request.url);
   url.searchParams.set("reason", reason);
   return NextResponse.redirect(url);
+}
+
+function sanitizeLogValue(value: string | null): string | null {
+  if (!value) return null;
+  return value.replace(/[\r\n\t]/g, " ").slice(0, 240);
 }
