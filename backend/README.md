@@ -116,6 +116,14 @@ to total, energy, congestion, loss, and GHG price columns at
 `interval_start_time_utc x node_id x market_run_id` grain. Runs log OASIS API
 fetch telemetry to `ops.api_fetch_log` and orchestration emits complete-day
 readiness events for the selected trading hubs.
+Historical CAISO OASIS files older than the recent `SingleZip` retention
+window are served from CAISO's Historical OASIS Data Downloader and a
+requester-pays S3 bucket. The historical loader requires
+`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional `AWS_SESSION_TOKEN`, and
+`AWS_DEFAULT_REGION=us-west-1` in the runtime environment before real writes.
+If CAISO's bulk metadata endpoint does not present a complete TLS chain to the
+VM, set `CAISO_BULK_CA_BUNDLE` or `REQUESTS_CA_BUNDLE` to a trusted CA bundle
+that includes the missing intermediate plus standard public roots.
 The CAISO DA hourly LMP production path is
 `backend.orchestration.power.caiso.da_lmps`, with manual backfills at
 `backend.backfills.power.caiso.da_lmps`. The VM timer is
@@ -469,6 +477,7 @@ python -m backend.backfills.power.pjm.hrl_load_prelim
 python -m backend.backfills.power.pjm.gen_outages_by_type
 python -m backend.backfills.power.caiso.da_lmps
 python -m backend.backfills.power.caiso.rt_lmps
+python -m backend.backfills.power.caiso.historical_lmps
 python -m backend.backfills.weather.wsi.hourly_observed
 python -m backend.backfills.nav.positions_from_legacy_cache
 python -m backend.backfills.ice_trade_blotters.from_legacy_cache
@@ -483,6 +492,16 @@ WSI hourly observed backfills call the existing weather orchestration path, so
 successful runs also emit the current WSI freshness event. Use the read-only
 coverage SQL in `docs/operations/manual-backfills.md` before handing historical
 coverage to frontend consumers.
+
+The CAISO historical LMP backfill
+`backend.backfills.power.caiso.historical_lmps` is the operator path for
+loading DA and RT LMP history back to 2020. It uses CAISO's public bulk search
+endpoint plus requester-pays S3 group ZIP downloads, defaults to `dry_run=True`,
+chunks writes into 31-day windows, calls the raw CAISO scrape/upsert paths, and
+stamps `ops.api_fetch_log.metadata` with
+`backfill_family=caiso_lmp_historical_backfill`. It intentionally avoids
+data-readiness events and release emails. Actual writes require standard AWS
+credentials in `/etc/helioscta/backend.env`.
 
 The NAV positions legacy-cache backfill copies workbooks from the old local
 cache into `backend/scrapes/nav/downloads/` and then upserts parsed rows into

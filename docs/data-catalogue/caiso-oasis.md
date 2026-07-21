@@ -12,6 +12,12 @@
 - Telemetry: external fetches write to `ops.api_fetch_log`.
 - DDL: application tables must be created by `helios_admin` outside this repo
   before writers or schedules are enabled.
+- Historical source: older data is available through CAISO's Historical OASIS
+  Data Downloader search endpoint and requester-pays S3 bucket
+  `caiso-oasis-s3-prod-groupzips`; production writes require AWS credentials
+  in the VM environment. The bulk metadata endpoint can require an explicit
+  `CAISO_BULK_CA_BUNDLE` or `REQUESTS_CA_BUNDLE` path if the VM TLS store does
+  not already contain CAISO's intermediate certificate chain.
 
 ## Feeds
 
@@ -61,6 +67,7 @@ CAISO LMP backfills use:
 ```powershell
 python -m backend.backfills.power.caiso.da_lmps
 python -m backend.backfills.power.caiso.rt_lmps
+python -m backend.backfills.power.caiso.historical_lmps
 ```
 
 The scheduled DA orchestration starts before the CAISO 1:00 p.m. Pacific
@@ -81,6 +88,21 @@ The nightly global LMP repair uses `backend.backfills.power.lmp_price_backfill_7
 to repair recent CAISO DA and RT price rows through raw scrape/upsert paths
 with `repair_family=lmp_price_backfill_7_day` metadata. That repair does not
 emit readiness events or release emails.
+
+The dedicated historical loader
+`backend.backfills.power.caiso.historical_lmps` is for long-range DA/RT
+history such as 2020-to-present. It uses CAISO bulk groups `DAM_LMP` and
+`RTM_LMP`, defaults to a dry run, chunks each feed by 31 OASIS trading dates,
+writes through the same primary-key upserts, and stamps API fetch telemetry
+with `backfill_family=caiso_lmp_historical_backfill`.
+That metadata is separate from the nightly repair `repair_family` so production
+health freshness checks continue to represent the scheduled seven-day repair.
+Real historical writes require `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
+optional `AWS_SESSION_TOKEN`, and `AWS_DEFAULT_REGION=us-west-1` in
+`/etc/helioscta/backend.env`. If Python TLS verification fails against
+`https://oasis-bulk.caiso.com/prod/search`, install the missing intermediate
+into the VM trust store and set `CAISO_BULK_CA_BUNDLE` to the resulting system
+CA bundle path.
 
 ## Reference DDL
 

@@ -56,6 +56,35 @@ boundary, or log path changes.
   `200` with `Cache-Control: no-store` when called with the Vercel protection
   bypass header.
 
+## da-lmp-release-email-peak-profiles
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-07-17`.
+- Workflow: shared backend DA LMP release email peak/off-peak profile
+  configuration.
+- Runtime code: `backend.utils.email_notifications`.
+- Affected scheduled release emails:
+  - `helios-pjm-da-hrl-lmps`
+  - `helios-isone-da-hrl-lmps`
+  - `helios-ercot-dam-stlmnt-pnt-prices`
+  - `helios-caiso-da-lmps`
+- Deployed commit: `542d4125691834c22a555e54568cbf9cd9d666e5` on
+  `deploy/caiso-da-lmps`. `main` contains the equivalent fix as
+  `2ce5c98ea1e261e241e4398da0b62a2ed37f7abf`.
+- Behavior: PJM and NEPOOL email summary/component tables label and calculate
+  `Peak HE8-23` and `OffPeak HE1-7,24`; ERCOT and CAISO label and calculate
+  `Peak HE7-22` and `OffPeak HE1-6,23-24`.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded from `5a92d4f` to
+  `542d412`, backend package reinstall completed, and
+  `helios-pjm-da-hrl-lmps.timer`, `helios-isone-da-hrl-lmps.timer`,
+  `helios-ercot-dam-stlmnt-pnt-prices.timer`, and
+  `helios-caiso-da-lmps.timer` were restarted.
+- Verification: deploy-branch `pytest backend/tests` passed with `505` tests;
+  VM import check confirmed the four ISO peak profiles; affected DA LMP timers
+  were `active/waiting` after restart.
+- Residual note: ERCOT release emails sent before this deployment retain the
+  previous HE8-23 summary averages. The hourly tables in those emails were
+  correct. No correction email was sent during deployment.
+
 ## helios-pjm-da-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
@@ -646,6 +675,63 @@ FROM ops.data_availability_events
 WHERE dataset = 'caiso_rt_lmps'
 ORDER BY created_at DESC
 LIMIT 20;
+```
+
+## caiso-historical-lmp-backfill
+
+- Status: implemented as an operator-run backfill path; not scheduled.
+- Workflow: CAISO historical DA/RT LMP replay for dates outside recent OASIS
+  `SingleZip` retention, including 2020-to-present backfills.
+- Runtime module: `backend.backfills.power.caiso.historical_lmps`.
+- Bulk downloader helper: `backend.scrapes.power.caiso.bulk_oasis`.
+- Source system: CAISO Historical OASIS Data Downloader search endpoint plus
+  requester-pays S3 bucket `caiso-oasis-s3-prod-groupzips`.
+- Bulk groups: `DAM_LMP` for day-ahead LMPs and `RTM_LMP` for real-time LMPs.
+- Destination tables: `caiso.da_lmps` and `caiso.rt_lmps`.
+- API telemetry: `ops.api_fetch_log` with
+  `backfill_family=caiso_lmp_historical_backfill`.
+- Data readiness and release notifications: intentionally not emitted for
+  historical replay. Scheduled DA/RT CAISO jobs remain the freshness and
+  notification owners.
+- Scope: trading hubs `TH_NP15_GEN-APND` and `TH_SP15_GEN-APND`.
+- Grain: `interval_start_time_utc x node_id x market_run_id`.
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Credential boundary: real writes require requester-pays AWS credentials
+  (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, optional
+  `AWS_SESSION_TOKEN`, `AWS_DEFAULT_REGION=us-west-1`). If CAISO's bulk search
+  endpoint fails TLS verification on the VM, set `CAISO_BULK_CA_BUNDLE` or
+  `REQUESTS_CA_BUNDLE` to a trusted CA bundle that includes CAISO's missing
+  intermediate certificate and standard public roots.
+- Safe rerun story: primary-key upserts through the existing CAISO DA/RT table
+  writers; loader defaults to `dry_run=True` and chunks each feed into 31-day
+  windows.
+- Local verification: focused tests passed on `2026-07-17`; a metadata-only
+  CAISO bulk search smoke found
+  `DAM_LMP/2020/01/20200101_20200101_DAM_LMP_GRP_N_N_v12_csv.zip` with a
+  temporary CA bundle. S3 object smoke remains pending production AWS
+  requester-pays credentials.
+
+Verification SQL for CAISO historical backfill telemetry:
+
+```sql
+SELECT
+    target_table,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata->>'backfill_workflow' AS workflow,
+    metadata->>'backfill_business_date' AS business_date,
+    metadata->>'bulk_key' AS bulk_key,
+    created_at
+FROM ops.api_fetch_log
+WHERE provider = 'caiso'
+  AND metadata->>'backfill_family' = 'caiso_lmp_historical_backfill'
+ORDER BY created_at DESC
+LIMIT 30;
 ```
 
 ## helios-isone-da-hrl-lmps
