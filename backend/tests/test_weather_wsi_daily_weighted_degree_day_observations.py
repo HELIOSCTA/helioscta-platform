@@ -98,6 +98,21 @@ def test_daily_weighted_degree_day_observations_pull_uses_expected_params(
     assert captured[0]["metadata"]["run_mode"] == "test"
 
 
+def test_daily_weighted_degree_day_observations_default_stations_include_all_regions():
+    assert len(scrape.DEFAULT_STATIONS) == 9
+    assert {
+        "CONUS",
+        "EAST",
+        "MIDWEST",
+        "SOUTHCENTRAL",
+        "MOUNTAIN",
+        "PACIFIC",
+        "GASCONSEAST",
+        "GASCONSWEST",
+        "GASPRODUCING",
+    } == set(scrape.DEFAULT_STATIONS)
+
+
 def test_daily_weighted_degree_day_observations_parse_failure_logs_fetch_failure(
     monkeypatch,
 ):

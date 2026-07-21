@@ -2594,9 +2594,10 @@ LIMIT 20;
 - Source grain:
   `source_issue_key x model x forecast_type x request_region x entity_id x
   forecast_date x metric_name`.
-- Defaults: North America, WSI model, daily resolution, uncorrected bias, PJM
-  weighted temperatures in Fahrenheit, and CONUS plus EAST, MIDWEST,
-  SOUTHCENTRAL, MOUNTAIN, and PACIFIC degree-day regions.
+- Defaults: North America, WSI model, daily resolution, uncorrected bias,
+  Fahrenheit weighted temperatures for all 25 configured NA forecast regions
+  returned by WSI `allregions=true`, and all nine weighted degree-day regions
+  accepted by the forecast endpoint.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Telemetry hardening: malformed forecast CSV after a successful HTTP response
@@ -2689,9 +2690,9 @@ LIMIT 20;
 - Source grain:
   `source_product_id x request_region x entity_id x observation_date x
   metric_name`.
-- Defaults: North America, daily resolution, Fahrenheit, PJM weighted
-  temperatures, and CONUS plus EAST, MIDWEST, SOUTHCENTRAL, MOUNTAIN, and
-  PACIFIC weighted degree-day regions.
+- Defaults: North America, daily resolution, Fahrenheit, all 13 historical
+  weighted-temperature regions accepted by WSI for the current account, and
+  all nine historical weighted degree-day regions accepted by the endpoint.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Telemetry hardening: malformed observed CSV after a successful HTTP response
@@ -2757,6 +2758,41 @@ LIMIT 20;
   `helios-weather-wsi-daily-weighted-observations.timer` enabled on
   `2026-07-21 20:20 UTC`, with next run observed at
   `2026-07-22 00:56:06 UTC`.
+- All-region scope correction: WSI daily weighted forecast and observed
+  workflows were corrected on `2026-07-21` after operator feedback that daily
+  weighted temperature and WDD tables should not be PJM-only. The VM was
+  fast-forwarded to `7ad05bb`, then to `c03199e` for the opt-in
+  data-availability event update fix. No table DDL was required because the
+  existing primary keys already include `entity_id`.
+- All-region live probe: `GetModelForecast` with `allregions=true` returned 25
+  configured NA weighted-temperature forecast regions; historical weighted
+  temperatures accepted 13 regions for the current account; weighted degree-day
+  forecast and observed endpoints accepted nine regions, including
+  `GASCONSEAST`, `GASCONSWEST`, and `GASPRODUCING`.
+- Scope correction verification: local `python -m pytest --basetemp
+  .pytest-tmp-wsi` over `backend/tests/test_weather_wsi*.py` passed with 55
+  tests; `python -m pytest --basetemp .pytest-tmp
+  backend/tests/test_prod_hardening.py
+  backend/tests/test_weather_wsi_daily_weighted_forecasts_orchestration.py
+  backend/tests/test_weather_wsi_daily_weighted_observations_orchestration.py`
+  passed with 23 tests; compileall passed locally and on the VM for the touched
+  WSI and utility paths.
+- Scope correction VM refresh: manual transient `systemd-run` refreshes on
+  `2026-07-21 20:42 UTC` exited `status=0/SUCCESS`, upserted 1,875 daily
+  weighted temperature forecast rows across 25 entities, 4,320 daily weighted
+  degree-day forecast rows across nine entities, 546 daily weighted observed
+  temperature rows across 13 entities, and 1,008 daily weighted observed
+  degree-day rows across nine entities.
+- Scope correction data availability: all four daily weighted datasets emitted
+  or updated `complete` events under `scope = 'NA'`. Latest event row counts
+  are 1,875 for temperature forecasts, 4,320 for degree-day forecasts, 39 for
+  the latest observed temperature date, and 72 for the latest observed
+  degree-day date.
+- Timer refresh after correction: both
+  `helios-weather-wsi-daily-weighted-forecasts.timer` and
+  `helios-weather-wsi-daily-weighted-observations.timer` remained
+  `enabled`/`active`; next runs were observed at `2026-07-22 00:45:11 UTC` and
+  `2026-07-22 00:56:06 UTC`, respectively.
 
 Verification SQL for WSI daily weighted forecast table freshness:
 

@@ -21,21 +21,22 @@ def _fixture_text() -> str:
     return FIXTURE_PATH.read_text(encoding="utf-8")
 
 
-def test_daily_weighted_temperature_forecast_normalizes_pjm_long_form():
+def test_daily_weighted_temperature_forecast_normalizes_all_regions_long_form():
     df = scrape.parse_daily_weighted_temperature_forecast_text(
         _fixture_text(),
         scrape_run_at_utc=SCRAPE_RUN_AT,
     )
 
-    assert len(df) == 10
-    assert df["entity_id"].unique().tolist() == ["PJM"]
+    assert len(df) == 20
+    assert df["entity_id"].unique().tolist() == ["NEISO", "PJM"]
     assert set(df["metric_name"]) == set(scrape.EXPECTED_METRIC_NAMES)
     assert df["source_issue_key"].unique().tolist() == [
         "wsi:GetModelForecast:WSI:Daily:202607211028"
     ]
 
     day_one = df[
-        (df["forecast_date"] == date(2026, 7, 21))
+        (df["entity_id"] == "PJM")
+        & (df["forecast_date"] == date(2026, 7, 21))
         & (df["metric_name"] == "max_temp_f")
     ].iloc[0]
     assert day_one.to_dict() == {
@@ -132,8 +133,15 @@ def test_daily_weighted_temperature_pull_uses_expected_request_params(monkeypatc
         "allregions": "true",
         "ShowDifferences": "false",
     }
-    assert captured[0]["metadata"]["entity_ids"] == ["PJM"]
+    assert captured[0]["metadata"]["entity_ids"] == scrape.DEFAULT_ENTITY_IDS
     assert captured[0]["metadata"]["run_mode"] == "test"
+
+
+def test_daily_weighted_temperature_forecast_default_entities_are_all_regions():
+    assert len(scrape.DEFAULT_ENTITY_IDS) == 25
+    assert {"PJM", "MISO", "ERCOT", "CAISO", "US NATIONAL"} <= set(
+        scrape.DEFAULT_ENTITY_IDS
+    )
 
 
 def test_daily_weighted_temperature_parse_failure_logs_fetch_failure(monkeypatch):

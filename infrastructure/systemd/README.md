@@ -675,7 +675,10 @@ Trader `GetModelForecast` weighted temperature forecasts and
 `weather.wsi_daily_weighted_temperature_forecasts` and
 `weather.wsi_daily_weighted_degree_day_forecasts`, writes WSI API telemetry to
 `ops.api_fetch_log`, and emits forecast freshness events to
-`ops.data_availability_events`. The timer runs every six hours at `00:44`,
+`ops.data_availability_events`. Weighted temperatures use WSI
+`allregions=true` and retain all configured NA regions returned by the source;
+weighted degree days request the full configured nine-region basket. The timer
+runs every six hours at `00:44`,
 `06:44`, `12:44`, and `18:44` UTC with `Persistent=false`, after the existing
 WSI observed and hourly forecast timers. The service uses `flock` with
 `/tmp/helios-weather-wsi-daily-weighted-forecasts.lock`.
@@ -723,7 +726,10 @@ WSI Trader `GetHistoricalObservations` products
 upserts `weather.wsi_daily_weighted_temperature_observations` and
 `weather.wsi_daily_weighted_degree_day_observations`, writes WSI API telemetry
 to `ops.api_fetch_log`, and emits observed freshness events to
-`ops.data_availability_events`. The timer runs every six hours at `00:56`,
+`ops.data_availability_events`. Weighted temperatures request all historical
+weighted-temperature regions accepted by WSI for the current account; weighted
+degree days request the full configured nine-region basket. The timer runs
+every six hours at `00:56`,
 `06:56`, `12:56`, and `18:56` UTC with `Persistent=false`, after the existing
 WSI observed, forecast, and daily weighted forecast timers. Scheduled runs pull
 a 14-day rolling observed window so late-posted observations are repaired. The
