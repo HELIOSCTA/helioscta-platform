@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 import logging
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +30,39 @@ from backend.scrapes.positions_and_trades.rules.engine.product_rules import (
     normalize_position_product,
 )
 from backend.scrapes.positions_and_trades.sql import generator as sql_generator
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+DBT_PROMOTION_SCRIPT = (
+    REPO_ROOT
+    / "dbt"
+    / "azure_postgres"
+    / "scripts"
+    / "promote_positions_trades_sql.py"
+)
+MUFG_CONTRACT_MARKERS = (
+    "give_in_out_firm_num in ('ADU', '905')",
+    "'New' as trade_status",
+    "product_code_grouping",
+    "product_code_region",
+    "product_code_underlying",
+    "ice_product_code",
+    "cme_product_code",
+    "bbg_product_code",
+)
+
+
+def _load_dbt_promotion_script():
+    spec = importlib.util.spec_from_file_location(
+        "helioscta_dbt_promote_positions_trades_sql",
+        DBT_PROMOTION_SCRIPT,
+    )
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
 
 
 PRODUCT_RULE_FIXTURES = [
@@ -620,9 +656,40 @@ def test_write_generated_sql_writes_clear_street_mufg_file(tmp_path):
             assert "nav.positions" in text
 
 
-def test_checked_in_generated_sql_is_current():
-    for path, expected_sql in sql_generator.generated_files().items():
-        assert path.read_text(encoding="utf-8") == expected_sql
+def test_checked_in_promoted_sql_artifacts_match_dbt_manifest():
+    promotion = _load_dbt_promotion_script()
+
+    for artifact in promotion.ARTIFACTS:
+        source_model = (
+            promotion.DBT_PROJECT_ROOT
+            / "models"
+            / "positions_and_trades_v2"
+            / artifact.model_path
+        )
+        assert source_model.exists(), (
+            f"{artifact.name} source model is missing: "
+            f"{source_model.relative_to(promotion.REPO_ROOT)}"
+        )
+
+        for target_path in artifact.targets:
+            assert target_path.exists(), (
+                f"{artifact.name} promoted target is missing: "
+                f"{target_path.relative_to(promotion.REPO_ROOT)}"
+            )
+            sql = target_path.read_text(encoding="utf-8")
+            missing_markers = promotion.validate_sql(sql, artifact)
+            assert not missing_markers, (
+                f"{artifact.name} promoted target is missing required markers "
+                f"{missing_markers}: {target_path.relative_to(promotion.REPO_ROOT)}"
+            )
+
+            if "MUFG" in artifact.name:
+                for marker in MUFG_CONTRACT_MARKERS:
+                    assert marker in sql, (
+                        f"{artifact.name} promoted target is missing MUFG "
+                        f"contract marker {marker!r}: "
+                        f"{target_path.relative_to(promotion.REPO_ROOT)}"
+                    )
 
 
 def test_generated_sql_uses_final_cte_convention():
