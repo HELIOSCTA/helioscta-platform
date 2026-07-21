@@ -167,6 +167,28 @@ after successful upserts. Forecast parse failures emit a failed
 `complete` only when every configured station is present and each station has a
 uniform count of forecast valid hours; otherwise it emits `partial`.
 
+The promoted WSI daily weighted forecast runtime modules are
+`backend.scrapes.weather.wsi.daily_weighted_temperature_forecast` and
+`backend.scrapes.weather.wsi.daily_weighted_degree_day_forecast`, with combined
+orchestration at `backend.orchestration.weather.wsi.daily_weighted_forecasts`.
+They write forecast-only daily weighted rows from WSI Trader `GetModelForecast`
+and `GetWeightedDegreeDayForecast` to
+`weather.wsi_daily_weighted_temperature_forecasts` and
+`weather.wsi_daily_weighted_degree_day_forecasts`. The source grain for both
+tables is
+`source_issue_key x model x forecast_type x request_region x entity_id x
+forecast_date x metric_name`; safe reruns upsert by that key while preserving
+distinct source forecast issues. Defaults are North America, WSI model, daily
+resolution, Fahrenheit temperature units for weighted temperatures, uncorrected
+model bias, PJM weighted temperature output, and CONUS plus the five new EIA
+degree-day regions. Both scrapes log WSI API fetch telemetry to
+`ops.api_fetch_log`; malformed or schema-incompatible CSV after HTTP success
+adds a failed parse-stage fetch row. The combined orchestration emits one
+`ops.data_availability_events` forecast freshness event for each table, marking
+`complete` only when the configured entities, expected metrics, and 15 daily
+forecast dates are present for the latest source issue. Scheduled runs retain
+90 days of source issues in the hot tables after successful upserts.
+
 Run `python -m backend.scrapes.weather.wsi.station_metadata` manually to fetch
 WSI Trader `GetCityIds` metadata and compare the returned station IDs against
 the configured PJM station basket. This probe is not scheduled and writes no
@@ -175,7 +197,8 @@ weather table rows.
 Forecast hot-table retention is enforced by the scrape runtime after successful
 upserts for rolling forecast tables: ERCOT seven-day load forecasts, ISO-NE
 regional demand/capacity/wind/solar forecasts, PJM seven-day load, hourly
-solar/wind, WSI hourly forecasts, and Meteologica PJM hourly forecasts.
+solar/wind, WSI hourly and daily weighted forecasts, and Meteologica PJM hourly
+forecasts.
 Retention is keyed to the source issue, publication, or evaluation timestamp so
 the table keeps 90 days of forecast vintages. Historical PJM Data Miner
 `pjm.load_frcstd_hist` and outage forecast tables remain indefinite unless

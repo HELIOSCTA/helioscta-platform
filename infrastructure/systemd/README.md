@@ -660,6 +660,54 @@ systemctl status helios-weather-wsi-hourly-forecast.timer
 journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
 ```
 
+## WSI Daily Weighted Forecast Weather
+
+The WSI daily weighted forecast weather workflow has one combined timer:
+
+```text
+helios-weather-wsi-daily-weighted-forecasts.service
+helios-weather-wsi-daily-weighted-forecasts.timer
+```
+
+It runs `backend.orchestration.weather.wsi.daily_weighted_forecasts`, pulls WSI
+Trader `GetModelForecast` weighted temperature forecasts and
+`GetWeightedDegreeDayForecast` weighted degree-day forecasts, upserts
+`weather.wsi_daily_weighted_temperature_forecasts` and
+`weather.wsi_daily_weighted_degree_day_forecasts`, writes WSI API telemetry to
+`ops.api_fetch_log`, and emits forecast freshness events to
+`ops.data_availability_events`. The timer runs every six hours at `00:44`,
+`06:44`, `12:44`, and `18:44` UTC with `Persistent=false`, after the existing
+WSI observed and hourly forecast timers. The service uses `flock` with
+`/tmp/helios-weather-wsi-daily-weighted-forecasts.lock`.
+Malformed forecast CSV responses add failed fetch-telemetry rows with
+`metadata.telemetry_stage = 'parse_daily_weighted_temperature_csv'` or
+`metadata.telemetry_stage = 'parse_daily_weighted_degree_day_csv'`. Forecast
+freshness emits `complete` only when the configured entities, expected metrics,
+and 15 daily forecast dates are present for the latest source issue; otherwise
+it emits `partial` with missing entity/metric/date details.
+
+Do not enable this timer until `/etc/helioscta/backend.env` contains
+`WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
+daily weighted weather table/index application DDL has been applied.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-weather-wsi-daily-weighted-forecasts.service
+sudo systemctl enable --now helios-weather-wsi-daily-weighted-forecasts.timer
+```
+
+Verify the workflow with:
+
+```bash
+systemctl status helios-weather-wsi-daily-weighted-forecasts.service
+systemctl status helios-weather-wsi-daily-weighted-forecasts.timer
+journalctl -u helios-weather-wsi-daily-weighted-forecasts.service -n 200 --no-pager
+```
+
 ## Email Notification Outbox
 
 `helios-email-notification-outbox.timer` flushes due rows from

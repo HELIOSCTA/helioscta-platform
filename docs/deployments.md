@@ -2486,3 +2486,144 @@ WHERE pipeline_name = 'wsi_hourly_forecasts'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## helios-weather-wsi-daily-weighted-forecasts
+
+- Status: promoted for VM deployment; do not enable the timer until production
+  DDL is applied and one manual service run succeeds.
+- Workflow: WSI daily weighted temperature and degree-day forecast refreshes.
+- Runtime module:
+  `backend.orchestration.weather.wsi.daily_weighted_forecasts`.
+- Lower-level scrape modules:
+  - `backend.scrapes.weather.wsi.daily_weighted_temperature_forecast`
+  - `backend.scrapes.weather.wsi.daily_weighted_degree_day_forecast`
+- Source systems:
+  - WSI Trader `GetModelForecast` / `WEIGHTED_TEMPERATURE_FORECAST`
+  - WSI Trader `GetWeightedDegreeDayForecast` /
+    `WEIGHTED_DEGREE_DAY_FORECAST`
+- Destination tables:
+  - `weather.wsi_daily_weighted_temperature_forecasts`
+  - `weather.wsi_daily_weighted_degree_day_forecasts`
+- Source grain:
+  `source_issue_key x model x forecast_type x request_region x entity_id x
+  forecast_date x metric_name`.
+- Defaults: North America, WSI model, daily resolution, uncorrected bias, PJM
+  weighted temperatures in Fahrenheit, and CONUS plus EAST, MIDWEST,
+  SOUTHCENTRAL, MOUNTAIN, and PACIFIC degree-day regions.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events`.
+- Telemetry hardening: malformed forecast CSV after a successful HTTP response
+  writes a failed `ops.api_fetch_log` row with
+  `metadata.telemetry_stage = 'parse_daily_weighted_temperature_csv'` or
+  `metadata.telemetry_stage = 'parse_daily_weighted_degree_day_csv'`.
+- Freshness completeness: `complete` only when the configured entities,
+  expected metrics, and 15 daily forecast dates are present for the latest
+  source issue; otherwise emits `partial` with missing entity/metric/date
+  details.
+- Unit files:
+  - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service`
+  - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer`
+- Proposed schedule: every six hours at `00:44`, `06:44`, `12:44`, and
+  `18:44` UTC with `RandomizedDelaySec=3min`.
+- Timer behavior: `Persistent=false`; scheduled runs store the latest WSI
+  source issue returned by each endpoint.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-weather-wsi-daily-weighted-forecasts.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
+  `/etc/helioscta/backend.env`.
+- Application DDL required before first run is managed outside this repo.
+- Safe rerun story: upsert on
+  `(source_issue_key, model, forecast_type, request_region, entity_id,
+  forecast_date, metric_name)`.
+- Local endpoint probe: `GetModelForecast` and
+  `GetWeightedDegreeDayForecast` returned HTTP 200 on `2026-07-21` with source
+  issue `2026-07-21 10:28 UTC`; no table rows were written during the probe.
+- Local verification on `2026-07-21`: all WSI tests passed with
+  `python -m pytest` over `backend/tests/test_weather_wsi*.py` resolved as an
+  explicit file list; `python -m compileall backend/scrapes/weather/wsi
+  backend/orchestration/weather/wsi` passed; no-upsert live parse returned 75
+  PJM temperature rows and 2,880 degree-day rows for six configured regions.
+- Production DDL: pending application of the two table DDL files and two index
+  DDL files under
+  `dbt/azure_postgres/reference_sql/ddl/weather/wsi/daily_weighted_*`.
+- VM verification: pending manual service run, `ops.api_fetch_log` inspection,
+  `ops.data_availability_events` inspection, and timer enablement.
+
+Verification SQL for WSI daily weighted table freshness:
+
+```sql
+SELECT
+    'temperature' AS dataset,
+    request_region,
+    entity_id,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT source_issue_key) AS source_issue_count,
+    MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc)) AS latest_issue_at,
+    MIN(forecast_date) AS min_forecast_date,
+    MAX(forecast_date) AS max_forecast_date,
+    COUNT(DISTINCT metric_name) AS metric_count,
+    MAX(updated_at) AS latest_updated_at
+FROM weather.wsi_daily_weighted_temperature_forecasts
+GROUP BY request_region, entity_id
+UNION ALL
+SELECT
+    'degree_day' AS dataset,
+    request_region,
+    entity_id,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT source_issue_key) AS source_issue_count,
+    MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc)) AS latest_issue_at,
+    MIN(forecast_date) AS min_forecast_date,
+    MAX(forecast_date) AS max_forecast_date,
+    COUNT(DISTINCT metric_name) AS metric_count,
+    MAX(updated_at) AS latest_updated_at
+FROM weather.wsi_daily_weighted_degree_day_forecasts
+GROUP BY request_region, entity_id
+ORDER BY dataset, request_region, entity_id;
+```
+
+Verification SQL for WSI daily weighted API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    target_table,
+    created_at,
+    metadata
+FROM ops.api_fetch_log
+WHERE pipeline_name IN (
+    'wsi_daily_weighted_temperature_forecasts',
+    'wsi_daily_weighted_degree_day_forecasts'
+)
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for WSI daily weighted data-availability events:
+
+```sql
+SELECT
+    dataset,
+    source_system,
+    availability_type,
+    business_date,
+    scope,
+    grain,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset IN (
+    'wsi_daily_weighted_temperature_forecasts',
+    'wsi_daily_weighted_degree_day_forecasts'
+)
+ORDER BY created_at DESC
+LIMIT 20;
+```
