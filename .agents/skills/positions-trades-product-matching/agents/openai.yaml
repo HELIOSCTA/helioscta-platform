@@ -1,0 +1,4 @@
+interface:
+  display_name: "Positions/Trades Product Matching"
+  short_description: "Triage dbt product-matching failures"
+  default_prompt: "Use $positions-trades-product-matching to run or triage the positions/trades product-matching dbt tests."

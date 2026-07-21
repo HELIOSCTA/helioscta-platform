@@ -1,0 +1,4 @@
+interface:
+  display_name: "HeliosCTA Telemetry Health"
+  short_description: "Check ops telemetry for failed or stale HeliosCTA scripts."
+  default_prompt: "Check HeliosCTA telemetry health for failed or stale scheduled scripts."

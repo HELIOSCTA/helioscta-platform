@@ -1,0 +1,4 @@
+interface:
+  display_name: "HeliosCTA dbt FINAL CTE"
+  short_description: "Enforce terminal FINAL CTE style"
+  default_prompt: "Use $helioscta-dbt-final-cte to check or fix HeliosCTA dbt SQL FINAL CTE style."

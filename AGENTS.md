@@ -9,12 +9,17 @@ change as production-bound unless the user explicitly says it is exploratory.
 Before editing, read the nearest relevant docs and contracts:
 
 - Root scope and promotion rule: `README.md`
+- Any nested `AGENTS.md` between the repo root and the working directory; the
+  nearest file owns subtree-specific workflow and verification details.
 - Backend runtime and dependencies: `backend/README.md`
 - Azure Postgres setup and permissions: `infrastructure/azure-postgres/README.md`
 - Agent workflow: `.agents/context/one-shot-implementation-workflow.md`
 - Assumption challenge rules: `.agents/context/assumptions-audit.md`
 - Parallel frontend/worktree workflow:
   `.agents/context/frontend-parallel-worktree-workflow.md`
+
+For read-only investigation or narrow subtree work, skip unrelated docs when a
+nearer `AGENTS.md` or README provides the complete local workflow.
 
 ## Assumption Audit
 
