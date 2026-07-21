@@ -15,6 +15,9 @@ setup(
             "sql/generated/nav_positions/marts/*.sql",
             "sql/generated/README.md",
         ],
+        "backend.scrapes.ice_trade_blotters": [
+            "sql/inspection/*.sql",
+        ],
         "backend.scrapes.positions_and_trades.rules.data": ["*.json"],
     },
 )

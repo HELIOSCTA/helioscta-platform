@@ -44,6 +44,7 @@ backend/mcp_server/runs/
 backend/scrapes/nav/downloads/
 backend/scrapes/clear_street/downloads/
 backend/scrapes/positions_and_trades/exports/
+backend/scrapes/ice_trade_blotters/csv/
 
 # Frontend
 frontend/node_modules/

@@ -258,6 +258,22 @@ overlapping manual/scheduled pulls with a local lock file, persists per-window
 state with explicit success/failure/timeout statuses, and writes durable job
 telemetry to `ops.api_fetch_log`.
 
+ICE trade blotter helpers are local manual-file workflows. They live under
+`backend.scrapes.ice_trade_blotters` and
+`backend.orchestration.ice_trade_blotters`, parse manually downloaded ICE Deal
+Report `.xls`/CSV exports, write raw rows to
+`ice_trade_blotter.ice_trade_blotter`, and write file lineage/load state to
+`ice_trade_blotter.file_manifest`. They use the existing Azure Postgres writer
+environment and do not create tables at runtime; apply the operator SQL under
+`dbt/azure_postgres/reference_sql/ddl/ice_trade_blotter/` with `helios_admin`
+before loading files. Local source files are cached under
+`backend/scrapes/ice_trade_blotters/csv/` by default and that folder is
+gitignored. The manual run path is
+`python -m backend.orchestration.ice_trade_blotters.trades`; read-only raw
+browsing and optional side-by-side inspection SQL lives under
+`backend/scrapes/ice_trade_blotters/sql/inspection/`. No standardization layer,
+Windows Task Scheduler job, or Linux systemd timer is promoted by default.
+
 NAV position helpers are local SFTP workflows. They live under
 `backend.scrapes.nav` and `backend.orchestration.nav`, write raw NAV position
 valuation snapshots to `nav.positions`, and use the existing `NAV_SFTP_*`
@@ -450,6 +466,7 @@ python -m backend.backfills.power.caiso.da_lmps
 python -m backend.backfills.power.caiso.rt_lmps
 python -m backend.backfills.weather.wsi.hourly_observed
 python -m backend.backfills.nav.positions_from_legacy_cache
+python -m backend.backfills.ice_trade_blotters.from_legacy_cache
 python -m backend.backfills.ice_python.futures
 ```
 
@@ -466,6 +483,13 @@ The NAV positions legacy-cache backfill copies workbooks from the old local
 cache into `backend/scrapes/nav/downloads/` and then upserts parsed rows into
 `nav.positions` with the same primary key as the scheduled SFTP workflow. It
 does not move or delete legacy workbooks.
+
+The ICE trade blotter legacy-cache backfill copies `.xls` files from the old
+`helioscta-azure-backend` local cache into
+`backend/scrapes/ice_trade_blotters/csv/formatted_files/`, registers them in
+`ice_trade_blotter.file_manifest`, and upserts parsed raw rows into
+`ice_trade_blotter.ice_trade_blotter`. It does not move or delete legacy files
+and logs backfill attempts to `ops.api_fetch_log`.
 
 ICE Python futures backfills write `ice_python.settlements` at
 `trade_date, symbol` grain for monthly futures generated from the active PJM,
