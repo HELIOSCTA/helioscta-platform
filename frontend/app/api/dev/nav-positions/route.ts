@@ -17,7 +17,7 @@ const MAX_DEBUG_ROW_LIMIT = 1_000;
 const ROUTE_CONFIG = {
   route: "/api/nav-positions",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "deployment-protected-no-store",
+  cachePolicy: "deployment-protected no-store",
   owner: "frontend",
   purpose: "NAV positions product summary and drilldown rows",
   p95TargetMs: 2_000,
@@ -28,7 +28,7 @@ function responseCacheHeaders(): HeadersInit {
   return {
     "Cache-Control": CACHE_HEADER,
     "Vercel-CDN-Cache-Control": NO_STORE_HEADER,
-    "X-Helios-Cache-Policy": "deployment-protected no-store",
+    "X-Helios-Cache-Policy": "auth-protected no-store",
   };
 }
 

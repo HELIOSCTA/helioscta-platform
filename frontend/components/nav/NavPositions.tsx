@@ -167,7 +167,7 @@ const NAV_POSITIONS_DRILLDOWN_API_PATH = "/api/nav-positions/drilldown";
 const DEBUG_ROW_LIMIT = 100;
 const FILTER_LABEL_CLASS = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
 const PILL_DROPDOWN_CLASS =
-  "h-8 rounded-full border border-gray-700 bg-white px-3 text-xs font-semibold text-black outline-none transition-colors hover:border-gray-500 focus:border-sky-500/60 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
+  "h-8 rounded-full border border-sky-900/70 bg-[#101521] px-3 text-xs font-semibold text-gray-100 shadow-inner shadow-black/20 outline-none transition-colors hover:border-sky-700/80 focus:border-sky-500/70 focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-900 disabled:text-gray-500";
 const POSITION_LADDER_PRODUCT_WIDTH = 220;
 const DEFAULT_PRODUCT_GROUP_FILTERS = ["Power"];
 const DEFAULT_PRODUCT_REGION_FILTERS = ["PJM"];
@@ -2277,11 +2277,11 @@ export default function NavPositions({
                 disabled={!data?.availableDates.length && loading}
                 className={PILL_DROPDOWN_CLASS}
               >
-                <option value="" className="text-black">
+                <option value="" className="bg-[#101521] text-gray-100">
                   Latest
                 </option>
                 {(data?.availableDates ?? []).map((date) => (
-                  <option key={date.navDate} value={date.navDate} className="text-black">
+                  <option key={date.navDate} value={date.navDate} className="bg-[#101521] text-gray-100">
                     {date.navDate}
                   </option>
                 ))}
@@ -2362,7 +2362,7 @@ export default function NavPositions({
                   onChange={setQuickProductRegions}
                   placeholder="All regions"
                   width="w-36"
-                  tone="light"
+                  tone="dark"
                   showLabel={false}
                 />
                 <span className={`${FILTER_LABEL_CLASS} ml-2`}>Product Code</span>
@@ -2373,7 +2373,7 @@ export default function NavPositions({
                   onChange={setQuickProductCodes}
                   placeholder="All codes"
                   width="w-36"
-                  tone="light"
+                  tone="dark"
                   showLabel={false}
                 />
                 <span className={`${FILTER_LABEL_CLASS} ml-2`}>Option</span>
