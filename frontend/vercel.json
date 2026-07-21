@@ -71,6 +71,14 @@
     "app/api/nav-positions/drilldown/route.ts": {
       "maxDuration": 30,
       "regions": ["iad1"]
+    },
+    "app/api/ice-trade-blotter/raw/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/ice-trade-blotter/raw/drilldown/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
     }
   },
   "crons": [

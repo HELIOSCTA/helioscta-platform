@@ -68,6 +68,8 @@ GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
 GET /api/nav-positions?productGroup=Power&productRegion=PJM
 GET /api/nav-positions/drilldown?productGroup=Power&productRegion=PJM&limit=100&drilldown=<json>
+GET /api/ice-trade-blotter/raw?date=YYYY-MM-DD
+GET /api/ice-trade-blotter/raw/drilldown?date=YYYY-MM-DD&limit=100&drilldown=<json>
 ```
 
 Email/report links can open the PJM DA LMP page directly into the single-day
@@ -280,6 +282,47 @@ verified as `positions_pkey`, `idx_nav_positions_fund_nav_date`,
 `idx_nav_positions_updated_at`. Apply future indexes only as an operator DDL
 action with a write-capable role and autocommit; the app and dbt project must
 not create them.
+
+## ICE Trade Blotter Source Contract
+
+The ICE Trade Blotter view reads manually loaded raw ICE Deal Report rows with
+`helios_readonly` from `ice_trade_blotter.ice_trade_blotter` and file lineage
+from `ice_trade_blotter.file_manifest`. The page is production-visible at
+`/?section=ice-trade-blotter`. The production endpoints are
+`GET /api/ice-trade-blotter/raw` for the NAV-style aggregate grid and
+`GET /api/ice-trade-blotter/raw/drilldown` for bounded raw row inspection.
+
+Source system: manually downloaded ICE Deal Report `.xls`/CSV exports loaded by
+`backend.orchestration.ice_trade_blotters.trades`.
+
+Promoted table grain:
+one raw ICE deal-leg row from one managed source file. The operator DDL enforces
+the raw business key with a `UNIQUE NULLS NOT DISTINCT` index over deal, trade
+date, user, leg, side, hub, contract, begin/end date, quantity, price, option,
+and strikes.
+
+The route accepts bounded params:
+`date=YYYY-MM-DD`, repeated or comma-separated `side`, `trader`,
+`clearingAcct`, `custAcct`, `clearingFirm`, `product`, `hub`, `contract`,
+`option`, `dealSection`, `source`, `userId`, `search`, `refresh=1`, and
+drilldown-only `limit=25..1000`. Without `date`, it selects the latest
+`trade_date`. The summary route returns the latest 90 trade dates, filter
+options from the selected trade-date/search snapshot, source freshness, raw
+counts, and aggregate rows grouped by raw ICE display identity: `product`,
+`hub`, `contract`, `begin_date`, `end_date`, `option`, `strike`, `strike_2`,
+`cc`, `strip`, and `deal_section`.
+
+Signed display quantity treats clear sell-side `b_s` values as negative, but
+the drilldown returns the original raw row fields.
+
+This page is visual inspection only. It does not add dbt models, product
+standardization, product matching, frontend cache tables, backend writes,
+scheduled jobs, or new credentials.
+
+Access and caching match NAV Positions: the server-rendered home page hides the
+Positions section for unauthorized users, both ICE raw APIs fail closed with
+`404` through the same app-auth gate, and responses use
+`Cache-Control: private, no-store` plus `Vercel-CDN-Cache-Control: no-store`.
 
 ## Local DEV Clear Street Trades Source Contract
 

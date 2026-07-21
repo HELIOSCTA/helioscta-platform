@@ -12,6 +12,9 @@ import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
+import RawIceTradeBlotter, {
+  type RawIceTradeBlotterFreshnessSummary,
+} from "@/components/positions/RawIceTradeBlotter";
 import NavPositions, {
   type NavPositionsFreshnessSummary,
 } from "@/components/nav/NavPositions";
@@ -189,6 +192,16 @@ const DEFAULT_NAV_POSITIONS_FRESHNESS: NavPositionsFreshnessSummary = {
   latestUpdateLabel: "--",
 };
 
+const DEFAULT_RAW_ICE_BLOTTER_FRESHNESS: RawIceTradeBlotterFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "ICE Trade Blotter --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+  rowCountLabel: "--",
+};
+
 const DEFAULT_CLEAR_STREET_TRADES_FRESHNESS: ClearStreetTradesFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
@@ -225,6 +238,9 @@ function parseInitialSection(
   }
   if (value === "nav-positions") {
     return "nav-positions";
+  }
+  if (value === "ice-trade-blotter") {
+    return "ice-trade-blotter";
   }
   if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
@@ -347,6 +363,7 @@ export default function HomePageClient({
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [navPositionsRefreshToken, setNavPositionsRefreshToken] = useState(0);
+  const [rawIceBlotterRefreshToken, setRawIceBlotterRefreshToken] = useState(0);
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
   const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
@@ -365,6 +382,7 @@ export default function HomePageClient({
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
   const [navPositionsFreshnessOpen, setNavPositionsFreshnessOpen] = useState(false);
+  const [rawIceBlotterFreshnessOpen, setRawIceBlotterFreshnessOpen] = useState(false);
   const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
     useState(false);
   const [iceSettlementsFreshnessOpen, setIceSettlementsFreshnessOpen] =
@@ -403,6 +421,10 @@ export default function HomePageClient({
     useState<WeatherDashboardFreshnessSummary>(DEFAULT_PJM_WEATHER_FRESHNESS);
   const [navPositionsFreshness, setNavPositionsFreshness] =
     useState<NavPositionsFreshnessSummary>(DEFAULT_NAV_POSITIONS_FRESHNESS);
+  const [rawIceBlotterFreshness, setRawIceBlotterFreshness] =
+    useState<RawIceTradeBlotterFreshnessSummary>(
+      DEFAULT_RAW_ICE_BLOTTER_FRESHNESS,
+    );
   const [clearStreetTradesFreshness, setClearStreetTradesFreshness] =
     useState<ClearStreetTradesFreshnessSummary>(
       DEFAULT_CLEAR_STREET_TRADES_FRESHNESS,
@@ -472,6 +494,15 @@ export default function HomePageClient({
         subtitle:
           "Position valuation snapshots aggregated by product, with drilldown rows and product-code rules.",
         footer: "Positions | Source: nav.positions / Azure PostgreSQL",
+      };
+    }
+    if (activeSection === "ice-trade-blotter") {
+      return {
+        title: "ICE Trade Blotter",
+        subtitle:
+          "Raw ICE Deal Report rows aggregated for visual trade inspection, with bounded row-level drilldowns.",
+        footer:
+          "ICE Trade Blotter | Source: ice_trade_blotter.ice_trade_blotter / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "clear-street-trades") {
@@ -817,6 +848,29 @@ export default function HomePageClient({
               />
             )}
 
+            {activeSection === "ice-trade-blotter" && (
+              <FreshnessCard
+                statusLabel={rawIceBlotterFreshness.status}
+                statusClass={rawIceBlotterFreshness.statusClass}
+                summary={rawIceBlotterFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: rawIceBlotterFreshness.status,
+                    className: rawIceBlotterFreshness.statusClass,
+                  },
+                  { label: "Selected Date", value: rawIceBlotterFreshness.targetDateLabel },
+                  { label: "Latest Date", value: rawIceBlotterFreshness.latestDateLabel },
+                  { label: "Latest Load", value: rawIceBlotterFreshness.latestUpdateLabel },
+                  { label: "Rows", value: rawIceBlotterFreshness.rowCountLabel },
+                ]}
+                open={rawIceBlotterFreshnessOpen}
+                onToggle={() => setRawIceBlotterFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setRawIceBlotterRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "clear-street-trades" && (
               <FreshnessCard
                 statusLabel={clearStreetTradesFreshness.status}
@@ -1061,6 +1115,12 @@ export default function HomePageClient({
             <NavPositions
               refreshToken={navPositionsRefreshToken}
               onFreshnessChange={setNavPositionsFreshness}
+            />
+          )}
+          {activeSection === "ice-trade-blotter" && (
+            <RawIceTradeBlotter
+              refreshToken={rawIceBlotterRefreshToken}
+              onFreshnessChange={setRawIceBlotterFreshness}
             />
           )}
           {showLocalDevFeatures && activeSection === "clear-street-trades" && (

@@ -9,6 +9,7 @@ export type ActiveSection =
   | "pjm-term-bible"
   | "pjm-historical-settlements"
   | "nav-positions"
+  | "ice-trade-blotter"
   | "clear-street-trades"
   | "ice-settlements"
   | "spark-spreads"
@@ -74,7 +75,10 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
   sections.push({
     key: "positions",
     label: "POSITIONS",
-    navItems: [{ id: "nav-positions", label: "Positions" }],
+    navItems: [
+      { id: "nav-positions", label: "Positions" },
+      { id: "ice-trade-blotter", label: "ICE Trade Blotter" },
+    ],
   });
 
   if (showLocalDevFeatures) {
