@@ -32,7 +32,7 @@ interface UserInfoResponse {
 
 export async function GET(request: NextRequest): Promise<Response> {
   const config = getVercelAuthConfig();
-  if (!config) return redirectToAuthError(request);
+  if (!config) return redirectToAuthError(request, "auth-not-configured");
 
   const code = request.nextUrl.searchParams.get("code");
   const state = request.nextUrl.searchParams.get("state");
@@ -40,9 +40,11 @@ export async function GET(request: NextRequest): Promise<Response> {
   const codeVerifier = request.cookies.get(OAUTH_CODE_VERIFIER_COOKIE)?.value;
   const returnTo = safeReturnTo(request.cookies.get(OAUTH_RETURN_TO_COOKIE)?.value);
 
-  if (!code || !state || !storedState || state !== storedState || !codeVerifier) {
-    return redirectToAuthError(request);
-  }
+  if (!code) return redirectToAuthError(request, "missing-code", { hasState: Boolean(state) });
+  if (!state) return redirectToAuthError(request, "missing-state", { hasCode: true });
+  if (!storedState) return redirectToAuthError(request, "missing-state-cookie");
+  if (state !== storedState) return redirectToAuthError(request, "state-mismatch");
+  if (!codeVerifier) return redirectToAuthError(request, "missing-code-verifier-cookie");
 
   try {
     const token = await exchangeCodeForToken({
@@ -55,8 +57,15 @@ export async function GET(request: NextRequest): Promise<Response> {
     const user = await fetchUserInfo(token.access_token);
     const tokenNonce = decodeJwtClaim(token.id_token, "nonce");
     const storedNonce = request.cookies.get(OAUTH_NONCE_COOKIE)?.value;
-    if (!storedNonce || tokenNonce !== storedNonce) return redirectToAuthError(request);
-    if (!user.email) return redirectToAuthError(request);
+    if (!storedNonce) {
+      return redirectToAuthError(request, "missing-nonce-cookie", {
+        hasIdToken: Boolean(token.id_token),
+      });
+    }
+    if (!token.id_token) return redirectToAuthError(request, "missing-id-token");
+    if (!tokenNonce) return redirectToAuthError(request, "missing-token-nonce");
+    if (tokenNonce !== storedNonce) return redirectToAuthError(request, "nonce-mismatch");
+    if (!user.email) return redirectToAuthError(request, "missing-user-email");
 
     const expiresInSeconds = clampSessionSeconds(token.expires_in ?? 60 * 60);
     const sessionCookie = createSessionCookieValue({
@@ -72,7 +81,7 @@ export async function GET(request: NextRequest): Promise<Response> {
     return response;
   } catch (error) {
     console.error("[auth] Vercel OAuth callback failed:", error);
-    return redirectToAuthError(request);
+    return redirectToAuthError(request, "oauth-callback-exception");
   }
 }
 
@@ -146,6 +155,23 @@ function clearOAuthCookies(response: NextResponse): void {
   response.cookies.set(OAUTH_RETURN_TO_COOKIE, "", clearAuthCookieOptions());
 }
 
-function redirectToAuthError(request: NextRequest): Response {
-  return NextResponse.redirect(new URL("/auth/error", request.url));
+function redirectToAuthError(
+  request: NextRequest,
+  reason: string,
+  details: Record<string, boolean | number | string | null> = {},
+): Response {
+  console.warn(
+    JSON.stringify({
+      event: "auth_callback_rejected",
+      reason,
+      host: request.nextUrl.host,
+      hasCode: request.nextUrl.searchParams.has("code"),
+      hasState: request.nextUrl.searchParams.has("state"),
+      ...details,
+    }),
+  );
+
+  const url = new URL("/auth/error", request.url);
+  url.searchParams.set("reason", reason);
+  return NextResponse.redirect(url);
 }
