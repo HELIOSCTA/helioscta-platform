@@ -2517,9 +2517,9 @@ LIMIT 20;
   `metadata.telemetry_stage = 'parse_daily_weighted_temperature_csv'` or
   `metadata.telemetry_stage = 'parse_daily_weighted_degree_day_csv'`.
 - Freshness completeness: `complete` only when the configured entities,
-  expected metrics, and 15 daily forecast dates are present for the latest
-  source issue; otherwise emits `partial` with missing entity/metric/date
-  details.
+  expected metrics, and 15 consecutive daily forecast dates are present for the
+  latest source issue; otherwise emits `partial` with missing
+  entity/metric/date details.
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service`
   - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer`
@@ -2562,6 +2562,21 @@ LIMIT 20;
   `helios-weather-wsi-daily-weighted-forecasts.timer` enabled on
   `2026-07-21 19:28 UTC`, with next run observed at
   `2026-07-22 00:45:56 UTC`.
+- Follow-up hardening deployment: `/opt/helioscta-platform` fast-forwarded to
+  `c45cd45` on `2026-07-21 19:47 UTC`. The change keeps empty-but-valid WSI
+  responses visible as `partial` freshness events, rejects short temperature
+  metric rows as parse failures, checks for consecutive 15-day horizons, and
+  purges daily weighted forecast hot-table rows by
+  `COALESCE(source_issue_at_utc, scrape_run_at_utc)`.
+- Follow-up VM verification: compileall passed for `backend/scrapes/weather/wsi`
+  and `backend/orchestration/weather/wsi`; manual transient `systemd-run` smoke
+  on `2026-07-21 19:48 UTC` exited `status=0/SUCCESS`, upserted 75 PJM daily
+  weighted temperature rows and 2,880 daily weighted degree-day rows, and wrote
+  successful WSI API telemetry rows for both endpoints. The existing freshness
+  events for source issue `202607211028` remained `complete`.
+- Timer refresh: `helios-weather-wsi-daily-weighted-forecasts.timer` restarted
+  after the follow-up smoke and was observed `enabled`/`active`, with next run
+  at `2026-07-22 00:44:56 UTC`.
 
 Verification SQL for WSI daily weighted table freshness:
 
