@@ -12,6 +12,7 @@ setup(
             "sql/generated/clear_street_trades/mufg/*.sql",
             "sql/generated/nav_positions/checks/*.sql",
             "sql/generated/nav_positions/drilldowns/*.sql",
+            "sql/generated/nav_positions/frontend/*.sql",
             "sql/generated/nav_positions/marts/*.sql",
             "sql/generated/README.md",
         ],
