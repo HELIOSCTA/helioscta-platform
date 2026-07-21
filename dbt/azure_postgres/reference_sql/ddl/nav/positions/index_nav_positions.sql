@@ -5,7 +5,7 @@
 -- role in a SQL editor with autocommit enabled. Do not wrap CREATE INDEX
 -- CONCURRENTLY in BEGIN/COMMIT.
 
-CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_nav_positions_latest_fund
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_nav_positions_fund_nav_date
     ON nav.positions (
         fund_code,
         nav_date DESC,

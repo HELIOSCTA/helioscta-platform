@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import type { NavPositionsClientAuth } from "@/lib/appAuthTypes";
+
 export type ActiveSection =
   | "pjm-da-lmps"
   | "power-lmp-adders"
@@ -29,6 +31,8 @@ interface SidebarProps {
   activeSection: ActiveSection;
   onSectionChange: (section: ActiveSection) => void;
   showLocalDevFeatures: boolean;
+  showNavPositionsFeature: boolean;
+  navPositionsAuth: NavPositionsClientAuth;
 }
 
 interface NavItem {
@@ -45,7 +49,7 @@ interface TopSection {
   navItems: NavItem[];
 }
 
-function getSections(showLocalDevFeatures: boolean): TopSection[] {
+function getSections(showLocalDevFeatures: boolean, showNavPositionsFeature: boolean): TopSection[] {
   const sections: TopSection[] = [];
 
   sections.push({
@@ -71,6 +75,14 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     ],
   });
 
+  if (showNavPositionsFeature) {
+    sections.push({
+      key: "positions",
+      label: "POSITIONS",
+      navItems: [{ id: "nav-positions", label: "Positions" }],
+    });
+  }
+
   if (showLocalDevFeatures) {
     sections.push({
       key: "dev",
@@ -80,7 +92,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "pjm-price-view", label: "Price View" },
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
-        { id: "nav-positions", label: "Positions" },
         { id: "clear-street-trades", label: "Trades" },
         { id: "pjm-generation", label: "Generation" },
         { id: "pjm-tightness-lookback", label: "Tightness Lookback" },
@@ -98,8 +109,11 @@ export default function Sidebar({
   activeSection,
   onSectionChange,
   showLocalDevFeatures,
+  showNavPositionsFeature,
+  navPositionsAuth,
 }: SidebarProps) {
-  const topSections = getSections(showLocalDevFeatures);
+  const topSections = getSections(showLocalDevFeatures, showNavPositionsFeature);
+  const showAuthControl = navPositionsAuth.authConfigured || navPositionsAuth.signedIn;
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(topSections.map((s) => [s.key, true]))
   );
@@ -191,6 +205,36 @@ export default function Sidebar({
 
       {/* Footer */}
       <div className="border-t border-gray-800 px-4 py-3">
+        {showAuthControl && (
+          <div className="mb-3 rounded-md border border-gray-800 bg-gray-950/50 px-3 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-600">
+              Access
+            </p>
+            {navPositionsAuth.signedIn ? (
+              <div className="mt-1 flex min-w-0 items-center justify-between gap-2">
+                <span
+                  className="min-w-0 truncate text-[11px] text-gray-400"
+                  title={navPositionsAuth.userEmail ?? undefined}
+                >
+                  {navPositionsAuth.userEmail}
+                </span>
+                <a
+                  href={navPositionsAuth.signOutUrl}
+                  className="shrink-0 rounded border border-gray-700 px-2 py-0.5 text-[10px] font-semibold text-gray-300 hover:border-gray-600 hover:bg-gray-800 hover:text-white"
+                >
+                  Sign out
+                </a>
+              </div>
+            ) : (
+              <a
+                href={navPositionsAuth.signInUrl}
+                className="mt-2 inline-flex rounded border border-sky-700/70 bg-sky-500/10 px-2 py-1 text-[11px] font-semibold text-sky-100 hover:bg-sky-500/20"
+              >
+                Sign in
+              </a>
+            )}
+          </div>
+        )}
         <p className="text-[10px] text-gray-600">Source: Azure PostgreSQL</p>
       </div>
     </aside>

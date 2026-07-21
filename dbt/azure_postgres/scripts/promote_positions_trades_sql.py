@@ -139,6 +139,52 @@ ARTIFACTS = (
         ),
     ),
     SqlArtifact(
+        name="NAV positions frontend all-history contract",
+        model_path=Path("nav_positions/frontend/nav_frontend_positions_all_history.sql"),
+        targets=(
+            FRONTEND_ROOT / "sql" / "nav-positions" / "frontend" / "all_history.sql",
+            REPO_ROOT
+            / "backend"
+            / "scrapes"
+            / "positions_and_trades"
+            / "sql"
+            / "generated"
+            / "nav_positions"
+            / "frontend"
+            / "all_history.sql",
+        ),
+        required_markers=(
+            "__dbt__cte__nav_40_positions_all_history",
+            "product_norm",
+            "normalization_status",
+            "contract_date",
+            "from FINAL",
+        ),
+    ),
+    SqlArtifact(
+        name="NAV positions frontend latest contract",
+        model_path=Path("nav_positions/frontend/nav_frontend_positions_latest.sql"),
+        targets=(
+            FRONTEND_ROOT / "sql" / "nav-positions" / "frontend" / "latest.sql",
+            REPO_ROOT
+            / "backend"
+            / "scrapes"
+            / "positions_and_trades"
+            / "sql"
+            / "generated"
+            / "nav_positions"
+            / "frontend"
+            / "latest.sql",
+        ),
+        required_markers=(
+            "__dbt__cte__nav_50_positions_latest",
+            "product_norm",
+            "normalization_status",
+            "contract_date",
+            "from FINAL",
+        ),
+    ),
+    SqlArtifact(
         name="Positions/trades rule exceptions",
         model_path=Path("nav_positions/marts/pat_90_rule_exceptions.sql"),
         targets=(

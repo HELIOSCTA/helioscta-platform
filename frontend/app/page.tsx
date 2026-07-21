@@ -1,9 +1,14 @@
 import { Suspense } from "react";
 import HomePageClient from "./HomePageClient";
+import { getNavPositionsClientAuth } from "@/lib/server/appAuth";
 import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 
-export default function Page() {
+export const dynamic = "force-dynamic";
+
+export default async function Page() {
   const showLocalDevFeatures = isLocalOnlyFeatureEnabled();
+  const navPositionsAuth = await getNavPositionsClientAuth();
+  const showNavPositionsFeature = navPositionsAuth.allowed;
 
   return (
     <Suspense
@@ -13,7 +18,11 @@ export default function Page() {
         </main>
       }
     >
-      <HomePageClient showLocalDevFeatures={showLocalDevFeatures} />
+      <HomePageClient
+        showLocalDevFeatures={showLocalDevFeatures}
+        showNavPositionsFeature={showNavPositionsFeature}
+        navPositionsAuth={navPositionsAuth}
+      />
     </Suspense>
   );
 }

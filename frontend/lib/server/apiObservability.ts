@@ -128,7 +128,8 @@ export function observedJsonRoute(
         headers.set("Server-Timing", `app;dur=${durationMs}, db;dur=${dbDurationMs}`);
         headers.set("X-Helios-Route", config.route);
         headers.set("X-Helios-Request-Id", requestId);
-        headers.set("X-Helios-Cache-Policy", config.cachePolicy);
+        const cachePolicy = headers.get("X-Helios-Cache-Policy") ?? config.cachePolicy;
+        headers.set("X-Helios-Cache-Policy", cachePolicy);
         headers.set("X-Helios-Data-As-Of", headerValue(result.dataAsOf));
 
         logApiEvent({
@@ -141,7 +142,7 @@ export function observedJsonRoute(
           db_query_count: metrics.dbQueryCount,
           row_count: rowCount,
           payload_bytes: bytes,
-          cache_policy: config.cachePolicy,
+          cache_policy: cachePolicy,
           data_as_of: result.dataAsOf ?? null,
           request_id: requestId,
           freshness_source: config.freshnessSource ?? null,

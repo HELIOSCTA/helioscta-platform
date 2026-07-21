@@ -21,33 +21,25 @@ product_catalog as (
     select * from {{ ref('utils_v2_positions_and_trades_product_catalog') }}
 ),
 
-latest_nav_by_fund as (
-    select
-        fund_code,
-        max(nav_date) as nav_date
-    from source_positions
-    group by fund_code
-),
-
-latest_upload_by_fund as (
-    select
-        source_positions.fund_code,
-        source_positions.nav_date,
-        max(source_positions.sftp_upload_timestamp) as sftp_upload_timestamp
-    from source_positions
-    inner join latest_nav_by_fund
-        on latest_nav_by_fund.fund_code = source_positions.fund_code
-       and latest_nav_by_fund.nav_date = source_positions.nav_date
-    group by source_positions.fund_code, source_positions.nav_date
+latest_file_by_fund as (
+    select distinct on (positions.fund_code)
+        positions.fund_code,
+        positions.nav_date,
+        positions.sftp_upload_timestamp::timestamp as sftp_upload_timestamp
+    from {{ source('nav_v1', 'positions') }} as positions
+    order by
+        positions.fund_code,
+        positions.nav_date desc,
+        positions.sftp_upload_timestamp desc
 ),
 
 latest_positions as (
     select source_positions.*
     from source_positions
-    inner join latest_upload_by_fund
-        on latest_upload_by_fund.fund_code = source_positions.fund_code
-       and latest_upload_by_fund.nav_date = source_positions.nav_date
-       and latest_upload_by_fund.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
+    inner join latest_file_by_fund
+        on latest_file_by_fund.fund_code = source_positions.fund_code
+       and latest_file_by_fund.nav_date = source_positions.nav_date
+       and latest_file_by_fund.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
 ),
 
 clean_positions as (
@@ -185,12 +177,3 @@ FINAL as (
 
 select *
 from FINAL
-order by
-    nav_date desc,
-    sftp_upload_timestamp desc,
-    fund_code,
-    account_group,
-    account,
-    product_code,
-    contract_yyyymm,
-    contract_day

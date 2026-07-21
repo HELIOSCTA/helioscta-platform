@@ -67,6 +67,14 @@
     "app/api/ops/readiness/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
+    },
+    "app/api/nav-positions/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/nav-positions/drilldown/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
     }
   },
   "crons": [

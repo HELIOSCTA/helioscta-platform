@@ -2,26 +2,26 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 export const PROMOTED_ALL_HISTORY_SQL_RELATIVE_PATH =
-  "frontend/sql/nav-positions/marts/all_history.sql";
+  "frontend/sql/nav-positions/frontend/all_history.sql";
 const PROMOTED_ALL_HISTORY_SQL_RUNTIME_PATHS = [
-  path.join(process.cwd(), "sql", "nav-positions", "marts", "all_history.sql"),
-  path.join(process.cwd(), "frontend", "sql", "nav-positions", "marts", "all_history.sql"),
+  path.join(process.cwd(), "sql", "nav-positions", "frontend", "all_history.sql"),
+  path.join(process.cwd(), "frontend", "sql", "nav-positions", "frontend", "all_history.sql"),
 ];
 
-export const PROMOTED_LATEST_SQL_RELATIVE_PATH = "frontend/sql/nav-positions/marts/latest.sql";
+export const PROMOTED_LATEST_SQL_RELATIVE_PATH = "frontend/sql/nav-positions/frontend/latest.sql";
 const PROMOTED_LATEST_SQL_RUNTIME_PATHS = [
-  path.join(process.cwd(), "sql", "nav-positions", "marts", "latest.sql"),
-  path.join(process.cwd(), "frontend", "sql", "nav-positions", "marts", "latest.sql"),
+  path.join(process.cwd(), "sql", "nav-positions", "frontend", "latest.sql"),
+  path.join(process.cwd(), "frontend", "sql", "nav-positions", "frontend", "latest.sql"),
 ];
 
 export const DBT_ALL_HISTORY_MODEL_PATH =
-  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_40_positions_all_history.sql";
+  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_all_history.sql";
 export const DBT_ALL_HISTORY_COMPILED_PATH =
-  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/marts/nav_40_positions_all_history.sql";
+  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_all_history.sql";
 export const DBT_LATEST_MODEL_PATH =
-  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_50_positions_latest.sql";
+  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_latest.sql";
 export const DBT_LATEST_COMPILED_PATH =
-  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/marts/nav_50_positions_latest.sql";
+  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_latest.sql";
 
 let cachedAllHistorySql: string | null = null;
 let cachedLatestSql: string | null = null;
@@ -53,8 +53,12 @@ async function loadPromotedSql({
   }
 
   const sql = stripFinalOrderBy(content.trim().replace(/;\s*$/, ""));
-  if (!sql.toLowerCase().includes("rule_status") || !sql.includes("__dbt__cte__")) {
-    throw new Error(`${relativePath} is not a compiled dbt NAV positions mart.`);
+  if (
+    !sql.toLowerCase().includes("normalization_status") ||
+    !sql.toLowerCase().includes("product_norm") ||
+    !sql.includes("__dbt__cte__")
+  ) {
+    throw new Error(`${relativePath} is not a compiled dbt NAV positions frontend contract.`);
   }
 
   return sql;
@@ -102,7 +106,12 @@ export function selectedNavPositionsCte(promotedSql: string): string {
       $1::date AS requested_nav_date,
       $2::text AS fund_filter,
       NULLIF($3::text, '') AS account_group_filter,
-      NULLIF($4::text, '') AS search_text
+      NULLIF($4::text, '') AS search_text,
+      $5::text[] AS product_group_filters,
+      $6::text[] AS product_region_filters,
+      $7::text[] AS product_code_filters,
+      NULLIF($8::text, '') AS instrument_type_filter,
+      NULLIF($9::text, '') AS put_call_filter
   ),
   modelled_nav_positions AS (
     ${promotedSql}
@@ -140,77 +149,81 @@ export function selectedNavPositionsCte(promotedSql: string): string {
      AND latest.nav_date = filtered_history.nav_date
      AND latest.sftp_upload_timestamp = filtered_history.sftp_upload_timestamp
   ),
-  enriched_positions AS (
+  filter_source_positions AS MATERIALIZED (
     SELECT
       latest_positions.fund_code,
-      latest_positions.source_legal_entity,
-      latest_positions.source_file_name,
-      latest_positions.source_file_row_number,
       latest_positions.nav_date,
       latest_positions.sftp_upload_timestamp,
-      latest_positions.broker_name,
       latest_positions.account_group,
       latest_positions.account,
+      latest_positions.account_name,
       latest_positions.trade_date,
       latest_positions.product_id_internal,
       latest_positions.product,
-      latest_positions.type,
-      latest_positions.month_year,
+      latest_positions.product_norm,
       latest_positions.client_symbol,
-      latest_positions.strike_price,
-      latest_positions.call_put,
-      latest_positions.product_currency_1,
-      latest_positions.long_short,
-      latest_positions.quantity_1,
-      latest_positions.counter_currency_ccy2,
-      latest_positions.ccy2_long_short,
-      latest_positions.ccy2_quantity_2,
-      latest_positions.trade_price,
-      latest_positions.multiplier_and_tick_value,
-      latest_positions.cost_in_native_currency,
-      latest_positions.open_exchange_rate,
-      latest_positions.cost_in_base_currency,
-      latest_positions.market_settlement_price,
-      latest_positions.market_value_in_native_currency,
-      latest_positions.close_exchange_rate,
-      latest_positions.market_value_in_base_currency,
-      latest_positions.sector,
-      latest_positions.sub_sector,
-      latest_positions.country,
-      latest_positions.exchange_name,
       latest_positions.source_1_symbol,
       latest_positions.source_3_symbol,
-      latest_positions.one_chicago_symbol,
-      latest_positions.fas_level,
-      latest_positions.option_style,
       latest_positions.updated_at,
       latest_positions.product_code,
-      latest_positions.product_family AS product_group,
-      latest_positions.market_name AS product_region,
+      latest_positions.product_group,
+      latest_positions.product_region,
       latest_positions.underlying_product_code,
       latest_positions.contract_yyyymm,
       latest_positions.contract_day,
-      latest_positions.put_call_code AS put_call,
-      latest_positions.strike_price_normalized AS normalized_strike_price,
-      latest_positions.rule_status AS normalization_status
+      latest_positions.put_call,
+      latest_positions.normalized_strike_price,
+      latest_positions.instrument_type,
+      latest_positions.quantity_1,
+      latest_positions.multiplier_and_tick_value,
+      latest_positions.trade_price,
+      latest_positions.cost_in_base_currency,
+      latest_positions.market_settlement_price,
+      latest_positions.market_value_in_base_currency,
+      latest_positions.long_short,
+      latest_positions.normalization_status,
+      latest_positions.rule_priority,
+      latest_positions.rule_match_type,
+      latest_positions.rule_pattern
     FROM latest_positions
-  ),
-  selected_positions AS MATERIALIZED (
-    SELECT enriched_positions.*
-    FROM enriched_positions
     CROSS JOIN params
-    WHERE (params.account_group_filter IS NULL OR enriched_positions.account_group = params.account_group_filter)
+    WHERE (params.account_group_filter IS NULL OR latest_positions.account_group = params.account_group_filter)
       AND (
         params.search_text IS NULL
-        OR enriched_positions.product ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.product_code ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.product_group ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.product_region ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.product_id_internal ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.client_symbol ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.source_1_symbol ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.source_3_symbol ILIKE '%' || params.search_text || '%'
-        OR enriched_positions.account ILIKE '%' || params.search_text || '%'
+        OR latest_positions.product ILIKE '%' || params.search_text || '%'
+        OR latest_positions.product_code ILIKE '%' || params.search_text || '%'
+        OR latest_positions.product_group ILIKE '%' || params.search_text || '%'
+        OR latest_positions.product_region ILIKE '%' || params.search_text || '%'
+        OR latest_positions.product_id_internal ILIKE '%' || params.search_text || '%'
+        OR latest_positions.client_symbol ILIKE '%' || params.search_text || '%'
+        OR latest_positions.source_1_symbol ILIKE '%' || params.search_text || '%'
+        OR latest_positions.source_3_symbol ILIKE '%' || params.search_text || '%'
+        OR latest_positions.account ILIKE '%' || params.search_text || '%'
+      )
+  ),
+  selected_positions AS MATERIALIZED (
+    SELECT filter_source_positions.*
+    FROM filter_source_positions
+    CROSS JOIN params
+    WHERE (
+        cardinality(params.product_group_filters) = 0
+        OR lower(coalesce(filter_source_positions.product_group, '')) = ANY(params.product_group_filters)
+      )
+      AND (
+        cardinality(params.product_region_filters) = 0
+        OR lower(coalesce(filter_source_positions.product_region, '')) = ANY(params.product_region_filters)
+      )
+      AND (
+        cardinality(params.product_code_filters) = 0
+        OR lower(coalesce(filter_source_positions.product_code, '')) = ANY(params.product_code_filters)
+      )
+      AND (
+        params.instrument_type_filter IS NULL
+        OR filter_source_positions.instrument_type = params.instrument_type_filter
+      )
+      AND (
+        params.put_call_filter IS NULL
+        OR filter_source_positions.put_call = params.put_call_filter
       )
   )
 `;

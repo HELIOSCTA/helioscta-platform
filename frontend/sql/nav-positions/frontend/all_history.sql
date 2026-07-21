@@ -1,7 +1,8 @@
--- Latest NAV positions with dbt-derived rule fields.
+-- Frontend-facing all-history NAV position rows.
 --
--- Keep this latest mart optimized for frontend review: choose each fund's
--- latest NAV date and upload before running product matching.
+-- This is a thin projection over the canonical v2 all-history mart. Product,
+-- contract, account, and rule matching logic stays upstream in v2; this model
+-- only exposes stable names and helper fields for the NAV positions UI.
 
 with  __dbt__cte__nav_00_src_positions as (
 with source_rows as (
@@ -95,6 +96,50 @@ FINAL as (
 
 select *
 from FINAL
+),  __dbt__cte__nav_10_int_clean as (
+with positions as (
+    select * from __dbt__cte__nav_00_src_positions
+),
+
+accounts as (
+    select * from __dbt__cte__utils_v2_positions_and_trades_account_lookup
+    where source = 'nav'
+),
+
+FINAL as (
+    select
+    positions.*,
+    accounts.account_name,
+    upper(regexp_replace(coalesce(positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
+    (
+        upper(coalesce(positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
+        or upper(coalesce(positions.type, '')) like '%OPTION%'
+    ) as is_option,
+    case
+        when upper(coalesce(positions.call_put, '')) in ('CALL', 'C') then 'C'
+        when upper(coalesce(positions.call_put, '')) in ('PUT', 'P') then 'P'
+    end as put_call_code,
+    case
+        when positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
+        then to_char(to_date(trim(positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
+        when upper(trim(coalesce(positions.month_year, ''))) ~ '^[A-Z]{3}\d{2}$'
+        then to_char(to_date(upper(trim(positions.month_year)), 'MONYY'), 'YYYYMM')
+    end as contract_yyyymm,
+    case
+        when positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
+        then extract(day from to_date(trim(positions.month_year), 'MM/DD/YYYY'))::integer
+    end as contract_day,
+    case
+        when positions.strike_price is null then null
+        else round(positions.strike_price::numeric, 3)::double precision
+    end as strike_price_normalized
+from positions
+left join accounts
+    on positions.account = accounts.account
+)
+
+select *
+from FINAL
 ),  __dbt__cte__utils_v2_positions_and_trades_product_aliases as (
 with product_aliases(
     source_priority,
@@ -162,6 +207,48 @@ with product_aliases(
 
 FINAL as (
     select * from product_aliases
+)
+
+select *
+from FINAL
+),  __dbt__cte__nav_20_int_product_matches as (
+with positions as (
+    select * from __dbt__cte__nav_10_int_clean
+),
+
+product_aliases as (
+    select * from __dbt__cte__utils_v2_positions_and_trades_product_aliases
+    where source = 'nav'
+),
+
+FINAL as (
+    select
+    positions.*,
+    matched_alias.source_priority as rule_priority,
+    matched_alias.match_type as rule_match_type,
+    matched_alias.pattern as rule_pattern,
+    matched_alias.product_code as matched_product_code
+from positions
+left join lateral (
+    select product_aliases.*
+    from product_aliases
+    where (
+            (
+                product_aliases.match_type = 'exact'
+                and positions.product_norm = product_aliases.pattern
+            )
+            or (
+                product_aliases.match_type = 'regex'
+                and positions.product_norm ~* product_aliases.pattern
+            )
+        )
+      and (
+            product_aliases.option_type is null
+            or product_aliases.option_type = case when positions.is_option then 'option' else 'future' end
+        )
+    order by product_aliases.source_priority
+    limit 1
+) as matched_alias on true
 )
 
 select *
@@ -234,176 +321,181 @@ FINAL as (
 
 select *
 from FINAL
-), source_positions as (
-    select * from __dbt__cte__nav_00_src_positions
-),
-
-accounts as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_account_lookup
-    where source = 'nav'
-),
-
-product_aliases as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_product_aliases
-    where source = 'nav'
+),  __dbt__cte__nav_30_int_rules as (
+with positions as (
+    select * from __dbt__cte__nav_20_int_product_matches
 ),
 
 product_catalog as (
     select * from __dbt__cte__utils_v2_positions_and_trades_product_catalog
 ),
 
-latest_file_by_fund as (
-    select distinct on (positions.fund_code)
-        positions.fund_code,
-        positions.nav_date,
-        positions.sftp_upload_timestamp::timestamp as sftp_upload_timestamp
-    from "helios_prod"."nav"."positions" as positions
-    order by
-        positions.fund_code,
-        positions.nav_date desc,
-        positions.sftp_upload_timestamp desc
-),
-
-latest_positions as (
-    select source_positions.*
-    from source_positions
-    inner join latest_file_by_fund
-        on latest_file_by_fund.fund_code = source_positions.fund_code
-       and latest_file_by_fund.nav_date = source_positions.nav_date
-       and latest_file_by_fund.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
-),
-
-clean_positions as (
+FINAL as (
     select
-        latest_positions.*,
-        accounts.account_name,
-        upper(regexp_replace(coalesce(latest_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
-        (
-            upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
-            or upper(coalesce(latest_positions.type, '')) like '%OPTION%'
-        ) as is_option,
-        case
-            when upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'C') then 'C'
-            when upper(coalesce(latest_positions.call_put, '')) in ('PUT', 'P') then 'P'
-        end as put_call_code,
-        case
-            when latest_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
-            then to_char(to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'), 'YYYYMM')
-            when upper(trim(coalesce(latest_positions.month_year, ''))) ~ '^[A-Z]{3}\d{2}$'
-            then to_char(to_date(upper(trim(latest_positions.month_year)), 'MONYY'), 'YYYYMM')
-        end as contract_yyyymm,
-        case
-            when latest_positions.month_year ~ '^\s*\d{1,2}/\d{1,2}/\d{4}\s*$'
-            then extract(day from to_date(trim(latest_positions.month_year), 'MM/DD/YYYY'))::integer
-        end as contract_day,
-        case
-            when latest_positions.strike_price is null then null
-            else round(latest_positions.strike_price::numeric, 3)::double precision
-        end as strike_price_normalized
-    from latest_positions
-    left join accounts
-        on latest_positions.account = accounts.account
+    positions.fund_code,
+    positions.source_legal_entity,
+    positions.source_file_name,
+    positions.source_file_row_number,
+    positions.nav_date,
+    positions.sftp_upload_timestamp,
+    positions.broker_name,
+    positions.account_group,
+    positions.account,
+    positions.account_name,
+    positions.trade_date,
+    positions.product_id_internal,
+    positions.product,
+    positions.type,
+    positions.month_year,
+    positions.client_symbol,
+    positions.strike_price,
+    positions.call_put,
+    positions.product_currency_1,
+    positions.long_short,
+    positions.quantity_1,
+    positions.counter_currency_ccy2,
+    positions.ccy2_long_short,
+    positions.ccy2_quantity_2,
+    positions.trade_price,
+    positions.multiplier_and_tick_value,
+    positions.cost_in_native_currency,
+    positions.open_exchange_rate,
+    positions.cost_in_base_currency,
+    positions.market_settlement_price,
+    positions.market_value_in_native_currency,
+    positions.close_exchange_rate,
+    positions.market_value_in_base_currency,
+    positions.sector,
+    positions.sub_sector,
+    positions.country,
+    positions.exchange_name,
+    positions.source_1_symbol,
+    positions.source_3_symbol,
+    positions.one_chicago_symbol,
+    positions.fas_level,
+    positions.option_style,
+    positions.created_at,
+    positions.updated_at,
+    product_catalog.product_code,
+    product_catalog.product_family,
+    product_catalog.market_name,
+    case when positions.is_option then product_catalog.underlying_product_code end as underlying_product_code,
+    product_catalog.bbg_exchange_code,
+    product_catalog.default_exchange_name,
+    positions.contract_yyyymm,
+    positions.contract_day,
+    positions.put_call_code as put_call_code,
+    positions.strike_price_normalized,
+    case
+        when product_catalog.product_code is null then 'unresolved_product'
+        when coalesce(trim(positions.month_year), '') <> '' and positions.contract_yyyymm is null then 'unparsed_contract'
+        when positions.is_option and positions.put_call_code is null then 'option_missing_put_call'
+        when positions.is_option and positions.strike_price is null then 'option_missing_strike'
+        else 'ok'
+    end as rule_status,
+    positions.rule_priority,
+    positions.rule_match_type,
+    positions.rule_pattern
+from positions
+left join product_catalog
+    on product_catalog.product_code = positions.matched_product_code
+)
+
+select *
+from FINAL
+),  __dbt__cte__nav_40_positions_all_history as (
+with positions as (
+    select * from __dbt__cte__nav_30_int_rules
 ),
 
-matched_positions as (
-    select
-        clean_positions.*,
-        matched_alias.source_priority as rule_priority,
-        matched_alias.match_type as rule_match_type,
-        matched_alias.pattern as rule_pattern,
-        matched_alias.product_code as matched_product_code
-    from clean_positions
-    left join lateral (
-        select product_aliases.*
-        from product_aliases
-        where (
-                (
-                    product_aliases.match_type = 'exact'
-                    and clean_positions.product_norm = product_aliases.pattern
-                )
-                or (
-                    product_aliases.match_type = 'regex'
-                    and clean_positions.product_norm ~* product_aliases.pattern
-                )
-            )
-          and (
-                product_aliases.option_type is null
-                or product_aliases.option_type = case when clean_positions.is_option then 'option' else 'future' end
-            )
-        order by product_aliases.source_priority
-        limit 1
-    ) as matched_alias on true
+FINAL as (
+    select *
+    from positions
+)
+
+select *
+from FINAL
+), positions as (
+    select * from __dbt__cte__nav_40_positions_all_history
 ),
 
 FINAL as (
     select
-        matched_positions.fund_code,
-        matched_positions.source_legal_entity,
-        matched_positions.source_file_name,
-        matched_positions.source_file_row_number,
-        matched_positions.nav_date,
-        matched_positions.sftp_upload_timestamp,
-        matched_positions.broker_name,
-        matched_positions.account_group,
-        matched_positions.account,
-        matched_positions.account_name,
-        matched_positions.trade_date,
-        matched_positions.product_id_internal,
-        matched_positions.product,
-        matched_positions.type,
-        matched_positions.month_year,
-        matched_positions.client_symbol,
-        matched_positions.strike_price,
-        matched_positions.call_put,
-        matched_positions.product_currency_1,
-        matched_positions.long_short,
-        matched_positions.quantity_1,
-        matched_positions.counter_currency_ccy2,
-        matched_positions.ccy2_long_short,
-        matched_positions.ccy2_quantity_2,
-        matched_positions.trade_price,
-        matched_positions.multiplier_and_tick_value,
-        matched_positions.cost_in_native_currency,
-        matched_positions.open_exchange_rate,
-        matched_positions.cost_in_base_currency,
-        matched_positions.market_settlement_price,
-        matched_positions.market_value_in_native_currency,
-        matched_positions.close_exchange_rate,
-        matched_positions.market_value_in_base_currency,
-        matched_positions.sector,
-        matched_positions.sub_sector,
-        matched_positions.country,
-        matched_positions.exchange_name,
-        matched_positions.source_1_symbol,
-        matched_positions.source_3_symbol,
-        matched_positions.one_chicago_symbol,
-        matched_positions.fas_level,
-        matched_positions.option_style,
-        matched_positions.created_at,
-        matched_positions.updated_at,
-        product_catalog.product_code,
-        product_catalog.product_family,
-        product_catalog.market_name,
-        case when matched_positions.is_option then product_catalog.underlying_product_code end as underlying_product_code,
-        product_catalog.bbg_exchange_code,
-        product_catalog.default_exchange_name,
-        matched_positions.contract_yyyymm,
-        matched_positions.contract_day,
-        matched_positions.put_call_code as put_call_code,
-        matched_positions.strike_price_normalized,
+        positions.fund_code,
+        positions.source_legal_entity,
+        positions.source_file_name,
+        positions.source_file_row_number,
+        positions.nav_date,
+        positions.sftp_upload_timestamp,
+        positions.broker_name,
+        positions.account_group,
+        positions.account,
+        positions.account_name,
+        positions.trade_date,
+        positions.product_id_internal,
+        positions.product,
+        upper(regexp_replace(coalesce(positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
+        positions.type,
+        positions.month_year,
+        positions.client_symbol,
+        positions.strike_price,
+        positions.call_put,
+        positions.product_currency_1,
+        positions.long_short,
+        positions.quantity_1,
+        positions.counter_currency_ccy2,
+        positions.ccy2_long_short,
+        positions.ccy2_quantity_2,
+        positions.trade_price,
+        positions.multiplier_and_tick_value,
+        positions.cost_in_native_currency,
+        positions.open_exchange_rate,
+        positions.cost_in_base_currency,
+        positions.market_settlement_price,
+        positions.market_value_in_native_currency,
+        positions.close_exchange_rate,
+        positions.market_value_in_base_currency,
+        positions.sector,
+        positions.sub_sector,
+        positions.country,
+        positions.exchange_name,
+        positions.source_1_symbol,
+        positions.source_3_symbol,
+        positions.one_chicago_symbol,
+        positions.fas_level,
+        positions.option_style,
+        positions.created_at,
+        positions.updated_at,
+        positions.product_code,
+        positions.product_family as product_group,
+        positions.market_name as product_region,
+        positions.underlying_product_code,
+        positions.bbg_exchange_code,
+        positions.default_exchange_name,
+        positions.contract_yyyymm,
+        positions.contract_day,
+        positions.put_call_code as put_call,
+        positions.strike_price_normalized as normalized_strike_price,
         case
-            when product_catalog.product_code is null then 'unresolved_product'
-            when coalesce(trim(matched_positions.month_year), '') <> '' and matched_positions.contract_yyyymm is null then 'unparsed_contract'
-            when matched_positions.is_option and matched_positions.put_call_code is null then 'option_missing_put_call'
-            when matched_positions.is_option and matched_positions.strike_price is null then 'option_missing_strike'
-            else 'ok'
-        end as rule_status,
-        matched_positions.rule_priority,
-        matched_positions.rule_match_type,
-        matched_positions.rule_pattern
-    from matched_positions
-    left join product_catalog
-        on product_catalog.product_code = matched_positions.matched_product_code
+            when positions.strike_price_normalized is not null then 'option'
+            else 'future'
+        end as instrument_type,
+        case
+            when positions.contract_yyyymm ~ '^\d{6}$' and positions.contract_day is not null
+            then to_date(
+                positions.contract_yyyymm || lpad(positions.contract_day::integer::text, 2, '0'),
+                'YYYYMMDD'
+            )
+        end as contract_date,
+        case
+            when positions.contract_yyyymm ~ '^\d{6}$'
+            then to_date(positions.contract_yyyymm || '01', 'YYYYMMDD')
+        end as contract_month_date,
+        positions.rule_status as normalization_status,
+        positions.rule_priority,
+        positions.rule_match_type,
+        positions.rule_pattern
+    from positions
 )
 
 select *
