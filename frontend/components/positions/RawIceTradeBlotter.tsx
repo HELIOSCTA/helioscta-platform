@@ -1800,20 +1800,10 @@ export default function RawIceTradeBlotter({
   onFreshnessChange?: (freshness: RawIceTradeBlotterFreshnessSummary) => void;
 }) {
   const [selectedDate, setSelectedDate] = useState("");
-  const [sides, setSides] = useState<string[]>([]);
   const [traders, setTraders] = useState<string[]>([]);
   const [clearingAccounts, setClearingAccounts] = useState<string[]>([]);
-  const [customerAccounts, setCustomerAccounts] = useState<string[]>([]);
   const [clearingFirms, setClearingFirms] = useState<string[]>([]);
-  const [products, setProducts] = useState<string[]>([]);
-  const [hubs, setHubs] = useState<string[]>([]);
   const [ccs, setCcs] = useState<string[]>([]);
-  const [contracts, setContracts] = useState<string[]>([]);
-  const [options, setOptions] = useState<string[]>([]);
-  const [dealSections, setDealSections] = useState<string[]>([]);
-  const [sources, setSources] = useState<string[]>([]);
-  const [userIds, setUserIds] = useState<string[]>([]);
-  const [search, setSearch] = useState("");
   const [data, setData] = useState<IceTradeBlotterPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1826,37 +1816,27 @@ export default function RawIceTradeBlotter({
   const currentFilters = useMemo(
     () => ({
       selectedDate,
-      sides,
+      sides: [],
       traders,
       clearingAccounts,
-      customerAccounts,
+      customerAccounts: [],
       clearingFirms,
-      products,
-      hubs,
+      products: [],
+      hubs: [],
       ccs,
-      contracts,
-      options,
-      dealSections,
-      sources,
-      userIds,
-      search,
+      contracts: [],
+      options: [],
+      dealSections: [],
+      sources: [],
+      userIds: [],
+      search: "",
     }),
     [
       clearingAccounts,
       clearingFirms,
       ccs,
-      contracts,
-      customerAccounts,
-      dealSections,
-      hubs,
-      options,
-      products,
-      search,
       selectedDate,
-      sides,
-      sources,
       traders,
-      userIds,
     ],
   );
 
@@ -1907,58 +1887,27 @@ export default function RawIceTradeBlotter({
 
   useEffect(() => {
     if (!data) return;
-    setSides((selected) => retainAvailableSelections(selected, data.metadata.sides));
     setTraders((selected) => retainAvailableSelections(selected, data.metadata.traders));
     setClearingAccounts((selected) =>
       retainAvailableSelections(selected, data.metadata.clearingAccounts),
     );
-    setCustomerAccounts((selected) =>
-      retainAvailableSelections(selected, data.metadata.customerAccounts),
-    );
     setClearingFirms((selected) =>
       retainAvailableSelections(selected, data.metadata.clearingFirms),
     );
-    setProducts((selected) => retainAvailableSelections(selected, data.metadata.products));
-    setHubs((selected) => retainAvailableSelections(selected, data.metadata.hubs));
     setCcs((selected) => retainAvailableSelections(selected, data.metadata.ccs));
-    setContracts((selected) => retainAvailableSelections(selected, data.metadata.contracts));
-    setOptions((selected) => retainAvailableSelections(selected, data.metadata.options));
-    setDealSections((selected) => retainAvailableSelections(selected, data.metadata.dealSections));
-    setSources((selected) => retainAvailableSelections(selected, data.metadata.sources));
-    setUserIds((selected) => retainAvailableSelections(selected, data.metadata.userIds));
   }, [data]);
 
   const activeFilterCount =
-    sides.length +
     traders.length +
     clearingAccounts.length +
-    customerAccounts.length +
     clearingFirms.length +
-    products.length +
-    hubs.length +
-    ccs.length +
-    contracts.length +
-    options.length +
-    dealSections.length +
-    sources.length +
-    userIds.length +
-    (search ? 1 : 0);
+    ccs.length;
 
   const clearFilters = () => {
-    setSides([]);
     setTraders([]);
     setClearingAccounts([]);
-    setCustomerAccounts([]);
     setClearingFirms([]);
-    setProducts([]);
-    setHubs([]);
     setCcs([]);
-    setContracts([]);
-    setOptions([]);
-    setDealSections([]);
-    setSources([]);
-    setUserIds([]);
-    setSearch("");
   };
 
   const ladder = useMemo(
