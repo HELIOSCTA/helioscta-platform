@@ -268,7 +268,7 @@ The page is local-only and appears in the local `DEV` sidebar section at
 from `GET /api/dev/clear-street-trades`.
 
 The route accepts bounded params `limit=25..2000` and optional `search`. It
-uses the same product-code null criteria as the backend MUFG Slack/email
+uses the same product-code null criteria as the backend MUFG email
 warning: product grouping and region are blank/null, and at least one ICE, CME,
 or Bloomberg product code is blank/null. The API highlights the latest SFTP
 date and latest upload as the daily review file, then lets Postgres join those

@@ -1,7 +1,7 @@
 # Runs the Clear Street overnight transaction poll for Windows Task Scheduler.
 #
 # The Python orchestration owns the target-date policy, 5-minute polling loop,
-# timeout handling, Slack notification outbox, and ops.api_fetch_log telemetry.
+# timeout handling and ops.api_fetch_log telemetry.
 # This wrapper sets the local Windows runtime environment and captures stdout.
 
 param(

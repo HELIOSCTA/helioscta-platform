@@ -57,7 +57,7 @@ existing Azure Postgres server
   `helios_admin` before enabling backend workflows that write to those objects.
 - Shared runtime observability and notification tables are application objects.
   Apply them before enabling workflows that emit API telemetry,
-  data-availability events, or email/Slack notifications.
+  data-availability events, or email notifications.
 - `permissions/01_apply_database_permissions.sql` applies read-only grants to
   existing application schemas and installs read-only defaults for future
   schemas, tables, and sequences created by `helios_admin`.

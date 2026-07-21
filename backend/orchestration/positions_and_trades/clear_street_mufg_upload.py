@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from backend.scrapes.positions_and_trades.clear_street import mufg_upload as scrape
-from backend.utils import email_notifications, script_logging, slack_notifications
+from backend.utils import email_notifications, script_logging
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
@@ -24,7 +24,6 @@ def main(
     database: str | None = None,
     run_mode: str = "manual",
     metadata: dict[str, Any] | None = None,
-    send_slack: bool = True,
     send_email: bool = True,
     run_logger: Any | None = None,
 ) -> int:
@@ -55,12 +54,6 @@ def main(
             database=database,
         )
         rows_uploaded = int(summary.get("rows_uploaded", 0) or 0)
-        if send_slack:
-            _notify_mufg_slack_success(
-                summary=summary,
-                database=database,
-                run_logger=run_logger,
-            )
         if send_email:
             _notify_mufg_email_success(
                 summary=summary,
@@ -83,14 +76,6 @@ def main(
         run_logger.exception(
             f"Clear Street MUFG upload orchestration failed: {error_message}"
         )
-        if send_slack:
-            _notify_mufg_slack_failure(
-                summary=summary or failure_summary,
-                error_type=error_type,
-                error_message=error_message,
-                database=database,
-                run_logger=run_logger,
-            )
         raise
     finally:
         elapsed_ms = round((time.perf_counter() - started_at) * 1000)
@@ -108,74 +93,6 @@ def main(
         )
         if owns_logger:
             script_logging.close_logging()
-
-
-def _notify_mufg_slack_success(
-    *,
-    summary: dict[str, object],
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if not slack_notifications.positions_trades_alerts_channel_id():
-        run_logger.info(
-            "Skipping MUFG upload Slack notification; no Slack channel configured."
-        )
-        return 0
-
-    try:
-        message = slack_notifications.build_clear_street_mufg_upload_success_slack(
-            summary=summary,
-        )
-        enqueued = slack_notifications.enqueue_slack_notification(
-            database=database,
-            **message,
-        )
-        queued = 1 if enqueued.get("created") else 0
-        if _has_product_code_nulls(summary):
-            null_message = (
-                slack_notifications.build_clear_street_mufg_product_code_nulls_slack(
-                    summary=summary,
-                )
-            )
-            null_enqueued = slack_notifications.enqueue_slack_notification(
-                database=database,
-                **null_message,
-            )
-            queued += 1 if null_enqueued.get("created") else 0
-
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                f"MUFG upload Slack notification queued={queued}; sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            f"MUFG upload Slack notification queued={queued}, "
-            f"processed={len(processed)}."
-        )
-        return queued
-    except Exception:
-        run_logger.exception(
-            "MUFG upload Slack notification handling failed; "
-            "upload telemetry remains committed."
-        )
-        return 0
-
-
-def _has_product_code_nulls(summary: dict[str, object]) -> bool:
-    null_check = summary.get("product_code_null_check")
-    if not isinstance(null_check, dict):
-        return False
-    if bool(null_check.get("has_nulls")):
-        return True
-    try:
-        return int(null_check.get("null_rows", 0) or 0) > 0
-    except (TypeError, ValueError):
-        return False
 
 
 def _notify_mufg_email_success(
@@ -247,56 +164,6 @@ def _mufg_summary_file_path(summary: dict[str, object]) -> Path:
     if not path.exists():
         raise FileNotFoundError(f"MUFG upload CSV not found: {path}")
     return path
-
-
-def _notify_mufg_slack_failure(
-    *,
-    summary: dict[str, object],
-    error_type: str,
-    error_message: str,
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if not slack_notifications.positions_trades_alerts_channel_id():
-        run_logger.info(
-            "Skipping MUFG upload failure Slack notification; "
-            "no Slack channel configured."
-        )
-        return 0
-
-    try:
-        message = slack_notifications.build_clear_street_mufg_upload_failure_slack(
-            summary=summary,
-            error_type=error_type,
-            error_message=error_message,
-        )
-        enqueued = slack_notifications.enqueue_slack_notification(
-            database=database,
-            **message,
-        )
-        queued = 1 if enqueued.get("created") else 0
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                "MUFG upload failure Slack notification "
-                f"queued={queued}; sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "MUFG upload failure Slack notification "
-            f"queued={queued}, processed={len(processed)}."
-        )
-        return queued
-    except Exception:
-        run_logger.exception(
-            "MUFG upload failure Slack notification handling failed; "
-            "upload telemetry remains committed."
-        )
-        return 0
 
 
 def _log_fetch(

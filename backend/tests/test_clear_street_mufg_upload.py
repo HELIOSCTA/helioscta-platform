@@ -366,9 +366,8 @@ def test_run_mufg_upload_does_not_gate_non_ok_trade_status(monkeypatch, tmp_path
     assert summary["non_ok_trade_status_rows"] == 1
 
 
-def test_mufg_orchestration_logs_success_and_queues_slack(monkeypatch, tmp_path):
+def test_mufg_orchestration_logs_success(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
-    slack_calls: list[dict[str, object]] = []
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
@@ -393,36 +392,6 @@ def test_mufg_orchestration_logs_success_and_queues_slack(monkeypatch, tmp_path)
         "log_api_fetch",
         lambda **kwargs: telemetry.append(kwargs),
     )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "positions_trades_alerts_channel_id",
-        lambda: "C123",
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "build_clear_street_mufg_upload_success_slack",
-        lambda **kwargs: {
-            "notification_key": "mufg:success",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "MUFG uploaded",
-            "message_blocks": [],
-            "dataset": "clear_street_trades_mufg_upload",
-            "source_event_key": "mufg",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "enqueue_slack_notification",
-        lambda **kwargs: slack_calls.append(kwargs) or {"created": True},
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "notifications_enabled",
-        lambda: False,
-    )
 
     exit_code = clear_street_mufg_upload.main(
         expected_trade_date="20260706",
@@ -431,7 +400,6 @@ def test_mufg_orchestration_logs_success_and_queues_slack(monkeypatch, tmp_path)
     )
 
     assert exit_code == 0
-    assert len(slack_calls) == 1
     assert len(telemetry) == 1
     assert telemetry[0]["provider"] == "mufg_sftp"
     assert telemetry[0]["operation_name"] == "clear_street_trades_mufg_upload"
@@ -439,131 +407,6 @@ def test_mufg_orchestration_logs_success_and_queues_slack(monkeypatch, tmp_path)
     assert telemetry[0]["rows_written"] == 1
     assert telemetry[0]["metadata"]["expected_trade_date"] == "20260706"
     assert telemetry[0]["database"] == "stage_db"
-
-
-def test_mufg_orchestration_queues_product_code_null_warning(
-    monkeypatch,
-    tmp_path,
-):
-    telemetry: list[dict[str, object]] = []
-    slack_calls: list[dict[str, object]] = []
-    summary = {
-        "target_table": mufg_clear_street_trades.TARGET_NAME,
-        "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades/mufg/latest.sql",
-        "rows_exported": 2,
-        "rows_uploaded": 2,
-        "sftp_date": "2026-07-06",
-        "sftp_date_from_sql": "20260706",
-        "filename": "Helios_Transactions_20260706_filtered.csv",
-        "remote_dir": "/",
-        "remote_path": "/Helios_Transactions_20260706_filtered.csv",
-        "product_code_null_check": {
-            "null_counts": {
-                "product_code_grouping": 2,
-                "product_code_region": 2,
-                "ice_product_code": 2,
-                "cme_product_code": 0,
-                "bbg_product_code": 0,
-            },
-            "null_columns": [
-                "product_code_grouping",
-                "product_code_region",
-                "ice_product_code",
-            ],
-            "null_rows": 2,
-            "has_nulls": True,
-            "missing_columns": [],
-            "affected_products": [
-                {
-                    "product": "ALQ-Algonquin Citygates Basis Future",
-                    "row_count": 2,
-                    "source_fields": {
-                        "security_description": (
-                            "ALQ-Algonquin Citygates Basis Future"
-                        ),
-                        "futures_code": "H9",
-                        "exch_comm_cd": "ALQ",
-                        "exchange_name": "IPE",
-                    },
-                    "contract_year_months": ["202611"],
-                    "put_calls": [],
-                    "trade_statuses": ["New"],
-                }
-            ],
-            "affected_product_count": 1,
-        },
-    }
-
-    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
-    monkeypatch.setattr(
-        clear_street_mufg_upload.scrape,
-        "run_clear_street_trades_mufg_upload",
-        lambda **kwargs: summary,
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload,
-        "log_api_fetch",
-        lambda **kwargs: telemetry.append(kwargs),
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "positions_trades_alerts_channel_id",
-        lambda: "C123",
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "build_clear_street_mufg_upload_success_slack",
-        lambda **kwargs: {
-            "notification_key": "mufg:success",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "MUFG uploaded",
-            "message_blocks": [],
-            "dataset": "clear_street_trades_mufg_upload",
-            "source_event_key": "mufg",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "build_clear_street_mufg_product_code_nulls_slack",
-        lambda **kwargs: {
-            "notification_key": "mufg:nulls",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "MUFG nulls",
-            "message_blocks": [],
-            "dataset": "clear_street_trades_mufg_upload",
-            "source_event_key": "mufg:nulls",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "enqueue_slack_notification",
-        lambda **kwargs: slack_calls.append(kwargs) or {"created": True},
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "notifications_enabled",
-        lambda: False,
-    )
-
-    exit_code = clear_street_mufg_upload.main(
-        expected_trade_date="20260706",
-        local_dir=tmp_path,
-        database="stage_db",
-    )
-
-    assert exit_code == 0
-    assert [call["notification_key"] for call in slack_calls] == [
-        "mufg:success",
-        "mufg:nulls",
-    ]
-    assert len(telemetry) == 1
 
 
 def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
@@ -634,9 +477,8 @@ def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
     assert email_calls[0]["payload"]["attachment_paths"] == [str(local_file)]
 
 
-def test_mufg_orchestration_logs_failure_and_queues_slack(monkeypatch, tmp_path):
+def test_mufg_orchestration_logs_failure(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
-    slack_calls: list[dict[str, object]] = []
 
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setattr(
@@ -649,36 +491,6 @@ def test_mufg_orchestration_logs_failure_and_queues_slack(monkeypatch, tmp_path)
         "log_api_fetch",
         lambda **kwargs: telemetry.append(kwargs),
     )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "positions_trades_alerts_channel_id",
-        lambda: "C123",
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "build_clear_street_mufg_upload_failure_slack",
-        lambda **kwargs: {
-            "notification_key": "mufg:failure",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "MUFG failed",
-            "message_blocks": [],
-            "dataset": "clear_street_trades_mufg_upload",
-            "source_event_key": "mufg",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "enqueue_slack_notification",
-        lambda **kwargs: slack_calls.append(kwargs) or {"created": True},
-    )
-    monkeypatch.setattr(
-        clear_street_mufg_upload.slack_notifications,
-        "notifications_enabled",
-        lambda: False,
-    )
 
     with pytest.raises(RuntimeError, match="SFTP unavailable"):
         clear_street_mufg_upload.main(
@@ -687,7 +499,6 @@ def test_mufg_orchestration_logs_failure_and_queues_slack(monkeypatch, tmp_path)
             database="stage_db",
         )
 
-    assert len(slack_calls) == 1
     assert len(telemetry) == 1
     assert telemetry[0]["status"] == "failure"
     assert telemetry[0]["error_type"] == "RuntimeError"

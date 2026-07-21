@@ -28,18 +28,6 @@ AZURE_OUTLOOK_TENANT_ID=
 AZURE_OUTLOOK_CLIENT_SECRET=
 AZURE_OUTLOOK_SENDER=aidan.keaveny@helioscta.com
 
-HELIOS_SLACK_NOTIFICATIONS_ENABLED=false
-HELIOS_SLACK_MAX_ATTEMPTS=6
-HELIOS_SLACK_STALE_SENDING_MINUTES=30
-SLACK_BOT_TOKEN=
-SLACK_DEFAULT_CHANNEL_ID=C0BEDBTAL2H
-SLACK_DEFAULT_CHANNEL_NAME=#helios-alerts-power
-SLACK_POWER_ALERTS_CHANNEL_ID=C0BEDBTAL2H
-SLACK_POWER_ALERTS_CHANNEL_NAME=#helios-alerts-power
-SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID=
-SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_NAME=#helios-alerts-positions-trades
-SLACK_DEFAULT_WEBHOOK_URL=
-
 ERCOT_USERNAME=
 ERCOT_PASSCODE=
 ERCOT_API_KEY=
@@ -215,8 +203,7 @@ publication window. The scheduled path polls PJM Data Miner
 `da_reserve_market_results` for the current PJM/Eastern market date every two
 minutes for up to four hours, then upserts by
 `datetime_beginning_utc x locale x service`, logs one resolved API fetch
-telemetry row to `ops.api_fetch_log`, emits a complete day readiness event,
-and queues one Slack release notification.
+telemetry row to `ops.api_fetch_log`, and emits a complete day readiness event.
 
 PJM simple hourly refreshes run through the hourly bucket at
 `backend.orchestration.power.pjm.hourly_bucket`. It includes
@@ -327,13 +314,7 @@ VM. Downloaded raw CSVs are cached under
 gitignored. The local Windows Task Scheduler path starts one scheduled poll at
 19:00 local time, checks every five minutes for that window's target
 trade-date file, and exits successfully as soon as the file is processed or
-fails at 05:00 local time. Successful runs enqueue one duplicate-safe Slack
-outbox row for the latest loaded source trade file only, not for downstream SQL
-readiness. The alert routes to the positions/trades Slack channel when
-configured, falling back to the default Slack channel; timeout alerts enqueue
-to the same positions/trades channel. Actual posting still depends on
-`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true` and Slack bot/webhook credentials.
-Successful source-file loads also enqueue an internal email to
+fails at 05:00 local time. Successful source-file loads enqueue an internal email to
 `HELIOS_EMAIL_RECIPIENTS` with the downloaded raw Clear Street CSV attached;
 delivery depends on `HELIOS_EMAIL_NOTIFICATIONS_ENABLED=true` and Microsoft
 Graph credentials. Attachment paths are stored in the email outbox payload, so
@@ -345,15 +326,9 @@ leg reads the generated read-only SQL at
 uses the Clear Street target trade date for the exported
 `Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
 the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with
-`provider = 'mufg_sftp'`, and posts positions/trades Slack success or failure
-notifications. When a MUFG output row has blank/null `product_code_grouping`,
-blank/null `product_code_region`, and at least one blank/null vendor product
-code among `ice_product_code`, `cme_product_code`, or `bbg_product_code`, the
-leg queues a separate positions/trades Slack warning listing the affected
-source products and their Clear Street identifiers, with per-column counts in
-the payload for matching rows. The scheduler's only freshness gate is the
-arrival and load of the target Clear Street source file. MUFG upload success
-also enqueues an internal email to `HELIOS_EMAIL_RECIPIENTS` with the generated
+`provider = 'mufg_sftp'`. The scheduler's only freshness gate is the arrival
+and load of the target Clear Street source file. MUFG upload success also
+enqueues an internal email to `HELIOS_EMAIL_RECIPIENTS` with the generated
 filtered MUFG CSV attached; the email body includes any MUFG-side warnings such
 as empty extract, SQL `sftp_date` mismatch, non-ok `trade_status`, or product
 mapping issues. These conditions are recorded in metadata for diagnosis instead
@@ -396,22 +371,6 @@ CAISO DA LMP scheduled workflows enqueue one release email per configured
 Street source and MUFG
 handoff paths do enqueue internal emails with CSV attachments to
 `HELIOS_EMAIL_RECIPIENTS` when email notifications are enabled.
-
-Slack notifications use `ops.slack_notification_outbox` for the same durable
-retry and duplicate-suppression pattern. The Slack sender posts through
-`SLACK_BOT_TOKEN` with Slack `chat.postMessage` and only sends when
-`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`; `SLACK_DEFAULT_WEBHOOK_URL` is kept
-as a fallback path, not the preferred production path. The PJM DA HRL LMP,
-verified RT HRL LMP, verified RT five-minute HRL LMP, and DA reserve market
-results scheduled workflows enqueue one Slack notification to
-`#helios-alerts-power` after the target market date is complete and the scrape
-has succeeded. Each notification key is derived from the
-`ops.data_availability_events.event_key`, so reruns do not duplicate the
-channel message. Clear Street EOD transaction runs enqueue a source-file-loaded
-notification to `#helios-alerts-positions-trades` through
-`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID` when set. The composed Clear Street
-to MUFG workflow also enqueues MUFG upload success/failure notifications to the
-same positions/trades channel.
 
 After the Azure Postgres permission defaults have been installed, new schemas
 and tables created by `helios_admin` inherit the expected read-only grants

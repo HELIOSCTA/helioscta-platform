@@ -286,26 +286,21 @@ the prior evening's target file. It exits as soon as the target
 `Helios_Transactions_YYYYMMDD.csv` file is processed, or exits nonzero at the
 05:00 timeout. The scheduled path writes one resolved `ops.api_fetch_log` row
 with `operation_name = 'clear_street_eod_transactions_poll'`, `poll_count`,
-`poll_wait_seconds`, and the target trade date in metadata. Its success Slack
-notification confirms only that the target source trade file landed and loaded
-to `clear_street.eod_transactions`; downstream SQL readiness should use a
-separate notification after that layer runs and validates.
+`poll_wait_seconds`, and the target trade date in metadata.
 After the source file succeeds, the same scheduled process generates
 `Helios_Transactions_YYYYMMDD_filtered.csv` from the packaged
 `sql/generated/clear_street_trades/mufg/latest.sql` extract using the Clear Street target
 trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
-`ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`, and queues
-positions/trades Slack success or failure notifications for the MUFG leg. The
-source-file success path also enqueues an internal email to
+`ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`. The source-file
+success path also enqueues an internal email to
 `HELIOS_EMAIL_RECIPIENTS` with the downloaded raw Clear Street CSV attached.
 MUFG upload success enqueues an internal email with the generated filtered MUFG
 CSV attached, and the email body includes any MUFG-side warnings. If
 the MUFG output has rows with blank/null `product_code_grouping`, blank/null
 `product_code_region`, and at least one blank/null vendor product code among
-`ice_product_code`, `cme_product_code`, or `bbg_product_code`, it also queues a
-separate positions/trades Slack warning listing the affected source products
-and their Clear Street identifiers, with per-column counts in the payload for
-matching rows. These internal alert emails use `ops.email_notification_outbox`;
+`ice_product_code`, `cme_product_code`, or `bbg_product_code`, the email body
+includes the affected source products and their Clear Street identifiers. These
+internal alert emails use `ops.email_notification_outbox`;
 attachment paths are stored in the outbox payload and require cached CSVs to
 remain available until sent. The same source CSV is also emailed to NAV through
 Microsoft Graph with separate `ops.api_fetch_log` telemetry using
@@ -339,10 +334,7 @@ It also verifies `MUFG_SFTP_HOST`, `MUFG_SFTP_USER`, and
 `AZURE_OUTLOOK_CLIENT_SECRET`. Email sends default to
 `aidan.keaveny@helioscta.com` through `AZURE_OUTLOOK_SENDER` or
 `CLEAR_STREET_NAV_EMAIL_SENDER`, and `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`
-defaults to the legacy NAV recipient list. Slack delivery also requires
-`SLACK_BOT_TOKEN`,
-`SLACK_POSITIONS_TRADES_ALERTS_CHANNEL_ID`, and
-`HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
+defaults to the legacy NAV recipient list.
 
 Manual smoke:
 

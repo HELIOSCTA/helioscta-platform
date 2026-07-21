@@ -23,7 +23,7 @@ from backend.scrapes.power.pjm.data_miner_feed import (
     normalize_feed_frame,
     upsert_feed_frame,
 )
-from backend.utils import script_logging, slack_notifications
+from backend.utils import script_logging
 from backend.utils.data_availability import emit_data_availability_event
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
@@ -388,61 +388,6 @@ def _utc_timestamp(value: Any) -> datetime:
     return timestamp.to_pydatetime()
 
 
-def _notify_da_reserve_release_events(
-    *,
-    events: list[dict[str, Any]],
-    run_mode: str,
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if run_mode != "scheduled":
-        run_logger.info(
-            "Skipping DA reserve market results Slack notifications outside "
-            "scheduled mode."
-        )
-        return 0
-    if not events:
-        return 0
-
-    queued = 0
-    try:
-        for event in events:
-            message = (
-                slack_notifications.build_pjm_da_reserve_market_results_release_slack(
-                    event=event,
-                )
-            )
-            enqueued = slack_notifications.enqueue_slack_notification(
-                database=database,
-                **message,
-            )
-            if enqueued.get("created"):
-                queued += 1
-
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                "DA reserve market results Slack notifications "
-                f"queued={queued}; sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "DA reserve market results Slack notifications "
-            f"queued={queued}, processed={len(processed)}."
-        )
-    except Exception:
-        run_logger.exception(
-            "DA reserve market results Slack notification handling failed; "
-            "scrape data and readiness events remain committed."
-        )
-
-    return queued
-
-
 def main(
     *,
     target_date: date | datetime | str | None = None,
@@ -502,14 +447,6 @@ def main(
                 "No complete DA reserve market results business date detected; "
                 "no data availability event emitted."
             )
-
-        run_logger.section("Handling release Slack notification(s) ...")
-        _notify_da_reserve_release_events(
-            events=events,
-            run_mode=run_mode,
-            database=database,
-            run_logger=run_logger,
-        )
 
         run_logger.success(
             f"{API_SCRAPE_NAME} completed; {len(df)} rows processed."

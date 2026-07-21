@@ -59,7 +59,7 @@ A backend workflow is production-ready when it has:
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
 | API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, and CAISO API scrapes write `ops.api_fetch_log`. |
 | Data readiness | In place | Critical PJM, ERCOT, ISO-NE, and CAISO price orchestration write `ops.data_availability_events`. |
-| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, and CAISO DA LMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. PJM DA still sends Slack during the transition. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results send Slack. |
+| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, and CAISO DA LMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results rely on readiness events, API telemetry, and the health digest. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests on pushes and pull requests. |
@@ -76,8 +76,7 @@ These are not blockers for the first DA workflow, but they are blockers for a
 mature production backend platform:
 
 - No automated deploy pipeline.
-- No systemd failure notification path; current Slack coverage is limited to
-  data-release notifications.
+- No systemd failure notification path.
 - No standardized overlap protection for every future timer; current critical
   DA, RT five-minute HRL, and PJM batch jobs use `flock`.
 - No formal database migration tool.
@@ -85,8 +84,7 @@ mature production backend platform:
   health digest until a dashboard is promoted.
 - PJM DA and verified RT hourly LMP release report links are deployed to Vercel
   and can open the single-day LMP view from a data-availability event business
-  date. Verified RT five-minute release Slack currently links to the PJM source
-  definition only.
+  date.
 
 ## Hardening Backlog
 
@@ -144,8 +142,7 @@ Current criticality decision:
 - Dedicated day-ahead ancillary service timer:
   `da_reserve_market_results`, because the feed posts after the early PJM Data
   Miner support batch. It starts at 13:45 America/New_York, polls every two
-  minutes for up to four hours, emits a complete-day readiness event, and
-  queues one Slack release notification.
+  minutes for up to four hours, and emits a complete-day readiness event.
 - PJM hourly bucket: `rt_unverified_hrl_lmps` runs hourly after the source's
   typical top-of-hour refresh and stays out of the daily support batch so
   dashboard-facing RT prices do not wait for the next overnight job. Add other

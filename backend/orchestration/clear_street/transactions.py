@@ -15,7 +15,7 @@ from backend.orchestration.positions_and_trades import (
     clear_street_nav_email,
 )
 from backend.scrapes.clear_street import transactions as scrape
-from backend.utils import email_notifications, script_logging, slack_notifications
+from backend.utils import email_notifications, script_logging
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
@@ -72,11 +72,6 @@ def main(
             database=database,
         )
         rows_processed = int(summary.get("rows_processed", 0))
-        _notify_clear_street_slack_success(
-            summary=summary,
-            database=database,
-            run_logger=run_logger,
-        )
         if send_email:
             _notify_clear_street_email_success(
                 summary=summary,
@@ -196,11 +191,6 @@ def scheduled_main(
                 error_type = None
                 error_message = None
                 rows_processed = int(summary.get("rows_processed", 0) or 0)
-                _notify_clear_street_slack_success(
-                    summary=summary,
-                    database=database,
-                    run_logger=run_logger,
-                )
                 if send_email:
                     _notify_clear_street_email_success(
                         summary=summary,
@@ -273,14 +263,6 @@ def scheduled_main(
         error_type = type(exc).__name__
         error_message = redact_secrets(str(exc))
         run_logger.error(error_message)
-        _notify_clear_street_slack_timeout(
-            target_trade_date=resolved_target_trade_date,
-            window=window,
-            poll_count=poll_count,
-            poll_wait_seconds=poll_wait_seconds,
-            database=database,
-            run_logger=run_logger,
-        )
         return 1
     except Exception as exc:
         error_type = type(exc).__name__
@@ -320,56 +302,6 @@ def scheduled_main(
             max_attempts=max(1, poll_count),
         )
         script_logging.close_logging()
-
-
-def _notify_clear_street_slack_success(
-    *,
-    summary: dict[str, object],
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    rows_processed = int(summary.get("rows_processed", 0) or 0)
-    if rows_processed <= 0:
-        run_logger.info("Skipping Clear Street Slack notification for 0 rows.")
-        return 0
-    if not slack_notifications.positions_trades_alerts_channel_id():
-        run_logger.info(
-            "Skipping Clear Street Slack notification; no Slack channel configured."
-        )
-        return 0
-
-    try:
-        message = slack_notifications.build_clear_street_eod_transactions_slack(
-            summary=summary,
-        )
-        enqueued = slack_notifications.enqueue_slack_notification(
-            database=database,
-            **message,
-        )
-        queued = 1 if enqueued.get("created") else 0
-
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                f"Clear Street Slack notification queued={queued}; "
-                "sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "Clear Street Slack notification "
-            f"queued={queued}, processed={len(processed)}."
-        )
-        return queued
-    except Exception:
-        run_logger.exception(
-            "Clear Street Slack notification handling failed; "
-            "scrape data and fetch telemetry remain committed."
-        )
-        return 0
 
 
 def _notify_clear_street_email_success(
@@ -449,60 +381,6 @@ def _source_summary_file_path(summary: dict[str, object]) -> Path:
     if not path.exists():
         raise FileNotFoundError(f"Clear Street source CSV not found: {path}")
     return path
-
-
-def _notify_clear_street_slack_timeout(
-    *,
-    target_trade_date: str,
-    window: PollingWindow,
-    poll_count: int,
-    poll_wait_seconds: int,
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if not slack_notifications.positions_trades_alerts_channel_id():
-        run_logger.info(
-            "Skipping Clear Street timeout Slack notification; "
-            "no Slack channel configured."
-        )
-        return 0
-
-    try:
-        message = slack_notifications.build_clear_street_eod_transactions_timeout_slack(
-            target_trade_date=target_trade_date,
-            window_start_at=window.start_at,
-            window_end_at=window.deadline_at,
-            poll_count=poll_count,
-            poll_wait_seconds=poll_wait_seconds,
-        )
-        enqueued = slack_notifications.enqueue_slack_notification(
-            database=database,
-            **message,
-        )
-        queued = 1 if enqueued.get("created") else 0
-
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                f"Clear Street timeout Slack notification queued={queued}; "
-                "sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "Clear Street timeout Slack notification "
-            f"queued={queued}, processed={len(processed)}."
-        )
-        return queued
-    except Exception:
-        run_logger.exception(
-            "Clear Street timeout Slack notification handling failed; "
-            "fetch telemetry remains committed."
-        )
-        return 0
 
 
 def _summary_has_target_trade_date(

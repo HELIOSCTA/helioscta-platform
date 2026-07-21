@@ -54,7 +54,7 @@ helios-pjm-da-hrl-lmps.timer
 It runs `backend.orchestration.power.pjm.da_hrl_lmps`, not the lower-level
 scrape module, so the scheduled path includes PJM polling, API fetch logging,
 terminal/file logging, DA LMP data readiness event emission, and DA release
-email/Slack notification enqueueing.
+email notification enqueueing.
 The service uses `flock` with `/tmp/helios-pjm-da-hrl-lmps.lock`.
 
 The live production VM currently has `helios-pjm-da-hrl-lmps.timer` enabled on
@@ -144,7 +144,7 @@ It runs `backend.orchestration.power.pjm.da_reserve_market_results`, polls PJM
 Data Miner until the current PJM/Eastern market date has complete hourly
 locale/service rows, upserts `pjm.da_reserve_market_results`, writes one
 resolved PJM Data Miner API telemetry row to `ops.api_fetch_log`, emits a
-complete-day readiness event, and queues one Slack release notification. The
+complete-day readiness event. The
 timer runs daily at `13:45 America/New_York` with `Persistent=true`,
 `AccuracySec=1min`, and `RandomizedDelaySec=2min`, after the observed
 day-ahead ancillary service market publication window. The service uses
@@ -306,8 +306,7 @@ helios-pjm-rt-fivemin-hrl-lmps.timer
 
 It runs `backend.orchestration.power.pjm.rt_fivemin_hrl_lmps`, which reuses the
 lower-level scrape, upserts `pjm.rt_fivemin_hrl_lmps`, and emits complete-day
-readiness events for hub, zone, and interface pricing nodes. Scheduled runs
-also enqueue one Slack release notification per complete business date. The
+readiness events for hub, zone, and interface pricing nodes. The
 service uses `flock` with `/tmp/helios-pjm-rt-fivemin-hrl-lmps.lock`.
 
 ## Production Health Digest
@@ -692,11 +691,10 @@ journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
 
 ## Email Notification Outbox
 
-`helios-email-notification-outbox.timer` is retained for historical/manual
-email notification support. Current promoted release alerts are Slack-only, so
-production should keep this timer disabled and
-`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false` unless email workflows are
-explicitly re-enabled.
+`helios-email-notification-outbox.timer` flushes due rows from
+`ops.email_notification_outbox` for release and file-delivery emails. Keep
+`HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false` unless Microsoft Graph credentials
+and recipients are intentionally configured for sending.
 
 Environment values in `/etc/helioscta/backend.env` when email is re-enabled:
 
@@ -716,39 +714,6 @@ Verify the outbox with:
 systemctl status helios-email-notification-outbox.service
 systemctl status helios-email-notification-outbox.timer
 journalctl -u helios-email-notification-outbox.service -n 100 --no-pager
-```
-
-## Slack Notification Outbox
-
-`helios-slack-notification-outbox.timer` flushes due rows from
-`ops.slack_notification_outbox` every minute. It is intentionally separate from
-scrape timers so transient Slack API failures can be retried without rerunning
-the data scrape. Current PJM release producers are DA HRL LMPs, verified RT HRL
-LMPs, verified RT five-minute HRL LMPs, and DA reserve market results.
-
-Required environment values in `/etc/helioscta/backend.env`:
-
-```text
-HELIOS_SLACK_NOTIFICATIONS_ENABLED=true
-HELIOS_SLACK_MAX_ATTEMPTS=6
-HELIOS_SLACK_STALE_SENDING_MINUTES=30
-SLACK_BOT_TOKEN=
-SLACK_DEFAULT_CHANNEL_ID=C0BEDBTAL2H
-SLACK_DEFAULT_CHANNEL_NAME=#helios-alerts-power
-SLACK_POWER_ALERTS_CHANNEL_ID=C0BEDBTAL2H
-SLACK_POWER_ALERTS_CHANNEL_NAME=#helios-alerts-power
-SLACK_DEFAULT_WEBHOOK_URL=
-```
-
-Prefer `SLACK_BOT_TOKEN` plus a channel ID for production routing. Keep the
-incoming webhook only as a fallback.
-
-Verify the outbox with:
-
-```bash
-systemctl status helios-slack-notification-outbox.service
-systemctl status helios-slack-notification-outbox.timer
-journalctl -u helios-slack-notification-outbox.service -n 100 --no-pager
 ```
 
 ## Naming
@@ -791,8 +756,6 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.servic
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-ops-sum.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-email-notification-outbox.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-email-notification-outbox.timer /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-slack-notification-outbox.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-slack-notification-outbox.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-prod-health-check.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-dam-stlmnt-pnt-prices.service /etc/systemd/system/
@@ -845,7 +808,6 @@ sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-hrl-load-prelim.timer
 sudo systemctl enable --now helios-pjm-load-frcstd-7-day.timer
 sudo systemctl enable --now helios-pjm-ops-sum.timer
-sudo systemctl enable --now helios-slack-notification-outbox.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-caiso-da-lmps.timer
 sudo systemctl enable --now helios-caiso-rt-lmps.timer

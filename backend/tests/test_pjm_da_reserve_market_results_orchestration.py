@@ -148,7 +148,7 @@ def test_emits_readiness_event_for_complete_market_day(monkeypatch):
     assert captured["database"] == "stage_db"
 
 
-def test_main_polls_upserts_readiness_and_notifies(monkeypatch):
+def test_main_polls_upserts_and_emits_readiness(monkeypatch):
     target_date = date(2026, 7, 2)
     expected = _reserve_market_frame(target_date=target_date, hours=24)
     captured: dict[str, object] = {}
@@ -191,10 +191,6 @@ def test_main_polls_upserts_readiness_and_notifies(monkeypatch):
             }
         ]
 
-    def fake_notify(**kwargs):
-        captured["notify"] = kwargs
-        return 1
-
     monkeypatch.setattr(
         da_reserve_market_results.credentials,
         "AZURE_POSTGRESQL_DB_NAME",
@@ -211,11 +207,6 @@ def test_main_polls_upserts_readiness_and_notifies(monkeypatch):
         da_reserve_market_results,
         "_emit_data_availability_events",
         fake_emit,
-    )
-    monkeypatch.setattr(
-        da_reserve_market_results,
-        "_notify_da_reserve_release_events",
-        fake_notify,
     )
     monkeypatch.setattr(
         da_reserve_market_results.script_logging,
@@ -243,76 +234,6 @@ def test_main_polls_upserts_readiness_and_notifies(monkeypatch):
     assert captured["upsert_config"] == "da_reserve_market_results"
     assert captured["upsert_database"] == "stage_db"
     assert captured["emit"]["target_date"] == target_date
-    assert captured["notify"]["run_mode"] == "scheduled"
-
-
-def test_slack_notifications_are_idempotent_and_sent(monkeypatch):
-    calls: list[dict[str, object]] = []
-
-    class DummyRunLogger:
-        def info(self, _msg: str) -> None:
-            pass
-
-        def exception(self, _msg: str) -> None:
-            pass
-
-    monkeypatch.setattr(
-        da_reserve_market_results.slack_notifications,
-        "build_pjm_da_reserve_market_results_release_slack",
-        lambda **kwargs: {
-            "notification_key": f"{kwargs['event']['event_key']}:slack:release",
-            "channel_id": "CPOWER",
-            "channel_name": "#helios-alerts-power",
-            "message_text": "message",
-            "dataset": "pjm_da_reserve_market_results",
-            "source_event_key": kwargs["event"]["event_key"],
-            "source_event_id": kwargs["event"]["id"],
-            "payload": {},
-        },
-    )
-
-    def fake_enqueue(**kwargs):
-        calls.append(kwargs)
-        return {"created": True}
-
-    monkeypatch.setattr(
-        da_reserve_market_results.slack_notifications,
-        "enqueue_slack_notification",
-        fake_enqueue,
-    )
-    monkeypatch.setattr(
-        da_reserve_market_results.slack_notifications,
-        "notifications_enabled",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        da_reserve_market_results.slack_notifications,
-        "send_due_slack_notifications",
-        lambda **kwargs: [{"status": "sent", **kwargs}],
-    )
-
-    queued = da_reserve_market_results._notify_da_reserve_release_events(
-        events=[
-            {
-                "id": 1,
-                "event_key": (
-                    "pjm_da_reserve_market_results:data_ready:"
-                    "2026-07-02:locale_service"
-                ),
-            }
-        ],
-        run_mode="scheduled",
-        database="stage_db",
-        run_logger=DummyRunLogger(),
-    )
-
-    assert queued == 1
-    assert calls[0]["notification_key"] == (
-        "pjm_da_reserve_market_results:data_ready:"
-        "2026-07-02:locale_service:slack:release"
-    )
-    assert calls[0]["channel_id"] == "CPOWER"
-    assert calls[0]["database"] == "stage_db"
 
 
 def _reserve_market_frame(

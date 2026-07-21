@@ -307,7 +307,6 @@ def test_scheduled_window_after_midnight_targets_previous_day():
 
 def test_scheduled_main_polls_until_target_file_success(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
-    slack_calls: list[dict[str, object]] = []
     sleep_calls: list[float] = []
     summaries = iter(
         [
@@ -352,43 +351,6 @@ def test_scheduled_main_polls_until_target_file_success(monkeypatch, tmp_path):
         "log_api_fetch",
         lambda **kwargs: telemetry.append(kwargs),
     )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "positions_trades_alerts_channel_id",
-        lambda: "C123",
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "build_clear_street_eod_transactions_slack",
-        lambda **kwargs: {
-            "notification_key": "clear-street:slack:release",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "Clear Street loaded",
-            "message_blocks": [],
-            "dataset": "clear_street_eod_transactions",
-            "source_event_key": "clear-street",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "enqueue_slack_notification",
-        lambda **kwargs: slack_calls.append(kwargs) or {"created": True},
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "notifications_enabled",
-        lambda: False,
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "send_due_slack_notifications",
-        lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("Slack sender should not run when disabled")
-        ),
-    )
 
     exit_code = orchestration.scheduled_main(
         database="stage_db",
@@ -400,7 +362,6 @@ def test_scheduled_main_polls_until_target_file_success(monkeypatch, tmp_path):
 
     assert exit_code == 0
     assert sleep_calls == [300.0]
-    assert len(slack_calls) == 1
     assert len(telemetry) == 1
     assert telemetry[0]["operation_name"] == "clear_street_eod_transactions_poll"
     assert telemetry[0]["status"] == "success"
@@ -504,11 +465,6 @@ def test_scheduled_main_runs_mufg_upload_after_target_success(
         lambda **kwargs: telemetry.append(kwargs),
     )
     monkeypatch.setattr(
-        orchestration,
-        "_notify_clear_street_slack_success",
-        lambda **kwargs: 1,
-    )
-    monkeypatch.setattr(
         orchestration.clear_street_mufg_upload,
         "main",
         lambda **kwargs: mufg_calls.append(kwargs) or 0,
@@ -579,11 +535,6 @@ def test_scheduled_main_returns_nonzero_when_mufg_upload_fails(
         lambda **kwargs: telemetry.append(kwargs),
     )
     monkeypatch.setattr(
-        orchestration,
-        "_notify_clear_street_slack_success",
-        lambda **kwargs: 1,
-    )
-    monkeypatch.setattr(
         orchestration.clear_street_mufg_upload,
         "main",
         lambda **kwargs: (_ for _ in ()).throw(RuntimeError("MUFG down")),
@@ -643,11 +594,6 @@ def test_scheduled_main_returns_nonzero_when_nav_email_fails(
         lambda **kwargs: telemetry.append(kwargs),
     )
     monkeypatch.setattr(
-        orchestration,
-        "_notify_clear_street_slack_success",
-        lambda **kwargs: 1,
-    )
-    monkeypatch.setattr(
         orchestration.clear_street_mufg_upload,
         "main",
         lambda **kwargs: 0,
@@ -676,7 +622,6 @@ def test_scheduled_main_returns_nonzero_when_nav_email_fails(
 
 def test_scheduled_main_times_out_at_window_end(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
-    timeout_slack_calls: list[dict[str, object]] = []
     sleep_calls: list[float] = []
     now_values = iter(
         [
@@ -709,11 +654,6 @@ def test_scheduled_main_times_out_at_window_end(monkeypatch, tmp_path):
         "log_api_fetch",
         lambda **kwargs: telemetry.append(kwargs),
     )
-    monkeypatch.setattr(
-        orchestration,
-        "_notify_clear_street_slack_timeout",
-        lambda **kwargs: timeout_slack_calls.append(kwargs) or 1,
-    )
 
     exit_code = orchestration.scheduled_main(
         database="stage_db",
@@ -723,8 +663,6 @@ def test_scheduled_main_times_out_at_window_end(monkeypatch, tmp_path):
 
     assert exit_code == 1
     assert sleep_calls == [300.0]
-    assert len(timeout_slack_calls) == 1
-    assert timeout_slack_calls[0]["target_trade_date"] == "20260706"
     assert len(telemetry) == 1
     assert telemetry[0]["operation_name"] == "clear_street_eod_transactions_poll"
     assert telemetry[0]["status"] == "failure"
@@ -736,7 +674,6 @@ def test_scheduled_main_times_out_at_window_end(monkeypatch, tmp_path):
 
 def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
-    slack_calls: list[dict[str, object]] = []
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setenv("CLEAR_STREET_SFTP_HOST", "sftp.example.test")
     monkeypatch.setattr(
@@ -761,43 +698,6 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
         "log_api_fetch",
         lambda **kwargs: telemetry.append(kwargs),
     )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "build_clear_street_eod_transactions_slack",
-        lambda **kwargs: {
-            "notification_key": "clear-street:slack:release",
-            "channel_id": "C123",
-            "channel_name": "#alerts",
-            "message_text": "Clear Street loaded",
-            "message_blocks": [],
-            "dataset": "clear_street_eod_transactions",
-            "source_event_key": "clear-street",
-            "source_event_id": None,
-            "payload": {},
-        },
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "enqueue_slack_notification",
-        lambda **kwargs: slack_calls.append(kwargs) or {"created": True},
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "notifications_enabled",
-        lambda: False,
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "positions_trades_alerts_channel_id",
-        lambda: "C123",
-    )
-    monkeypatch.setattr(
-        orchestration.slack_notifications,
-        "send_due_slack_notifications",
-        lambda **kwargs: (_ for _ in ()).throw(
-            AssertionError("Slack sender should not run when disabled")
-        ),
-    )
 
     exit_code = orchestration.main(
         lookback_days=1,
@@ -813,9 +713,6 @@ def test_orchestration_emits_api_fetch_telemetry(monkeypatch, tmp_path):
     assert telemetry[0]["rows_written"] == 3
     assert telemetry[0]["database"] == "stage_db"
     assert telemetry[0]["metadata"]["files_downloaded"] == 1
-    assert len(slack_calls) == 1
-    assert slack_calls[0]["database"] == "stage_db"
-    assert slack_calls[0]["notification_key"] == "clear-street:slack:release"
 
 
 def test_cache_backfill_dry_run_parses_matching_files_without_upsert(

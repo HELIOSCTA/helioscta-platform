@@ -23,7 +23,7 @@ from backend.scrapes.power.pjm.pricing_filters import (
     DEFAULT_PRICING_NODE_TYPES,
     pricing_node_type_label,
 )
-from backend.utils import script_logging, slack_notifications
+from backend.utils import script_logging
 from backend.utils.data_availability import emit_data_availability_event
 from backend.utils.ops_logging import redact_secrets
 
@@ -134,14 +134,6 @@ def main(
                 "No complete RT five-minute HRL LMP business date detected; "
                 "no data availability event emitted."
             )
-
-        run_logger.section("Handling release Slack notification(s) ...")
-        _notify_rt_fivemin_release_events(
-            events=events,
-            run_mode=run_mode,
-            database=database,
-            run_logger=run_logger,
-        )
 
         run_logger.success(
             f"{API_SCRAPE_NAME} completed; {rows_processed} rows processed."
@@ -330,58 +322,6 @@ def _utc_timestamp(value: Any) -> datetime:
 def _value_counts(values: pd.Series) -> dict[str, int]:
     counts = values.astype("string").str.strip().value_counts(dropna=False)
     return {str(key): int(value) for key, value in counts.items()}
-
-
-def _notify_rt_fivemin_release_events(
-    *,
-    events: list[dict[str, Any]],
-    run_mode: str,
-    database: str | None,
-    run_logger: Any,
-) -> int:
-    if run_mode != "scheduled":
-        run_logger.info(
-            "Skipping RT five-minute HRL LMP Slack notifications outside scheduled mode."
-        )
-        return 0
-    if not events:
-        return 0
-
-    queued = 0
-    try:
-        for event in events:
-            message = slack_notifications.build_pjm_rt_fivemin_hrl_lmp_release_slack(
-                event=event,
-            )
-            enqueued = slack_notifications.enqueue_slack_notification(
-                database=database,
-                **message,
-            )
-            if enqueued.get("created"):
-                queued += 1
-
-        if not slack_notifications.notifications_enabled():
-            run_logger.info(
-                "RT five-minute HRL LMP Slack notifications "
-                f"queued={queued}; sending is disabled."
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        run_logger.info(
-            "RT five-minute HRL LMP Slack notifications "
-            f"queued={queued}, processed={len(processed)}."
-        )
-    except Exception:
-        run_logger.exception(
-            "RT five-minute HRL LMP Slack notification handling failed; "
-            "scrape data and readiness events remain committed."
-        )
-
-    return queued
 
 
 if __name__ == "__main__":

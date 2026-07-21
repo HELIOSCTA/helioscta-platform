@@ -51,8 +51,7 @@ boundary, or log path changes.
 - Destination table: `pjm.da_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
-- Release notification output: `ops.email_notification_outbox` and
-  `ops.slack_notification_outbox` during the email transition.
+- Release notification output: `ops.email_notification_outbox`.
 - Email body: backend-rendered inline DA LMP snapshot with hub summary rows,
   all configured PJM hub hourly component tables, and a Vercel single-day report
   link.
@@ -119,24 +118,6 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-Verification SQL for Slack release notifications:
-
-```sql
-SELECT
-    notification_key,
-    channel_id,
-    channel_name,
-    status,
-    attempts,
-    next_attempt_at,
-    sent_at,
-    created_at
-FROM ops.slack_notification_outbox
-WHERE dataset = 'pjm_da_hrl_lmps'
-ORDER BY created_at DESC
-LIMIT 10;
-```
-
 ## helios-email-notification-outbox
 
 - Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; re-enabled on
@@ -168,47 +149,6 @@ LIMIT 10;
 - Residual delivery caveat: if Microsoft Graph accepts a message and the
   process crashes before the row is marked `sent`, a later stale-row retry can
   send the same recipient a duplicate email.
-
-## helios-slack-notification-outbox
-
-- Status: deployed on `helioscta-prod-vm-01` on `2026-06-30`; timer enabled,
-  Slack bot credentials configured, and manual smoke messages sent.
-- Workflow: durable Slack notification retry sender.
-- Runtime module: `backend.orchestration.notifications.slack_outbox`.
-- Destination table: updates `ops.slack_notification_outbox`.
-- Provider: Slack Web API `chat.postMessage` through `SLACK_BOT_TOKEN`; incoming
-  webhook remains fallback only.
-- Unit files:
-  - `infrastructure/systemd/helios-slack-notification-outbox.service`
-  - `infrastructure/systemd/helios-slack-notification-outbox.timer`
-- Schedule: every minute, with `RandomizedDelaySec=10s`.
-- Default channel scope: `SLACK_DEFAULT_CHANNEL_ID` or
-  `SLACK_DEFAULT_CHANNEL_NAME`; production uses channel IDs.
-- Send status: enabled in `/etc/helioscta/backend.env` with
-  `HELIOS_SLACK_NOTIFICATIONS_ENABLED=true`.
-- Slack bot: `helioscta_alerts`.
-- Default channel: `#helios-alerts-power` / `C0BEDBTAL2H`.
-- Active managed public alert channel:
-  - `#helios-alerts-power` / `C0BEDBTAL2H`
-- Archived during cleanup:
-  - `#helios-alerts-critical` / `C0BEJJYEM8R`
-  - `#helios-alerts-gas` / `C0BEJJXR3SM`
-  - `#helios-alerts-weather` / `C0BEADC03MZ`
-  - `#helios-alerts-positions` / `C0BELD1UV1S`
-  - `#helios-alerts-dev` / `C0BEDBTS71T`
-  - `#helioscta-alerts`
-  - `#test123`
-- Smoke verification: `manual_slack_bot_smoke:20260630T222122Z` was marked
-  `sent` at `2026-06-30 22:21:33 UTC` on attempt `1` via
-  `slack_chat_post_message`; provider channel ID was `C0BEE4WSA0L`.
-- Channel setup verification: `manual_slack_dev_channel_smoke:20260701T143202Z`
-  was marked `sent` at `2026-07-01 14:32:09 UTC` on attempt `1` via
-  `slack_chat_post_message`; provider channel ID was `C0BEDBTS71T`.
-- Earlier failed smoke rows from the inactive token/webhook tests were also
-  retried and marked `sent` after the valid bot token was installed.
-- Duplicate suppression: unique outbox key on `(notification_key, channel_id)`.
-- Retry policy: failed rows remain in the outbox and are retried until
-  `HELIOS_SLACK_MAX_ATTEMPTS`, then marked `dead` for manual inspection.
 
 ## ercot-congestion-batch
 
@@ -1246,16 +1186,11 @@ FROM isone.seven_day_solar_forecast;
   target market date returns a complete hub hourly shape.
 - Data readiness: emits
   `pjm_rt_hrl_lmps:data_ready:<business_date>:hub` after the scrape succeeds.
-- Slack release notification: scheduled runs enqueue one durable outbox message
-  to `#helios-alerts-power` with the single-day RT LMP report link; duplicates
-  are suppressed by `(notification_key, channel_id)`.
 - Latest VM verification: service exited `status=0/SUCCESS`, poll telemetry
   found target market date `2026-06-30` on attempt `1`, the scrape upserted
   `2,016` rows across recent posted market dates, emitted complete readiness
   event `pjm_rt_hrl_lmps:data_ready:2026-06-30:hub` with `288` rows, `12`
-  hubs, and `24` periods, and sent Slack notification
-  `pjm_rt_hrl_lmps:data_ready:2026-06-30:hub:slack:release` to
-  `#helios-alerts-power` / `C0BEDBTAL2H` on attempt `1`.
+  hubs, and `24` periods.
 - Timer behavior: `Persistent=true`; missed daily runs fire after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-rt-hrl-lmps.lock`.
@@ -1743,7 +1678,6 @@ LIMIT 20;
 - Source grain: `datetime_beginning_utc x locale x service`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
-- Release notification output: `ops.slack_notification_outbox`.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-da-reserve-market-results.service`
   - `infrastructure/systemd/helios-pjm-da-reserve-market-results.timer`
@@ -1762,19 +1696,15 @@ LIMIT 20;
   `3` services, with zero duplicate primary-key groups.
 - Polling orchestration update: scheduled runtime now waits for a complete
   current PJM/Eastern market-date publication, emits
-  `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`, and
-  queues one Slack release alert keyed by that readiness event.
+  `pjm_da_reserve_market_results:data_ready:<YYYY-MM-DD>:locale_service`.
 - Production hotfix on `2026-07-01 19:29 UTC`: VM runtime was missing
   `backend.scrapes.power.pjm.da_reserve_market_results` and the matching
   `FEED_CONFIGS["da_reserve_market_results"]` entry. Copied the missing scrape
   module, inserted the feed config, changed the orchestrator default from the
   unavailable next market day to the current PJM/Eastern market date, and
   reran `helios-pjm-da-reserve-market-results.service`. The service exited
-  `status=0/SUCCESS`, upserted `120` rows for `2026-07-01`, created readiness
-  event `pjm_da_reserve_market_results:data_ready:2026-07-01:locale_service`,
-  and sent Slack notification
-  `pjm_da_reserve_market_results:data_ready:2026-07-01:locale_service:slack:release`
-  to `#helios-alerts-power` / `C0BEDBTAL2H` on attempt `1`.
+  `status=0/SUCCESS`, upserted `120` rows for `2026-07-01`, and created
+  readiness event `pjm_da_reserve_market_results:data_ready:2026-07-01:locale_service`.
 
 Verification SQL for table freshness:
 
@@ -1826,24 +1756,6 @@ SELECT
     period_count,
     created_at
 FROM ops.data_availability_events
-WHERE dataset = 'pjm_da_reserve_market_results'
-ORDER BY created_at DESC
-LIMIT 10;
-```
-
-Verification SQL for Slack release notifications:
-
-```sql
-SELECT
-    notification_key,
-    channel_id,
-    channel_name,
-    status,
-    attempts,
-    next_attempt_at,
-    sent_at,
-    created_at
-FROM ops.slack_notification_outbox
 WHERE dataset = 'pjm_da_reserve_market_results'
 ORDER BY created_at DESC
 LIMIT 10;
@@ -2275,7 +2187,6 @@ LIMIT 20;
 - Destination table: `pjm.rt_fivemin_hrl_lmps`.
 - API telemetry: `ops.api_fetch_log`.
 - Data readiness output: `ops.data_availability_events`.
-- Release notification output: `ops.slack_notification_outbox`.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.service`
   - `infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer`
@@ -2301,24 +2212,6 @@ LIMIT 20;
 - API batching note: PJM rejected comma-separated multi-ID `pnode_id` requests
   during production optimization testing, so the runtime intentionally keeps
   `pnode_id_batch_size=1`.
-
-Verification SQL for Slack release notifications:
-
-```sql
-SELECT
-    notification_key,
-    channel_id,
-    channel_name,
-    status,
-    attempts,
-    next_attempt_at,
-    sent_at,
-    created_at
-FROM ops.slack_notification_outbox
-WHERE dataset = 'pjm_rt_fivemin_hrl_lmps'
-ORDER BY created_at DESC
-LIMIT 10;
-```
 
 ## helios-prod-health-check
 

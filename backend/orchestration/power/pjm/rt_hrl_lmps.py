@@ -25,7 +25,6 @@ from backend.orchestration.power.pjm._policies import (
 )
 from backend.scrapes.power.pjm import client
 from backend.scrapes.power.pjm import rt_hrl_lmps as scrape
-from backend.utils import slack_notifications
 from backend.utils.data_availability import emit_data_availability_event
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
@@ -375,56 +374,6 @@ def _utc_timestamp(value: Any) -> datetime:
     return timestamp.to_pydatetime()
 
 
-def _notify_rt_release_events(
-    *,
-    events: list[dict[str, Any]],
-    run_mode: str,
-    database: str | None,
-) -> int:
-    if run_mode != DEFAULT_RUN_MODE:
-        logger.info("Skipping RT HRL LMP Slack notifications outside scheduled mode.")
-        return 0
-    if not events:
-        return 0
-
-    queued = 0
-    try:
-        for event in events:
-            message = slack_notifications.build_pjm_rt_hrl_lmp_release_slack(
-                event=event,
-            )
-            enqueued = slack_notifications.enqueue_slack_notification(
-                database=database,
-                **message,
-            )
-            if enqueued.get("created"):
-                queued += 1
-
-        if not slack_notifications.notifications_enabled():
-            logger.info(
-                "RT HRL LMP Slack notifications queued=%s; sending is disabled.",
-                queued,
-            )
-            return queued
-
-        processed = slack_notifications.send_due_slack_notifications(
-            limit=20,
-            database=database,
-        )
-        logger.info(
-            "RT HRL LMP Slack notifications queued=%s, processed=%s.",
-            queued,
-            len(processed),
-        )
-    except Exception:
-        logger.exception(
-            "RT HRL LMP Slack notification handling failed; "
-            "scrape data and readiness events remain committed."
-        )
-
-    return queued
-
-
 def main(
     target_date: date | datetime | str | None = None,
     database: str | None = None,
@@ -449,15 +398,10 @@ def main(
         metadata={"run_mode": run_mode, **fetch_metadata},
     )
     scrape.main(database=database, run_mode=run_mode, metadata=fetch_metadata)
-    events = _emit_data_availability_events(
+    _emit_data_availability_events(
         df=available_df,
         target_date=market_date,
         run_id=run_id,
-        database=database,
-    )
-    _notify_rt_release_events(
-        events=events,
-        run_mode=run_mode,
         database=database,
     )
     return 0

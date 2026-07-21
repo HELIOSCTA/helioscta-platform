@@ -10,7 +10,7 @@ from backend.orchestration.power.pjm import rt_hrl_lmps
 def test_rt_hrl_orchestration_calls_scrape_with_post_publish_metadata(monkeypatch):
     captured: dict[str, object] = {}
     waited: dict[str, object] = {}
-    notified: dict[str, object] = {}
+    emitted: dict[str, object] = {}
 
     def fake_wait(**kwargs):
         waited.update(kwargs)
@@ -20,6 +20,7 @@ def test_rt_hrl_orchestration_calls_scrape_with_post_publish_metadata(monkeypatc
         captured.update(kwargs)
 
     def fake_emit(**kwargs):
+        emitted.update(kwargs)
         assert kwargs["target_date"] == date(2026, 6, 29)
         assert kwargs["database"] == "stage_db"
         return [{"id": 1, "event_key": "pjm_rt_hrl_lmps:data_ready:2026-06-29:hub"}]
@@ -31,11 +32,6 @@ def test_rt_hrl_orchestration_calls_scrape_with_post_publish_metadata(monkeypatc
     )
     monkeypatch.setattr(rt_hrl_lmps.scrape, "main", fake_main)
     monkeypatch.setattr(rt_hrl_lmps, "_emit_data_availability_events", fake_emit)
-    monkeypatch.setattr(
-        rt_hrl_lmps,
-        "_notify_rt_release_events",
-        lambda **kwargs: notified.update(kwargs),
-    )
 
     result = rt_hrl_lmps.main(target_date="2026-06-29", database="stage_db")
 
@@ -50,11 +46,8 @@ def test_rt_hrl_orchestration_calls_scrape_with_post_publish_metadata(monkeypatc
         "poll_ceiling_seconds": 18000,
         "poll_wait_seconds": 300,
     }
-    assert notified["events"] == [
-        {"id": 1, "event_key": "pjm_rt_hrl_lmps:data_ready:2026-06-29:hub"}
-    ]
-    assert notified["run_mode"] == "scheduled_post_publish"
-    assert notified["database"] == "stage_db"
+    assert emitted["target_date"] == date(2026, 6, 29)
+    assert emitted["database"] == "stage_db"
     assert captured["database"] == "stage_db"
     assert captured["run_mode"] == "scheduled_post_publish"
     assert captured["metadata"] == {
@@ -79,7 +72,6 @@ def test_rt_hrl_orchestration_allows_metadata_override(monkeypatch):
     )
     monkeypatch.setattr(rt_hrl_lmps.scrape, "main", fake_main)
     monkeypatch.setattr(rt_hrl_lmps, "_emit_data_availability_events", lambda **_: [])
-    monkeypatch.setattr(rt_hrl_lmps, "_notify_rt_release_events", lambda **_: 0)
 
     rt_hrl_lmps.main(
         target_date=date(2026, 6, 29),
@@ -229,60 +221,3 @@ def test_rt_hrl_skips_readiness_event_for_incomplete_target_date(monkeypatch):
         == []
     )
     assert emitted is False
-
-
-def test_rt_hrl_slack_notifications_are_idempotent_and_sent(monkeypatch):
-    calls: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        rt_hrl_lmps.slack_notifications,
-        "build_pjm_rt_hrl_lmp_release_slack",
-        lambda **kwargs: {
-            "notification_key": f"{kwargs['event']['event_key']}:slack:release",
-            "channel_id": "CPOWER",
-            "channel_name": "#helios-alerts-power",
-            "message_text": "message",
-            "dataset": "pjm_rt_hrl_lmps",
-            "source_event_key": kwargs["event"]["event_key"],
-            "source_event_id": kwargs["event"]["id"],
-            "payload": {},
-        },
-    )
-
-    def fake_enqueue(**kwargs):
-        calls.append(kwargs)
-        return {"created": True}
-
-    monkeypatch.setattr(
-        rt_hrl_lmps.slack_notifications,
-        "enqueue_slack_notification",
-        fake_enqueue,
-    )
-    monkeypatch.setattr(
-        rt_hrl_lmps.slack_notifications,
-        "notifications_enabled",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        rt_hrl_lmps.slack_notifications,
-        "send_due_slack_notifications",
-        lambda **kwargs: [{"status": "sent", **kwargs}],
-    )
-
-    queued = rt_hrl_lmps._notify_rt_release_events(
-        events=[
-            {
-                "id": 1,
-                "event_key": "pjm_rt_hrl_lmps:data_ready:2026-06-30:hub",
-            }
-        ],
-        run_mode=rt_hrl_lmps.DEFAULT_RUN_MODE,
-        database="stage_db",
-    )
-
-    assert queued == 1
-    assert calls[0]["notification_key"] == (
-        "pjm_rt_hrl_lmps:data_ready:2026-06-30:hub:slack:release"
-    )
-    assert calls[0]["channel_id"] == "CPOWER"
-    assert calls[0]["database"] == "stage_db"
