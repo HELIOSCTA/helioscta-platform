@@ -2489,8 +2489,8 @@ LIMIT 20;
 
 ## helios-weather-wsi-daily-weighted-forecasts
 
-- Status: promoted for VM deployment; do not enable the timer until production
-  DDL is applied and one manual service run succeeds.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled after a successful
+  manual VM smoke run.
 - Workflow: WSI daily weighted temperature and degree-day forecast refreshes.
 - Runtime module:
   `backend.orchestration.weather.wsi.daily_weighted_forecasts`.
@@ -2545,11 +2545,23 @@ LIMIT 20;
   explicit file list; `python -m compileall backend/scrapes/weather/wsi
   backend/orchestration/weather/wsi` passed; no-upsert live parse returned 75
   PJM temperature rows and 2,880 degree-day rows for six configured regions.
-- Production DDL: pending application of the two table DDL files and two index
-  DDL files under
-  `dbt/azure_postgres/reference_sql/ddl/weather/wsi/daily_weighted_*`.
-- VM verification: pending manual service run, `ops.api_fetch_log` inspection,
-  `ops.data_availability_events` inspection, and timer enablement.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded to code commit
+  `81681ec` on `2026-07-21 19:25 UTC`; VM dependency refresh and compileall
+  checks passed.
+- Production DDL: two table DDL files and two index DDL files under
+  `dbt/azure_postgres/reference_sql/ddl/weather/wsi/daily_weighted_*` applied
+  with the `helios_admin` service environment on `2026-07-21 19:27 UTC`.
+- VM verification: manual `systemd-run` smoke on `2026-07-21 19:27 UTC`
+  exited `status=0/SUCCESS`, upserted 75 PJM daily weighted temperature rows
+  and 2,880 daily weighted degree-day rows, wrote successful WSI API telemetry
+  for both endpoints, and emitted complete freshness events for both datasets:
+  `wsi_daily_weighted_temperature_forecasts:freshness_forecast:PJM:wsi:GetModelForecast:WSI:Daily:202607211028`
+  and
+  `wsi_daily_weighted_degree_day_forecasts:freshness_forecast:NA:wsi:GetWeightedDegreeDayForecast:WSI:Daily:202607211028`.
+- Timer activation: unit files installed under `/etc/systemd/system/`,
+  `helios-weather-wsi-daily-weighted-forecasts.timer` enabled on
+  `2026-07-21 19:28 UTC`, with next run observed at
+  `2026-07-22 00:45:56 UTC`.
 
 Verification SQL for WSI daily weighted table freshness:
 
