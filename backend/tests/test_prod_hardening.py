@@ -310,6 +310,50 @@ def test_emit_data_availability_event_is_idempotent(monkeypatch):
     assert params[-1] == "pjm_da_hrl_lmps:data_ready:2026-06-13:hub"
 
 
+def test_emit_data_availability_event_can_update_existing(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_execute_sql(query, params=None, database=None, fetch=False):
+        captured["query"] = query
+        captured["params"] = params
+        captured["database"] = database
+        captured["fetch"] = fetch
+        return [{"id": 11, "event_key": params[0], "created": False}]
+
+    monkeypatch.setattr(data_availability.db, "execute_sql", fake_execute_sql)
+
+    result = data_availability.emit_data_availability_event(
+        event_key="wsi_daily_weighted_degree_day_forecasts:freshness:NA:issue",
+        dataset="wsi_daily_weighted_degree_day_forecasts",
+        source_system="wsi",
+        availability_type="freshness_forecast",
+        business_date=date(2026, 7, 21),
+        row_count=4320,
+        entity_count=9,
+        period_count=15,
+        completeness_status="complete",
+        payload={"expected_entity_count": 9},
+        database="stage_db",
+        update_existing=True,
+    )
+
+    assert result == {
+        "id": 11,
+        "event_key": "wsi_daily_weighted_degree_day_forecasts:freshness:NA:issue",
+        "created": False,
+    }
+    assert "UPDATE ops.data_availability_events" in captured["query"]
+    assert "updated_at = now()" in captured["query"]
+    assert captured["database"] == "stage_db"
+    assert captured["fetch"] is True
+    params = captured["params"]
+    assert params[0] == "wsi_daily_weighted_degree_day_forecasts:freshness:NA:issue"
+    assert params[12] == 15
+    assert params[27] == 15
+    assert json.loads(params[30]) == {"expected_entity_count": 9}
+    assert params[31] == "wsi_daily_weighted_degree_day_forecasts:freshness:NA:issue"
+
+
 def test_orchestrated_da_emits_readiness_event_for_complete_current_rows(monkeypatch):
     captured: list[dict[str, object]] = []
 

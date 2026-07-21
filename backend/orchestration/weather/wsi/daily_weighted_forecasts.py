@@ -167,6 +167,7 @@ def _emit_freshness_event(
         run_id=None,
         payload=payload,
         database=database,
+        update_existing=True,
     )
 
 

@@ -31,6 +31,7 @@ def emit_data_availability_event(
     run_id: str | None = None,
     payload: dict[str, Any] | None = None,
     database: str | None = None,
+    update_existing: bool = False,
 ) -> dict[str, Any]:
     """Insert one idempotent data availability event and return its metadata."""
     if completeness_status not in VALID_COMPLETENESS_STATUSES:
@@ -39,11 +40,86 @@ def emit_data_availability_event(
             f"Expected one of {sorted(VALID_COMPLETENESS_STATUSES)}."
         )
 
-    rows = db.execute_sql(
-        """
-        WITH inserted AS (
-            INSERT INTO ops.data_availability_events (
-                event_key,
+    payload_json = json.dumps(payload or {}, default=str)
+    event_values = (
+        event_key,
+        dataset,
+        source_system,
+        availability_type,
+        business_date,
+        window_start,
+        window_end,
+        scope,
+        grain,
+        source_table,
+        row_count,
+        entity_count,
+        period_count,
+        completeness_status,
+        run_id,
+        payload_json,
+    )
+    if update_existing:
+        rows = db.execute_sql(
+            """
+            WITH inserted AS (
+                INSERT INTO ops.data_availability_events (
+                    event_key,
+                    dataset,
+                    source_system,
+                    availability_type,
+                    business_date,
+                    window_start,
+                    window_end,
+                    scope,
+                    grain,
+                    source_table,
+                    row_count,
+                    entity_count,
+                    period_count,
+                    completeness_status,
+                    run_id,
+                    payload
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                )
+                ON CONFLICT (event_key) DO NOTHING
+                RETURNING id, event_key, TRUE AS created
+            ),
+            updated AS (
+                UPDATE ops.data_availability_events
+                SET
+                    dataset = %s,
+                    source_system = %s,
+                    availability_type = %s,
+                    business_date = %s,
+                    window_start = %s,
+                    window_end = %s,
+                    scope = %s,
+                    grain = %s,
+                    source_table = %s,
+                    row_count = %s,
+                    entity_count = %s,
+                    period_count = %s,
+                    completeness_status = %s,
+                    run_id = %s,
+                    payload = %s::jsonb,
+                    updated_at = now()
+                WHERE event_key = %s
+                  AND NOT EXISTS (SELECT 1 FROM inserted)
+                RETURNING id, event_key, FALSE AS created
+            )
+            SELECT id, event_key, created
+            FROM inserted
+            UNION ALL
+            SELECT id, event_key, created
+            FROM updated
+            LIMIT 1;
+            """,
+            params=(
+                *event_values,
                 dataset,
                 source_system,
                 availability_type,
@@ -58,46 +134,57 @@ def emit_data_availability_event(
                 period_count,
                 completeness_status,
                 run_id,
-                payload
-            )
-            VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s, %s, %s::jsonb
-            )
-            ON CONFLICT (event_key) DO NOTHING
-            RETURNING id, event_key, TRUE AS created
+                payload_json,
+                event_key,
+            ),
+            database=database,
+            fetch=True,
         )
-        SELECT id, event_key, created
-        FROM inserted
-        UNION ALL
-        SELECT id, event_key, FALSE AS created
-        FROM ops.data_availability_events
-        WHERE event_key = %s
-          AND NOT EXISTS (SELECT 1 FROM inserted)
-        LIMIT 1;
-        """,
-        params=(
-            event_key,
-            dataset,
-            source_system,
-            availability_type,
-            business_date,
-            window_start,
-            window_end,
-            scope,
-            grain,
-            source_table,
-            row_count,
-            entity_count,
-            period_count,
-            completeness_status,
-            run_id,
-            json.dumps(payload or {}, default=str),
-            event_key,
-        ),
-        database=database,
-        fetch=True,
-    )
+    else:
+        rows = db.execute_sql(
+            """
+            WITH inserted AS (
+                INSERT INTO ops.data_availability_events (
+                    event_key,
+                    dataset,
+                    source_system,
+                    availability_type,
+                    business_date,
+                    window_start,
+                    window_end,
+                    scope,
+                    grain,
+                    source_table,
+                    row_count,
+                    entity_count,
+                    period_count,
+                    completeness_status,
+                    run_id,
+                    payload
+                )
+                VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s, %s, %s::jsonb
+                )
+                ON CONFLICT (event_key) DO NOTHING
+                RETURNING id, event_key, TRUE AS created
+            )
+            SELECT id, event_key, created
+            FROM inserted
+            UNION ALL
+            SELECT id, event_key, FALSE AS created
+            FROM ops.data_availability_events
+            WHERE event_key = %s
+              AND NOT EXISTS (SELECT 1 FROM inserted)
+            LIMIT 1;
+            """,
+            params=(
+                *event_values,
+                event_key,
+            ),
+            database=database,
+            fetch=True,
+        )
 
     if not rows:
         raise RuntimeError(
@@ -107,6 +194,8 @@ def emit_data_availability_event(
     result = rows[0]
     if result["created"]:
         logger.info("Created data availability event %s", event_key)
+    elif update_existing:
+        logger.info("Updated data availability event %s", event_key)
     else:
         logger.info(
             "Data availability event %s already exists; skipping duplicate emit",
