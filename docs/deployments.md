@@ -2352,6 +2352,11 @@ LIMIT 10;
   SQL shape checks passed on `2026-06-17`. pytest reported only pre-existing
   cache write warnings for `backend/.pytest_cache`.
 - Production validation: read-only primary-key checks passed on `2026-06-18`.
+- Runtime hardening deployment: code commit `eab0e4b` added parse-failure API
+  telemetry and station-basket completeness payloads; `/opt/helioscta-platform`
+  was fast-forwarded through that commit on `2026-07-21 18:47 UTC`. VM
+  `compileall` and WSI import smoke checks passed, and the six-hour timer
+  remained enabled.
 - VM verification: manual service run on `2026-06-18 13:54 UTC` exited
   `status=0/SUCCESS`, upserted 1,935 rows for 34 PJM station IDs, wrote
   successful WSI API telemetry, and emitted
@@ -2437,6 +2442,11 @@ LIMIT 20;
   `idx_weather_wsi_hourly_fcst_valid_time`, and
   `idx_weather_wsi_hourly_fcst_updated_at`.
 - Production validation: read-only primary-key checks passed on `2026-06-18`.
+- Runtime hardening deployment: code commit `eab0e4b` added parse-failure API
+  telemetry and station-basket/forecast-period completeness payloads;
+  `/opt/helioscta-platform` was fast-forwarded through that commit on
+  `2026-07-21 18:47 UTC`. VM `compileall` and WSI import smoke checks passed,
+  and the six-hour timer remained enabled.
 - Production refresh verification: local orchestration run on
   `2026-06-18 14:19 UTC` upserted 12,240 rows for 34 PJM station IDs and one
   WSI forecast issue, wrote four successful batched WSI API telemetry rows,
