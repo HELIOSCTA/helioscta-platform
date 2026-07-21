@@ -584,8 +584,9 @@ It runs `backend.orchestration.weather.wsi.hourly_observed`, pulls WSI Trader
 Historical Observations for the PJM station basket, upserts
 `weather.wsi_hourly_observed_temperatures`, writes WSI API telemetry to
 `ops.api_fetch_log`, and emits weather freshness events to
-`ops.data_availability_events`. The timer runs hourly at minute `20` UTC with
-`Persistent=false` because the scheduled default pulls a rolling recent window.
+`ops.data_availability_events`. The timer runs every six hours at `00:20`,
+`06:20`, `12:20`, and `18:20` UTC with `Persistent=false` because the
+scheduled default pulls a rolling recent window.
 The service uses `flock` with
 `/tmp/helios-weather-wsi-hourly-observed.lock`.
 
@@ -624,9 +625,9 @@ It runs `backend.orchestration.weather.wsi.hourly_forecast`, pulls WSI Trader
 Hourly Forecast rows for the PJM station basket, upserts
 `weather.wsi_hourly_forecasts`, writes WSI API telemetry to
 `ops.api_fetch_log`, and emits weather forecast freshness events to
-`ops.data_availability_events`. The timer runs hourly at minute `32` UTC with
-`Persistent=false`; each run stores the latest WSI forecast issue returned by
-the source. The service uses `flock` with
+`ops.data_availability_events`. The timer runs every six hours at `00:32`,
+`06:32`, `12:32`, and `18:32` UTC with `Persistent=false`; each run stores the
+latest WSI forecast issue returned by the source. The service uses `flock` with
 `/tmp/helios-weather-wsi-hourly-forecast.lock`.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains

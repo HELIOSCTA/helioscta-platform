@@ -1,8 +1,8 @@
 [Unit]
-Description=Hourly HeliosCTA WSI hourly forecast weather refresh timer
+Description=Six-hourly HeliosCTA WSI hourly forecast weather refresh timer
 
 [Timer]
-OnCalendar=*:32
+OnCalendar=*-*-* 00/6:32:00
 Persistent=false
 RandomizedDelaySec=3min
 AccuracySec=1min

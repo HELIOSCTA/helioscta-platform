@@ -2315,8 +2315,8 @@ LIMIT 10;
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-hourly-observed.service`
   - `infrastructure/systemd/helios-weather-wsi-hourly-observed.timer`
-- Proposed schedule: hourly at minute `20` UTC with
-  `RandomizedDelaySec=3min`.
+- Proposed schedule: every six hours at `00:20`, `06:20`, `12:20`, and
+  `18:20` UTC with `RandomizedDelaySec=3min`.
 - Timer behavior: `Persistent=false`; scheduled runs pull a rolling recent
   observation window.
 - Overlap protection: service uses `/usr/bin/flock` with
@@ -2393,8 +2393,8 @@ LIMIT 20;
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.service`
   - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.timer`
-- Proposed schedule: hourly at minute `32` UTC with
-  `RandomizedDelaySec=3min`.
+- Proposed schedule: every six hours at `00:32`, `06:32`, `12:32`, and
+  `18:32` UTC with `RandomizedDelaySec=3min`.
 - Timer behavior: `Persistent=false`; scheduled runs store the latest WSI
   forecast issue returned by the source.
 - Overlap protection: service uses `/usr/bin/flock` with
