@@ -1409,12 +1409,13 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 23 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 22 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
   `hrl_load_prelim`, `hrl_dmd_bids`, `da_transconstraints`,
   `da_reserve_market_results`, `gen_outages_by_type`, and the four Operations
-  Summary feeds were promoted to dedicated timers.
+  Summary feeds were promoted to dedicated timers. `load_frcstd_hist` is
+  intentionally excluded from the scheduled batch for storage-cost control.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.

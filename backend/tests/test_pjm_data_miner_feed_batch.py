@@ -74,6 +74,7 @@ def test_batch_feed_configs_have_contract_fields():
 
 def test_publication_specific_feeds_are_not_in_early_support_batch():
     assert "hrl_load_prelim" not in data_miner_batch.DEFAULT_FEEDS
+    assert "load_frcstd_hist" not in data_miner_batch.DEFAULT_FEEDS
 
 
 def test_forecast_feed_configs_have_90_day_hot_retention():

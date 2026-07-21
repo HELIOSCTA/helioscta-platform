@@ -247,8 +247,10 @@ solar/wind, WSI hourly and daily weighted forecasts, and Meteologica PJM hourly
 forecasts.
 Retention is keyed to the source issue, publication, or evaluation timestamp so
 the table keeps 90 days of forecast vintages. Historical PJM Data Miner
-`pjm.load_frcstd_hist` and outage forecast tables remain indefinite unless
-operators explicitly decide to truncate archive history.
+`pjm.load_frcstd_hist` is no longer scheduled by default because current
+frontend and production workflows do not need the archive; keep the scrape
+module for manual recovery only. Outage forecast tables remain indefinite
+unless operators explicitly decide to truncate archive history.
 
 PJM Data Miner Operations Summary helpers run through
 `backend.orchestration.power.pjm.ops_sum` and write

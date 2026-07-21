@@ -43,7 +43,7 @@ Feed selection and promotion priority are documented in
 | five_min_solar_generation | Five Minute Solar Generation | Generation | datetime_beginning_ept window | pjm.five_min_solar_generation |
 | gen_by_fuel | Generation by Fuel Type | Generation | datetime_beginning_ept window | pjm.gen_by_fuel |
 | rt_and_self_ecomax | Scheduled Generation | Generation | datetime_beginning_ept window | pjm.rt_and_self_ecomax |
-| load_frcstd_hist | Historical Load Forecasts | Load Forecast | forecast_hour_beginning_ept window | pjm.load_frcstd_hist |
+| load_frcstd_hist | Historical Load Forecasts | Load Forecast | De-scheduled; manual recovery only | pjm.load_frcstd_hist |
 | hrl_load_metered | Hourly Load: Metered | Load | datetime_beginning_ept window | pjm.hrl_load_metered |
 | hrl_load_prelim | Hourly Load: Preliminary | Load | datetime_beginning_ept window | pjm.hrl_load_prelim |
 | hrl_dmd_bids | Hourly Demand Bid Data | Bid and Offer Data | datetime_beginning_ept window | pjm.hrl_dmd_bids |
@@ -88,7 +88,7 @@ Feed selection and promotion priority are documented in
 | Promoted | five_min_solar_generation | Five Minute Solar Generation | none | none | Every 5 minutes | 30 days | datetime_beginning_utc |
 | Promoted | gen_by_fuel | Generation by Fuel Type | none | none | Hourly | Indefinitely | datetime_beginning_utc, fuel_type |
 | Promoted | rt_and_self_ecomax | Scheduled Generation | none | none | Daily | Indefinitely | datetime_beginning_utc |
-| Promoted | load_frcstd_hist | Historical Load Forecasts | none | none | Daily | Indefinitely | evaluated_at_utc, evaluated_at_ept, forecast_hour_beginning_utc, forecast_hour_beginning_ept, forecast_area |
+| De-scheduled | load_frcstd_hist | Historical Load Forecasts | none | none | Manual only | Not retained in hot production storage | evaluated_at_utc, evaluated_at_ept, forecast_hour_beginning_utc, forecast_hour_beginning_ept, forecast_area |
 | Promoted | hrl_load_metered | Hourly Load: Metered | none | none | Daily | Indefinitely | datetime_beginning_utc, nerc_region, mkt_region, zone, load_area, is_verified |
 | Promoted | hrl_load_prelim | Hourly Load: Preliminary | none | none | Daily | Indefinitely | datetime_beginning_utc, load_area |
 | Promoted | hrl_dmd_bids | Hourly Demand Bid Data | none | none | Daily | Indefinitely | datetime_beginning_utc, datetime_beginning_ept, area |
@@ -341,6 +341,9 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `evaluated_at_utc, evaluated_at_ept, forecast_hour_beginning_utc, forecast_hour_beginning_ept, forecast_area`.
 - Freshness field: `forecast_hour_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.load_frcstd_hist`.
+- Scheduling stance: not included in the production PJM Data Miner batch. Use
+  only for manual recovery if an approved model-training or archive use case
+  returns.
 
 ### hrl_load_metered
 

@@ -74,7 +74,7 @@ analysis, load/weather-normalization work, and outage/transmission context.
 | inst_load | Instantaneous Load | Load | Every 5 minutes | 30 days | Near-real-time load driver for price moves |
 | very_short_load_frcst | Five Minute Load Forecast | Load Forecast | Every 5 minutes | 30 days | Forecast-vs-actual load at intraday grain |
 | load_frcstd_7_day | Seven-Day Load Forecast | Load Forecast | Hourly | None | Forward load expectations |
-| load_frcstd_hist | Historical Load Forecasts | Load Forecast | Daily | Indefinitely | Forecast error history and model training set |
+| load_frcstd_hist | Historical Load Forecasts | Load Forecast | Daily | De-scheduled | No current promoted consumer; keep manual scrape only unless a model-training use case is approved |
 | hrl_load_prelim | Hourly Load: Preliminary | Load | Daily | Indefinitely | Early hourly actual load |
 | hrl_load_metered | Hourly Load: Metered | Load | Daily | Indefinitely | Verified hourly actual load |
 | gen_by_fuel | Generation by Fuel Type | Generation | Hourly | Indefinitely | Stack and fuel-mix context |
@@ -157,25 +157,24 @@ Promote the next feeds in this order:
 2. `inst_load`
 3. `very_short_load_frcst`
 4. `load_frcstd_7_day`
-5. `load_frcstd_hist`
-6. `hrl_load_prelim`
-7. `hrl_load_metered`
-8. `gen_by_fuel`
-9. `five_min_solar_generation`
-10. `instantaneous_wind_gen`
-11. `five_min_wind_power_forecast`
-12. `five_min_solar_power_forecast`
-13. `wind_gen`
-14. `solar_gen`
-15. `day_gen_capacity`
-16. `rt_and_self_ecomax`
-17. `frcstd_gen_outages`
-18. `gen_outages_by_type`
-19. `da_transconstraints`
-20. `da_marginal_value`
-21. `rt_marginal_value`
-22. `da_interface_flows_and_limits`
-23. `rt_scheduled_interchange`
+5. `hrl_load_prelim`
+6. `hrl_load_metered`
+7. `gen_by_fuel`
+8. `five_min_solar_generation`
+9. `instantaneous_wind_gen`
+10. `five_min_wind_power_forecast`
+11. `five_min_solar_power_forecast`
+12. `wind_gen`
+13. `solar_gen`
+14. `day_gen_capacity`
+15. `rt_and_self_ecomax`
+16. `frcstd_gen_outages`
+17. `gen_outages_by_type`
+18. `da_transconstraints`
+19. `da_marginal_value`
+20. `rt_marginal_value`
+21. `da_interface_flows_and_limits`
+22. `rt_scheduled_interchange`
 
 After those are stable, promote Tier 2 based on the first downstream consumer:
 ancillary/reserve analytics, constraint diagnostics, virtual bidding analytics,
