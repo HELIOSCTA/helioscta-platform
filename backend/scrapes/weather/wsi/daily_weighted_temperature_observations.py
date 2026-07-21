@@ -37,7 +37,21 @@ DEFAULT_BASE_URL = (
     "GetHistoricalObservations"
 )
 DEFAULT_REQUEST_REGION = "NA"
-DEFAULT_ENTITY_IDS = ["PJM"]
+DEFAULT_ENTITY_IDS = [
+    "AESO",
+    "CAISO",
+    "ERCOT",
+    "IESO",
+    "MISO",
+    "NEISO",
+    "NWPP",
+    "NYISO",
+    "PJM",
+    "SOUTHEAST",
+    "SOUTHWEST",
+    "SPP",
+    "WECC",
+]
 DEFAULT_LOOKBACK_DAYS = 14
 DEFAULT_TEMP_UNITS = "F"
 DEFAULT_IS_DAILY = True

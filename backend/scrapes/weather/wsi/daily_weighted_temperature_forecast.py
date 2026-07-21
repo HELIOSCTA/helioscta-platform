@@ -39,7 +39,33 @@ DEFAULT_BASE_URL = (
     "https://www.wsitrader.com/Services/CSVDownloadService.svc/GetModelForecast"
 )
 DEFAULT_REQUEST_REGION = "NA"
-DEFAULT_ENTITY_IDS = ["PJM"]
+DEFAULT_ENTITY_IDS = [
+    "NEISO",
+    "NYISO",
+    "IESO",
+    "PJM",
+    "PJM EAST",
+    "PJM WEST",
+    "PJM SOUTH",
+    "SOUTHEAST",
+    "ERCOT",
+    "MISO",
+    "MISO NORTH",
+    "MISO SOUTH",
+    "SPP",
+    "NWPP",
+    "INTERIOR NORTHWEST",
+    "PACIFIC NORTHWEST",
+    "ROCKY MOUNTAIN",
+    "SOUTHWEST",
+    "AESO",
+    "CAISO",
+    "NORTHERN CAISO",
+    "SOUTHERN CAISO",
+    "US EASTERN INTERCONNECT",
+    "US NATIONAL",
+    "WECC",
+]
 DEFAULT_FORECAST_TYPE = "Daily"
 DEFAULT_MODEL = "WSI"
 DEFAULT_TEMP_UNITS = "F"

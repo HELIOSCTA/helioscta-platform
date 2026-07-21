@@ -2507,9 +2507,10 @@ LIMIT 20;
 - Source grain:
   `source_issue_key x model x forecast_type x request_region x entity_id x
   forecast_date x metric_name`.
-- Defaults: North America, WSI model, daily resolution, uncorrected bias, PJM
-  weighted temperatures in Fahrenheit, and CONUS plus EAST, MIDWEST,
-  SOUTHCENTRAL, MOUNTAIN, and PACIFIC degree-day regions.
+- Defaults: North America, WSI model, daily resolution, uncorrected bias,
+  Fahrenheit weighted temperatures for all 25 configured NA forecast regions
+  returned by WSI `allregions=true`, and all nine weighted degree-day regions
+  accepted by the forecast endpoint.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Telemetry hardening: malformed forecast CSV after a successful HTTP response
@@ -2602,9 +2603,9 @@ LIMIT 20;
 - Source grain:
   `source_product_id x request_region x entity_id x observation_date x
   metric_name`.
-- Defaults: North America, daily resolution, Fahrenheit, PJM weighted
-  temperatures, and CONUS plus EAST, MIDWEST, SOUTHCENTRAL, MOUNTAIN, and
-  PACIFIC weighted degree-day regions.
+- Defaults: North America, daily resolution, Fahrenheit, all 13 historical
+  weighted-temperature regions accepted by WSI for the current account, and
+  all nine historical weighted degree-day regions accepted by the endpoint.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Telemetry hardening: malformed observed CSV after a successful HTTP response

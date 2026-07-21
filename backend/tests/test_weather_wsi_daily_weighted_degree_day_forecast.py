@@ -96,6 +96,21 @@ def test_daily_weighted_degree_day_pull_uses_expected_request_params(monkeypatch
     assert captured[0]["metadata"]["run_mode"] == "test"
 
 
+def test_daily_weighted_degree_day_default_stations_include_all_regions():
+    assert len(scrape.DEFAULT_STATIONS) == 9
+    assert {
+        "CONUS",
+        "EAST",
+        "MIDWEST",
+        "SOUTHCENTRAL",
+        "MOUNTAIN",
+        "PACIFIC",
+        "GASCONSEAST",
+        "GASCONSWEST",
+        "GASPRODUCING",
+    } == set(scrape.DEFAULT_STATIONS)
+
+
 def test_daily_weighted_degree_day_valid_empty_csv_preserves_issue_context():
     lines = _fixture_text().splitlines()
     text = "\n".join(lines[:2]) + "\n"

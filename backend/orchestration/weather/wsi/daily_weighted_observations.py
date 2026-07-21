@@ -47,7 +47,7 @@ def main(
             expected_metric_names=(
                 daily_weighted_temperature_observations.EXPECTED_METRIC_NAMES
             ),
-            scope="PJM",
+            scope=daily_weighted_temperature_observations.DEFAULT_REQUEST_REGION,
             database=database,
         )
     else:

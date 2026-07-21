@@ -49,6 +49,9 @@ DEFAULT_STATIONS = [
     "SOUTHCENTRAL",
     "MOUNTAIN",
     "PACIFIC",
+    "GASCONSEAST",
+    "GASCONSWEST",
+    "GASPRODUCING",
 ]
 DEFAULT_DATA_TYPES = [
     "gas_hdd",

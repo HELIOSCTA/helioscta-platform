@@ -180,8 +180,9 @@ tables is
 forecast_date x metric_name`; safe reruns upsert by that key while preserving
 distinct source forecast issues. Defaults are North America, WSI model, daily
 resolution, Fahrenheit temperature units for weighted temperatures, uncorrected
-model bias, PJM weighted temperature output, and CONUS plus the five new EIA
-degree-day regions. Both scrapes log WSI API fetch telemetry to
+model bias, all NA weighted-temperature regions returned by WSI
+`allregions=true`, and all nine weighted degree-day regions accepted by the
+forecast endpoint. Both scrapes log WSI API fetch telemetry to
 `ops.api_fetch_log`; malformed or schema-incompatible CSV after HTTP success
 adds a failed parse-stage fetch row. The combined orchestration emits one
 `ops.data_availability_events` forecast freshness event for each table, marking
@@ -203,9 +204,10 @@ daily observed rows from WSI Trader `GetHistoricalObservations` products
 tables is
 `source_product_id x request_region x entity_id x observation_date x
 metric_name`; safe reruns upsert by that key. Defaults are North America,
-daily resolution, Fahrenheit, PJM weighted temperatures, and CONUS plus the
-five new EIA degree-day regions. Scheduled runs use a 14-day rolling observed
-window and retain historical observed rows indefinitely. The combined
+daily resolution, Fahrenheit, all historical weighted-temperature regions
+accepted by WSI for the current account, and all nine historical weighted
+degree-day regions accepted by the endpoint. Scheduled runs use a 14-day
+rolling observed window and retain historical observed rows indefinitely. The combined
 orchestration emits one `ops.data_availability_events` observed freshness event
 for each table, marking `complete` only when the configured entities and
 expected metrics are present for the latest observed date returned by WSI.

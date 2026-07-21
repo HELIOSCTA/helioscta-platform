@@ -61,7 +61,7 @@ def test_daily_weighted_forecasts_main_runs_both_scrapes_and_emits_events(
     temp_df = _forecast_rows(
         dataset="temperature",
         issue_key="wsi:GetModelForecast:WSI:Daily:202607211028",
-        entities=["PJM"],
+        entities=daily_weighted_temperature_forecast.DEFAULT_ENTITY_IDS,
         metrics=daily_weighted_temperature_forecast.EXPECTED_METRIC_NAMES,
     )
     degree_df = _forecast_rows(
@@ -99,6 +99,7 @@ def test_daily_weighted_forecasts_main_runs_both_scrapes_and_emits_events(
     assert emitted[0]["source_table"] == (
         "weather.wsi_daily_weighted_temperature_forecasts"
     )
+    assert emitted[0]["scope"] == "NA"
     assert emitted[1]["source_table"] == (
         "weather.wsi_daily_weighted_degree_day_forecasts"
     )
@@ -138,7 +139,9 @@ def test_daily_weighted_forecasts_main_emits_partial_events_for_empty_results(
         "partial",
     ]
     assert [event["row_count"] for event in emitted] == [0, 0]
-    assert emitted[0]["payload"]["missing_entity_ids"] == ["PJM"]
+    assert emitted[0]["payload"]["missing_entity_ids"] == sorted(
+        daily_weighted_temperature_forecast.DEFAULT_ENTITY_IDS
+    )
     assert emitted[0]["payload"]["missing_metric_names"] == sorted(
         daily_weighted_temperature_forecast.EXPECTED_METRIC_NAMES
     )

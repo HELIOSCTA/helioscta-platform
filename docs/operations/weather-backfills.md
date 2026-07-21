@@ -45,6 +45,10 @@ Destination tables:
 - `weather.wsi_daily_weighted_temperature_observations`
 - `weather.wsi_daily_weighted_degree_day_observations`
 
+Default scope: all historical weighted-temperature regions accepted by WSI for
+the current account, and all nine historical weighted degree-day regions
+accepted by the endpoint.
+
 Safe rerun key for both tables:
 `source_product_id, request_region, entity_id, observation_date, metric_name`.
 
@@ -67,6 +71,10 @@ Destination tables:
 
 - `weather.wsi_daily_weighted_temperature_forecasts`
 - `weather.wsi_daily_weighted_degree_day_forecasts`
+
+Default scope: all NA weighted-temperature regions returned by WSI
+`allregions=true`, and all nine weighted degree-day regions accepted by the
+forecast endpoint.
 
 Safe rerun key for both tables:
 `source_issue_key, model, forecast_type, request_region, entity_id,

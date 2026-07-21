@@ -87,7 +87,7 @@ def test_daily_weighted_temperature_observations_pull_uses_expected_params(
     assert captured[0]["params"] == {
         "StartDate": "07/14/2026",
         "EndDate": "07/21/2026",
-        "CityIds[]": ["PJM"],
+        "CityIds[]": scrape.DEFAULT_ENTITY_IDS,
         "HistoricalProductID": "HISTORICAL_WEIGHTED_TEMPERATURE",
         "DataTypes[]": ["temperature"],
         "TempUnits": "F",
@@ -96,6 +96,13 @@ def test_daily_weighted_temperature_observations_pull_uses_expected_params(
         "IsDisplayDates": "true",
     }
     assert captured[0]["metadata"]["run_mode"] == "test"
+
+
+def test_daily_weighted_temperature_observations_default_entities_are_all_regions():
+    assert len(scrape.DEFAULT_ENTITY_IDS) == 13
+    assert {"PJM", "MISO", "ERCOT", "CAISO", "WECC"} <= set(
+        scrape.DEFAULT_ENTITY_IDS
+    )
 
 
 def test_daily_weighted_temperature_observations_parse_failure_logs_fetch_failure(

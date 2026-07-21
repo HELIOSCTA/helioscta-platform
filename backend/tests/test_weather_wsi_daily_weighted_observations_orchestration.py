@@ -55,7 +55,7 @@ def test_daily_weighted_observations_main_runs_both_scrapes_and_emits_events(
     emitted: list[dict] = []
     temp_df = _observation_rows(
         dataset="temperature",
-        entities=["PJM"],
+        entities=daily_weighted_temperature_observations.DEFAULT_ENTITY_IDS,
         metrics=daily_weighted_temperature_observations.EXPECTED_METRIC_NAMES,
     )
     degree_df = _observation_rows(
@@ -91,6 +91,7 @@ def test_daily_weighted_observations_main_runs_both_scrapes_and_emits_events(
     assert all(event["completeness_status"] == "complete" for event in emitted)
     assert emitted[0]["business_date"] == date(2026, 7, 20)
     assert emitted[0]["period_count"] == 1
+    assert emitted[0]["scope"] == "NA"
     assert emitted[0]["source_table"] == (
         "weather.wsi_daily_weighted_temperature_observations"
     )
@@ -167,7 +168,9 @@ def test_daily_weighted_observations_main_emits_partial_events_for_empty_results
         date(2026, 7, 21),
     ]
     assert [event["row_count"] for event in emitted] == [0, 0]
-    assert emitted[0]["payload"]["missing_entity_ids"] == ["PJM"]
+    assert emitted[0]["payload"]["missing_entity_ids"] == sorted(
+        daily_weighted_temperature_observations.DEFAULT_ENTITY_IDS
+    )
     assert emitted[0]["payload"]["missing_metric_names"] == sorted(
         daily_weighted_temperature_observations.EXPECTED_METRIC_NAMES
     )
