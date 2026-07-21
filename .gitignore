@@ -39,6 +39,7 @@ dbt/**/target/
 *.log
 backend/**/logs/
 backend/mcp_server/runs/
+infrastructure/windows-task-scheduler/wm_natgasdatafeed_import/gasdatafeed_import.json
 
 # Local SFTP downloads
 backend/scrapes/nav/downloads/

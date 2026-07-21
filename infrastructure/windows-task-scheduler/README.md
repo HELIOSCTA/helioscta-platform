@@ -267,6 +267,46 @@ Also check freshness on:
 - `ice_python.settlements`
 - `ice_python.settlement_contract_dates`
 
+## WoodMac NatGas Datafeed Import
+
+The legacy raw WoodMac/Genscape NatGas datafeed Task Scheduler package has
+been copied here for migration and scheduler management context only:
+
+```text
+infrastructure/windows-task-scheduler/wm_natgasdatafeed_import/
+```
+
+Migration status: reference-only in this repo. Do not run the copied `.ts.*`
+registration scripts until the Task Scheduler cutover is explicitly approved.
+
+The current live tasks still run from the legacy
+`helioscta-azure-backend` checkout until cutover:
+
+```text
+\helioscta-azure-backend\NatGas\wm_natgasdatafeed_import delta 20
+\helioscta-azure-backend\NatGas\wm_natgasdatafeed_import delta 30
+\helioscta-azure-backend\NatGas\wm_natgasdatafeed_import delta 40
+\helioscta-azure-backend\NatGas\wm_natgasdatafeed_import hourly
+\helioscta-azure-backend\NatGas\wm_natgasdatafeed_import metadata
+```
+
+The copied package includes the original `.ts.*` registration helpers, SQL
+setup and verification files, and the PowerShell import runtime. The local
+`gasdatafeed_import.json` file is intentionally gitignored because it contains
+live SQL/API credentials. Keep the local file available on the scheduler host,
+but do not commit it.
+
+Observed live cadence:
+
+- metadata: hourly at `:05` and `:10`;
+- delta: hourly at `:20`, `:30`, and `:40`;
+- hourly: hourly at `:50`;
+- baseline: manual only.
+
+For monitoring, use Task Scheduler state, per-run logs under the configured
+datafeed working path, `natgas.load_status`, and `administration.error_log`.
+Task Scheduler success alone does not prove the feed merged successfully.
+
 ## Positions And Trades Status Window
 
 Routine NAV and Clear Street scheduled actions launch hidden under the
