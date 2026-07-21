@@ -1,4 +1,4 @@
-"""Shared helpers for WSI daily weighted forecast scrapes."""
+"""Shared helpers for WSI daily weighted weather scrapes."""
 
 from __future__ import annotations
 

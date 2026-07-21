@@ -9,6 +9,8 @@ expanded.
 
 - WSI hourly observed weather is a true date-window backfill through WSI Trader
   `GetHistoricalObservations`.
+- WSI daily weighted temperature and degree-day observations are true
+  date-window backfills through WSI Trader `GetHistoricalObservations`.
 - WSI hourly forecasts cannot be historically backfilled with the promoted
   `GetHourlyForecast` endpoint. The scheduled scrape stores source issue
   snapshots going forward.
@@ -34,6 +36,29 @@ PY
 
 sudo systemd-run --unit=helios-wsi-hourly-observed-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-wsi-hourly-observed-backfill.py
 rm -f /tmp/helios-wsi-hourly-observed-backfill.py
+```
+
+## WSI Daily Weighted Observations
+
+Destination tables:
+
+- `weather.wsi_daily_weighted_temperature_observations`
+- `weather.wsi_daily_weighted_degree_day_observations`
+
+Safe rerun key for both tables:
+`source_product_id, request_region, entity_id, observation_date, metric_name`.
+
+Default max window: 366 observed dates. For larger replays, run in chunks.
+
+```bash
+cat > /tmp/helios-wsi-daily-weighted-observations-backfill.py <<'PY'
+from backend.backfills.weather.wsi.daily_weighted_observations import main
+
+print(main(start_date="2026-07-01", end_date="2026-07-07"))
+PY
+
+sudo systemd-run --unit=helios-wsi-daily-weighted-observations-backfill --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python /tmp/helios-wsi-daily-weighted-observations-backfill.py
+rm -f /tmp/helios-wsi-daily-weighted-observations-backfill.py
 ```
 
 ## WSI Daily Weighted Forecasts
@@ -118,6 +143,33 @@ ORDER BY dataset, request_region, entity_id;
 
 ```sql
 SELECT
+    'wsi_daily_weighted_temperature_observed' AS dataset,
+    request_region,
+    entity_id,
+    COUNT(*) AS rows,
+    MIN(observation_date)::text AS min_observation_date,
+    MAX(observation_date)::text AS max_observation_date,
+    COUNT(DISTINCT metric_name) AS metric_count,
+    MAX(updated_at)::text AS latest_updated_at
+FROM weather.wsi_daily_weighted_temperature_observations
+GROUP BY request_region, entity_id
+UNION ALL
+SELECT
+    'wsi_daily_weighted_degree_day_observed' AS dataset,
+    request_region,
+    entity_id,
+    COUNT(*) AS rows,
+    MIN(observation_date)::text AS min_observation_date,
+    MAX(observation_date)::text AS max_observation_date,
+    COUNT(DISTINCT metric_name) AS metric_count,
+    MAX(updated_at)::text AS latest_updated_at
+FROM weather.wsi_daily_weighted_degree_day_observations
+GROUP BY request_region, entity_id
+ORDER BY dataset, request_region, entity_id;
+```
+
+```sql
+SELECT
     dataset,
     source_system,
     availability_type,
@@ -133,7 +185,9 @@ SELECT
 FROM ops.data_availability_events
 WHERE dataset IN (
     'wsi_daily_weighted_temperature_forecasts',
-    'wsi_daily_weighted_degree_day_forecasts'
+    'wsi_daily_weighted_degree_day_forecasts',
+    'wsi_daily_weighted_temperature_observations',
+    'wsi_daily_weighted_degree_day_observations'
 )
 ORDER BY created_at DESC
 LIMIT 20;
