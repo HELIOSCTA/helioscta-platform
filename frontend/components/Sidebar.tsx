@@ -41,6 +41,7 @@ interface NavItem {
   group?: string;
   disabled?: boolean;
   comingSoon?: boolean;
+  requiresSignIn?: boolean;
 }
 
 interface TopSection {
@@ -49,7 +50,15 @@ interface TopSection {
   navItems: NavItem[];
 }
 
-function getSections(showLocalDevFeatures: boolean, showNavPositionsFeature: boolean): TopSection[] {
+function getSections({
+  showLocalDevFeatures,
+  showNavPositionsFeature,
+  showNavPositionsSignIn,
+}: {
+  showLocalDevFeatures: boolean;
+  showNavPositionsFeature: boolean;
+  showNavPositionsSignIn: boolean;
+}): TopSection[] {
   const sections: TopSection[] = [];
 
   sections.push({
@@ -75,11 +84,17 @@ function getSections(showLocalDevFeatures: boolean, showNavPositionsFeature: boo
     ],
   });
 
-  if (showNavPositionsFeature) {
+  if (showNavPositionsFeature || showNavPositionsSignIn) {
     sections.push({
       key: "positions",
       label: "POSITIONS",
-      navItems: [{ id: "nav-positions", label: "Positions" }],
+      navItems: [
+        {
+          id: "nav-positions",
+          label: "Positions",
+          requiresSignIn: showNavPositionsSignIn,
+        },
+      ],
     });
   }
 
@@ -112,7 +127,15 @@ export default function Sidebar({
   showNavPositionsFeature,
   navPositionsAuth,
 }: SidebarProps) {
-  const topSections = getSections(showLocalDevFeatures, showNavPositionsFeature);
+  const showNavPositionsSignIn =
+    navPositionsAuth.authConfigured &&
+    !navPositionsAuth.signedIn &&
+    !showNavPositionsFeature;
+  const topSections = getSections({
+    showLocalDevFeatures,
+    showNavPositionsFeature,
+    showNavPositionsSignIn,
+  });
   const showAuthControl = navPositionsAuth.authConfigured || navPositionsAuth.signedIn;
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(topSections.map((s) => [s.key, true]))
@@ -124,6 +147,15 @@ export default function Sidebar({
 
   const handleSectionChange = (section: ActiveSection) => {
     onSectionChange(section);
+  };
+
+  const handleNavItemClick = (item: NavItem) => {
+    if (item.disabled) return;
+    if (item.requiresSignIn) {
+      window.location.assign(navPositionsAuth.signInUrl);
+      return;
+    }
+    handleSectionChange(item.id);
   };
 
   return (
@@ -180,9 +212,15 @@ export default function Sidebar({
                           </div>
                         )}
                         <button
-                          onClick={() => !item.disabled && handleSectionChange(item.id)}
+                          onClick={() => handleNavItemClick(item)}
                           disabled={item.disabled}
-                          title={item.disabled ? `${item.label} is not available yet` : undefined}
+                          title={
+                            item.disabled
+                              ? `${item.label} is not available yet`
+                              : item.requiresSignIn
+                                ? "Sign in to view Positions"
+                                : undefined
+                          }
                           className={`flex w-full items-center rounded-md py-1.5 text-[13px] font-medium transition-colors ${
                             item.disabled
                               ? "cursor-not-allowed bg-transparent text-gray-600 opacity-55"
