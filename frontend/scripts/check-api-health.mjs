@@ -108,12 +108,6 @@ const endpoints = [
     targetMs: 1_500,
     devOnly: true,
   },
-  {
-    name: "NOAA METAR weather",
-    path: "/api/pjm-weather?region=PJM&hours=24",
-    targetMs: 750,
-    devOnly: true,
-  },
 ];
 
 function usage() {

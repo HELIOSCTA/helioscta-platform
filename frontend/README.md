@@ -118,7 +118,6 @@ GET /api/pjm-price-view?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/weather/wsi-forecast-map?region=PJM&date=YYYY-MM-DD&forecastRun=primary
-GET /api/pjm-weather?region=PJM&hours=24
 GET /api/pjm-net-load-forecast-explorer?source=pjm
 GET /api/pjm-net-load-forecast-explorer?source=meteologica
 GET /api/pjm-net-load-forecast-differences?source=pjm&area=RTO&date=YYYY-MM-DD&lookbackHours=72
@@ -773,22 +772,9 @@ forecast valid UTC timestamps to `America/New_York` hours, converts WSI
 observed station-local timestamps back to PJM/EPT using station time-zone
 metadata, and returns forecast, observed, and observed-minus-forecast hourly
 values by station. Station coordinates are keyed by `station_id`; the route
-uses the latest `weather.noaa_metar_observations` latitude/longitude when
-available and falls back to the promoted WSI station metadata in
+uses the promoted WSI station metadata in
 `frontend/lib/weather/wsiStationMetadata.ts`. The synthetic `PJM` station is
 kept for aggregate charting but is not rendered as a map marker.
-
-## NOAA Weather Source Contract
-
-The NOAA METAR Weather view reads realtime observations from
-`weather.noaa_metar_observations` using `helios_readonly`. The source grain is
-`station_id x observation_time_utc`.
-
-Required fields:
-`station_id`, `station_name`, `region`, `observation_time_utc`, `temp_f`,
-`dew_point_f`, `feels_like_f`, `wind_speed_mph`, `wind_gust_mph`,
-`wind_dir_degrees`, `pressure_mb`, `visibility_miles`, `raw_metar`, and
-`updated_at`.
 
 Production routes should expose:
 

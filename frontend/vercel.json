@@ -40,10 +40,6 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
-    "app/api/pjm-weather/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
     "app/api/ice-trade-blotter/daily-settlements/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]

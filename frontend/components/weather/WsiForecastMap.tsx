@@ -30,7 +30,7 @@ interface WsiForecastMapStation {
   timeZone: string | null;
   state: string | null;
   isAggregate: boolean;
-  coordinateSource: "noaa_metar" | "fallback" | null;
+  coordinateSource: "static" | null;
 }
 
 interface WsiForecastMapPoint {
@@ -998,11 +998,7 @@ export default function WsiForecastMap({ refreshToken = 0 }: { refreshToken?: nu
                         Source
                       </div>
                       <div className="mt-1 font-semibold text-gray-100">
-                        {selectedStation?.coordinateSource === "noaa_metar"
-                          ? "NOAA"
-                          : selectedStation?.coordinateSource === "fallback"
-                            ? "Static"
-                            : "--"}
+                        {selectedStation?.coordinateSource === "static" ? "Static" : "--"}
                       </div>
                     </div>
                   </div>

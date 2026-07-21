@@ -2299,80 +2299,6 @@ ORDER BY created_at DESC
 LIMIT 10;
 ```
 
-## helios-weather-noaa-metar-observations
-
-- Status: deployed on the production VM; timer enabled and latest manual run
-  succeeded.
-- Workflow: NOAA AviationWeather METAR observation refresh for the PJM station
-  basket.
-- Runtime module: `backend.orchestration.weather.noaa.metar_observations`.
-- Lower-level scrape module:
-  `backend.scrapes.weather.noaa.metar_observations`.
-- Source system: NOAA/NWS AviationWeather Data API `/api/data/metar`.
-- Destination table: `weather.noaa_metar_observations`.
-- Source grain: `station_id x observation_time_utc`.
-- API telemetry: `ops.api_fetch_log`.
-- Data freshness output: `ops.data_availability_events`.
-- Unit files:
-  - `infrastructure/systemd/helios-weather-noaa-metar-observations.service`
-  - `infrastructure/systemd/helios-weather-noaa-metar-observations.timer`
-- Proposed schedule: every 15 minutes at `07`, `22`, `37`, and `52` minutes
-  past the hour UTC with `RandomizedDelaySec=2min`.
-- Timer behavior: `Persistent=false`; scheduled runs pull a rolling recent
-  observation window.
-- Overlap protection: service uses `/usr/bin/flock` with
-  `/tmp/helios-weather-noaa-metar-observations.lock`.
-- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
-- VM deployment: working-tree overlay copied to `/opt/helioscta-platform` on
-  `2026-06-17`; unit files installed under `/etc/systemd/system/`.
-- Production DDL: `weather` schema, NOAA table, NOAA indexes, WSI table, WSI
-  indexes, and refreshed read-only grants applied on `2026-06-17`.
-- Application DDL required before first run is managed outside this repo.
-- Safe rerun story: upsert on `(station_id, observation_time_utc)`.
-- Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
-  backend/tests/test_weather_wsi_hourly_observed_orchestration.py
-  backend/tests/test_weather_noaa_metar_observations.py
-  backend/tests/test_weather_noaa_metar_observations_orchestration.py`, and historical read-only SQL shape checks passed on `2026-06-17`. pytest reported only pre-existing cache write warnings for
-  `backend/.pytest_cache`.
-- Production validation: read-only primary-key checks passed on `2026-06-17`.
-- VM verification: manual service run on `2026-06-17 21:04 UTC` exited
-  `status=0/SUCCESS`, upserted 1,651 rows for 33 PJM stations, wrote five
-  successful batched NOAA API telemetry rows, and emitted
-  `weather_noaa_metar_observations:freshness_observed:PJM:202606172058`.
-  First timer-triggered run completed on `2026-06-17 21:07:52 UTC`, exited
-  `status=0/SUCCESS`, and upserted 1,651 rows. Next scheduled run observed at
-  `2026-06-17 21:23:25 UTC`.
-
-Verification SQL for NOAA table freshness:
-
-```sql
-SELECT
-    region,
-    COUNT(*) AS rows,
-    COUNT(DISTINCT station_id) AS station_count,
-    MAX(observation_time_utc) AS latest_observation_time_utc,
-    MAX(updated_at) AS latest_updated_at
-FROM weather.noaa_metar_observations
-GROUP BY region
-ORDER BY region;
-```
-
-Verification SQL for NOAA API telemetry:
-
-```sql
-SELECT
-    provider,
-    operation_name,
-    status,
-    http_status,
-    rows_returned,
-    created_at
-FROM ops.api_fetch_log
-WHERE pipeline_name = 'noaa_metar_observations'
-ORDER BY created_at DESC
-LIMIT 20;
-```
-
 ## helios-weather-wsi-hourly-observed
 
 - Status: deployed on the production VM; timer enabled and latest manual run
@@ -2404,8 +2330,8 @@ LIMIT 20;
   recorded in this repo.
 - VM deployment: working-tree overlay copied to `/opt/helioscta-platform` on
   `2026-06-17`; unit files installed under `/etc/systemd/system/`.
-- Production DDL: `weather` schema, WSI table, WSI indexes, NOAA table, NOAA
-  indexes, and refreshed read-only grants applied on `2026-06-17`.
+- Production DDL: `weather` schema, WSI table, WSI indexes, and refreshed
+  read-only grants applied on `2026-06-17`.
 - Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(station_id, observation_time_local, region)`.

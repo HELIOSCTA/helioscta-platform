@@ -350,16 +350,6 @@ as empty extract, SQL `sftp_date` mismatch, non-ok `trade_status`, or product
 mapping issues. These conditions are recorded in metadata for diagnosis instead
 of blocking the v1 upload.
 
-NOAA AviationWeather METAR helpers use the public
-`https://aviationweather.gov/api/data/metar` endpoint and do not require
-provider credentials. The runtime module is
-`backend.scrapes.weather.noaa.metar_observations`, with orchestration at
-`backend.orchestration.weather.noaa.metar_observations`. It writes
-frontend-facing realtime observations to `weather.noaa_metar_observations`,
-logs API fetch telemetry to `ops.api_fetch_log`, and emits weather freshness
-events to `ops.data_availability_events`. The source grain is
-`station_id x observation_time_utc`.
-
 ## Permissions Contract
 
 Application schemas, shared platform tables, and promoted direct-write feed

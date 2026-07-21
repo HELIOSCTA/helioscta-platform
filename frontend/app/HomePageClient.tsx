@@ -610,8 +610,8 @@ export default function HomePageClient({
     if (activeSection === "pjm-weather") {
       return {
         title: "Weather",
-        subtitle: "WSI hourly weather and NOAA METAR observations for PJM station coverage.",
-        footer: "Weather | Source: WSI + NOAA AviationWeather / Azure PostgreSQL",
+        subtitle: "WSI hourly observed and forecast weather for PJM station coverage.",
+        footer: "Weather | Source: WSI / Azure PostgreSQL",
       };
     }
     if (activeSection === "power-lmp-adders") {

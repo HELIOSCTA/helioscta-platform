@@ -571,44 +571,6 @@ This avoids corrupting secrets that contain characters such as `$`. See
 The exception is `backend.backfills.power.lmp_price_backfill_7_day`, which is
 the promoted scheduled repair wrapper around the LMP scrape/backfill paths.
 
-## NOAA METAR Weather
-
-The NOAA AviationWeather METAR workflow has its own timer:
-
-```text
-helios-weather-noaa-metar-observations.service
-helios-weather-noaa-metar-observations.timer
-```
-
-It runs `backend.orchestration.weather.noaa.metar_observations`, pulls public
-METAR observations for the PJM station basket, upserts
-`weather.noaa_metar_observations`, writes NOAA API telemetry to
-`ops.api_fetch_log`, and emits weather freshness events to
-`ops.data_availability_events`. The timer runs every 15 minutes at minutes
-`07`, `22`, `37`, and `52` UTC with `Persistent=false`. The service uses
-`flock` with `/tmp/helios-weather-noaa-metar-observations.lock`.
-
-Do not enable this timer until the weather schema/table/index application DDL has
-been applied.
-
-After those prerequisites are complete:
-
-```bash
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-noaa-metar-observations.service /etc/systemd/system/
-sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-noaa-metar-observations.timer /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl start helios-weather-noaa-metar-observations.service
-sudo systemctl enable --now helios-weather-noaa-metar-observations.timer
-```
-
-Verify the workflow with:
-
-```bash
-systemctl status helios-weather-noaa-metar-observations.service
-systemctl status helios-weather-noaa-metar-observations.timer
-journalctl -u helios-weather-noaa-metar-observations.service -n 200 --no-pager
-```
-
 ## WSI Hourly Observed Weather
 
 The WSI hourly observed weather workflow has its own timer:

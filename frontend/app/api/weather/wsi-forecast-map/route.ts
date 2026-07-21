@@ -20,7 +20,7 @@ const ROUTE_CONFIG = {
   purpose: "WSI single-day station forecast map data",
   p95TargetMs: 1800,
   freshnessSource:
-    "weather.wsi_hourly_forecasts.updated_at, weather.wsi_hourly_observed_temperatures.updated_at, weather.noaa_metar_observations",
+    "weather.wsi_hourly_forecasts.updated_at, weather.wsi_hourly_observed_temperatures.updated_at",
 } as const;
 
 type ForecastRun = "primary" | "intraday";
@@ -77,12 +77,6 @@ interface MapRawRow {
   observed_updated_at: string | null;
 }
 
-interface NoaaCoordinateRow {
-  station_id: string;
-  latitude: string | number | null;
-  longitude: string | number | null;
-}
-
 interface WsiForecastMapHour {
   hourBeginning: number;
   hourEnding: number;
@@ -98,7 +92,7 @@ interface WsiForecastMapStation {
   timeZone: string | null;
   state: string | null;
   isAggregate: boolean;
-  coordinateSource: "noaa_metar" | "fallback" | null;
+  coordinateSource: "static" | null;
 }
 
 interface WsiForecastMapPoint {
@@ -436,19 +430,6 @@ const MAP_ROWS_SQL = `
     COALESCE(forecast.local_time_ept, observed.local_time_ept)
 `;
 
-const NOAA_COORDINATES_SQL = `
-  SELECT DISTINCT ON (station.station_id)
-    station.station_id,
-    station.latitude,
-    station.longitude
-  FROM weather.noaa_metar_observations AS station
-  WHERE station.region = $1::text
-    AND station.station_id = ANY($2::text[])
-    AND station.latitude IS NOT NULL
-    AND station.longitude IS NOT NULL
-  ORDER BY station.station_id, station.observation_time_utc DESC
-`;
-
 function parseRegion(raw: string | null): string {
   const value = raw?.trim();
   return value || "PJM";
@@ -562,27 +543,14 @@ function normalizePoint(row: MapRawRow): WsiForecastMapPoint {
   };
 }
 
-function buildStations(
-  points: WsiForecastMapPoint[],
-  noaaCoordinates: NoaaCoordinateRow[]
-): WsiForecastMapStation[] {
-  const noaaById = new Map(
-    noaaCoordinates.map((row) => [
-      row.station_id,
-      {
-        latitude: toNumber(row.latitude),
-        longitude: toNumber(row.longitude),
-      },
-    ])
-  );
+function buildStations(points: WsiForecastMapPoint[]): WsiForecastMapStation[] {
   const stationRows = new Map<string, WsiForecastMapStation>();
 
   for (const point of points) {
     if (stationRows.has(point.stationId)) continue;
     const metadata = WSI_STATION_METADATA_BY_ID.get(point.stationId);
-    const noaa = noaaById.get(point.stationId);
-    const latitude = noaa?.latitude ?? metadata?.latitude ?? null;
-    const longitude = noaa?.longitude ?? metadata?.longitude ?? null;
+    const latitude = metadata?.latitude ?? null;
+    const longitude = metadata?.longitude ?? null;
     stationRows.set(point.stationId, {
       stationId: point.stationId,
       stationName: point.stationName || metadata?.stationName || point.stationId,
@@ -593,11 +561,7 @@ function buildStations(
       state: metadata?.state ?? null,
       isAggregate: point.stationId === point.region,
       coordinateSource:
-        noaa && noaa.latitude !== null && noaa.longitude !== null
-          ? "noaa_metar"
-          : latitude !== null && longitude !== null
-            ? "fallback"
-            : null,
+        latitude !== null && longitude !== null ? "static" : null,
     });
   }
 
@@ -610,19 +574,6 @@ function buildStations(
 
 function dataAsOf(payload: WsiForecastMapPayload): string | null {
   return maxStamp(payload.asOf.forecast, payload.asOf.observed);
-}
-
-async function fetchNoaaCoordinates(
-  region: string,
-  stationIds: string[]
-): Promise<NoaaCoordinateRow[]> {
-  if (stationIds.length === 0) return [];
-  try {
-    return await query<NoaaCoordinateRow>(NOAA_COORDINATES_SQL, [region, stationIds]);
-  } catch (error) {
-    console.warn("[weather-wsi-forecast-map] NOAA coordinate lookup failed:", error);
-    return [];
-  }
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
@@ -684,9 +635,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     const selectedExecution = toIsoString(execution.selected_execution);
     const rowsResult = await query<MapRawRow>(MAP_ROWS_SQL, [region, date, selectedExecution]);
     const rows = rowsResult.map(normalizePoint);
-    const stationIds = Array.from(new Set(rows.map((row) => row.stationId).filter(Boolean)));
-    const noaaCoordinates = await fetchNoaaCoordinates(region, stationIds);
-    const stations = buildStations(rows, noaaCoordinates);
+    const stations = buildStations(rows);
     const forecastAsOf = rows.reduce<string | null>(
       (latest, row) => maxStamp(latest, row.forecastUpdatedAt),
       null
