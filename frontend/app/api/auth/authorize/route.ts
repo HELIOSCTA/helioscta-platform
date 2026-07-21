@@ -32,7 +32,6 @@ export async function GET(request: NextRequest): Promise<Response> {
     client_id: config.clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    response_mode: "query",
     scope: "openid email profile",
     state,
     nonce,
