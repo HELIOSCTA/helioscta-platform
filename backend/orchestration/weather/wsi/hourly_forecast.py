@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import pandas as pd
 
+from backend.orchestration.weather.wsi._completeness import station_coverage
 from backend.scrapes.weather.wsi import hourly_forecast as scrape
+from backend.scrapes.weather.wsi.stations import STATION_BASKETS
 from backend.utils.data_availability import emit_data_availability_event
 
 API_SCRAPE_NAME = scrape.API_SCRAPE_NAME
@@ -54,6 +57,7 @@ def _emit_freshness_event(
     df: pd.DataFrame,
     region: str,
     database: str | None,
+    expected_stations: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     current_df = df.copy()
     current_df["forecast_issued_at_utc"] = pd.to_datetime(
@@ -73,10 +77,47 @@ def _emit_freshness_event(
     station_count = int(current_df["station_id"].nunique())
     row_count = int(len(current_df))
     business_date = pd.Timestamp(latest_issue).date()
+    expected_station_map = expected_stations or STATION_BASKETS.get(region, {})
+    coverage = station_coverage(current_df, expected_stations=expected_station_map)
+    forecast_period_counts = (
+        current_df.dropna(subset=["forecast_time_utc"])
+        .groupby("station_id")["forecast_time_utc"]
+        .nunique()
+        .sort_index()
+    )
+    station_forecast_period_counts = {
+        str(station_id): int(period_count)
+        for station_id, period_count in forecast_period_counts.items()
+    }
+    min_station_period_count = (
+        min(station_forecast_period_counts.values())
+        if station_forecast_period_counts
+        else 0
+    )
+    max_station_period_count = (
+        max(station_forecast_period_counts.values())
+        if station_forecast_period_counts
+        else 0
+    )
+    uniform_forecast_period_count = (
+        bool(station_forecast_period_counts)
+        and min_station_period_count == max_station_period_count
+    )
+    completeness_status = coverage.status
+    if completeness_status == "complete" and not uniform_forecast_period_count:
+        completeness_status = "partial"
     payload = {
         "region": region,
         "latest_forecast_issued_at_utc": pd.Timestamp(latest_issue).isoformat(),
         "station_count": station_count,
+        "completeness_basis": (
+            "expected_station_presence_and_uniform_forecast_period_count"
+        ),
+        **coverage.as_payload(),
+        "station_forecast_period_counts": station_forecast_period_counts,
+        "min_station_period_count": min_station_period_count,
+        "max_station_period_count": max_station_period_count,
+        "uniform_forecast_period_count": uniform_forecast_period_count,
         "forecast_time_min_utc": pd.Timestamp(
             current_df["forecast_time_utc"].min()
         ).isoformat(),
@@ -102,7 +143,7 @@ def _emit_freshness_event(
         row_count=row_count,
         entity_count=station_count,
         period_count=int(current_df["forecast_time_utc"].nunique()),
-        completeness_status="unknown",
+        completeness_status=completeness_status,
         run_id=None,
         payload=payload,
         database=database,

@@ -2312,6 +2312,12 @@ LIMIT 10;
 - Source grain: `station_id x observation_time_local x region`.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
+- Telemetry hardening: malformed or schema-incompatible CSV after a successful
+  HTTP response writes a failed `ops.api_fetch_log` row with
+  `metadata.telemetry_stage = 'parse_csv'`.
+- Freshness completeness: `complete` only when the configured PJM station
+  basket is present; missing or unexpected stations emit `partial` with
+  station coverage details in the event payload.
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-hourly-observed.service`
   - `infrastructure/systemd/helios-weather-wsi-hourly-observed.timer`
@@ -2325,6 +2331,11 @@ LIMIT 10;
 - Required VM credentials:
   `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
   `/etc/helioscta/backend.env`.
+- Manual station-basket validation:
+  `python -m backend.scrapes.weather.wsi.station_metadata` calls WSI Trader
+  `GetCityIds`, writes fetch telemetry, compares returned station IDs against
+  the configured PJM basket, and writes no weather table rows. It is not
+  scheduled.
 - VM credentials: WSI credential keys were installed in
   `/etc/helioscta/backend.env` on `2026-06-18`; values are intentionally not
   recorded in this repo.
@@ -2336,9 +2347,10 @@ LIMIT 10;
 - Safe rerun story: upsert on
   `(station_id, observation_time_local, region)`.
 - Local verification: `pytest backend/tests/test_weather_wsi_hourly_observed.py
-  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, and
-  historical read-only SQL shape checks passed on `2026-06-17`. pytest reported
-  only pre-existing cache write warnings for `backend/.pytest_cache`.
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py
+  backend/tests/test_weather_wsi_station_metadata.py`, and historical read-only
+  SQL shape checks passed on `2026-06-17`. pytest reported only pre-existing
+  cache write warnings for `backend/.pytest_cache`.
 - Production validation: read-only primary-key checks passed on `2026-06-18`.
 - VM verification: manual service run on `2026-06-18 13:54 UTC` exited
   `status=0/SUCCESS`, upserted 1,935 rows for 34 PJM station IDs, wrote
@@ -2390,6 +2402,12 @@ LIMIT 20;
   `station_id x region x forecast_issued_at_utc x forecast_time_utc`.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
+- Telemetry hardening: malformed forecast CSV after a successful HTTP response
+  writes a failed `ops.api_fetch_log` row with
+  `metadata.telemetry_stage = 'parse_forecast_csv'`.
+- Freshness completeness: `complete` only when the configured PJM station
+  basket is present and every station has the same forecast valid-hour count;
+  otherwise emits `partial` with station and period-count details.
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.service`
   - `infrastructure/systemd/helios-weather-wsi-hourly-forecast.timer`
@@ -2409,9 +2427,10 @@ LIMIT 20;
 - Local verification: `pytest backend/tests/test_weather_wsi_hourly_forecast.py
   backend/tests/test_weather_wsi_hourly_forecast_orchestration.py
   backend/tests/test_weather_wsi_hourly_observed.py
-  backend/tests/test_weather_wsi_hourly_observed_orchestration.py`, and
-  historical read-only SQL shape checks passed on `2026-06-18`. pytest reported
-  only pre-existing cache write warnings for `backend/.pytest_cache`.
+  backend/tests/test_weather_wsi_hourly_observed_orchestration.py
+  backend/tests/test_weather_wsi_station_metadata.py`, and historical read-only
+  SQL shape checks passed on `2026-06-18`. pytest reported only pre-existing
+  cache write warnings for `backend/.pytest_cache`.
 - Production DDL: `weather.wsi_hourly_forecasts` table and three forecast
   indexes were applied on `2026-06-18`:
   `idx_weather_wsi_hourly_fcst_latest`,

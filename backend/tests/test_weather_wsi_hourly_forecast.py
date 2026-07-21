@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pandas as pd
+import pytest
 
 from backend.scrapes.weather.wsi import hourly_forecast
 
@@ -132,6 +133,38 @@ def test_wsi_hourly_forecast_pull_uses_batched_site_ids(monkeypatch):
     assert captured[0]["params"]["SiteIds[]"] == ["KDCA", "KPHL"]
     assert captured[1]["params"]["SiteIds[]"] == ["KPIT"]
     assert set(df["station_id"]) == {"KDCA", "KPHL", "KPIT"}
+
+
+def test_wsi_hourly_forecast_parse_failure_logs_fetch_failure(monkeypatch):
+    captured: list[dict[str, object]] = []
+
+    def fake_get_text(**_kwargs):
+        return "NA-KDCA , Hourly Forecast Made Jun 18 2026 1028 UTC\n"
+
+    monkeypatch.setattr(hourly_forecast.client._HTTP_CLIENT, "get_text", fake_get_text)
+    monkeypatch.setattr(
+        hourly_forecast.client,
+        "log_wsi_fetch_event",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    with pytest.raises(ValueError, match="missing header"):
+        hourly_forecast._pull_batch(
+            region="PJM",
+            station_names={"KDCA": "Washington"},
+            run_id="run-1",
+            database="helios_prod",
+            scrape_run_at_utc=datetime(2026, 6, 18, 10, 30, tzinfo=timezone.utc),
+        )
+
+    assert captured[0]["status"] == "failure"
+    assert captured[0]["http_status"] == 200
+    assert captured[0]["operation_name"] == "GetHourlyForecast"
+    assert captured[0]["metadata"] == {
+        "region": "PJM",
+        "station_ids": ["KDCA"],
+        "telemetry_stage": "parse_forecast_csv",
+    }
 
 
 def test_wsi_hourly_forecast_retention_purge_uses_90_day_default(monkeypatch):

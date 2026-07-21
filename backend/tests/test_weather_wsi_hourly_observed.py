@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pandas as pd
+import pytest
 
 from backend.scrapes.weather.wsi import client, hourly_observed
 
@@ -62,6 +63,44 @@ def test_wsi_credentials_contract(monkeypatch):
     monkeypatch.setattr(client.credentials, "WSI_TRADER_PASSWORD", "password")
 
     assert not client.wsi_credentials_available()
+
+
+def test_wsi_csv_parse_failure_logs_fetch_failure(monkeypatch):
+    captured: list[dict[str, object]] = []
+
+    class FakeHttpClient:
+        def get_text(self, **_kwargs):
+            return "Unexpected,Columns\n1,2\n"
+
+    monkeypatch.setattr(
+        client,
+        "log_wsi_fetch_event",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    with pytest.raises(ValueError, match="missing required columns"):
+        client.read_wsi_csv(
+            base_url="https://www.wsitrader.com/Services/GetHistoricalObservations",
+            params={},
+            skiprows=0,
+            required_columns=["Date", "Hour"],
+            pipeline_name="wsi_hourly_observed_temperatures",
+            operation_name="GetHistoricalObservations",
+            target_table="weather.wsi_hourly_observed_temperatures",
+            run_id="run-1",
+            feed_name="wsi_hourly_observed_temperatures",
+            database="helios_prod",
+            metadata={"region": "PJM"},
+            http_client=FakeHttpClient(),
+        )
+
+    assert captured[0]["status"] == "failure"
+    assert captured[0]["http_status"] == 200
+    assert captured[0]["operation_name"] == "GetHistoricalObservations"
+    assert captured[0]["metadata"] == {
+        "region": "PJM",
+        "telemetry_stage": "parse_csv",
+    }
 
 
 def test_wsi_hourly_observed_pull_uses_station_metadata(monkeypatch):

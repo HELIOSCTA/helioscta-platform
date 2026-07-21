@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import logging
 import re
+import time
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from io import StringIO
@@ -247,6 +248,11 @@ def _pull_batch(
         "wsi_request: %s",
         client.sanitized_request_context(DEFAULT_BASE_URL, params),
     )
+    fetch_metadata = {
+        "region": region,
+        "station_ids": station_ids,
+        **(metadata or {}),
+    }
     text = client._HTTP_CLIENT.get_text(
         base_url=DEFAULT_BASE_URL,
         params=params,
@@ -256,18 +262,34 @@ def _pull_batch(
         run_id=run_id,
         feed_name=API_SCRAPE_NAME,
         database=database,
-        metadata={
-            "region": region,
-            "station_ids": station_ids,
-            **(metadata or {}),
-        },
+        metadata=fetch_metadata,
     )
-    return parse_hourly_forecast_text(
-        text,
-        region=region,
-        station_names=station_names,
-        scrape_run_at_utc=scrape_run_at_utc,
-    )
+    parse_started_at = time.perf_counter()
+    try:
+        return parse_hourly_forecast_text(
+            text,
+            region=region,
+            station_names=station_names,
+            scrape_run_at_utc=scrape_run_at_utc,
+        )
+    except Exception as exc:
+        elapsed_ms = round((time.perf_counter() - parse_started_at) * 1000)
+        client.log_wsi_fetch_event(
+            base_url=DEFAULT_BASE_URL,
+            pipeline_name=API_SCRAPE_NAME,
+            operation_name="GetHourlyForecast",
+            target_table=TARGET_TABLE_FQN,
+            status="failure",
+            http_status=200,
+            elapsed_ms=elapsed_ms,
+            run_id=run_id,
+            feed_name=API_SCRAPE_NAME,
+            database=database,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            metadata=client.with_telemetry_stage(fetch_metadata, "parse_forecast_csv"),
+        )
+        raise
 
 
 def _pull(

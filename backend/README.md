@@ -144,7 +144,13 @@ WSI API fetch telemetry to `ops.api_fetch_log`, and emits a weather freshness
 event to `ops.data_availability_events`. The source grain is
 `station_id x observation_time_local x region`; observations are stored in WSI
 local station-hour time, so the availability payload records the local window
-instead of UTC interval bounds.
+instead of UTC interval bounds. WSI CSV parse and required-column failures emit
+an additional failed `ops.api_fetch_log` row with
+`metadata.telemetry_stage = 'parse_csv'` after the HTTP fetch row, so malformed
+HTTP 200 responses are visible in fetch telemetry. The freshness event marks
+`completeness_status = 'complete'` only when every configured station in the
+region basket is present; otherwise it emits `partial` with expected, actual,
+missing, and unexpected station IDs in the payload.
 
 The promoted WSI hourly forecast runtime module is
 `backend.scrapes.weather.wsi.hourly_forecast`, with orchestration at
@@ -155,7 +161,16 @@ The source grain is
 `station_id x region x forecast_issued_at_utc x forecast_time_utc`; safe reruns
 upsert by that key while preserving distinct forecast issues. Scheduled runs
 retain 90 days of forecast issue history in the hot table and purge older rows
-after successful upserts.
+after successful upserts. Forecast parse failures emit a failed
+`ops.api_fetch_log` row with
+`metadata.telemetry_stage = 'parse_forecast_csv'`. Forecast freshness marks
+`complete` only when every configured station is present and each station has a
+uniform count of forecast valid hours; otherwise it emits `partial`.
+
+Run `python -m backend.scrapes.weather.wsi.station_metadata` manually to fetch
+WSI Trader `GetCityIds` metadata and compare the returned station IDs against
+the configured PJM station basket. This probe is not scheduled and writes no
+weather table rows.
 
 Forecast hot-table retention is enforced by the scrape runtime after successful
 upserts for rolling forecast tables: ERCOT seven-day load forecasts, ISO-NE

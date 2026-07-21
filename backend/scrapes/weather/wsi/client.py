@@ -67,6 +67,55 @@ def sanitized_request_context(
     return {"base_url": base_url, "params": merged}
 
 
+def log_wsi_fetch_event(
+    *,
+    base_url: str,
+    pipeline_name: str,
+    operation_name: str,
+    target_table: str | None,
+    status: str,
+    elapsed_ms: int,
+    run_id: str | None = None,
+    feed_name: str | None = None,
+    database: str | None = None,
+    http_status: int | None = None,
+    rows_returned: int | None = None,
+    error_type: str | None = None,
+    error_message: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    parsed = urlparse(base_url)
+    log_api_fetch(
+        actor_type="backend",
+        provider="wsi",
+        pipeline_name=pipeline_name,
+        run_id=run_id,
+        operation_name=operation_name,
+        feed_name=feed_name,
+        target_table=target_table,
+        method="GET",
+        target_host=parsed.netloc,
+        target_path=parsed.path,
+        status=status,
+        http_status=http_status,
+        elapsed_ms=elapsed_ms,
+        rows_returned=rows_returned,
+        error_type=error_type,
+        error_message=redact_secrets(error_message),
+        metadata=metadata,
+        database=database,
+    )
+
+
+def with_telemetry_stage(
+    metadata: dict[str, Any] | None,
+    stage: str,
+) -> dict[str, Any]:
+    staged = dict(metadata or {})
+    staged["telemetry_stage"] = stage
+    return staged
+
+
 class WsiTraderHttpClient:
     """Shared WSI HTTP client with retry, timeout, throttling, and telemetry."""
 
@@ -111,14 +160,13 @@ class WsiTraderHttpClient:
         params: dict[str, Any] | None = None,
         pipeline_name: str,
         operation_name: str,
-        target_table: str,
+        target_table: str | None,
         run_id: str | None = None,
         feed_name: str | None = None,
         database: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> str:
         merged_params = {**wsi_credentials(), **(params or {})}
-        parsed = urlparse(base_url)
         started_at = time.perf_counter()
         status = "success"
         http_status: int | None = None
@@ -146,25 +194,20 @@ class WsiTraderHttpClient:
             raise
         finally:
             elapsed_ms = round((time.perf_counter() - started_at) * 1000)
-            log_api_fetch(
-                actor_type="backend",
-                provider="wsi",
+            log_wsi_fetch_event(
+                base_url=base_url,
                 pipeline_name=pipeline_name,
-                run_id=run_id,
                 operation_name=operation_name,
-                feed_name=feed_name,
                 target_table=target_table,
-                method="GET",
-                target_host=parsed.netloc,
-                target_path=parsed.path,
                 status=status,
                 http_status=http_status,
                 elapsed_ms=elapsed_ms,
-                rows_returned=None,
+                run_id=run_id,
+                feed_name=feed_name,
+                database=database,
                 error_type=error_type,
                 error_message=error_message,
                 metadata=metadata,
-                database=database,
             )
 
 
@@ -179,7 +222,7 @@ def read_wsi_csv(
     required_columns: list[str],
     pipeline_name: str,
     operation_name: str,
-    target_table: str,
+    target_table: str | None,
     run_id: str | None,
     feed_name: str | None,
     database: str | None,
@@ -197,19 +240,38 @@ def read_wsi_csv(
         database=database,
         metadata=metadata,
     )
+    parse_started_at = time.perf_counter()
     try:
-        df = pd.read_csv(StringIO(text), skiprows=skiprows)
-    except pd.errors.EmptyDataError as exc:
-        raise ValueError("WSI response contained no CSV data.") from exc
-    except pd.errors.ParserError as exc:
-        raise ValueError(f"Failed to parse WSI CSV response: {exc}") from exc
+        try:
+            df = pd.read_csv(StringIO(text), skiprows=skiprows)
+        except pd.errors.EmptyDataError as exc:
+            raise ValueError("WSI response contained no CSV data.") from exc
+        except pd.errors.ParserError as exc:
+            raise ValueError(f"Failed to parse WSI CSV response: {exc}") from exc
 
-    if df.empty:
-        raise ValueError("WSI response returned 0 rows.")
-    missing = [column for column in required_columns if column not in df.columns]
-    if missing:
-        raise ValueError(
-            "WSI response missing required columns. "
-            f"Missing={missing}, Actual={df.columns.tolist()}"
+        if df.empty:
+            raise ValueError("WSI response returned 0 rows.")
+        missing = [column for column in required_columns if column not in df.columns]
+        if missing:
+            raise ValueError(
+                "WSI response missing required columns. "
+                f"Missing={missing}, Actual={df.columns.tolist()}"
+            )
+    except Exception as exc:
+        log_wsi_fetch_event(
+            base_url=base_url,
+            pipeline_name=pipeline_name,
+            operation_name=operation_name,
+            target_table=target_table,
+            status="failure",
+            http_status=200,
+            elapsed_ms=round((time.perf_counter() - parse_started_at) * 1000),
+            run_id=run_id,
+            feed_name=feed_name,
+            database=database,
+            error_type=type(exc).__name__,
+            error_message=str(exc),
+            metadata=with_telemetry_stage(metadata, "parse_csv"),
         )
+        raise
     return df

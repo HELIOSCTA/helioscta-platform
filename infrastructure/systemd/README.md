@@ -587,6 +587,10 @@ Historical Observations for the PJM station basket, upserts
 `ops.data_availability_events`. The timer runs every six hours at `00:20`,
 `06:20`, `12:20`, and `18:20` UTC with `Persistent=false` because the
 scheduled default pulls a rolling recent window.
+Malformed or schema-incompatible CSV responses add a failed fetch-telemetry row
+with `metadata.telemetry_stage = 'parse_csv'`. Freshness completeness is based
+on configured station-basket coverage; missing or unexpected stations emit
+`completeness_status = 'partial'`.
 The service uses `flock` with
 `/tmp/helios-weather-wsi-hourly-observed.lock`.
 
@@ -629,6 +633,10 @@ Hourly Forecast rows for the PJM station basket, upserts
 `06:32`, `12:32`, and `18:32` UTC with `Persistent=false`; each run stores the
 latest WSI forecast issue returned by the source. The service uses `flock` with
 `/tmp/helios-weather-wsi-hourly-forecast.lock`.
+Malformed forecast CSV responses add a failed fetch-telemetry row with
+`metadata.telemetry_stage = 'parse_forecast_csv'`. Forecast freshness emits
+`complete` only when the configured station basket is present and every station
+has the same forecast valid-hour count; otherwise it emits `partial`.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the

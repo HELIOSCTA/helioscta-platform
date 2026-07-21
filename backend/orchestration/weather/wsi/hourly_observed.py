@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 
 import pandas as pd
 
+from backend.orchestration.weather.wsi._completeness import station_coverage
 from backend.scrapes.weather.wsi import hourly_observed as scrape
+from backend.scrapes.weather.wsi.stations import STATION_BASKETS
 from backend.utils.data_availability import emit_data_availability_event
 
 API_SCRAPE_NAME = scrape.API_SCRAPE_NAME
@@ -59,6 +62,7 @@ def _emit_freshness_event(
     df: pd.DataFrame,
     region: str,
     database: str | None,
+    expected_stations: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     current_df = df.copy()
     current_df["observation_time_local"] = pd.to_datetime(
@@ -72,10 +76,24 @@ def _emit_freshness_event(
     station_count = int(current_df["station_id"].nunique())
     row_count = int(len(current_df))
     business_date = pd.Timestamp(latest).date()
+    expected_station_map = expected_stations or STATION_BASKETS.get(region, {})
+    coverage = station_coverage(current_df, expected_stations=expected_station_map)
+    latest_by_station = (
+        current_df.dropna(subset=["observation_time_local"])
+        .groupby("station_id")["observation_time_local"]
+        .max()
+        .sort_index()
+    )
     payload = {
         "region": region,
         "latest_observation_time_local": pd.Timestamp(latest).isoformat(),
         "station_count": station_count,
+        "completeness_basis": "expected_station_presence_in_returned_window",
+        **coverage.as_payload(),
+        "station_latest_observation_time_local": {
+            str(station_id): pd.Timestamp(value).isoformat()
+            for station_id, value in latest_by_station.items()
+        },
         "window_min": pd.Timestamp(current_df["observation_time_local"].min()).isoformat(),
         "window_max": pd.Timestamp(latest).isoformat(),
     }
@@ -97,7 +115,7 @@ def _emit_freshness_event(
         row_count=row_count,
         entity_count=station_count,
         period_count=int(current_df["observation_time_local"].nunique()),
-        completeness_status="unknown",
+        completeness_status=coverage.status,
         run_id=None,
         payload=payload,
         database=database,
