@@ -569,6 +569,7 @@ select
     trade_price,
     market_settlement_price,
 
+    product_norm,
     rule_status,
     rule_priority,
     rule_match_type,

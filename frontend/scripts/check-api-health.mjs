@@ -83,6 +83,20 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
+    name: "NAV positions summary",
+    path: "/api/nav-positions?fund=all&productGroup=Power&productRegion=PJM",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.rowCount,
+  },
+  {
+    name: "NAV positions drilldown",
+    path: "/api/nav-positions/drilldown?fund=all&productGroup=Power&productRegion=PJM&productCode=PWA&limit=25",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.rowCount,
+  },
+  {
     name: "WSI hourly temps",
     path: "/api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary",
     targetMs: 1_500,
@@ -111,6 +125,7 @@ Options:
   --base-url=<url>     Base URL to check. Default: ${DEFAULT_BASE_URL}
   --samples=<n>        Measured samples per endpoint. Default: ${DEFAULT_SAMPLES}
   --warmup=<n>         Warmup requests per endpoint. Default: ${DEFAULT_WARMUP}
+  --filter=<text>      Check only endpoints whose name or path contains text.
   --cache-bust         Add a unique query param so Vercel/Next cache misses are measured.
   --require-timing     Fail when Server-Timing is missing.
   --allow-slow         Exit 0 when routes exceed target latency, but still report SLOW.
@@ -119,7 +134,10 @@ Options:
 
 Environment:
   HELIOS_API_HEALTH_BASE_URL      Same as --base-url.
+  HELIOS_API_HEALTH_FILTER        Same as --filter.
   HELIOS_API_HEALTH_BYPASS_TOKEN  Vercel protection bypass token. Appended as a query param.
+  HELIOS_NAV_POSITIONS_SERVICE_TOKEN
+                                  Optional app-level token for protected NAV checks.
 `.trim();
 }
 
@@ -132,6 +150,7 @@ function parseArgs(argv) {
     requireTiming: false,
     allowSlow: false,
     json: false,
+    filter: process.env.HELIOS_API_HEALTH_FILTER?.trim().toLowerCase() || null,
   };
 
   for (const arg of argv) {
@@ -149,6 +168,11 @@ function parseArgs(argv) {
     }
     if (arg.startsWith("--warmup=")) {
       options.warmup = positiveInt(arg.slice("--warmup=".length), "warmup", 0);
+      continue;
+    }
+    if (arg.startsWith("--filter=")) {
+      const filter = arg.slice("--filter=".length).trim().toLowerCase();
+      options.filter = filter || null;
       continue;
     }
     if (arg === "--cache-bust") {
@@ -194,6 +218,10 @@ function requestHeaders() {
   const bypassToken = process.env.HELIOS_API_HEALTH_BYPASS_TOKEN;
   if (bypassToken) {
     headers["x-vercel-protection-bypass"] = bypassToken;
+  }
+  const navPositionsToken = process.env.HELIOS_NAV_POSITIONS_SERVICE_TOKEN;
+  if (navPositionsToken) {
+    headers["x-helios-nav-positions-token"] = navPositionsToken;
   }
   return headers;
 }
@@ -287,6 +315,18 @@ async function measureEndpoint(endpoint, options) {
       if (!dataAsOf || dataAsOf === "unknown") {
         errors.push("missing X-Helios-Data-As-Of");
       }
+      const rowCount =
+        typeof endpoint.rowCount === "function"
+          ? endpoint.rowCount(parsedBody)
+          : typeof parsedBody?.rowCount === "number"
+            ? parsedBody.rowCount
+            : null;
+      if (
+        typeof endpoint.minRows === "number" &&
+        (typeof rowCount !== "number" || rowCount < endpoint.minRows)
+      ) {
+        errors.push(`row count below ${endpoint.minRows}`);
+      }
 
       if (measured) {
         samples.push({
@@ -297,7 +337,7 @@ async function measureEndpoint(endpoint, options) {
           payloadBytes,
           dataAsOf,
           cachePolicy: response.headers.get("x-helios-cache-policy"),
-          rowCount: typeof parsedBody?.rowCount === "number" ? parsedBody.rowCount : null,
+          rowCount,
         });
       }
     } catch (error) {
@@ -389,8 +429,15 @@ async function main() {
   const options = parseArgs(process.argv.slice(2));
   const results = [];
   const endpointsToCheck = endpoints.filter(
-    (endpoint) => !endpoint.devOnly || isLocalBaseUrl(options.baseUrl),
+    (endpoint) =>
+      (!endpoint.devOnly || isLocalBaseUrl(options.baseUrl)) &&
+      (!options.filter ||
+        endpoint.name.toLowerCase().includes(options.filter) ||
+        endpoint.path.toLowerCase().includes(options.filter)),
   );
+  if (endpointsToCheck.length === 0) {
+    throw new Error(`No endpoints matched filter: ${options.filter}`);
+  }
 
   for (const endpoint of endpointsToCheck) {
     results.push(await measureEndpoint(endpoint, options));

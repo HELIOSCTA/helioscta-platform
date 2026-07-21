@@ -43,31 +43,44 @@ export interface ProductSummaryRow {
 }
 
 export interface NavPositionDebugRow {
-  fundCode: string;
   navDate: string;
-  sftpUploadTimestamp: string | null;
-  accountGroup: string | null;
-  account: string | null;
-  sourceFileName: string;
-  sourceFileRowNumber: number;
-  product: string | null;
-  type: string | null;
-  monthYear: string | null;
-  exchangeName: string | null;
-  clientSymbol: string | null;
-  quantity1: number | null;
-  costInBaseCurrency: number | null;
-  marketValueInBaseCurrency: number | null;
-  productCode: string | null;
+  tradeDate: string | null;
   productGroup: string | null;
   productRegion: string | null;
-  underlyingProductCode: string | null;
+  productCode: string | null;
   contractYyyymm: string | null;
   contractDay: number | null;
-  putCall: string | null;
-  normalizedStrikePrice: number | null;
+  account: string | null;
+  accountName: string | null;
+  longShort: string | null;
+  quantity1: number | null;
+  multiplierAndTickValue: number | null;
+  tradePrice: number | null;
+  marketSettlementPrice: number | null;
+  productNorm: string | null;
   normalizationStatus: string | null;
-  updatedAt: string | null;
+  rulePriority: number | null;
+  ruleMatchType: string | null;
+  rulePattern: string | null;
+}
+
+export interface NavPositionsProductFilterOption {
+  productGroup: string | null;
+  productRegion: string | null;
+  productCode: string | null;
+  instrumentType: string | null;
+  putCall: string | null;
+}
+
+export interface NavPositionsAppliedFilters {
+  fund: string;
+  accountGroup: string;
+  productSearch: string;
+  productGroups: string[];
+  productRegions: string[];
+  productCodes: string[];
+  instrumentType: string;
+  putCall: string;
 }
 
 export interface NavPositionsPayload {
@@ -82,17 +95,17 @@ export interface NavPositionsPayload {
   asOf: string | null;
   latestUploadAt: string | null;
   availableDates: AvailableDate[];
-  filters: {
-    fund: string;
-    accountGroup: string;
-    productSearch: string;
-  };
+  filters: NavPositionsAppliedFilters;
   summary: NavPositionsSummary;
   productSummary: ProductSummaryRow[];
   metadata: {
     funds: string[];
     accountGroups: string[];
     products: string[];
+    productGroups: string[];
+    productRegions: string[];
+    productCodes: string[];
+    productFilterOptions: NavPositionsProductFilterOption[];
     aggregationGrain: string[];
     productSummaryLimit: number;
     dbtModel: string;
@@ -111,11 +124,7 @@ export interface NavPositionsDebugPayload {
   requestedDate: string | null;
   asOf: string | null;
   latestUploadAt: string | null;
-  filters: {
-    fund: string;
-    accountGroup: string;
-    productSearch: string;
-  };
+  filters: NavPositionsAppliedFilters;
   summary: {
     rowCount: number;
     returnedRowCount: number;

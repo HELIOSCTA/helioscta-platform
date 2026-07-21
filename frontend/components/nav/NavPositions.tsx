@@ -11,6 +11,7 @@ import type {
   NavPositionDebugRow,
   NavPositionsDebugPayload,
   NavPositionsPayload,
+  NavPositionsProductFilterOption,
   ProductSummaryRow,
 } from "@/lib/positionsAndTrades/navPositionsTypes";
 
@@ -28,26 +29,35 @@ type SortState<Key extends string> = { key: Key; direction: SortDirection };
 type ColumnFilters<Key extends string> = Partial<Record<Key, string[]>>;
 
 type DebugRowColumnKey =
-  | "fundCode"
   | "navDate"
-  | "accountGroup"
-  | "account"
-  | "sourceFileRowNumber"
-  | "product"
-  | "type"
-  | "monthYear"
-  | "exchangeName"
-  | "clientSymbol"
-  | "quantity1"
-  | "marketValueInBaseCurrency"
-  | "productCode"
+  | "tradeDate"
   | "productGroup"
   | "productRegion"
+  | "productCode"
   | "contractYyyymm"
   | "contractDay"
-  | "putCall"
-  | "normalizedStrikePrice"
-  | "normalizationStatus";
+  | "account"
+  | "accountName"
+  | "longShort"
+  | "quantity1"
+  | "multiplierAndTickValue"
+  | "tradePrice"
+  | "marketSettlementPrice"
+  | "productNorm"
+  | "normalizationStatus"
+  | "rulePriority"
+  | "ruleMatchType"
+  | "rulePattern";
+
+type DebugSelectableColumnKey = Extract<
+  DebugRowColumnKey,
+  | "contractDay"
+  | "quantity1"
+  | "multiplierAndTickValue"
+  | "tradePrice"
+  | "marketSettlementPrice"
+  | "rulePriority"
+>;
 
 type PositionLadderColumnKey =
   | "prior"
@@ -62,12 +72,32 @@ type PositionLadderColumnKey =
   | "other"
   | `month:${string}`;
 
+type PositionLadderProductColumnKey = "product";
+type OptionFilter = "all" | "futures" | "options";
+type PutCallFilter = "all" | "C" | "P";
+
 interface TableColumn<Key extends string> {
   key: Key;
   label: string;
   align?: ColumnAlign;
   sticky?: boolean;
   minClass?: string;
+  width?: number;
+}
+
+interface SelectionStats {
+  cells: number;
+  observations: number;
+  columns: DebugSelectableColumnKey[];
+  avg: number | null;
+  sum: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+interface DebugRowItem {
+  row: NavPositionDebugRow;
+  key: string;
 }
 
 interface PositionLadderColumn {
@@ -132,10 +162,15 @@ interface PositionLadderDrilldown {
 }
 
 const API_CACHE_TTL_MS = 2 * 60 * 1000;
-const DEBUG_ROW_LIMIT = 500;
+const NAV_POSITIONS_API_PATH = "/api/nav-positions";
+const NAV_POSITIONS_DRILLDOWN_API_PATH = "/api/nav-positions/drilldown";
+const DEBUG_ROW_LIMIT = 100;
 const FILTER_LABEL_CLASS = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
 const PILL_DROPDOWN_CLASS =
   "h-8 rounded-full border border-gray-700 bg-white px-3 text-xs font-semibold text-black outline-none transition-colors hover:border-gray-500 focus:border-sky-500/60 disabled:cursor-not-allowed disabled:bg-gray-200 disabled:text-gray-500";
+const POSITION_LADDER_PRODUCT_WIDTH = 220;
+const DEFAULT_PRODUCT_GROUP_FILTERS = ["Power"];
+const DEFAULT_PRODUCT_REGION_FILTERS = ["PJM"];
 const DEFAULT_FRESHNESS: NavPositionsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
@@ -145,51 +180,97 @@ const DEFAULT_FRESHNESS: NavPositionsFreshnessSummary = {
   latestUpdateLabel: "--",
 };
 
+interface NavPositionsApiFilters {
+  selectedDate: string;
+  accountFilter: string;
+  productGroupFilters: string[];
+  productRegionFilters: string[];
+  productCodeFilters: string[];
+  optionFilter: OptionFilter;
+  putCallFilter: PutCallFilter;
+}
+
+function stableFilterValues(values: string[]): string[] {
+  return [...values].sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function appendRepeatedParams(params: URLSearchParams, name: string, values: string[]): void {
+  stableFilterValues(values).forEach((value) => params.append(name, value));
+}
+
 function buildApiUrl({
   selectedDate,
   accountFilter,
+  productGroupFilters,
+  productRegionFilters,
+  productCodeFilters,
+  optionFilter,
+  putCallFilter,
   refresh,
-}: {
-  selectedDate: string;
-  accountFilter: string;
+}: NavPositionsApiFilters & {
   refresh: boolean;
 }): string {
   const params = new URLSearchParams();
   if (selectedDate) params.set("date", selectedDate);
   if (accountFilter !== "all") params.set("fund", accountFilter);
+  appendRepeatedParams(params, "productGroup", productGroupFilters);
+  appendRepeatedParams(params, "productRegion", productRegionFilters);
+  appendRepeatedParams(params, "productCode", productCodeFilters);
+  if (optionFilter !== "all") params.set("instrumentType", optionFilter);
+  if (putCallFilter !== "all") params.set("putCall", putCallFilter);
   if (refresh) params.set("refresh", "1");
-  return `/api/dev/nav-positions?${params.toString()}`;
+  return `${NAV_POSITIONS_API_PATH}?${params.toString()}`;
 }
 
 function buildDebugApiUrl({
   selectedDate,
   accountFilter,
+  productGroupFilters,
+  productRegionFilters,
+  productCodeFilters,
+  optionFilter,
+  putCallFilter,
   limit,
   drilldown,
-}: {
-  selectedDate: string;
-  accountFilter: string;
+  refresh,
+  useLatestSnapshot,
+}: NavPositionsApiFilters & {
   limit: number;
   drilldown?: PositionLadderDrilldown | null;
+  refresh: boolean;
+  useLatestSnapshot: boolean;
 }): string {
-  const params = new URLSearchParams({ mode: "debug", limit: String(limit) });
-  if (selectedDate) params.set("date", selectedDate);
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (!useLatestSnapshot && selectedDate) params.set("date", selectedDate);
   if (accountFilter !== "all") params.set("fund", accountFilter);
+  appendRepeatedParams(params, "productGroup", productGroupFilters);
+  appendRepeatedParams(params, "productRegion", productRegionFilters);
+  appendRepeatedParams(params, "productCode", productCodeFilters);
+  if (optionFilter !== "all") params.set("instrumentType", optionFilter);
+  if (putCallFilter !== "all") params.set("putCall", putCallFilter);
+  if (refresh) params.set("refresh", "1");
   if (drilldown) params.set("drilldown", JSON.stringify(drilldown));
-  return `/api/dev/nav-positions?${params.toString()}`;
+  return `${NAV_POSITIONS_DRILLDOWN_API_PATH}?${params.toString()}`;
 }
 
 function cacheKey({
   selectedDate,
   accountFilter,
-}: {
-  selectedDate: string;
-  accountFilter: string;
-}): string {
+  productGroupFilters,
+  productRegionFilters,
+  productCodeFilters,
+  optionFilter,
+  putCallFilter,
+}: NavPositionsApiFilters): string {
   return [
-    "api:dev:nav-positions",
+    "api:nav-positions",
     selectedDate || "latest",
     accountFilter,
+    stableFilterValues(productGroupFilters).join(",") || "all-groups",
+    stableFilterValues(productRegionFilters).join(",") || "all-regions",
+    stableFilterValues(productCodeFilters).join(",") || "all-codes",
+    optionFilter,
+    putCallFilter,
   ].join(":");
 }
 
@@ -408,6 +489,14 @@ function fmtNumber(value: number | null | undefined, digits = 0): string {
   });
 }
 
+function fmtCompactNumber(value: number | null | undefined, digits = 4): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+    minimumFractionDigits: 0,
+  });
+}
+
 function fmtQuantity(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   const abs = Math.abs(value);
@@ -430,6 +519,13 @@ function fmtPrice(value: number | null | undefined): string {
 
 function displayText(value: string | null | undefined): string {
   return value && value.trim() ? value : "-";
+}
+
+function fmtContractYyyymm(value: string | null | undefined): string {
+  const text = displayText(value);
+  const match = /^(\d{4})(\d{2})$/.exec(text);
+  if (!match) return text;
+  return `${match[1]}-${match[2]}`;
 }
 
 function dateRangeLabel(payload: NavPositionsPayload): string {
@@ -535,6 +631,39 @@ function selectedTextMatches(value: string | null | undefined, selected: string[
   return Boolean(value && selected.includes(value));
 }
 
+function optionFilterMatches(
+  instrumentType: string | null | undefined,
+  optionFilter: OptionFilter,
+): boolean {
+  if (optionFilter === "all") return true;
+  return optionFilter === "options" ? instrumentType === "option" : instrumentType !== "option";
+}
+
+function productFilterOptionMatches(
+  option: NavPositionsProductFilterOption,
+  {
+    productGroups,
+    productRegions,
+    productCodes,
+    optionFilter,
+    putCallFilter,
+  }: {
+    productGroups?: string[];
+    productRegions?: string[];
+    productCodes?: string[];
+    optionFilter?: OptionFilter;
+    putCallFilter?: PutCallFilter;
+  },
+): boolean {
+  return (
+    selectedTextMatches(option.productGroup, productGroups ?? []) &&
+    selectedTextMatches(option.productRegion, productRegions ?? []) &&
+    selectedTextMatches(option.productCode, productCodes ?? []) &&
+    optionFilterMatches(option.instrumentType, optionFilter ?? "all") &&
+    (putCallFilter === undefined || putCallFilter === "all" || option.putCall === putCallFilter)
+  );
+}
+
 function sortFilterOption(left: string, right: string): number {
   const leftNumber = Number(left.replace(/[$,%\s,]/g, ""));
   const rightNumber = Number(right.replace(/[$,%\s,]/g, ""));
@@ -557,18 +686,6 @@ function compareColumnValues(
       ? left - right
       : String(left).localeCompare(String(right), undefined, { numeric: true });
   return direction === "asc" ? result : -result;
-}
-
-function tableHeaderClass(column: TableColumn<string>): string {
-  const align = column.align === "left" ? "text-left" : "text-right";
-  const sticky = column.sticky ? "sticky left-0 z-20 bg-gray-950" : "";
-  return `px-3 py-2 font-semibold uppercase tracking-wide ${align} ${sticky}`;
-}
-
-function tableHeaderInnerClass(column: TableColumn<string>): string {
-  return `flex w-full items-center gap-1.5 ${
-    column.align === "left" ? "justify-start" : "justify-end"
-  }`;
 }
 
 function positionLadderRowKey(row: ProductSummaryRow): string {
@@ -821,12 +938,33 @@ function buildPositionLadder(
   };
 }
 
-function positionLadderCellTitle(cell: PositionLadderCell): string {
+function positionLadderDisplayDayCount(
+  cell: PositionLadderCell,
+  column: PositionLadderColumn,
+): number {
+  if (column.kind !== "bucket") return 1;
+  return Math.max(cell.contractLabels.length, 1);
+}
+
+function positionLadderDisplayQuantity(
+  cell: PositionLadderCell,
+  column: PositionLadderColumn,
+): number {
+  if (column.kind !== "bucket") return cell.netQuantity;
+  return cell.netQuantity / positionLadderDisplayDayCount(cell, column);
+}
+
+function positionLadderCellTitle(cell: PositionLadderCell, column: PositionLadderColumn): string {
   const contracts = cell.contractLabels.slice(0, 10).join(", ");
   const contractSuffix =
     cell.contractLabels.length > 10 ? `, +${cell.contractLabels.length - 10} more` : "";
+  const displayQuantity = positionLadderDisplayQuantity(cell, column);
+  const dayCount = positionLadderDisplayDayCount(cell, column);
   return [
-    `Net qty ${fmtQuantity(cell.netQuantity)}`,
+    `Display qty ${fmtQuantity(displayQuantity)}`,
+    column.kind === "bucket" && dayCount > 1
+      ? `Summed qty ${fmtQuantity(cell.netQuantity)} across ${dayCount.toLocaleString()} contract days`
+      : null,
     `Gross qty ${fmtQuantity(cell.grossQuantity)}`,
     `MV base ${fmtNumber(cell.marketValueBase, 0)}`,
     `P&L base ${fmtNumber(cell.unrealizedPnlBase, 0)}`,
@@ -838,9 +976,14 @@ function positionLadderCellTitle(cell: PositionLadderCell): string {
 }
 
 function positionLadderColumnWidthClass(column: PositionLadderColumn): string {
-  if (column.kind === "month") return "w-[62px]";
-  if (column.kind === "other") return "w-[68px]";
-  return "w-[82px]";
+  if (column.kind === "month") return "w-[74px] min-w-[74px]";
+  if (column.kind === "other") return "w-[74px] min-w-[74px]";
+  return "w-[88px] min-w-[88px]";
+}
+
+function positionLadderColumnWidthPx(column: PositionLadderColumn): number {
+  if (column.kind === "month" || column.kind === "other") return 74;
+  return 88;
 }
 
 function positionLadderCellClass(
@@ -850,92 +993,145 @@ function positionLadderCellClass(
   const padding = column.kind === "month" ? "px-1.5" : "px-2";
   const base = `h-11 ${positionLadderColumnWidthClass(column)} ${padding} py-1.5 text-right align-middle text-[11px] tabular-nums transition-colors`;
   if (!cell || cell.rowCount === 0) return `${base} text-gray-700`;
-  if (cell.netQuantity > 0) {
+  const displayQuantity = positionLadderDisplayQuantity(cell, column);
+  if (displayQuantity > 0) {
     return `${base} cursor-pointer bg-emerald-500/[0.04] font-semibold text-emerald-100 outline outline-1 -outline-offset-1 outline-emerald-500/60 hover:bg-emerald-500/[0.1]`;
   }
-  if (cell.netQuantity < 0) {
+  if (displayQuantity < 0) {
     return `${base} cursor-pointer bg-red-500/[0.04] font-semibold text-red-100 outline outline-1 -outline-offset-1 outline-red-500/60 hover:bg-red-500/[0.1]`;
   }
   return `${base} cursor-pointer bg-sky-500/[0.04] font-semibold text-gray-100 outline outline-1 -outline-offset-1 outline-sky-500/50 hover:bg-sky-500/[0.1]`;
 }
 
-function renderPositionLadderCell(cell: PositionLadderCell | undefined): ReactNode {
+function renderPositionLadderCell(
+  cell: PositionLadderCell | undefined,
+  column: PositionLadderColumn,
+): ReactNode {
   if (!cell || cell.rowCount === 0) {
     return <span className="text-gray-700">--</span>;
   }
 
   return (
-    <span className="block truncate" title={positionLadderCellTitle(cell)}>
-      {fmtQuantity(cell.netQuantity)}
+    <span className="block truncate" title={positionLadderCellTitle(cell, column)}>
+      {fmtQuantity(positionLadderDisplayQuantity(cell, column))}
     </span>
   );
 }
 
+function positionLadderProductSortValue(row: PositionLadderRow): string {
+  return row.productLabel;
+}
+
+function positionLadderIsOption(row: PositionLadderRow): boolean {
+  return row.strikePrice !== null && row.strikePrice !== undefined;
+}
+
+function normalizedMarketText(value: string | null | undefined): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
+function positionLadderMarketPriority(row: PositionLadderRow): number {
+  const isPower = normalizedMarketText(row.productGroup) === "power";
+  const isPjm = normalizedMarketText(row.productRegion) === "pjm";
+  if (isPower && isPjm) return 0;
+  if (isPower) return 1;
+  if (isPjm) return 2;
+  return 3;
+}
+
+function comparePositionLadderRows(
+  left: PositionLadderRow,
+  right: PositionLadderRow,
+  direction: SortDirection,
+): number {
+  const marketPriority = positionLadderMarketPriority(left) - positionLadderMarketPriority(right);
+  if (marketPriority !== 0) return marketPriority;
+
+  const optionPriority = Number(positionLadderIsOption(left)) - Number(positionLadderIsOption(right));
+  if (optionPriority !== 0) return optionPriority;
+
+  return compareColumnValues(
+    positionLadderProductSortValue(left),
+    positionLadderProductSortValue(right),
+    direction,
+  );
+}
+
 const DEBUG_ROW_COLUMNS: Array<TableColumn<DebugRowColumnKey>> = [
-  { key: "product", label: "Product", align: "left", sticky: true, minClass: "min-w-[260px]" },
-  { key: "fundCode", label: "Fund", align: "left", minClass: "min-w-[80px]" },
-  { key: "navDate", label: "Date" },
-  { key: "accountGroup", label: "Account Group", align: "left", minClass: "min-w-[140px]" },
-  { key: "account", label: "Account", align: "left", minClass: "min-w-[110px]" },
-  { key: "sourceFileRowNumber", label: "Row" },
-  { key: "type", label: "Type" },
-  { key: "monthYear", label: "Month" },
-  { key: "exchangeName", label: "Exchange" },
-  { key: "clientSymbol", label: "Client Symbol", align: "left", minClass: "min-w-[130px]" },
-  { key: "quantity1", label: "Qty" },
-  { key: "marketValueInBaseCurrency", label: "MV Base" },
-  { key: "productCode", label: "Code" },
-  { key: "productGroup", label: "Group" },
-  { key: "productRegion", label: "Region" },
-  { key: "contractYyyymm", label: "Contract" },
-  { key: "contractDay", label: "Day" },
-  { key: "putCall", label: "C/P" },
-  { key: "normalizedStrikePrice", label: "Strike" },
-  { key: "normalizationStatus", label: "Status", align: "left", minClass: "min-w-[150px]" },
+  { key: "navDate", label: "NAV Date", sticky: true, width: 84 },
+  { key: "tradeDate", label: "Trade", width: 84 },
+  { key: "productGroup", label: "Family", align: "left", width: 78 },
+  { key: "productRegion", label: "Market", align: "left", width: 72 },
+  { key: "productCode", label: "Code", align: "left", width: 76 },
+  { key: "contractYyyymm", label: "Contract", width: 74 },
+  { key: "contractDay", label: "Day", width: 44 },
+  { key: "account", label: "Account", align: "left", width: 108 },
+  { key: "accountName", label: "Acct Name", align: "left", width: 110 },
+  { key: "longShort", label: "L/S", align: "left", width: 52 },
+  { key: "quantity1", label: "Qty", width: 62 },
+  { key: "multiplierAndTickValue", label: "Mult", width: 62 },
+  { key: "tradePrice", label: "Trade Px", width: 68 },
+  { key: "marketSettlementPrice", label: "Settle", width: 68 },
+  { key: "productNorm", label: "Product Norm", align: "left", width: 116 },
+  { key: "normalizationStatus", label: "Rule", align: "left", width: 62 },
+  { key: "rulePriority", label: "Priority", width: 54 },
+  { key: "ruleMatchType", label: "Match", align: "left", width: 62 },
+  { key: "rulePattern", label: "Pattern", align: "left", width: 116 },
+];
+
+const DEBUG_ROW_TABLE_WIDTH = DEBUG_ROW_COLUMNS.reduce(
+  (total, column) => total + (column.width ?? 96),
+  0,
+);
+const DEBUG_SELECTABLE_COLUMNS: DebugSelectableColumnKey[] = [
+  "contractDay",
+  "quantity1",
+  "multiplierAndTickValue",
+  "tradePrice",
+  "marketSettlementPrice",
+  "rulePriority",
 ];
 
 function debugRowDisplayValue(row: NavPositionDebugRow, key: DebugRowColumnKey): string {
   switch (key) {
-    case "fundCode":
-      return displayText(row.fundCode);
     case "navDate":
       return displayText(row.navDate);
-    case "accountGroup":
-      return displayText(row.accountGroup);
-    case "account":
-      return displayText(row.account);
-    case "sourceFileRowNumber":
-      return row.sourceFileRowNumber.toLocaleString();
-    case "product":
-      return displayText(row.product);
-    case "type":
-      return displayText(row.type);
-    case "monthYear":
-      return displayText(row.monthYear);
-    case "exchangeName":
-      return displayText(row.exchangeName);
-    case "clientSymbol":
-      return displayText(row.clientSymbol);
-    case "quantity1":
-      return fmtQuantity(row.quantity1);
-    case "marketValueInBaseCurrency":
-      return fmtNumber(row.marketValueInBaseCurrency, 0);
-    case "productCode":
-      return displayText(row.productCode);
+    case "tradeDate":
+      return displayText(row.tradeDate);
     case "productGroup":
       return displayText(row.productGroup);
     case "productRegion":
       return displayText(row.productRegion);
+    case "productCode":
+      return displayText(row.productCode);
     case "contractYyyymm":
-      return displayText(row.contractYyyymm);
+      return fmtContractYyyymm(row.contractYyyymm);
     case "contractDay":
       return fmtNumber(row.contractDay, 0);
-    case "putCall":
-      return displayText(row.putCall);
-    case "normalizedStrikePrice":
-      return fmtPrice(row.normalizedStrikePrice);
+    case "account":
+      return displayText(row.account);
+    case "accountName":
+      return displayText(row.accountName);
+    case "longShort":
+      return displayText(row.longShort);
+    case "quantity1":
+      return fmtQuantity(row.quantity1);
+    case "multiplierAndTickValue":
+      return fmtCompactNumber(row.multiplierAndTickValue, 4);
+    case "tradePrice":
+      return fmtNumber(row.tradePrice, 2);
+    case "marketSettlementPrice":
+      return fmtNumber(row.marketSettlementPrice, 2);
+    case "productNorm":
+      return displayText(row.productNorm);
     case "normalizationStatus":
       return displayText(row.normalizationStatus);
+    case "rulePriority":
+      return fmtNumber(row.rulePriority, 0);
+    case "ruleMatchType":
+      return displayText(row.ruleMatchType);
+    case "rulePattern":
+      return displayText(row.rulePattern);
   }
 }
 
@@ -944,16 +1140,18 @@ function debugRowSortValue(
   key: DebugRowColumnKey,
 ): string | number | null {
   switch (key) {
-    case "sourceFileRowNumber":
-      return row.sourceFileRowNumber;
     case "quantity1":
       return row.quantity1;
-    case "marketValueInBaseCurrency":
-      return row.marketValueInBaseCurrency;
+    case "multiplierAndTickValue":
+      return row.multiplierAndTickValue;
+    case "tradePrice":
+      return row.tradePrice;
+    case "marketSettlementPrice":
+      return row.marketSettlementPrice;
     case "contractDay":
       return row.contractDay;
-    case "normalizedStrikePrice":
-      return row.normalizedStrikePrice;
+    case "rulePriority":
+      return row.rulePriority;
     default:
       return debugRowDisplayValue(row, key);
   }
@@ -969,33 +1167,258 @@ function debugRowMatchesFilter(
   return selectedValues.some((selected) => value === selected.trim().toLowerCase());
 }
 
-function debugRowCellClass(row: NavPositionDebugRow, column: TableColumn<DebugRowColumnKey>) {
+function debugRowKey(row: NavPositionDebugRow, index: number): string {
+  return [
+    row.navDate,
+    row.tradeDate ?? "",
+    row.account ?? "",
+    row.productCode ?? "",
+    row.contractYyyymm ?? "",
+    row.contractDay ?? "",
+    row.longShort ?? "",
+    row.quantity1 ?? "",
+    index,
+  ].join("|");
+}
+
+function debugCellKey(rowKey: string, column: DebugSelectableColumnKey): string {
+  return `${column}|${rowKey}`;
+}
+
+function debugCellColumnFromKey(key: string): DebugSelectableColumnKey | null {
+  const column = key.split("|", 1)[0] as DebugRowColumnKey;
+  return isDebugSelectableColumn(column) ? column : null;
+}
+
+function isDebugSelectableColumn(key: DebugRowColumnKey): key is DebugSelectableColumnKey {
+  return (DEBUG_SELECTABLE_COLUMNS as DebugRowColumnKey[]).includes(key);
+}
+
+function debugSelectableCellValue(
+  row: NavPositionDebugRow,
+  column: DebugSelectableColumnKey,
+): number | null {
+  switch (column) {
+    case "contractDay":
+      return row.contractDay;
+    case "quantity1":
+      return row.quantity1;
+    case "multiplierAndTickValue":
+      return row.multiplierAndTickValue;
+    case "tradePrice":
+      return row.tradePrice;
+    case "marketSettlementPrice":
+      return row.marketSettlementPrice;
+    case "rulePriority":
+      return row.rulePriority;
+  }
+}
+
+function debugSelectableColumnLabel(column: DebugSelectableColumnKey): string {
+  return DEBUG_ROW_COLUMNS.find((item) => item.key === column)?.label ?? column;
+}
+
+function fmtDebugSelectionValue(
+  value: number | null | undefined,
+  column: DebugSelectableColumnKey | null,
+): string {
+  if (column === "quantity1") return fmtQuantity(value);
+  if (column === "contractDay" || column === "rulePriority") return fmtNumber(value, 0);
+  if (column === "tradePrice" || column === "marketSettlementPrice") {
+    return fmtNumber(value, 2);
+  }
+  return fmtCompactNumber(value, 4);
+}
+
+function buildSelectionStats(
+  selectedKeys: Set<string>,
+  visibleValues: Map<string, number | null>,
+): SelectionStats | null {
+  const visibleSelectedKeys = Array.from(selectedKeys).filter((key) => visibleValues.has(key));
+  if (visibleSelectedKeys.length === 0) return null;
+
+  const values = visibleSelectedKeys
+    .map((key) => visibleValues.get(key) ?? null)
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+  const columns = Array.from(
+    new Set(
+      visibleSelectedKeys
+        .map(debugCellColumnFromKey)
+        .filter((column): column is DebugSelectableColumnKey => column !== null),
+    ),
+  );
+  const sum = values.reduce((total, value) => total + value, 0);
+
+  return {
+    cells: visibleSelectedKeys.length,
+    observations: values.length,
+    columns,
+    avg: values.length > 0 ? sum / values.length : null,
+    sum: values.length > 0 ? sum : null,
+    min: values.length > 0 ? Math.min(...values) : null,
+    max: values.length > 0 ? Math.max(...values) : null,
+  };
+}
+
+function debugRowHeaderClass(column: TableColumn<DebugRowColumnKey>): string {
   const align = column.align === "left" ? "text-left" : "text-right";
   const sticky = column.sticky
-    ? "sticky left-0 z-10 max-w-[260px] bg-[#0d1119] font-semibold text-gray-100"
+    ? "sticky left-0 top-0 z-30 border-r border-gray-800 bg-gray-950 shadow-[1px_0_0_rgba(31,41,55,0.8)]"
+    : "sticky top-0 z-20 bg-gray-950";
+  return `px-2 py-1.5 font-semibold uppercase tracking-wide ${align} ${sticky} ${column.minClass ?? ""}`;
+}
+
+function debugRowHeaderInnerClass(column: TableColumn<DebugRowColumnKey>): string {
+  return `flex w-full min-w-0 items-center gap-1 ${
+    column.align === "left" ? "justify-start" : "justify-end"
+  }`;
+}
+
+function debugRowCellClass(
+  row: NavPositionDebugRow,
+  column: TableColumn<DebugRowColumnKey>,
+  {
+    selected = false,
+    selectable = false,
+  }: {
+    selected?: boolean;
+    selectable?: boolean;
+  } = {},
+) {
+  const align = column.align === "left" ? "text-left" : "text-right";
+  const sticky = column.sticky
+    ? "sticky left-0 z-10 border-r border-gray-800 bg-[#0d1119] font-semibold text-gray-100 shadow-[1px_0_0_rgba(31,41,55,0.8)]"
     : "";
   const numeric = [
-    "sourceFileRowNumber",
     "quantity1",
-    "marketValueInBaseCurrency",
+    "multiplierAndTickValue",
+    "tradePrice",
+    "marketSettlementPrice",
     "contractDay",
-    "normalizedStrikePrice",
+    "rulePriority",
   ].includes(column.key)
     ? "tabular-nums"
     : "";
   const tone =
     column.key === "normalizationStatus" && row.normalizationStatus !== "ok"
       ? "font-semibold text-yellow-200"
-      : column.key === "marketValueInBaseCurrency"
+      : column.key === "quantity1"
         ? "font-semibold text-gray-100"
         : "text-gray-300";
+  const interaction = selectable ? "cursor-pointer select-none transition-colors" : "";
+  const selection = selected
+    ? "bg-sky-500/25 text-sky-50 outline outline-1 -outline-offset-1 outline-sky-400/70"
+    : selectable
+      ? "hover:bg-sky-500/10"
+      : "";
 
-  return `px-3 py-2 ${align} ${sticky} ${numeric} ${tone}`;
+  return `whitespace-nowrap px-2 py-1.5 align-middle text-[11px] ${align} ${column.minClass ?? ""} ${sticky} ${numeric} ${tone} ${interaction} ${selection}`;
+}
+
+function debugRowValueClass(column: TableColumn<DebugRowColumnKey>): string {
+  const base = "block min-w-0 truncate";
+  switch (column.key) {
+    case "productNorm":
+    case "rulePattern":
+      return `${base} max-w-[104px]`;
+    case "accountName":
+      return `${base} max-w-[98px]`;
+    case "account":
+      return `${base} max-w-[96px]`;
+    case "productGroup":
+      return `${base} max-w-[66px]`;
+    default:
+      return base;
+  }
+}
+
+function DebugSelectionStatsBar({
+  stats,
+  onClear,
+}: {
+  stats: SelectionStats;
+  onClear: () => void;
+}) {
+  const selectedColumn = stats.columns.length === 1 ? stats.columns[0] : null;
+  const label =
+    selectedColumn === null
+      ? "Numeric selection"
+      : `${debugSelectableColumnLabel(selectedColumn)} selection`;
+  const columnSummary =
+    stats.columns.length > 1
+      ? stats.columns.map(debugSelectableColumnLabel).join(", ")
+      : null;
+
+  return (
+    <div className="fixed bottom-4 left-1/2 z-[60] w-[calc(100vw-2rem)] max-w-4xl -translate-x-1/2 rounded-lg border border-sky-500/30 bg-[#090d15]/95 px-3 py-2 shadow-2xl shadow-black/40 backdrop-blur">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-gray-300">
+        <span className="font-semibold text-sky-100">{label}</span>
+        {columnSummary && (
+          <span className="max-w-[360px] truncate text-gray-500" title={columnSummary}>
+            Cols: {columnSummary}
+          </span>
+        )}
+        <span>
+          <span className="text-gray-500">Count:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {stats.observations.toLocaleString()}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Sum:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtDebugSelectionValue(stats.sum, selectedColumn)}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Avg:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtDebugSelectionValue(stats.avg, selectedColumn)}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Min:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtDebugSelectionValue(stats.min, selectedColumn)}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Max:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtDebugSelectionValue(stats.max, selectedColumn)}
+          </span>
+        </span>
+        <span>
+          <span className="text-gray-500">Cells:</span>{" "}
+          <span className="font-semibold tabular-nums text-gray-100">
+            {stats.cells.toLocaleString()}
+          </span>
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+        >
+          Clear
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function DebugRowsTable({ rows }: { rows: NavPositionDebugRow[] }) {
   const [columnFilters, setColumnFilters] = useState<ColumnFilters<DebugRowColumnKey>>({});
   const [sortState, setSortState] = useState<SortState<DebugRowColumnKey> | null>(null);
+  const [selectedDebugCells, setSelectedDebugCells] = useState<Set<string>>(() => new Set());
+  const [lastSelectedDebugCell, setLastSelectedDebugCell] = useState<{
+    rowKey: string;
+    column: DebugSelectableColumnKey;
+  } | null>(null);
+
+  const keyedRows = useMemo<DebugRowItem[]>(
+    () => rows.map((row, index) => ({ row, key: debugRowKey(row, index) })),
+    [rows],
+  );
 
   const updateColumnFilter = (key: DebugRowColumnKey, values: string[]) => {
     setColumnFilters((filters) => {
@@ -1005,6 +1428,24 @@ function DebugRowsTable({ rows }: { rows: NavPositionDebugRow[] }) {
       return next;
     });
   };
+
+  const clearDebugSelection = () => {
+    setSelectedDebugCells(new Set());
+    setLastSelectedDebugCell(null);
+  };
+
+  useEffect(() => {
+    clearDebugSelection();
+  }, [rows]);
+
+  useEffect(() => {
+    if (selectedDebugCells.size === 0) return undefined;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") clearDebugSelection();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedDebugCells.size]);
 
   const filterOptions = useMemo(() => {
     return Object.fromEntries(
@@ -1033,20 +1474,35 @@ function DebugRowsTable({ rows }: { rows: NavPositionDebugRow[] }) {
       .filter(([, selected]) => selected.length > 0);
     const filtered =
       activeFilters.length === 0
-        ? rows
-        : rows.filter((row) =>
+        ? keyedRows
+        : keyedRows.filter(({ row }) =>
             activeFilters.every(([key, selected]) => debugRowMatchesFilter(row, key, selected)),
           );
 
     if (!sortState) return filtered;
     return [...filtered].sort((left, right) =>
       compareColumnValues(
-        debugRowSortValue(left, sortState.key),
-        debugRowSortValue(right, sortState.key),
+        debugRowSortValue(left.row, sortState.key),
+        debugRowSortValue(right.row, sortState.key),
         sortState.direction,
       ),
     );
-  }, [columnFilters, rows, sortState]);
+  }, [columnFilters, keyedRows, sortState]);
+
+  const visibleSelectionValues = useMemo(() => {
+    const values = new Map<string, number | null>();
+    displayedRows.forEach(({ row, key }) => {
+      DEBUG_SELECTABLE_COLUMNS.forEach((column) => {
+        values.set(debugCellKey(key, column), debugSelectableCellValue(row, column));
+      });
+    });
+    return values;
+  }, [displayedRows]);
+
+  const selectionStats = useMemo(
+    () => buildSelectionStats(selectedDebugCells, visibleSelectionValues),
+    [selectedDebugCells, visibleSelectionValues],
+  );
 
   const toggleSort = (key: DebugRowColumnKey) => {
     setSortState((current) =>
@@ -1056,70 +1512,154 @@ function DebugRowsTable({ rows }: { rows: NavPositionDebugRow[] }) {
     );
   };
 
+  const toggleDebugCell = (
+    rowKey: string,
+    column: DebugSelectableColumnKey,
+    shiftKey: boolean,
+  ) => {
+    const key = debugCellKey(rowKey, column);
+    const rowOrder = displayedRows.map((item) => item.key);
+
+    if (
+      shiftKey &&
+      lastSelectedDebugCell?.column === column &&
+      rowOrder.includes(lastSelectedDebugCell.rowKey) &&
+      rowOrder.includes(rowKey)
+    ) {
+      const start = rowOrder.indexOf(lastSelectedDebugCell.rowKey);
+      const end = rowOrder.indexOf(rowKey);
+      const [from, to] = start <= end ? [start, end] : [end, start];
+      setSelectedDebugCells((selected) => {
+        const next = new Set(selected);
+        for (let index = from; index <= to; index += 1) {
+          next.add(debugCellKey(rowOrder[index], column));
+        }
+        return next;
+      });
+    } else {
+      setSelectedDebugCells((selected) => {
+        const next = new Set(selected);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    }
+
+    setLastSelectedDebugCell({ rowKey, column });
+  };
+
   return (
-    <table className="w-full min-w-[1900px] border-collapse bg-[#0d1119] text-xs text-gray-200">
-      <thead className="bg-gray-950 text-gray-500">
-        <tr className="border-b border-gray-800/80">
-          {DEBUG_ROW_COLUMNS.map((column) => {
-            const sortDirection = sortState?.key === column.key ? sortState.direction : null;
-            return (
-              <th key={column.key} className={`${tableHeaderClass(column)} ${column.minClass ?? ""}`}>
-                <div className={tableHeaderInnerClass(column)}>
-                  <button
-                    type="button"
-                    onClick={() => toggleSort(column.key)}
-                    className={`flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-900 ${
-                      sortDirection ? "text-sky-200" : "text-gray-400"
-                    }`}
-                    aria-label={`Sort ${column.label}`}
-                  >
-                    <span className="truncate whitespace-nowrap text-[10px]">
-                      {column.label}
-                    </span>
-                    <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
-                      {sortDirection === "asc" ? "\u2191" : sortDirection === "desc" ? "\u2193" : ""}
-                    </span>
-                  </button>
-                  <ColumnFilterMenu
-                    label={column.label}
-                    options={filterOptions[column.key] ?? []}
-                    selected={columnFilters[column.key] ?? []}
-                    sortDirection={sortDirection}
-                    onSort={(direction) => setSortState({ key: column.key, direction })}
-                    onChange={(values) => updateColumnFilter(column.key, values)}
-                  />
-                </div>
-              </th>
-            );
-          })}
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-800">
-        {displayedRows.length === 0 ? (
-          <tr>
-            <td
-              colSpan={DEBUG_ROW_COLUMNS.length}
-              className="px-3 py-8 text-center text-sm text-gray-500"
-            >
-              No debug rows found.
-            </td>
+    <>
+      <table
+        className="min-w-full table-fixed border-collapse bg-[#0d1119] text-[11px] text-gray-200"
+        style={{ width: DEBUG_ROW_TABLE_WIDTH }}
+      >
+        <colgroup>
+          {DEBUG_ROW_COLUMNS.map((column) => (
+            <col key={column.key} style={{ width: column.width }} />
+          ))}
+        </colgroup>
+        <thead className="bg-gray-950 text-gray-500">
+          <tr className="border-b border-gray-800/80">
+            {DEBUG_ROW_COLUMNS.map((column) => {
+              const sortDirection = sortState?.key === column.key ? sortState.direction : null;
+              return (
+                <th key={column.key} className={debugRowHeaderClass(column)}>
+                  <div className={debugRowHeaderInnerClass(column)}>
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(column.key)}
+                      className={`flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-900 ${
+                        sortDirection ? "text-sky-200" : "text-gray-400"
+                      }`}
+                      aria-label={`Sort ${column.label}`}
+                    >
+                      <span className="truncate whitespace-nowrap text-[10px]">
+                        {column.label}
+                      </span>
+                      <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
+                        {sortDirection === "asc"
+                          ? "\u2191"
+                          : sortDirection === "desc"
+                            ? "\u2193"
+                            : ""}
+                      </span>
+                    </button>
+                    <ColumnFilterMenu
+                      label={column.label}
+                      options={filterOptions[column.key] ?? []}
+                      selected={columnFilters[column.key] ?? []}
+                      sortDirection={sortDirection}
+                      onSort={(direction) => setSortState({ key: column.key, direction })}
+                      onChange={(values) => updateColumnFilter(column.key, values)}
+                    />
+                  </div>
+                </th>
+              );
+            })}
           </tr>
-        ) : (
-          displayedRows.map((row) => (
-            <tr
-              key={`${row.sourceFileName}:${row.sourceFileRowNumber}:${row.fundCode}:${row.navDate}`}
-              className="hover:bg-gray-900/60"
-            >
-              {DEBUG_ROW_COLUMNS.map((column) => (
-                <td key={column.key} className={debugRowCellClass(row, column)}>
-                  {debugRowDisplayValue(row, column.key)}
-                </td>
-              ))}
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {displayedRows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={DEBUG_ROW_COLUMNS.length}
+                className="px-3 py-8 text-center text-sm text-gray-500"
+              >
+                No debug rows found.
+              </td>
             </tr>
-          ))
-        )}
-      </tbody>
-    </table>
+          ) : (
+            displayedRows.map(({ row, key }) => (
+              <tr key={key} className="hover:bg-gray-900/60">
+                {DEBUG_ROW_COLUMNS.map((column) => {
+                  const displayValue = debugRowDisplayValue(row, column.key);
+                  const selectableColumn = isDebugSelectableColumn(column.key) ? column.key : null;
+                  const selectable = selectableColumn !== null;
+                  const selected =
+                    selectableColumn !== null &&
+                    selectedDebugCells.has(debugCellKey(key, selectableColumn));
+                  return (
+                    <td
+                      key={column.key}
+                      role={selectable ? "button" : undefined}
+                      tabIndex={selectable ? 0 : undefined}
+                      aria-pressed={selectable ? selected : undefined}
+                      onClick={
+                        selectableColumn
+                          ? (event) => toggleDebugCell(key, selectableColumn, event.shiftKey)
+                          : undefined
+                      }
+                      onKeyDown={
+                        selectableColumn
+                          ? (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                toggleDebugCell(key, selectableColumn, event.shiftKey);
+                              }
+                            }
+                          : undefined
+                      }
+                      className={debugRowCellClass(row, column, { selected, selectable })}
+                    >
+                      <span
+                        className={debugRowValueClass(column)}
+                        title={displayValue === "-" ? undefined : displayValue}
+                      >
+                        {displayValue}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+      {selectionStats && (
+        <DebugSelectionStatsBar stats={selectionStats} onClear={clearDebugSelection} />
+      )}
+    </>
   );
 }
 
@@ -1129,8 +1669,10 @@ function DebugRowsModal({
   debugDrilldown,
   debugError,
   debugLoading,
+  debugUseLatestSnapshot,
   onClose,
   onDateChange,
+  onUseLatestSnapshot,
   onLoad,
 }: {
   debugDate: string;
@@ -1138,8 +1680,10 @@ function DebugRowsModal({
   debugDrilldown: PositionLadderDrilldown | null;
   debugError: string | null;
   debugLoading: boolean;
+  debugUseLatestSnapshot: boolean;
   onClose: () => void;
   onDateChange: (date: string) => void;
+  onUseLatestSnapshot: () => void;
   onLoad: () => void;
 }) {
   const rows = debugData?.rows ?? [];
@@ -1155,11 +1699,15 @@ function DebugRowsModal({
       ]
         .filter((value): value is string => Boolean(value))
         .join(" | ")
-    : debugDate
-      ? [contextLabel, `NAV snapshot ${debugDate}`]
+    : debugUseLatestSnapshot
+      ? [contextLabel, `Latest NAV snapshot`]
           .filter((value): value is string => Boolean(value))
           .join(" | ")
-      : undefined;
+      : debugDate
+        ? [contextLabel, `NAV snapshot ${debugDate}`]
+          .filter((value): value is string => Boolean(value))
+          .join(" | ")
+        : undefined;
 
   return (
     <div
@@ -1180,6 +1728,18 @@ function DebugRowsModal({
           bodyClassName="max-h-[calc(90vh-116px)]"
           action={
             <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={onUseLatestSnapshot}
+                disabled={debugLoading}
+                className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed ${
+                  debugUseLatestSnapshot
+                    ? "border-sky-500/70 bg-sky-500/20 text-white"
+                    : "border-gray-700 bg-gray-900 text-gray-300 hover:border-sky-500/50 hover:text-sky-100"
+                }`}
+              >
+                Latest
+              </button>
               <label className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-gray-500">
                 NAV Snapshot
                 <input
@@ -1243,23 +1803,82 @@ function PositionLadderTable({
     cell: PositionLadderCell,
   ) => void;
 }) {
+  const [sortState, setSortState] = useState<SortState<PositionLadderProductColumnKey> | null>({
+    key: "product",
+    direction: "asc",
+  });
+
+  const displayedRows = useMemo(() => {
+    if (!sortState) return rows;
+    return [...rows].sort((left, right) =>
+      comparePositionLadderRows(left, right, sortState.direction),
+    );
+  }, [rows, sortState]);
+
+  const toggleSort = (key: PositionLadderProductColumnKey) => {
+    setSortState((current) =>
+      current?.key === key && current.direction === "asc"
+        ? { key, direction: "desc" }
+        : { key, direction: "asc" },
+    );
+  };
+
+  const tableMinWidth =
+    POSITION_LADDER_PRODUCT_WIDTH +
+    columns.reduce((total, column) => total + positionLadderColumnWidthPx(column), 0);
+  const productSortDirection = sortState?.key === "product" ? sortState.direction : null;
+
   return (
-    <table className="w-full table-fixed border-collapse bg-[#0d1119] text-xs text-gray-200">
+    <table
+      className="w-full border-separate border-spacing-0 bg-[#0d1119] text-xs text-gray-200"
+      style={{ minWidth: `${tableMinWidth}px` }}
+    >
       <thead className="bg-gray-950 text-gray-500">
-        <tr className="border-b border-gray-800/80">
-          <th className="sticky left-0 top-0 z-30 w-[190px] bg-gray-950 px-2 py-2 text-left text-[10px] font-semibold uppercase tracking-wide">
-            Product
+        <tr>
+          <th
+            className="sticky left-0 top-0 z-40 border-b border-gray-800/80 bg-gray-950 px-2 py-2 text-left align-bottom text-[10px] font-semibold uppercase tracking-wide text-gray-500"
+            style={{
+              width: POSITION_LADDER_PRODUCT_WIDTH,
+              minWidth: POSITION_LADDER_PRODUCT_WIDTH,
+              maxWidth: POSITION_LADDER_PRODUCT_WIDTH,
+            }}
+          >
+            <div className="flex w-full items-center justify-start gap-1.5">
+              <button
+                type="button"
+                onClick={() => toggleSort("product")}
+                className={`flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 transition-colors hover:bg-gray-900 ${
+                  productSortDirection ? "text-sky-200" : "text-gray-400"
+                }`}
+                aria-label="Sort Product"
+              >
+                <span className="truncate whitespace-nowrap">Product</span>
+                <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
+                  {productSortDirection === "asc"
+                    ? "\u2191"
+                    : productSortDirection === "desc"
+                      ? "\u2193"
+                      : ""}
+                </span>
+              </button>
+            </div>
           </th>
           {columns.map((column) => (
             <th
               key={column.key}
-              className={`sticky top-0 z-20 ${positionLadderColumnWidthClass(column)} bg-gray-950 px-1.5 py-2 text-right align-bottom`}
+              className={`sticky top-0 z-30 border-b border-gray-800/80 ${positionLadderColumnWidthClass(column)} bg-gray-950 px-1.5 py-2 text-right align-bottom`}
             >
-              <span className="block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+              <span
+                className="block truncate text-[10px] font-semibold uppercase tracking-wide text-gray-500"
+                title={column.label}
+              >
                 {column.label}
               </span>
               {column.dateLabel ? (
-                <span className="mt-1 block truncate text-[9px] font-medium normal-case tracking-normal text-gray-500">
+                <span
+                  className="mt-1 block truncate text-[9px] font-medium normal-case tracking-normal text-gray-500"
+                  title={column.dateLabel}
+                >
                   {column.dateLabel}
                 </span>
               ) : null}
@@ -1267,40 +1886,50 @@ function PositionLadderTable({
           ))}
         </tr>
       </thead>
-      <tbody className="divide-y divide-gray-800">
-        {rows.map((row) => (
-          <tr key={row.key} className="hover:bg-gray-900/60">
+      <tbody>
+        {displayedRows.map((row) => (
+          <tr key={row.key} className="group hover:bg-gray-900/60">
             <td
-              className="sticky left-0 z-10 w-[190px] max-w-[190px] bg-[#0d1119] px-2 py-1.5 text-left"
+              className="sticky left-0 z-20 border-b border-gray-800/80 bg-[#0d1119] px-2 py-1.5 text-left align-middle group-hover:bg-gray-900/95"
+              style={{
+                width: POSITION_LADDER_PRODUCT_WIDTH,
+                minWidth: POSITION_LADDER_PRODUCT_WIDTH,
+                maxWidth: POSITION_LADDER_PRODUCT_WIDTH,
+              }}
               title={`${row.productLabel} | ${row.subtitle} | ${row.rowCount.toLocaleString()} source rows | MV base ${fmtNumber(row.marketValueBase, 0)}`}
             >
               <span className="block truncate text-[11px] font-bold text-gray-100">
                 {row.productLabel}
               </span>
-              <span className="mt-0.5 block truncate text-[10px] text-gray-500">{row.subtitle}</span>
+              <span className="mt-0.5 block truncate text-[10px] text-gray-500">
+                {row.subtitle}
+              </span>
             </td>
             {columns.map((column) => {
               const cell = row.cells[column.key];
               return (
-                <td key={column.key} className={positionLadderCellClass(cell, column)}>
+                <td
+                  key={column.key}
+                  className={`${positionLadderCellClass(cell, column)} border-b border-gray-800/80`}
+                >
                   {cell && cell.rowCount > 0 ? (
                     <button
                       type="button"
                       onClick={() => onCellSelect(row, column, cell)}
                       className="block h-full w-full truncate text-right outline-none focus-visible:ring-2 focus-visible:ring-sky-400/70"
-                      title={`${positionLadderCellTitle(cell)} | Click for source rows`}
+                      title={`${positionLadderCellTitle(cell, column)} | Click for source rows`}
                     >
-                      {fmtQuantity(cell.netQuantity)}
+                      {fmtQuantity(positionLadderDisplayQuantity(cell, column))}
                     </button>
                   ) : (
-                    renderPositionLadderCell(cell)
+                    renderPositionLadderCell(cell, column)
                   )}
                 </td>
               );
             })}
           </tr>
         ))}
-        {!rows.length && (
+        {!displayedRows.length && (
           <tr>
             <td
               colSpan={columns.length + 1}
@@ -1334,9 +1963,16 @@ export default function NavPositions({
   const [debugLoading, setDebugLoading] = useState(false);
   const [debugError, setDebugError] = useState<string | null>(null);
   const [debugDrilldown, setDebugDrilldown] = useState<PositionLadderDrilldown | null>(null);
-  const [quickProductGroups, setQuickProductGroups] = useState<string[]>([]);
-  const [quickProductRegions, setQuickProductRegions] = useState<string[]>([]);
+  const [debugUseLatestSnapshot, setDebugUseLatestSnapshot] = useState(true);
+  const [quickProductGroups, setQuickProductGroups] = useState<string[]>(() => [
+    ...DEFAULT_PRODUCT_GROUP_FILTERS,
+  ]);
+  const [quickProductRegions, setQuickProductRegions] = useState<string[]>(() => [
+    ...DEFAULT_PRODUCT_REGION_FILTERS,
+  ]);
   const [quickProductCodes, setQuickProductCodes] = useState<string[]>([]);
+  const [optionFilter, setOptionFilter] = useState<OptionFilter>("all");
+  const [putCallFilter, setPutCallFilter] = useState<PutCallFilter>("all");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1347,6 +1983,11 @@ export default function NavPositions({
     const params = {
       selectedDate,
       accountFilter,
+      productGroupFilters: quickProductGroups,
+      productRegionFilters: quickProductRegions,
+      productCodeFilters: quickProductCodes,
+      optionFilter,
+      putCallFilter,
     };
     const url = buildApiUrl({ ...params, refresh: refreshToken > 0 });
 
@@ -1384,7 +2025,17 @@ export default function NavPositions({
       active = false;
       controller.abort();
     };
-  }, [accountFilter, onFreshnessChange, refreshToken, selectedDate]);
+  }, [
+    accountFilter,
+    onFreshnessChange,
+    optionFilter,
+    putCallFilter,
+    quickProductCodes,
+    quickProductGroups,
+    quickProductRegions,
+    refreshToken,
+    selectedDate,
+  ]);
 
   const accountFilterOptions = useMemo(() => {
     const values = new Set(data?.metadata.funds ?? []);
@@ -1393,55 +2044,80 @@ export default function NavPositions({
   }, [accountFilter, data]);
 
   const productGroupOptions = useMemo(
-    () => uniqueSortedText((data?.productSummary ?? []).map((row) => row.productGroup)),
+    () => uniqueSortedText((data?.metadata.productFilterOptions ?? []).map((row) => row.productGroup)),
     [data],
   );
 
   const productRegionOptions = useMemo(
     () =>
       uniqueSortedText(
-        (data?.productSummary ?? [])
-          .filter((row) => selectedTextMatches(row.productGroup, quickProductGroups))
+        (data?.metadata.productFilterOptions ?? [])
+          .filter((row) =>
+            productFilterOptionMatches(row, {
+              productGroups: quickProductGroups,
+              optionFilter,
+              putCallFilter,
+            }),
+          )
           .map((row) => row.productRegion),
       ),
-    [data, quickProductGroups],
+    [data, optionFilter, putCallFilter, quickProductGroups],
   );
 
   const productCodeOptions = useMemo(
     () =>
       uniqueSortedText(
-        (data?.productSummary ?? [])
-          .filter(
-            (row) =>
-              selectedTextMatches(row.productGroup, quickProductGroups) &&
-              selectedTextMatches(row.productRegion, quickProductRegions),
+        (data?.metadata.productFilterOptions ?? [])
+          .filter((row) =>
+            productFilterOptionMatches(row, {
+              productGroups: quickProductGroups,
+              productRegions: quickProductRegions,
+              optionFilter,
+              putCallFilter,
+            }),
           )
           .map((row) => row.productCode),
       ),
-    [data, quickProductGroups, quickProductRegions],
+    [data, optionFilter, putCallFilter, quickProductGroups, quickProductRegions],
   );
 
   useEffect(() => {
+    if (!data) return;
     setQuickProductGroups((selected) => retainAvailableSelections(selected, productGroupOptions));
-  }, [productGroupOptions]);
+  }, [data, productGroupOptions]);
 
   useEffect(() => {
+    if (!data) return;
     setQuickProductRegions((selected) => retainAvailableSelections(selected, productRegionOptions));
-  }, [productRegionOptions]);
+  }, [data, productRegionOptions]);
 
   useEffect(() => {
+    if (!data) return;
     setQuickProductCodes((selected) => retainAvailableSelections(selected, productCodeOptions));
-  }, [productCodeOptions]);
+  }, [data, productCodeOptions]);
 
   const quickFilteredProductSummary = useMemo(
     () =>
-      (data?.productSummary ?? []).filter(
-        (row) =>
+      (data?.productSummary ?? []).filter((row) => {
+        const isOption = row.strikePrice !== null && row.strikePrice !== undefined;
+        return (
           selectedTextMatches(row.productGroup, quickProductGroups) &&
           selectedTextMatches(row.productRegion, quickProductRegions) &&
-          selectedTextMatches(row.productCode, quickProductCodes),
-      ),
-    [data, quickProductCodes, quickProductGroups, quickProductRegions],
+          selectedTextMatches(row.productCode, quickProductCodes) &&
+          (optionFilter === "all" ||
+            (optionFilter === "options" && isOption) ||
+            (optionFilter === "futures" && !isOption)) &&
+          (putCallFilter === "all" || row.putCall === putCallFilter)
+        );
+      }),
+    [
+      data,
+      optionFilter,
+      putCallFilter,
+      quickProductCodes,
+      quickProductGroups,
+      quickProductRegions,
+    ],
   );
 
   const effectiveAnchorDate = anchorDate || data?.selectedDate || selectedDate;
@@ -1454,12 +2130,16 @@ export default function NavPositions({
   const activeQuickFilterCount =
     quickProductGroups.length +
     quickProductRegions.length +
-    quickProductCodes.length;
+    quickProductCodes.length +
+    (optionFilter === "all" ? 0 : 1) +
+    (putCallFilter === "all" ? 0 : 1);
 
   const clearQuickFilters = () => {
     setQuickProductGroups([]);
     setQuickProductRegions([]);
     setQuickProductCodes([]);
+    setOptionFilter("all");
+    setPutCallFilter("all");
   };
 
   const drilldownFromCell = (
@@ -1487,9 +2167,12 @@ export default function NavPositions({
   const loadDebugRows = (
     dateOverride?: string,
     drilldownOverride?: PositionLadderDrilldown | null,
+    useLatestSnapshotOverride?: boolean,
+    forceRefreshOverride = false,
   ) => {
     const date = dateOverride ?? debugDate;
     const drilldown = drilldownOverride === undefined ? debugDrilldown : drilldownOverride;
+    const useLatestSnapshot = useLatestSnapshotOverride ?? debugUseLatestSnapshot;
     const controller = new AbortController();
 
     setDebugLoading(true);
@@ -1497,22 +2180,34 @@ export default function NavPositions({
 
     void fetchJsonWithCache<NavPositionsDebugPayload>({
       key: [
-        "api:dev:nav-positions",
+        "api:nav-positions",
         "debug",
-        date || "latest",
+        useLatestSnapshot ? "latest" : date || "date-empty",
         accountFilter,
+        stableFilterValues(quickProductGroups).join(",") || "all-groups",
+        stableFilterValues(quickProductRegions).join(",") || "all-regions",
+        stableFilterValues(quickProductCodes).join(",") || "all-codes",
+        optionFilter,
+        putCallFilter,
         drilldown ? JSON.stringify(drilldown) : "all-rows",
       ].join(":"),
       url: buildDebugApiUrl({
         selectedDate: date,
         accountFilter,
+        productGroupFilters: quickProductGroups,
+        productRegionFilters: quickProductRegions,
+        productCodeFilters: quickProductCodes,
+        optionFilter,
+        putCallFilter,
         limit: DEBUG_ROW_LIMIT,
         drilldown,
+        refresh: forceRefreshOverride,
+        useLatestSnapshot,
       }),
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
-      cacheMode: "no-store",
-      forceRefresh: true,
+      cacheMode: forceRefreshOverride ? "no-store" : "default",
+      forceRefresh: forceRefreshOverride,
     })
       .then((payload) => {
         setDebugData(payload);
@@ -1529,12 +2224,14 @@ export default function NavPositions({
 
   const openDebugRows = () => {
     const date = selectedDate || data?.selectedDate || data?.latestDate || "";
+    const useLatestSnapshot = selectedDate === "";
+    setDebugUseLatestSnapshot(useLatestSnapshot);
     setDebugDate(date);
     setDebugData(null);
     setDebugError(null);
     setDebugDrilldown(null);
     setDebugOpen(true);
-    loadDebugRows(date, null);
+    loadDebugRows(date, null, useLatestSnapshot);
   };
 
   const openCellDebugRows = (
@@ -1544,13 +2241,15 @@ export default function NavPositions({
   ) => {
     if (!cell.rowCount) return;
     const date = selectedDate || data?.selectedDate || data?.latestDate || "";
+    const useLatestSnapshot = selectedDate === "";
     const drilldown = drilldownFromCell(row, column);
+    setDebugUseLatestSnapshot(useLatestSnapshot);
     setDebugDate(date);
     setDebugData(null);
     setDebugError(null);
     setDebugDrilldown(drilldown);
     setDebugOpen(true);
-    loadDebugRows(date, drilldown);
+    loadDebugRows(date, drilldown, useLatestSnapshot);
   };
 
   return (
@@ -1662,7 +2361,7 @@ export default function NavPositions({
                   selected={quickProductRegions}
                   onChange={setQuickProductRegions}
                   placeholder="All regions"
-                  width="w-40"
+                  width="w-36"
                   tone="light"
                   showLabel={false}
                 />
@@ -1673,10 +2372,36 @@ export default function NavPositions({
                   selected={quickProductCodes}
                   onChange={setQuickProductCodes}
                   placeholder="All codes"
-                  width="w-40"
+                  width="w-36"
                   tone="light"
                   showLabel={false}
                 />
+                <span className={`${FILTER_LABEL_CLASS} ml-2`}>Option</span>
+                <QuickFilterChip active={optionFilter === "all"} onClick={() => setOptionFilter("all")}>
+                  All
+                </QuickFilterChip>
+                <QuickFilterChip
+                  active={optionFilter === "futures"}
+                  onClick={() => setOptionFilter("futures")}
+                >
+                  Futures
+                </QuickFilterChip>
+                <QuickFilterChip
+                  active={optionFilter === "options"}
+                  onClick={() => setOptionFilter("options")}
+                >
+                  Options
+                </QuickFilterChip>
+                <span className={`${FILTER_LABEL_CLASS} ml-2`}>C/P</span>
+                <QuickFilterChip active={putCallFilter === "all"} onClick={() => setPutCallFilter("all")}>
+                  All
+                </QuickFilterChip>
+                <QuickFilterChip active={putCallFilter === "C"} onClick={() => setPutCallFilter("C")}>
+                  C
+                </QuickFilterChip>
+                <QuickFilterChip active={putCallFilter === "P"} onClick={() => setPutCallFilter("P")}>
+                  P
+                </QuickFilterChip>
                 {activeQuickFilterCount > 0 && (
                   <button
                     type="button"
@@ -1737,9 +2462,17 @@ export default function NavPositions({
           debugDrilldown={debugDrilldown}
           debugError={debugError}
           debugLoading={debugLoading}
+          debugUseLatestSnapshot={debugUseLatestSnapshot}
           onClose={() => setDebugOpen(false)}
-          onDateChange={setDebugDate}
-          onLoad={() => loadDebugRows(undefined, debugDrilldown)}
+          onDateChange={(date) => {
+            setDebugUseLatestSnapshot(false);
+            setDebugDate(date);
+          }}
+          onUseLatestSnapshot={() => {
+            setDebugUseLatestSnapshot(true);
+            setDebugDate(data?.selectedDate ?? data?.latestDate ?? debugDate);
+          }}
+          onLoad={() => loadDebugRows(undefined, debugDrilldown, undefined, true)}
         />
       )}
     </div>

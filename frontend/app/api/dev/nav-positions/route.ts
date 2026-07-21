@@ -1,4 +1,8 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
+import {
+  getNavPositionsAccessFromRequest,
+  navPositionsDeniedResponse,
+} from "@/lib/server/appAuth";
 import { query } from "@/lib/server/db";
 import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 import {
@@ -9,19 +13,28 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const CACHE_HEADER = "no-store";
+const CACHE_HEADER = "private, no-store";
+const NO_STORE_HEADER = "no-store";
 const PRODUCT_SUMMARY_LIMIT = 600;
-const DEFAULT_DEBUG_ROW_LIMIT = 500;
+const DEFAULT_DEBUG_ROW_LIMIT = 100;
 const MAX_DEBUG_ROW_LIMIT = 1_000;
 const ROUTE_CONFIG = {
-  route: "/api/dev/nav-positions",
+  route: "/api/nav-positions",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "local-dev-only, no-store",
+  cachePolicy: "auth-protected-no-store",
   owner: "frontend",
-  purpose: "DEV-only NAV positions product summary and debug rows",
+  purpose: "NAV positions product summary and drilldown rows",
   p95TargetMs: 2_000,
   freshnessSource: "nav.positions.updated_at and nav.positions.sftp_upload_timestamp",
 } as const;
+
+function responseCacheHeaders(): HeadersInit {
+  return {
+    "Cache-Control": CACHE_HEADER,
+    "Vercel-CDN-Cache-Control": NO_STORE_HEADER,
+    "X-Helios-Cache-Policy": "auth-protected no-store",
+  };
+}
 
 interface AvailableDateDbRow {
   nav_date: string;
@@ -34,6 +47,10 @@ interface FilterDbRow {
   funds: unknown;
   account_groups: unknown;
   products: unknown;
+  product_groups: unknown;
+  product_regions: unknown;
+  product_codes: unknown;
+  product_filter_options: unknown;
 }
 
 interface SummaryDbRow {
@@ -88,6 +105,19 @@ interface NavPositionsDebugBundleDbRow {
   raw_rows: unknown;
 }
 
+interface ParsedTextListFilter {
+  displayValues: string[];
+  sqlValues: string[];
+}
+
+interface ProductFilterOptionDbRow {
+  product_group: string | null;
+  product_region: string | null;
+  product_code: string | null;
+  instrument_type: string | null;
+  put_call: string | null;
+}
+
 interface DebugDrilldownFilter {
   productCode: string | null;
   productGroup: string | null;
@@ -105,31 +135,25 @@ interface DebugDrilldownFilter {
 }
 
 interface RawPositionDbRow {
-  fund_code: string;
   nav_date: string;
-  sftp_upload_timestamp: string | null;
-  account_group: string | null;
-  account: string | null;
-  source_file_name: string | null;
-  source_file_row_number: number | string;
-  product: string | null;
-  type: string | null;
-  month_year: string | null;
-  exchange_name: string | null;
-  client_symbol: string | null;
-  quantity_1: number | string | null;
-  cost_in_base_currency: number | string | null;
-  market_value_in_base_currency: number | string | null;
-  product_code: string | null;
+  trade_date: string | null;
   product_group: string | null;
   product_region: string | null;
-  underlying_product_code: string | null;
+  product_code: string | null;
   contract_yyyymm: string | null;
   contract_day: number | string | null;
-  put_call: string | null;
-  normalized_strike_price: number | string | null;
+  account: string | null;
+  account_name: string | null;
+  long_short: string | null;
+  quantity_1: number | string | null;
+  multiplier_and_tick_value: number | string | null;
+  trade_price: number | string | null;
+  market_settlement_price: number | string | null;
+  product_norm: string | null;
   normalization_status: string | null;
-  updated_at: string | null;
+  rule_priority: number | string | null;
+  rule_match_type: string | null;
+  rule_pattern: string | null;
 }
 
 function parseDate(value: string | null): string | null {
@@ -152,6 +176,46 @@ function parseText(value: string | null, maxLength: number): string | null {
 function parseFilterText(value: string | null, maxLength: number): string | null {
   const normalized = parseText(value, maxLength);
   return normalized?.toLowerCase() === "all" ? null : normalized;
+}
+
+function parseTextListFilter(
+  searchParams: URLSearchParams,
+  name: string,
+  maxLength: number,
+): ParsedTextListFilter {
+  const seen = new Set<string>();
+  const displayValues: string[] = [];
+  const sqlValues: string[] = [];
+
+  for (const rawValue of searchParams.getAll(name)) {
+    for (const part of rawValue.split(",")) {
+      const parsed = parseFilterText(part, maxLength);
+      if (!parsed) continue;
+      const sqlValue = parsed.toLowerCase();
+      if (seen.has(sqlValue)) continue;
+      seen.add(sqlValue);
+      displayValues.push(parsed);
+      sqlValues.push(sqlValue);
+    }
+  }
+
+  return {
+    displayValues: displayValues.slice(0, 40),
+    sqlValues: sqlValues.slice(0, 40),
+  };
+}
+
+function parseInstrumentType(value: string | null): string | null {
+  const normalized = parseFilterText(value, 20)?.toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "option" || normalized === "options") return "option";
+  if (normalized === "future" || normalized === "futures") return "future";
+  return null;
+}
+
+function parsePutCall(value: string | null): string | null {
+  const normalized = parseFilterText(value, 4)?.toUpperCase();
+  return normalized === "C" || normalized === "P" ? normalized : null;
 }
 
 function parseDebugLimit(value: string | null): number {
@@ -261,6 +325,22 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
     : [];
+}
+
+function productFilterOptions(value: unknown): Array<{
+  productGroup: string | null;
+  productRegion: string | null;
+  productCode: string | null;
+  instrumentType: string | null;
+  putCall: string | null;
+}> {
+  return rowArray<ProductFilterOptionDbRow>(value).map((row) => ({
+    productGroup: row.product_group,
+    productRegion: row.product_region,
+    productCode: row.product_code,
+    instrumentType: row.instrument_type,
+    putCall: row.put_call,
+  }));
 }
 
 function objectRecord(value: unknown): Record<string, unknown> {
@@ -380,31 +460,25 @@ function mapProductSummary(row: ProductSummaryDbRow) {
 
 function mapDebugRow(row: RawPositionDbRow) {
   return {
-    fundCode: row.fund_code,
     navDate: row.nav_date,
-    sftpUploadTimestamp: isoOrText(row.sftp_upload_timestamp),
-    accountGroup: row.account_group,
-    account: row.account,
-    sourceFileName: row.source_file_name ?? "",
-    sourceFileRowNumber: toInteger(row.source_file_row_number),
-    product: row.product,
-    type: row.type,
-    monthYear: row.month_year,
-    exchangeName: row.exchange_name,
-    clientSymbol: row.client_symbol,
-    quantity1: round(row.quantity_1, 6),
-    costInBaseCurrency: round(row.cost_in_base_currency),
-    marketValueInBaseCurrency: round(row.market_value_in_base_currency),
-    productCode: row.product_code,
+    tradeDate: row.trade_date,
     productGroup: row.product_group,
     productRegion: row.product_region,
-    underlyingProductCode: row.underlying_product_code,
+    productCode: row.product_code,
     contractYyyymm: row.contract_yyyymm,
     contractDay: toNumber(row.contract_day),
-    putCall: row.put_call,
-    normalizedStrikePrice: round(row.normalized_strike_price, 6),
+    account: row.account,
+    accountName: row.account_name,
+    longShort: row.long_short,
+    quantity1: round(row.quantity_1, 6),
+    multiplierAndTickValue: round(row.multiplier_and_tick_value, 6),
+    tradePrice: round(row.trade_price, 6),
+    marketSettlementPrice: round(row.market_settlement_price, 6),
+    productNorm: row.product_norm,
     normalizationStatus: row.normalization_status,
-    updatedAt: isoOrText(row.updated_at),
+    rulePriority: toNumber(row.rule_priority),
+    ruleMatchType: row.rule_match_type,
+    rulePattern: row.rule_pattern,
   };
 }
 
@@ -414,9 +488,25 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const fund = parseFund(searchParams.get("fund"));
   const accountGroup = parseFilterText(searchParams.get("accountGroup"), 120);
   const productSearch = parseText(searchParams.get("product"), 100);
+  const productGroupFilter = parseTextListFilter(searchParams, "productGroup", 80);
+  const productRegionFilter = parseTextListFilter(searchParams, "productRegion", 80);
+  const productCodeFilter = parseTextListFilter(searchParams, "productCode", 80);
+  const instrumentType = parseInstrumentType(searchParams.get("instrumentType"));
+  const putCall = parsePutCall(searchParams.get("putCall"));
   const debugRows = searchParams.get("mode") === "debug" || searchParams.get("debug") === "rows";
   const drilldownFilter = parseDrilldownFilter(searchParams.get("drilldown"));
-  const baseArgs = [requestedDate, fund, accountGroup, productSearch] as const;
+  const cacheHeaders = responseCacheHeaders();
+  const baseArgs = [
+    requestedDate,
+    fund,
+    accountGroup,
+    productSearch,
+    productGroupFilter.sqlValues,
+    productRegionFilter.sqlValues,
+    productCodeFilter.sqlValues,
+    instrumentType,
+    putCall,
+  ] as const;
   const promotedArtifact = await loadPromotedNavPositionsSql({ requestedDate });
   const selectedPositionsSql = selectedNavPositionsCte(promotedArtifact.sql);
 
@@ -424,7 +514,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     const limit = parseDebugLimit(searchParams.get("limit"));
     const drilldownWhere = buildDebugDrilldownWhere({
       filter: drilldownFilter,
-      firstParameterIndex: 6,
+      firstParameterIndex: 11,
     });
     const debugRowsResult = await query<NavPositionsDebugBundleDbRow>(
       `
@@ -451,39 +541,34 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
             SELECT coalesce(jsonb_agg(to_jsonb(raw_row)), '[]'::jsonb)
             FROM (
               SELECT
-                fund_code,
                 to_char(nav_date, 'YYYY-MM-DD') AS nav_date,
-                sftp_upload_timestamp::text AS sftp_upload_timestamp,
-                account_group,
-                account,
-                source_file_name,
-                source_file_row_number,
-                product,
-                type,
-                month_year,
-                exchange_name,
-                client_symbol,
-                quantity_1::double precision AS quantity_1,
-                cost_in_base_currency::double precision AS cost_in_base_currency,
-                market_value_in_base_currency::double precision AS market_value_in_base_currency,
-                product_code,
+                to_char(trade_date, 'YYYY-MM-DD') AS trade_date,
                 product_group,
                 product_region,
-                underlying_product_code,
+                product_code,
                 contract_yyyymm,
                 contract_day,
-                put_call,
-                normalized_strike_price::double precision AS normalized_strike_price,
+                account,
+                account_name,
+                long_short,
+                quantity_1::double precision AS quantity_1,
+                multiplier_and_tick_value::double precision AS multiplier_and_tick_value,
+                trade_price::double precision AS trade_price,
+                market_settlement_price::double precision AS market_settlement_price,
+                product_norm,
                 normalization_status,
-                updated_at::text AS updated_at
+                rule_priority,
+                rule_match_type,
+                rule_pattern
               FROM debug_positions
               ORDER BY
                 abs(coalesce(market_value_in_base_currency, 0)) DESC,
-                fund_code,
                 account_group NULLS LAST,
-                product NULLS LAST,
-                source_file_row_number
-              LIMIT $5::integer
+                account NULLS LAST,
+                product_code NULLS LAST,
+                contract_yyyymm NULLS LAST,
+                contract_day NULLS LAST
+              LIMIT $10::integer
             ) raw_row
           ) AS raw_rows
       `,
@@ -508,6 +593,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           fund: fund ?? "all",
           accountGroup: accountGroup ?? "all",
           productSearch: productSearch ?? "",
+          productGroups: productGroupFilter.displayValues,
+          productRegions: productRegionFilter.displayValues,
+          productCodes: productCodeFilter.displayValues,
+          instrumentType: instrumentType ?? "all",
+          putCall: putCall ?? "all",
         },
         summary: {
           rowCount,
@@ -522,7 +612,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
           drilldown: drilldownFilter,
         },
       },
-      headers: { "Cache-Control": CACHE_HEADER },
+      headers: cacheHeaders,
       rowCount,
       dataAsOf: asOf,
     };
@@ -565,11 +655,64 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
                 SELECT coalesce(jsonb_agg(product ORDER BY product), '[]'::jsonb)
                 FROM (
                   SELECT DISTINCT product
-                  FROM selected_positions
+                  FROM filter_source_positions
                   WHERE product IS NOT NULL AND product <> ''
                   ORDER BY product
                   LIMIT 300
                 ) products
+              ),
+              'product_groups',
+              (
+                SELECT coalesce(jsonb_agg(product_group ORDER BY product_group), '[]'::jsonb)
+                FROM (
+                  SELECT DISTINCT product_group
+                  FROM filter_source_positions
+                  WHERE product_group IS NOT NULL AND product_group <> ''
+                ) product_groups
+              ),
+              'product_regions',
+              (
+                SELECT coalesce(jsonb_agg(product_region ORDER BY product_region), '[]'::jsonb)
+                FROM (
+                  SELECT DISTINCT product_region
+                  FROM filter_source_positions
+                  WHERE product_region IS NOT NULL AND product_region <> ''
+                ) product_regions
+              ),
+              'product_codes',
+              (
+                SELECT coalesce(jsonb_agg(product_code ORDER BY product_code), '[]'::jsonb)
+                FROM (
+                  SELECT DISTINCT product_code
+                  FROM filter_source_positions
+                  WHERE product_code IS NOT NULL AND product_code <> ''
+                ) product_codes
+              ),
+              'product_filter_options',
+              (
+                SELECT coalesce(jsonb_agg(to_jsonb(product_filter_option) ORDER BY
+                  product_group NULLS LAST,
+                  product_region NULLS LAST,
+                  product_code NULLS LAST,
+                  instrument_type NULLS LAST,
+                  put_call NULLS LAST
+                ), '[]'::jsonb)
+                FROM (
+                  SELECT
+                    product_group,
+                    product_region,
+                    product_code,
+                    instrument_type,
+                    put_call
+                  FROM filter_source_positions
+                  GROUP BY
+                    product_group,
+                    product_region,
+                    product_code,
+                    instrument_type,
+                    put_call
+                  LIMIT 1000
+                ) product_filter_option
               )
             )
           ) AS filters,
@@ -689,7 +832,15 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   }));
 
   const bundleRow = bundleRows[0] ?? {
-    filters: { funds: [], account_groups: [], products: [] },
+    filters: {
+      funds: [],
+      account_groups: [],
+      products: [],
+      product_groups: [],
+      product_regions: [],
+      product_codes: [],
+      product_filter_options: [],
+    },
     summary: {},
     product_summary: [],
   };
@@ -717,6 +868,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       fund: fund ?? "all",
       accountGroup: accountGroup ?? "all",
       productSearch: productSearch ?? "",
+      productGroups: productGroupFilter.displayValues,
+      productRegions: productRegionFilter.displayValues,
+      productCodes: productCodeFilter.displayValues,
+      instrumentType: instrumentType ?? "all",
+      putCall: putCall ?? "all",
     },
     summary: {
       rowCount,
@@ -735,6 +891,10 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       funds: stringArray(filters.funds),
       accountGroups: stringArray(filters.account_groups),
       products: stringArray(filters.products),
+      productGroups: stringArray(filters.product_groups),
+      productRegions: stringArray(filters.product_regions),
+      productCodes: stringArray(filters.product_codes),
+      productFilterOptions: productFilterOptions(filters.product_filter_options),
       aggregationGrain: [
         "product_code",
         "product_group",
@@ -758,18 +918,24 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 
   return {
     payload,
-    headers: { "Cache-Control": CACHE_HEADER },
+    headers: cacheHeaders,
     rowCount,
     dataAsOf: asOf,
   };
 });
 
 export async function GET(request: Request): Promise<Response> {
-  if (!isLocalOnlyFeatureEnabled()) {
+  const pathname = new URL(request.url).pathname;
+  const isDevAlias = pathname.startsWith("/api/dev/");
+  if (isDevAlias && !isLocalOnlyFeatureEnabled()) {
     return new Response(null, {
       status: 404,
-      headers: { "Cache-Control": "no-store" },
+      headers: { "Cache-Control": NO_STORE_HEADER },
     });
+  }
+
+  if (!getNavPositionsAccessFromRequest(request).allowed) {
+    return navPositionsDeniedResponse();
   }
 
   return observedGET(request);
