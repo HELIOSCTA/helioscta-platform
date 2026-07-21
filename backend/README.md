@@ -16,10 +16,17 @@ AZURE_POSTGRES_WRITER_PORT=5432
 AZURE_POSTGRES_WRITER_DBNAME=helios_prod
 AZURE_POSTGRES_WRITER_SSLMODE=require
 
+DBT_POSTGRES_HOST=
+DBT_POSTGRES_READONLY_USER=helios_readonly
+DBT_POSTGRES_READONLY_PASSWORD=
+DBT_POSTGRES_PORT=5432
+DBT_POSTGRES_DBNAME=helios_prod
+DBT_POSTGRES_SSLMODE=require
+
 PJM_API_KEY=
 
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
-HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com
+HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com,Kapil.Saxena@HeliosCTA.com
 HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
 HELIOS_EMAIL_MAX_ATTEMPTS=6
 HELIOS_EMAIL_STALE_SENDING_MINUTES=30
@@ -61,6 +68,16 @@ MUFG_SFTP_REMOTE_DIR=/
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
 environment variable names still say `WRITER`, but the configured database user
 is now the app owner role, `helios_admin`.
+
+The production health digest also runs the dbt `tag:product_matching` suite
+under `dbt/azure_postgres`. Keep `DBT_POSTGRES_READONLY_USER` and
+`DBT_POSTGRES_READONLY_PASSWORD` configured with the read-only role; host,
+port, database, and SSL mode can mirror the writer connection. The VM service
+user should have the `dbt` CLI installed in the same Python environment as the
+health digest, or otherwise available on `PATH`, for exact dbt suite execution.
+If dbt is unavailable or not configured, the digest falls back to the packaged
+generated all-history SQL and fails on the same unresolved product statuses
+using the backend Postgres connection.
 
 Production VM jobs should not use `backend/.env`; they consume the root-owned
 systemd environment file at `/etc/helioscta/backend.env`. Keep one `KEY=value`
@@ -406,6 +423,10 @@ After the source file loads, the scheduled path runs the MUFG upload leg from
 `backend.orchestration.positions_and_trades.clear_street_mufg_upload`. That
 leg reads the generated read-only SQL at
 `backend/scrapes/positions_and_trades/sql/generated/clear_street_trades/mufg/latest.sql`,
+which is promoted from the dbt
+`positions_and_trades_v2.clear_street_eod_transactions.cs_80_mufg_latest`
+model with `python scripts/promote_positions_trades_sql.py` after
+`dbt compile`,
 uses the Clear Street target trade date for the exported
 `Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
 the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with
@@ -438,10 +459,12 @@ append Outlook organization tags with pipe separators, for example
 MUFG Upload | Warning`. DA LMP release emails use one inline snapshot template
 for PJM, NEPOOL, ERCOT, and CAISO hub reports: hub summary rows plus hourly
 component tables in the email body, with a Vercel single-day report link as
-the live fallback. The PJM DA HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, and
-CAISO DA LMP scheduled workflows enqueue one release email per configured
-`HELIOS_EMAIL_RECIPIENTS` recipient after complete-day readiness. The Clear
-Street source and MUFG
+the live fallback. `Kapil.Saxena@HeliosCTA.com` is always included in backend
+email recipient lists, even when the production environment file narrows
+`HELIOS_EMAIL_RECIPIENTS` or `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`. The PJM DA
+HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, and CAISO DA LMP scheduled
+workflows enqueue one release email per configured `HELIOS_EMAIL_RECIPIENTS`
+recipient after complete-day readiness. The Clear Street source and MUFG
 handoff paths do enqueue internal emails with CSV attachments to
 `HELIOS_EMAIL_RECIPIENTS` when email notifications are enabled.
 

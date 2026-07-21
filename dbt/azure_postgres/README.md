@@ -54,6 +54,29 @@ source .env
 set +a
 ```
 
+## Product-Matching Test Runner
+
+On the Windows workstation, run the all-history product-matching suite through
+the checked-in runner. It selects the local `helioscta-azure-backend` Conda
+environment, loads `.env` without printing its values, strips paired outer
+single or double quotes from values, and then runs the required dbt command.
+
+```powershell
+cd dbt/azure_postgres
+.\scripts\run_product_matching_tests.ps1
+```
+
+The default Conda root is `$env:USERPROFILE\miniconda3`. Override it only when
+the environment is installed elsewhere:
+
+```powershell
+.\scripts\run_product_matching_tests.ps1 -CondaRoot 'C:\\path\\to\\miniconda3'
+```
+
+The runner requires outbound TCP access to the configured Azure Postgres host
+on port 5432. A `Permission denied (10013)` connection error is an execution
+host network-policy problem, not a dbt or credential error.
+
 ## Positions And Trades v2 Product Matching
 
 ```text
