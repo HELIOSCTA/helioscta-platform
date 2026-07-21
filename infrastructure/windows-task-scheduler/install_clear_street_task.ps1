@@ -275,6 +275,8 @@ Ensure-TaskFolder -FolderPath $TaskPath
 
 $actionArguments = @(
     "-NoProfile",
+    "-WindowStyle",
+    "Hidden",
     "-ExecutionPolicy",
     "Bypass",
     "-File",

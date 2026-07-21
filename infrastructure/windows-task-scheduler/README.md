@@ -267,6 +267,41 @@ Also check freshness on:
 - `ice_python.settlements`
 - `ice_python.settlement_contract_dates`
 
+## Positions And Trades Status Window
+
+Routine NAV and Clear Street scheduled actions launch hidden under the
+interactive Windows user. Use the visible positions/trades status task as the
+operator surface for task state, recent logs, and explicit manual starts.
+
+Install or update the visible status task:
+
+```powershell
+.\infrastructure\windows-task-scheduler\install_positions_trades_status_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -HistoryLines 35
+```
+
+This registers one no-trigger Task Scheduler task:
+
+```text
+\HeliosCTA\Positions And Trades\HeliosCTA Positions And Trades Status
+```
+
+Start it from Task Scheduler when you want a visible status window. It prints
+the latest Task Scheduler state for NAV Positions, NAV Trade Breaks, and Clear
+Street EOD Transactions, shows recent scheduler log tails with NUL characters
+stripped for readability, and waits for input before closing.
+
+The status window shows an `ACTIONS` block. Press `P` to start NAV Positions,
+`T` to start NAV Trade Breaks, `C` to start Clear Street EOD Transactions, or
+press `Q`/Enter to close. Manual starts use the installed hidden scheduled task
+definitions, so the status window remains the visible operator surface.
+
+After pulling a repo version that includes the hidden routine-window behavior,
+rerun the NAV Positions, NAV Trade Breaks, and Clear Street installers so the
+registered task actions pick up `-WindowStyle Hidden`.
+
 ## Clear Street EOD Transactions
 
 Task Scheduler runs one overnight task:
@@ -280,6 +315,9 @@ The task starts daily at local hour `19`. Each launch calls:
 ```powershell
 python -c "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=300))"
 ```
+
+Routine Clear Street launches are hidden; use the positions/trades status task
+when you want a visible operator window.
 
 The Python orchestration owns the target-date policy. For an overnight window
 that starts at 19:00 and ends at 05:00, the target trade date is the date at
@@ -403,6 +441,9 @@ minutes until `11:00` local time. Each launch calls:
 python -c "from backend.orchestration.nav import positions; raise SystemExit(positions.scheduled_main(lookback_days=1, poll_wait_seconds=300, poll_window_minutes=420, poll_deadline_hour=11))"
 ```
 
+Routine NAV Positions launches are hidden; use the positions/trades status task
+when you want a visible operator window.
+
 The Python orchestration targets the previous business NAV date by default,
 downloads matching NAV `Position Valuation Detail Report` workbooks for `agr`,
 `moross`, `pnt`, and `titan`, and caches arrivals under
@@ -470,6 +511,9 @@ minutes until `11:00` local time, matching NAV positions. Each launch calls:
 ```powershell
 python -c "from backend.orchestration.nav import trade_breaks_email; raise SystemExit(trade_breaks_email.scheduled_main(lookback_days=1, poll_wait_seconds=300, poll_window_minutes=420, poll_deadline_hour=11))"
 ```
+
+Routine NAV Trade Breaks launches are hidden; use the positions/trades status
+task when you want a visible operator window.
 
 The Python orchestration targets the previous business NAV date by default,
 downloads the matching NAV `Trade Breaks Detail Report` workbook, and caches it
