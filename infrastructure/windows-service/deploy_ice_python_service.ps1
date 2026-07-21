@@ -1,7 +1,7 @@
-# Deploys the local-only ICE Python Windows service from a clean production clone.
+# Legacy rollback helper: deploys the old ICE Python Windows service from a clean production clone.
 #
-# Intended caller: a GitHub Actions self-hosted Windows runner service account
-# with permission to control the HeliosCTA-IcePython service.
+# Legacy intended caller: a GitHub Actions self-hosted Windows runner account
+# with permission to control the old HeliosCTA-IcePython service.
 
 #Requires -RunAsAdministrator
 

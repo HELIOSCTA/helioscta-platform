@@ -1,4 +1,4 @@
-# Removes the local-only ICE Python Windows service.
+# Removes the legacy NSSM ICE Python Windows service.
 
 #Requires -RunAsAdministrator
 

@@ -1,4 +1,4 @@
-"""Long-running local Windows service runner for ICE Python settlements."""
+"""Local Windows ICE Python coordinator for scheduled settlement pulls."""
 from __future__ import annotations
 
 import json
@@ -936,7 +936,7 @@ def main(
     state_file: str | Path | None = None,
     job_group: str = "all",
 ) -> int:
-    """Service entrypoint for Windows Service Control Manager wrappers."""
+    """Entry point for Task Scheduler run_once and legacy service wrappers."""
     install_stop_handlers()
     return run_service_loop(
         poll_seconds=poll_seconds,

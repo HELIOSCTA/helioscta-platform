@@ -44,15 +44,17 @@ gas_futures_west
 gas_futures_east
 ```
 
-Both tasks call the same wrapper and Python service:
+Both tasks call the same wrapper and Python coordinator module:
 
 ```powershell
 python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True, job_group='<group>'))"
 ```
 
-Task Scheduler owns the operator-facing schedule. Each `run_once` launch runs
-the selected ICE job group for that local-time window, even if a feed already
-failed earlier in the same hour. The Python coordinator still persists
+The imported module is still named `service` for compatibility with the older
+NSSM path, but Task Scheduler owns the operator-facing schedule. Each
+`run_once` launch runs the selected ICE job group for that local-time window,
+even if a feed already failed earlier in the same hour. The Python coordinator
+still persists
 per-window state for status, prevents same-feed overlap with local lock files,
 launches each ICE job in a child Python process, applies hard timeouts, and
 writes durable telemetry to `ops.api_fetch_log`.

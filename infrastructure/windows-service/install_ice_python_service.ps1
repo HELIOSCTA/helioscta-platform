@@ -1,4 +1,4 @@
-# Installs or updates the local-only ICE Python Windows service.
+# Legacy rollback helper: installs or updates the old ICE Python Windows service.
 #
 # Requires: Administrator, NSSM, backend local Windows requirements, and
 # licensed ICE XL / ICE Python installed on the host.

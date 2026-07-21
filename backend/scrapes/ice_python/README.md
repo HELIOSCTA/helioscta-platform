@@ -57,14 +57,18 @@ python -m backend.orchestration.ice_python.settlements.gas_futures_west
 python -m backend.orchestration.ice_python.settlements.gas_futures_east
 ```
 
-Production local Windows activation is one service runner:
+Production local Windows activation is the Task Scheduler coordinator under
+`infrastructure/windows-task-scheduler/`. The scheduled tasks call the
+historically named coordinator module in `run_once` mode:
 
 ```powershell
-python -m backend.orchestration.ice_python.service
+python -c "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True, job_group='<group>'))"
 ```
 
-Install it through `infrastructure/windows-service/`. Do not add Linux
-systemd units for ICE Python.
+`backend.orchestration.ice_python.service` is a Python module name, not the
+active Windows Service Control Manager deployment model. The older NSSM service
+path under `infrastructure/windows-service/` is retained only for rollback and
+legacy cleanup reference. Do not add Linux systemd units for ICE Python.
 
 Each wrapper defaults to today's contract-date snapshot plus a 14-day inclusive
 settlement lookback window. Set `lookback_days=0` for single-date behavior.
