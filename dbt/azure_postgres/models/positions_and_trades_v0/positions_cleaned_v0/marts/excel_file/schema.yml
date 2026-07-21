@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: sftp_metadata
+    description: "NAV workbook SFTP_METADATA query. Grain: one row per NAV fund/source freshness check."
+
+  - name: ice_settles
+    description: "NAV workbook ICE_SETTLES query. Grain: one latest NAV grouped position row per power future/option/basis contract."
+
+  - name: ice_balday
+    description: "NAV workbook ICE_BALDAY query. Grain: one latest NAV grouped position row per selected short-term power contract."
+
+  - name: ice_options
+    description: "NAV workbook ICE_OPTIONS query. Grain: one latest NAV grouped option row per PJM power option contract, put/call, and strike."
+
+  - name: ice_futures
+    description: "NAV workbook ICE_FUTURES query. Grain: one latest NAV grouped futures row per PJM power future contract."
+
+  - name: gas_options
+    description: "NAV workbook GAS_OPTIONS query. Grain: one latest NAV grouped gas option row for LN/PHE contracts after the workbook month cutoff."
+
+  - name: gas_futures
+    description: "NAV workbook GAS_FUTURES query. Grain: one latest NAV grouped gas futures row per gas futures contract."
+
+  - name: gas_balmo
+    description: "NAV workbook GAS_BALMO query. Grain: one latest NAV grouped BALMO row per HHD daily gas contract."
+
+  - name: gas_options_other
+    description: "NAV workbook GAS_OPTIONS_OTHER query. Grain: one latest NAV grouped gas option row outside LN/PHE."
+
+  - name: gas_futures_pivot
+    description: "NAV workbook GAS_FUTURES_PIVOT query. Grain: one latest NAV row-level gas futures position row before Excel pivoting."
+
+  - name: gas_options_pivot
+    description: "NAV workbook GAS_OPTIONS_PIVOT query. Grain: one grouped gas option row per month, option code, strike, and description before Excel pivoting."

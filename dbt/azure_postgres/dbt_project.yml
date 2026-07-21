@@ -29,6 +29,12 @@ models:
         +schema: clear_street_eod_transactions_v1
         +materialized: ephemeral
 
+    positions_and_trades_v0:
+      positions_cleaned_v0:
+        +enabled: true
+        +schema: positions_cleaned_v0
+        +materialized: ephemeral
+
     positions_and_trades_v2:
       utils:
         +enabled: true

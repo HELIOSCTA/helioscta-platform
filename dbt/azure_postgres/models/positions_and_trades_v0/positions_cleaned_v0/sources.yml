@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: nav_v6
+    schema: nav
+    description: '{{ doc("positions_nav_source_group") }}'
+    tables:
+      - name: positions
+        description: '{{ doc("positions_nav_source_group") }}'
