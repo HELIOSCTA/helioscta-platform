@@ -175,6 +175,49 @@ after successful upserts. Forecast parse failures emit a failed
 `complete` only when every configured station is present and each station has a
 uniform count of forecast valid hours; otherwise it emits `partial`.
 
+The promoted WSI daily weighted forecast runtime modules are
+`backend.scrapes.weather.wsi.daily_weighted_temperature_forecast` and
+`backend.scrapes.weather.wsi.daily_weighted_degree_day_forecast`, with combined
+orchestration at `backend.orchestration.weather.wsi.daily_weighted_forecasts`.
+They write forecast-only daily weighted rows from WSI Trader `GetModelForecast`
+and `GetWeightedDegreeDayForecast` to
+`weather.wsi_daily_weighted_temperature_forecasts` and
+`weather.wsi_daily_weighted_degree_day_forecasts`. The source grain for both
+tables is
+`source_issue_key x model x forecast_type x request_region x entity_id x
+forecast_date x metric_name`; safe reruns upsert by that key while preserving
+distinct source forecast issues. Defaults are North America, WSI model, daily
+resolution, Fahrenheit temperature units for weighted temperatures, uncorrected
+model bias, PJM weighted temperature output, and CONUS plus the five new EIA
+degree-day regions. Both scrapes log WSI API fetch telemetry to
+`ops.api_fetch_log`; malformed or schema-incompatible CSV after HTTP success
+adds a failed parse-stage fetch row. The combined orchestration emits one
+`ops.data_availability_events` forecast freshness event for each table, marking
+`complete` only when the configured entities, expected metrics, and 15
+consecutive daily forecast dates are present for the latest source issue.
+Scheduled runs retain 90 days of source issues in the hot tables after
+successful upserts, using `source_issue_at_utc` when WSI publishes it and
+`scrape_run_at_utc` as the fallback for deterministic hourly issue keys.
+
+The promoted WSI daily weighted observed runtime modules are
+`backend.scrapes.weather.wsi.daily_weighted_temperature_observations` and
+`backend.scrapes.weather.wsi.daily_weighted_degree_day_observations`, with
+combined orchestration at
+`backend.orchestration.weather.wsi.daily_weighted_observations`. They write
+daily observed rows from WSI Trader `GetHistoricalObservations` products
+`HISTORICAL_WEIGHTED_TEMPERATURE` and `HISTORICAL_WEIGHTED_DEGREEDAYS` to
+`weather.wsi_daily_weighted_temperature_observations` and
+`weather.wsi_daily_weighted_degree_day_observations`. The source grain for both
+tables is
+`source_product_id x request_region x entity_id x observation_date x
+metric_name`; safe reruns upsert by that key. Defaults are North America,
+daily resolution, Fahrenheit, PJM weighted temperatures, and CONUS plus the
+five new EIA degree-day regions. Scheduled runs use a 14-day rolling observed
+window and retain historical observed rows indefinitely. The combined
+orchestration emits one `ops.data_availability_events` observed freshness event
+for each table, marking `complete` only when the configured entities and
+expected metrics are present for the latest observed date returned by WSI.
+
 Run `python -m backend.scrapes.weather.wsi.station_metadata` manually to fetch
 WSI Trader `GetCityIds` metadata and compare the returned station IDs against
 the configured PJM station basket. This probe is not scheduled and writes no
@@ -183,7 +226,8 @@ weather table rows.
 Forecast hot-table retention is enforced by the scrape runtime after successful
 upserts for rolling forecast tables: ERCOT seven-day load forecasts, ISO-NE
 regional demand/capacity/wind/solar forecasts, PJM seven-day load, hourly
-solar/wind, WSI hourly forecasts, and Meteologica PJM hourly forecasts.
+solar/wind, WSI hourly and daily weighted forecasts, and Meteologica PJM hourly
+forecasts.
 Retention is keyed to the source issue, publication, or evaluation timestamp so
 the table keeps 90 days of forecast vintages. Historical PJM Data Miner
 `pjm.load_frcstd_hist` and outage forecast tables remain indefinite unless
@@ -479,6 +523,7 @@ python -m backend.backfills.power.caiso.da_lmps
 python -m backend.backfills.power.caiso.rt_lmps
 python -m backend.backfills.power.caiso.historical_lmps
 python -m backend.backfills.weather.wsi.hourly_observed
+python -m backend.backfills.weather.wsi.daily_weighted_observations
 python -m backend.backfills.nav.positions_from_legacy_cache
 python -m backend.backfills.ice_trade_blotters.from_legacy_cache
 python -m backend.backfills.ice_python.futures
@@ -488,10 +533,11 @@ For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
 bottom `main(...)` call in the target module before running it on the VM. The
 wrappers validate the requested window, support `dry_run=True`, and stamp API
 fetch telemetry with backfill metadata where the underlying scrape supports it.
-WSI hourly observed backfills call the existing weather orchestration path, so
-successful runs also emit the current WSI freshness event. Use the read-only
-coverage SQL in `docs/operations/manual-backfills.md` before handing historical
-coverage to frontend consumers.
+WSI observed backfills call the existing weather orchestration paths, so
+successful hourly and daily weighted observed runs also emit the current WSI
+freshness events. Use the read-only coverage SQL in
+`docs/operations/manual-backfills.md` and `docs/operations/weather-backfills.md`
+before handing historical coverage to frontend consumers.
 
 The CAISO historical LMP backfill
 `backend.backfills.power.caiso.historical_lmps` is the operator path for

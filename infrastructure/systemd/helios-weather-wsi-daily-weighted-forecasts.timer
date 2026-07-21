@@ -1,0 +1,12 @@
+[Unit]
+Description=Six-hourly HeliosCTA WSI daily weighted forecast weather refresh timer
+
+[Timer]
+OnCalendar=*-*-* 00/6:44:00
+Persistent=false
+RandomizedDelaySec=3min
+AccuracySec=1min
+Unit=helios-weather-wsi-daily-weighted-forecasts.service
+
+[Install]
+WantedBy=timers.target

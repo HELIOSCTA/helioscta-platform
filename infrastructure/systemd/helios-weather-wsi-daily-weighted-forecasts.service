@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA WSI daily weighted forecast weather refresh
+Wants=network-online.target
+After=network-online.target helios-weather-wsi-hourly-observed.service helios-weather-wsi-hourly-forecast.service
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-weather-wsi-daily-weighted-forecasts.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.weather.wsi.daily_weighted_forecasts
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-weather-wsi-daily-weighted-forecasts
+
+[Install]
+WantedBy=multi-user.target

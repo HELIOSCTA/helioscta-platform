@@ -1,0 +1,6 @@
+Historical Weighted Degree Day Observations
+site_id,valid_time,electric_cdd,electric_hdd,gas_cdd,gas_hdd,oil_cdd,oil_hdd,population_cdd,population_hdd
+CONUS,7/14/2026,13.9,0,13.1,0,12.4,0,13.4,0
+CONUS,7/15/2026,14.8,0,14.1,0,13.6,0,14.3,0
+EAST,7/14/2026,6.4,0,4.6,0,11.6,0,5.5,0
+EAST,7/15/2026,7.1,0,5.4,0,12.8,0,6.3,0
