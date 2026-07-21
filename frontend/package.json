@@ -14,14 +14,18 @@
   "dependencies": {
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
+    "maplibre-gl": "^5.24.0",
+    "mssql": "^11.0.1",
     "next": "^15.5.12",
     "pg": "^8.20.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "recharts": "^3.8.1"
+    "recharts": "^3.8.1",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
+    "@types/mssql": "^9.1.11",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
     "@types/react": "^19",

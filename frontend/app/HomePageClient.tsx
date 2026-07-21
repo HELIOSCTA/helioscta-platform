@@ -8,6 +8,9 @@ import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
 import GasDailyPrices from "@/components/gas/GasDailyPrices";
+import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
+import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
+import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
 import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
@@ -221,6 +224,13 @@ const DEFAULT_ICE_SETTLEMENTS_FRESHNESS: IceTradeBlotterFreshnessSummary = {
   rowCountLabel: "--",
 };
 
+const DEFAULT_GENSCAPE_NOMS_FRESHNESS: GenscapeNomsFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  latestGasDayLabel: "--",
+  latestUpdateLabel: "--",
+};
+
 interface HomePageClientProps {
   showLocalDevFeatures: boolean;
 }
@@ -250,6 +260,12 @@ function parseInitialSection(
   }
   if (value === "spark-spreads") {
     return "spark-spreads";
+  }
+  if (showLocalDevFeatures && (value === "map" || value === "rt")) {
+    return "map";
+  }
+  if (showLocalDevFeatures && value === "noms") {
+    return "noms";
   }
   if (showLocalDevFeatures && value === "ice-pmi-curve") {
     return "ice-pmi-curve";
@@ -335,6 +351,15 @@ function parseTextParam(value: string | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function parseNumberCsvParam(value: string | null): number[] {
+  return (
+    value
+      ?.split(",")
+      .map((item) => Number.parseInt(item.trim(), 10))
+      .filter((item) => Number.isFinite(item) && item > 0) ?? []
+  );
+}
+
 function parseRefreshParam(value: string | null): boolean {
   return value === "1" || value === "true";
 }
@@ -366,6 +391,7 @@ export default function HomePageClient({
   const [rawIceBlotterRefreshToken, setRawIceBlotterRefreshToken] = useState(0);
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
   const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
+  const [genscapeNomsRefreshToken, setGenscapeNomsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [powerLmpAddersFreshnessOpen, setPowerLmpAddersFreshnessOpen] = useState(false);
   const [pjmDaModelFreshnessOpen, setPjmDaModelFreshnessOpen] = useState(false);
@@ -386,6 +412,8 @@ export default function HomePageClient({
   const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
     useState(false);
   const [iceSettlementsFreshnessOpen, setIceSettlementsFreshnessOpen] =
+    useState(false);
+  const [genscapeNomsFreshnessOpen, setGenscapeNomsFreshnessOpen] =
     useState(false);
   const [pjmDaLmpsFreshness, setPjmDaLmpsFreshness] =
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
@@ -433,6 +461,8 @@ export default function HomePageClient({
     useState<IceTradeBlotterFreshnessSummary>(
       DEFAULT_ICE_SETTLEMENTS_FRESHNESS,
     );
+  const [genscapeNomsFreshness, setGenscapeNomsFreshness] =
+    useState<GenscapeNomsFreshnessSummary>(DEFAULT_GENSCAPE_NOMS_FRESHNESS);
 
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
   const initialPjmDaLmpIso = parsePjmLmpIsoParam(searchParams.get("iso"));
@@ -450,6 +480,18 @@ export default function HomePageClient({
     searchParams.get("forecastType"),
     searchParams.get("section"),
     showLocalDevFeatures,
+  );
+  const initialGenscapeNomsStart = parseDateParam(searchParams.get("start"));
+  const initialGenscapeNomsEnd = parseDateParam(searchParams.get("end"));
+  const initialGenscapeNomsRoleIds = parseNumberCsvParam(
+    searchParams.get("locationRoleId") ?? searchParams.get("roleIds"),
+  );
+  const initialGenscapeNomsPipeline = parseTextParam(searchParams.get("pipeline"));
+  const initialGenscapeNomsSelectionName = parseTextParam(
+    searchParams.get("selectionName") ?? searchParams.get("name"),
+  );
+  const initialGenscapeNomsSelectionSource = parseTextParam(
+    searchParams.get("selectionSource"),
   );
 
   useEffect(() => {
@@ -529,6 +571,20 @@ export default function HomePageClient({
         subtitle:
           "Outright, calendar, and spark spread curve history with heat-rate context.",
         footer: "Power Sparks | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "map") {
+      return {
+        title: "RT",
+        subtitle: "Real-time nominations map for pipelines, locations, and imported RT selections.",
+        footer: "RT | Source: GenscapeDataFeed.natgas metadata / Azure SQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "noms") {
+      return {
+        title: "Noms",
+        subtitle: "Pipeline, location, and imported nominations from Genscape natgas data.",
+        footer: "Noms | Source: GenscapeDataFeed.natgas nominations / Azure SQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {
@@ -916,6 +972,27 @@ export default function HomePageClient({
               />
             )}
 
+            {showLocalDevFeatures && activeSection === "noms" && (
+              <FreshnessCard
+                statusLabel={genscapeNomsFreshness.status}
+                statusClass={genscapeNomsFreshness.statusClass}
+                summary={`Gas day ${genscapeNomsFreshness.latestGasDayLabel}`}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: genscapeNomsFreshness.status,
+                    className: genscapeNomsFreshness.statusClass,
+                  },
+                  { label: "Latest Gas Day", value: genscapeNomsFreshness.latestGasDayLabel },
+                  { label: "Source Update", value: genscapeNomsFreshness.latestUpdateLabel },
+                ]}
+                open={genscapeNomsFreshnessOpen}
+                onToggle={() => setGenscapeNomsFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setGenscapeNomsRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "pjm-generation" && (
               <FreshnessCard
                 statusLabel={pjmGenerationFreshness.status}
@@ -1137,6 +1214,21 @@ export default function HomePageClient({
           )}
           {activeSection === "spark-spreads" && (
             <SparkSpreadEvolution />
+          )}
+          {showLocalDevFeatures && activeSection === "map" && (
+            <GenscapeMapExplorer />
+          )}
+          {showLocalDevFeatures && activeSection === "noms" && (
+            <GenscapeNomsDashboard
+              initialStartDate={initialGenscapeNomsStart}
+              initialEndDate={initialGenscapeNomsEnd}
+              initialLocationRoleIds={initialGenscapeNomsRoleIds}
+              initialPipeline={initialGenscapeNomsPipeline}
+              initialSelectionName={initialGenscapeNomsSelectionName}
+              initialSelectionSource={initialGenscapeNomsSelectionSource}
+              refreshToken={genscapeNomsRefreshToken}
+              onFreshnessChange={setGenscapeNomsFreshness}
+            />
           )}
           {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (
             <IcePmiCurveTable />

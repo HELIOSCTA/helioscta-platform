@@ -13,6 +13,8 @@ export type ActiveSection =
   | "clear-street-trades"
   | "ice-settlements"
   | "spark-spreads"
+  | "map"
+  | "noms"
   | "ice-pmi-curve"
   | "gas-prices"
   | "pjm-price-duration-curves"
@@ -88,6 +90,8 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       navItems: [
         { id: "pjm-da-model", label: "DA Model" },
         { id: "pjm-price-view", label: "Price View" },
+        { id: "map", label: "Gas RT" },
+        { id: "noms", label: "Gas Noms" },
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
         { id: "clear-street-trades", label: "Trades" },

@@ -108,6 +108,31 @@ const endpoints = [
     targetMs: 1_500,
     devOnly: true,
   },
+  {
+    name: "Genscape map pipelines",
+    path: "/api/map/pipelines",
+    targetMs: 2_500,
+  },
+  {
+    name: "Genscape map search",
+    path: "/api/map/search?q=TRANSCO&limit=5",
+    targetMs: 2_500,
+  },
+  {
+    name: "Genscape noms filters",
+    path: "/api/genscape-noms/filters?pipelines=TRANSCO",
+    targetMs: 3_500,
+  },
+  {
+    name: "Genscape noms rows",
+    path: "/api/genscape-noms?start=2026-07-16&end=2026-07-18&pipeline=TRANSCO&limit=50&includeCount=false",
+    targetMs: 5_000,
+  },
+  {
+    name: "Genscape noms map",
+    path: "/api/genscape-noms/map?start=2026-07-16&end=2026-07-18&pipeline=TRANSCO&limit=200",
+    targetMs: 5_000,
+  },
 ];
 
 function usage() {
@@ -142,7 +167,7 @@ function parseArgs(argv) {
     requireTiming: false,
     allowSlow: false,
     json: false,
-    filter: process.env.HELIOS_API_HEALTH_FILTER?.trim().toLowerCase() || null,
+    filter: process.env.HELIOS_API_HEALTH_FILTER || null,
   };
 
   for (const arg of argv) {

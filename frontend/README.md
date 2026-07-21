@@ -25,10 +25,21 @@ HELIOS_POSTGRES_READONLY_DBNAME=helios_prod
 HELIOS_POSTGRES_READONLY_SSLMODE=require
 ```
 
-NAV Positions uses the same deployment-wide access boundary as the rest of the
-frontend. In production, manage access through Vercel Authentication or project
-membership; there is no separate Sign in with Vercel app session or
-per-Positions email allowlist.
+The Genscape RT and Noms pages also read from Azure SQL. Set these server-only
+variables in local development and Vercel:
+
+```text
+AZURE_SQL_DB_HOST=
+AZURE_SQL_DB_PORT=1433
+AZURE_SQL_DB_NAME=GenscapeDataFeed
+AZURE_SQL_DB_USER=
+AZURE_SQL_DB_PASSWORD=
+AZURE_SQL_CONNECTION_TIMEOUT_MS=12000
+AZURE_SQL_REQUEST_TIMEOUT_MS=28000
+```
+
+The frontend validates `AZURE_SQL_DB_NAME=GenscapeDataFeed` before connecting.
+Do not expose Azure SQL credentials through `NEXT_PUBLIC_*` variables.
 
 ## Local Development
 
@@ -66,6 +77,12 @@ GET /api/cache/warm-forecasts
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
 GET /api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all
+GET /api/map/pipelines
+GET /api/map/search?q=TRANSCO&limit=5
+GET /api/map/locations?pipeline=TRANSCO&limit=25
+GET /api/genscape-noms/filters?pipelines=TRANSCO
+GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=50&includeCount=false
+GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=200
 GET /api/nav-positions?productGroup=Power&productRegion=PJM
 GET /api/nav-positions/drilldown?productGroup=Power&productRegion=PJM&limit=100&drilldown=<json>
 GET /api/ice-trade-blotter/raw?date=YYYY-MM-DD
@@ -209,11 +226,11 @@ the Historical Settlements page on the Term Bible tab.
 
 The Positions view reads NAV position valuation snapshots with
 `helios_readonly` from `nav.positions`. The page is production-visible at
-`/?section=nav-positions` for users who can access the Vercel deployment. The
-production endpoints are `GET /api/nav-positions` for the summary ladder and
-`GET /api/nav-positions/drilldown` for bounded cell-level rows. The local-only
-compatibility alias `GET /api/dev/nav-positions` still returns the same handler
-only in local Next.js runs.
+`/?section=nav-positions` for users who can access the protected Vercel
+deployment. The production endpoints are `GET /api/nav-positions` for the
+summary ladder and `GET /api/nav-positions/drilldown` for bounded cell-level
+rows. The local-only compatibility alias `GET /api/dev/nav-positions` still
+returns the same handler only in local Next.js runs.
 
 Source system: NAV SFTP Position Valuation Detail Report XLSX files.
 
@@ -265,15 +282,13 @@ Drilldown rows are bounded cell investigations, not exports. The modal calls
 include NAV/trade dates, product identity, account, quantity, multiplier,
 trade/settle marks, `product_norm`, and dbt rule fields.
 
-Access control: NAV Positions is visible to users who can access the frontend
-deployment. Vercel Authentication or project membership owns the production
-access boundary. The app does not maintain a separate NAV Positions email
-allowlist.
+Access control: NAV Positions uses the same deployment-wide Vercel protection
+as the rest of the app. There is no separate app OAuth session, positions-only
+email allowlist, or service-token bypass.
 
-Caching: NAV Positions responses use `Cache-Control: private, no-store` and
-`Vercel-CDN-Cache-Control: no-store`. Do not re-enable public CDN caching for
-these endpoints unless the deployment access and cache key behavior are proven
-safe.
+Caching: protected NAV Positions responses use `Cache-Control: private,
+no-store` and `Vercel-CDN-Cache-Control: no-store`. Do not re-enable public CDN
+caching for these endpoints unless the cache key is proven user-safe.
 
 Index/operator note: as of July 21, 2026, live `nav.positions` indexes were
 verified as `positions_pkey`, `idx_nav_positions_fund_nav_date`,
@@ -309,9 +324,8 @@ drilldown-only `limit=25..1000`. Without `date`, it selects the latest
 `trade_date`. The summary route returns the latest 90 trade dates, filter
 options from the selected trade-date/search snapshot, source freshness, raw
 counts, and aggregate rows grouped by raw ICE display identity: `product`,
-`hub`, `contract`, `begin_date`, `end_date`, `option`, `strike`, `strike_2`,
-`cc`, `strip`, and `deal_section`.
-
+`hub`, `contract`, `begin_date`,
+`end_date`, `option`, `strike`, `strike_2`, `cc`, `strip`, and `deal_section`.
 Signed display quantity treats clear sell-side `b_s` values as negative, but
 the drilldown returns the original raw row fields.
 
@@ -797,8 +811,8 @@ route selects the primary or intraday WSI issue for the requested day, converts
 forecast valid UTC timestamps to `America/New_York` hours, converts WSI
 observed station-local timestamps back to PJM/EPT using station time-zone
 metadata, and returns forecast, observed, and observed-minus-forecast hourly
-values by station. Station coordinates are keyed by `station_id`; the route
-uses the promoted WSI station metadata in
+values by station. Station coordinates are keyed by `station_id` and come from
+the promoted WSI station metadata in
 `frontend/lib/weather/wsiStationMetadata.ts`. The synthetic `PJM` station is
 kept for aggregate charting but is not rendered as a map marker.
 
@@ -815,6 +829,62 @@ Production routes should expose:
 Use Vercel Observability to rank weak endpoints by function duration, errors,
 and status codes. Use Postgres query statistics or Azure query performance
 tools to connect slow routes back to slow SQL.
+
+## Genscape RT/Noms Source Contract
+
+The RT map (`/?section=map`) and Noms report (`/?section=noms`) are local-dev
+only while the Genscape workflow is staged. They are hidden from Vercel
+navigation, direct section routing is disabled on Vercel, and the matching
+`/api/map/*`, `/api/genscape-noms/*`, and `/api/watchlists/*` routes return 404
+outside local development. Source reads are backed by Azure SQL
+`GenscapeDataFeed.natgas`.
+
+Source system: WoodMac/Genscape natgas import on the local Windows Task
+Scheduler path documented under `infrastructure/windows-task-scheduler/`.
+
+Primary source tables:
+`natgas.pipelines`, `natgas.location_extended`, `natgas.location_role`,
+`natgas.nominations`, `natgas.no_notice`, and `natgas.nomination_cycles`.
+Nominations are keyed by `gas_day x location_role_id x cycle_code`; map
+metadata is keyed by pipeline/location/location-role identifiers. Freshness for
+Noms is derived from returned `nominations.update_timestamp` rows when present,
+falling back to the requested date window for empty filtered responses.
+
+Genscape source data remains read-only in Azure SQL. Saved Noms watchlists are
+app-owned data in Azure Postgres under `helioscta_app`:
+
+- `helioscta_app.genscape_noms_watchlists`
+- `helioscta_app.genscape_noms_watchlist_roles`
+
+Apply
+`dbt/azure_postgres/reference_sql/ddl/frontend/genscape_noms_watchlists/table_genscape_noms_watchlists.sql`
+as `helios_admin` before enabling watchlist writes, then run the matching
+`verify_genscape_noms_watchlists.sql`. The frontend exposes `/api/watchlists`
+and `/api/watchlists/[watchlistId]/roles` mutation routes using a separate
+writer connection. Configure either `HELIOS_POSTGRES_WRITER_URL` or
+`HELIOS_POSTGRES_WRITER_*`; `AZURE_POSTGRES_WRITER_*` remains supported as a
+fallback. The writer user must be `helios_admin` and the database must be
+`helios_prod`. Existing read-only Postgres routes continue to use
+`HELIOS_POSTGRES_READONLY_*`.
+
+RT selections can still be handed to Noms through session storage or direct
+`locationRoleId` URL params for ad hoc work.
+
+The bounded API routes are:
+
+```text
+GET /api/map/pipelines
+GET /api/map/search?q=<term>&limit=1..100
+GET /api/map/locations?pipeline=<short_name>&limit=1..5000
+GET /api/map/locations?locationRoleId=1,2&limit=1..5000
+GET /api/genscape-noms/filters?pipelines=<short_name>
+GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..5000&includeCount=false
+GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..3000
+```
+
+Because `natgas.nominations` is a large fact table, Genscape fact routes require
+`start`, `end`, and at least one metadata filter. Health checks use small
+sample windows and `includeCount=false`.
 
 Run the endpoint health check after a local build or production deploy:
 
@@ -834,6 +904,6 @@ header, in which case the checker falls back to total request time.
 
 ## Vercel
 
-Configure the Vercel project root as `frontend`. Deployment-wide access is
-handled by Vercel Authentication, SSO, or project access. NAV Positions does
-not have a second app-level login flow.
+Configure the Vercel project root as `frontend`. Production access is expected
+to be handled by Vercel Authentication, SSO, or project access, not app-level
+auth.

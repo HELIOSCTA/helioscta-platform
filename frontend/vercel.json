@@ -60,6 +60,30 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/map/pipelines/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/map/locations/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/map/search/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/genscape-noms/filters/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/genscape-noms/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/genscape-noms/map/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
     "app/api/ops/readiness/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
