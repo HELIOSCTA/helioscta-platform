@@ -79,6 +79,29 @@ def test_daily_weighted_temperature_forecast_fallback_issue_key_is_hourly():
     ]
 
 
+def test_daily_weighted_temperature_valid_empty_filter_preserves_issue_context():
+    df = scrape.parse_daily_weighted_temperature_forecast_text(
+        _fixture_text(),
+        entity_ids=["MISO"],
+        scrape_run_at_utc=SCRAPE_RUN_AT,
+    )
+
+    assert df.empty
+    assert df.columns.tolist() == scrape.OUTPUT_COLUMNS
+    assert df.attrs["source_issue_key"] == (
+        "wsi:GetModelForecast:WSI:Daily:202607211028"
+    )
+    assert df.attrs["source_issue_at_utc"] == datetime(
+        2026,
+        7,
+        21,
+        10,
+        28,
+        tzinfo=timezone.utc,
+    )
+    assert df.attrs["scrape_run_at_utc"] == SCRAPE_RUN_AT
+
+
 def test_daily_weighted_temperature_pull_uses_expected_request_params(monkeypatch):
     captured: list[dict[str, object]] = []
 
@@ -142,6 +165,38 @@ def test_daily_weighted_temperature_parse_failure_logs_fetch_failure(monkeypatch
     )
 
 
+def test_daily_weighted_temperature_short_metric_row_logs_parse_failure(monkeypatch):
+    captured: list[dict[str, object]] = []
+    malformed = _fixture_text().replace(
+        "Day 1-7/21/2026,71,85,0,13.1,89,",
+        "Day 1-7/21/2026,71,85,0,13.1",
+    )
+
+    monkeypatch.setattr(
+        scrape.client._HTTP_CLIENT,
+        "get_text",
+        lambda **_kwargs: malformed,
+    )
+    monkeypatch.setattr(
+        scrape.client,
+        "log_wsi_fetch_event",
+        lambda **kwargs: captured.append(kwargs),
+    )
+
+    with pytest.raises(ValueError, match="has 4 metric values; expected 5"):
+        scrape._pull(
+            run_id="run-1",
+            database="helios_prod",
+            scrape_run_at_utc=SCRAPE_RUN_AT,
+        )
+
+    assert captured[0]["status"] == "failure"
+    assert captured[0]["operation_name"] == "GetModelForecast"
+    assert captured[0]["metadata"]["telemetry_stage"] == (
+        "parse_daily_weighted_temperature_csv"
+    )
+
+
 def test_daily_weighted_temperature_upsert_uses_long_form_primary_key(monkeypatch):
     captured: dict[str, object] = {}
     df = scrape.parse_daily_weighted_temperature_forecast_text(
@@ -163,3 +218,23 @@ def test_daily_weighted_temperature_upsert_uses_long_form_primary_key(monkeypatc
     assert captured["data_types"] == scrape.SQL_DATA_TYPES
     assert captured["primary_key"] == scrape.PRIMARY_KEY
     assert captured["database"] == "helios_prod"
+
+
+def test_daily_weighted_temperature_retention_uses_source_issue_fallback(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        scrape.common,
+        "purge_rows_older_than_source_issue_or_scrape",
+        lambda **kwargs: captured.update(kwargs) or 3,
+    )
+
+    deleted_rows = scrape._purge_old_rows(database="helios_prod")
+
+    assert deleted_rows == 3
+    assert captured == {
+        "schema": "weather",
+        "table_name": "wsi_daily_weighted_temperature_forecasts",
+        "retention_days": 90,
+        "database": "helios_prod",
+    }

@@ -17,7 +17,7 @@ import pandas as pd
 from backend import credentials
 from backend.scrapes.weather.wsi import _daily_weighted_common as common
 from backend.scrapes.weather.wsi import client
-from backend.utils import db, retention, script_logging
+from backend.utils import db, script_logging
 from backend.utils.ops_logging import redact_secrets
 
 API_SCRAPE_NAME = "wsi_daily_weighted_temperature_forecasts"
@@ -131,6 +131,12 @@ def parse_daily_weighted_temperature_forecast_text(
         source_issue_at_utc=source_issue_at_utc,
         scrape_run_at_utc=scrape_run_at_utc,
     )
+    source_context = {
+        "source_issue_key": issue_key,
+        "source_issue_at_utc": source_issue_at_utc,
+        "source_banner": source_banner,
+        "scrape_run_at_utc": scrape_run_at_utc,
+    }
     requested_entities = {
         str(entity_id).strip().upper()
         for entity_id in (entity_ids or DEFAULT_ENTITY_IDS)
@@ -150,7 +156,21 @@ def parse_daily_weighted_temperature_forecast_text(
         metric_names = [_metric_name(metric) for metric in block["metrics"]]
         for row in block["rows"]:
             forecast_period, forecast_date = _parse_period_date(row[0])
-            values = row[1 : 1 + len(metric_names)]
+            expected_field_count = 1 + len(metric_names)
+            if len(row) < expected_field_count:
+                raise ValueError(
+                    "WSI temperature row for "
+                    f"{entity_id} {row[0]!r} has {len(row) - 1} metric values; "
+                    f"expected {len(metric_names)}."
+                )
+            extra_values = row[expected_field_count:]
+            if any(str(value).strip() for value in extra_values):
+                raise ValueError(
+                    "WSI temperature row for "
+                    f"{entity_id} {row[0]!r} has unexpected extra values: "
+                    f"{extra_values}"
+                )
+            values = row[1:expected_field_count]
             for metric_name, raw_value in zip(metric_names, values):
                 if not metric_name:
                     continue
@@ -179,13 +199,17 @@ def parse_daily_weighted_temperature_forecast_text(
                 )
 
     if not records:
-        return pd.DataFrame(columns=OUTPUT_COLUMNS)
-    return (
+        return common.attach_source_context(
+            pd.DataFrame(columns=OUTPUT_COLUMNS),
+            **source_context,
+        )
+    result = (
         pd.DataFrame(records, columns=OUTPUT_COLUMNS)
         .drop_duplicates(subset=PRIMARY_KEY, keep="last")
         .sort_values(PRIMARY_KEY)
         .reset_index(drop=True)
     )
+    return common.attach_source_context(result, **source_context)
 
 
 def _pull(
@@ -294,10 +318,9 @@ def _purge_old_rows(
     retention_days: int = DEFAULT_RETENTION_DAYS,
     database: str | None = None,
 ) -> int:
-    return retention.purge_rows_older_than(
+    return common.purge_rows_older_than_source_issue_or_scrape(
         schema=TARGET_SCHEMA,
         table_name=TARGET_TABLE,
-        timestamp_column="scrape_run_at_utc",
         retention_days=retention_days,
         database=database,
     )
@@ -369,7 +392,7 @@ def main(
             run_logger.success(
                 f"{API_SCRAPE_NAME} completed; {len(df)} rows processed."
             )
-        return df if not df.empty else None
+        return df
     except Exception as exc:
         run_logger.exception(f"Pipeline failed: {redact_secrets(str(exc))}")
         raise

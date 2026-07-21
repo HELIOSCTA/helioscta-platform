@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from datetime import datetime, time, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any
 
 import pandas as pd
@@ -34,7 +34,7 @@ def main(
         metadata=metadata,
     )
     events: dict[str, dict[str, Any]] = {}
-    if temperature_df is not None and not temperature_df.empty:
+    if temperature_df is not None:
         events["temperature"] = _emit_freshness_event(
             df=temperature_df,
             dataset=daily_weighted_temperature_forecast.API_SCRAPE_NAME,
@@ -54,7 +54,7 @@ def main(
         run_mode=run_mode,
         metadata=metadata,
     )
-    if degree_day_df is not None and not degree_day_df.empty:
+    if degree_day_df is not None:
         events["degree_day"] = _emit_freshness_event(
             df=degree_day_df,
             dataset=daily_weighted_degree_day_forecast.API_SCRAPE_NAME,
@@ -91,7 +91,7 @@ def _emit_freshness_event(
     database: str | None,
     expected_forecast_days: int = DEFAULT_EXPECTED_FORECAST_DAYS,
 ) -> dict[str, Any]:
-    current_df = df.copy()
+    current_df = _prepare_availability_frame(df)
     current_df["forecast_date"] = pd.to_datetime(
         current_df["forecast_date"],
         errors="coerce",
@@ -106,16 +106,22 @@ def _emit_freshness_event(
         errors="coerce",
         utc=True,
     )
-    latest_issue_key = _latest_issue_key(current_df)
-    issue_df = current_df[current_df["source_issue_key"] == latest_issue_key].copy()
-    if issue_df.empty:
-        raise ValueError("Cannot emit WSI daily weighted freshness; no latest issue")
+    if current_df.empty:
+        latest_issue_key, source_issue_at = _source_context_from_attrs(current_df)
+        issue_df = current_df
+    else:
+        latest_issue_key = _latest_issue_key(current_df)
+        issue_df = current_df[current_df["source_issue_key"] == latest_issue_key].copy()
+        if issue_df.empty:
+            raise ValueError("Cannot emit WSI daily weighted freshness; no latest issue")
 
-    source_issue_at = issue_df["source_issue_at_utc"].dropna().max()
-    if pd.isna(source_issue_at):
-        source_issue_at = issue_df["scrape_run_at_utc"].dropna().max()
-    if pd.isna(source_issue_at):
-        raise ValueError("Cannot emit WSI daily weighted freshness; issue time is empty")
+        source_issue_at = issue_df["source_issue_at_utc"].dropna().max()
+        if pd.isna(source_issue_at):
+            source_issue_at = issue_df["scrape_run_at_utc"].dropna().max()
+        if pd.isna(source_issue_at):
+            raise ValueError(
+                "Cannot emit WSI daily weighted freshness; issue time is empty"
+            )
 
     coverage = _coverage_payload(
         issue_df=issue_df,
@@ -181,6 +187,50 @@ def _latest_issue_key(df: pd.DataFrame) -> str:
     return str(issue_order.index[-1])
 
 
+def _prepare_availability_frame(df: pd.DataFrame) -> pd.DataFrame:
+    current_df = df.copy()
+    required_columns = [
+        "source_issue_key",
+        "source_issue_at_utc",
+        "scrape_run_at_utc",
+        "forecast_date",
+        "entity_id",
+        "metric_name",
+    ]
+    for column in required_columns:
+        if column not in current_df.columns:
+            current_df[column] = pd.Series(dtype="object")
+    current_df.attrs.update(df.attrs)
+    return current_df
+
+
+def _source_context_from_attrs(df: pd.DataFrame) -> tuple[str, pd.Timestamp]:
+    source_issue_key = df.attrs.get("source_issue_key")
+    if not source_issue_key:
+        raise ValueError(
+            "Cannot emit WSI daily weighted freshness; empty result has no "
+            "source_issue_key context"
+        )
+
+    source_issue_at = pd.to_datetime(
+        df.attrs.get("source_issue_at_utc"),
+        errors="coerce",
+        utc=True,
+    )
+    if pd.isna(source_issue_at):
+        source_issue_at = pd.to_datetime(
+            df.attrs.get("scrape_run_at_utc"),
+            errors="coerce",
+            utc=True,
+        )
+    if pd.isna(source_issue_at):
+        raise ValueError(
+            "Cannot emit WSI daily weighted freshness; empty result has no "
+            "issue or scrape timestamp context"
+        )
+    return str(source_issue_key), pd.Timestamp(source_issue_at)
+
+
 def _coverage_payload(
     *,
     issue_df: pd.DataFrame,
@@ -192,10 +242,37 @@ def _coverage_payload(
     expected_metrics = _sorted_values(expected_metric_names)
     actual_entity_ids = _sorted_values(issue_df["entity_id"].dropna().tolist())
     actual_metrics = _sorted_values(issue_df["metric_name"].dropna().tolist())
-    actual_forecast_dates = sorted(
-        str(forecast_date)
+    actual_forecast_date_values = sorted(
+        pd.Timestamp(forecast_date).date()
         for forecast_date in issue_df["forecast_date"].dropna().unique()
     )
+    actual_forecast_dates = [
+        str(forecast_date) for forecast_date in actual_forecast_date_values
+    ]
+    expected_forecast_dates = []
+    missing_forecast_dates = []
+    unexpected_forecast_dates = []
+    if actual_forecast_date_values:
+        first_forecast_date = actual_forecast_date_values[0]
+        expected_forecast_date_values = [
+            first_forecast_date + timedelta(days=day_offset)
+            for day_offset in range(expected_forecast_days)
+        ]
+        expected_forecast_dates = [
+            str(forecast_date) for forecast_date in expected_forecast_date_values
+        ]
+        actual_forecast_date_set = set(actual_forecast_date_values)
+        expected_forecast_date_set = set(expected_forecast_date_values)
+        missing_forecast_dates = [
+            str(forecast_date)
+            for forecast_date in expected_forecast_date_values
+            if forecast_date not in actual_forecast_date_set
+        ]
+        unexpected_forecast_dates = [
+            str(forecast_date)
+            for forecast_date in actual_forecast_date_values
+            if forecast_date not in expected_forecast_date_set
+        ]
 
     missing_entity_ids = [
         entity_id for entity_id in expected_entity_ids if entity_id not in actual_entity_ids
@@ -236,6 +313,8 @@ def _coverage_payload(
         and not unexpected_entity_ids
         and not missing_metric_names
         and not unexpected_metric_names
+        and not missing_forecast_dates
+        and not unexpected_forecast_dates
         and not missing_entity_metric_dates
         and actual_forecast_day_count == expected_forecast_days
     )
@@ -255,7 +334,10 @@ def _coverage_payload(
         "unexpected_metric_names": unexpected_metric_names,
         "expected_forecast_day_count": expected_forecast_days,
         "actual_forecast_day_count": actual_forecast_day_count,
+        "expected_forecast_dates": expected_forecast_dates,
         "actual_forecast_dates": actual_forecast_dates,
+        "missing_forecast_dates": missing_forecast_dates,
+        "unexpected_forecast_dates": unexpected_forecast_dates,
         "missing_entity_metric_date_count": len(missing_entity_metric_dates),
         "missing_entity_metric_date_examples": missing_entity_metric_dates[:50],
     }

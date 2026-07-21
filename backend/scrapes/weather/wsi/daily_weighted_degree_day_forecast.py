@@ -16,7 +16,7 @@ import pandas as pd
 from backend import credentials
 from backend.scrapes.weather.wsi import _daily_weighted_common as common
 from backend.scrapes.weather.wsi import client
-from backend.utils import db, retention, script_logging
+from backend.utils import db, script_logging
 from backend.utils.ops_logging import redact_secrets
 
 API_SCRAPE_NAME = "wsi_daily_weighted_degree_day_forecasts"
@@ -138,6 +138,12 @@ def parse_daily_weighted_degree_day_forecast_text(
         source_issue_at_utc=source_issue_at_utc,
         scrape_run_at_utc=scrape_run_at_utc,
     )
+    source_context = {
+        "source_issue_key": issue_key,
+        "source_issue_at_utc": source_issue_at_utc,
+        "source_banner": source_banner,
+        "scrape_run_at_utc": scrape_run_at_utc,
+    }
 
     csv_lines = [line for line in text.splitlines()[1:] if line.strip()]
     if not csv_lines:
@@ -150,9 +156,6 @@ def parse_daily_weighted_degree_day_forecast_text(
         raise ValueError(
             f"Failed to parse WSI weighted degree-day CSV response: {exc}"
         ) from exc
-
-    if source.empty:
-        raise ValueError("WSI weighted degree-day response returned 0 rows.")
 
     normalized = source.copy()
     normalized.columns = [_canonical_column(column) for column in normalized.columns]
@@ -172,6 +175,11 @@ def parse_daily_weighted_degree_day_forecast_text(
     ]
     if not metric_columns:
         raise ValueError("WSI weighted degree-day response has no metric columns.")
+    if normalized.empty:
+        return common.attach_source_context(
+            pd.DataFrame(columns=OUTPUT_COLUMNS),
+            **source_context,
+        )
 
     records: list[dict[str, object]] = []
     for row in normalized.to_dict("records"):
@@ -208,12 +216,18 @@ def parse_daily_weighted_degree_day_forecast_text(
                 }
             )
 
-    return (
+    if not records:
+        return common.attach_source_context(
+            pd.DataFrame(columns=OUTPUT_COLUMNS),
+            **source_context,
+        )
+    result = (
         pd.DataFrame(records, columns=OUTPUT_COLUMNS)
         .drop_duplicates(subset=PRIMARY_KEY, keep="last")
         .sort_values(PRIMARY_KEY)
         .reset_index(drop=True)
     )
+    return common.attach_source_context(result, **source_context)
 
 
 def _pull(
@@ -315,10 +329,9 @@ def _purge_old_rows(
     retention_days: int = DEFAULT_RETENTION_DAYS,
     database: str | None = None,
 ) -> int:
-    return retention.purge_rows_older_than(
+    return common.purge_rows_older_than_source_issue_or_scrape(
         schema=TARGET_SCHEMA,
         table_name=TARGET_TABLE,
-        timestamp_column="scrape_run_at_utc",
         retention_days=retention_days,
         database=database,
     )
@@ -387,7 +400,7 @@ def main(
             run_logger.success(
                 f"{API_SCRAPE_NAME} completed; {len(df)} rows processed."
             )
-        return df if not df.empty else None
+        return df
     except Exception as exc:
         run_logger.exception(f"Pipeline failed: {redact_secrets(str(exc))}")
         raise

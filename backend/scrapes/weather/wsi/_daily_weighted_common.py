@@ -6,6 +6,9 @@ import re
 from datetime import datetime, timezone
 
 import pandas as pd
+from psycopg2 import sql
+
+from backend.utils import db
 
 _FORECAST_UPDATED_RE = re.compile(
     r"Forecast Updated (?P<issued>[A-Za-z]{3}\s+\d{1,2}\s+\d{4}\s+\d{4}) UTC",
@@ -48,6 +51,25 @@ def source_issue_key(
     return f"wsi:{endpoint_name}:{model}:{forecast_type}:{stamp}"
 
 
+def attach_source_context(
+    df: pd.DataFrame,
+    *,
+    source_issue_key: str,
+    source_issue_at_utc: datetime | None,
+    source_banner: str,
+    scrape_run_at_utc: datetime,
+) -> pd.DataFrame:
+    df.attrs.update(
+        {
+            "source_issue_key": source_issue_key,
+            "source_issue_at_utc": source_issue_at_utc,
+            "source_banner": source_banner,
+            "scrape_run_at_utc": scrape_run_at_utc,
+        }
+    )
+    return df
+
+
 def utc_now() -> datetime:
     return datetime.now(tz=timezone.utc).replace(microsecond=0)
 
@@ -63,3 +85,48 @@ def numeric_value(value: object) -> float | None:
     if pd.isna(parsed):
         return None
     return float(parsed)
+
+
+def purge_rows_older_than_source_issue_or_scrape(
+    *,
+    schema: str,
+    table_name: str,
+    retention_days: int,
+    database: str | None = None,
+) -> int:
+    if retention_days < 1:
+        raise ValueError("retention_days must be >= 1")
+
+    connection = None
+    cursor = None
+    try:
+        connection = db.connect(database=database)
+        cursor = connection.cursor()
+        query = sql.SQL(
+            """
+            WITH deleted AS (
+                DELETE FROM {}.{}
+                WHERE COALESCE(source_issue_at_utc, scrape_run_at_utc)
+                    < (NOW() - (%s::int * INTERVAL '1 day'))
+                RETURNING 1
+            )
+            SELECT COUNT(*) AS deleted_rows
+            FROM deleted;
+            """
+        ).format(
+            sql.Identifier(schema),
+            sql.Identifier(table_name),
+        )
+        cursor.execute(query, (retention_days,))
+        deleted_rows = int(cursor.fetchone()[0])
+        connection.commit()
+        return deleted_rows
+    except Exception:
+        if connection:
+            connection.rollback()
+        raise
+    finally:
+        if cursor:
+            cursor.close()
+        if connection:
+            connection.close()

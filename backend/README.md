@@ -185,9 +185,11 @@ degree-day regions. Both scrapes log WSI API fetch telemetry to
 `ops.api_fetch_log`; malformed or schema-incompatible CSV after HTTP success
 adds a failed parse-stage fetch row. The combined orchestration emits one
 `ops.data_availability_events` forecast freshness event for each table, marking
-`complete` only when the configured entities, expected metrics, and 15 daily
-forecast dates are present for the latest source issue. Scheduled runs retain
-90 days of source issues in the hot tables after successful upserts.
+`complete` only when the configured entities, expected metrics, and 15
+consecutive daily forecast dates are present for the latest source issue.
+Scheduled runs retain 90 days of source issues in the hot tables after
+successful upserts, using `source_issue_at_utc` when WSI publishes it and
+`scrape_run_at_utc` as the fallback for deterministic hourly issue keys.
 
 Run `python -m backend.scrapes.weather.wsi.station_metadata` manually to fetch
 WSI Trader `GetCityIds` metadata and compare the returned station IDs against
