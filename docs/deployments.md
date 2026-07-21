@@ -28,6 +28,21 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## external-chat-alerting-retirement
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-07-21 14:47 UTC`.
+- Deployed commit: `6343a5d`.
+- Behavior: backend runtime code no longer includes a chat notification sender,
+  chat outbox orchestration module, bot/webhook credential config, or chat
+  systemd timer. Promoted alert delivery now uses
+  `ops.email_notification_outbox` where email workflows are implemented.
+  Workflows without email release messages rely on `ops.api_fetch_log`,
+  `ops.data_availability_events`, and the production health digest.
+- VM cleanup: live chat timer/unit files were disabled and removed; matching
+  environment keys were removed from `/etc/helioscta/backend.env`.
+- Database note: historical chat outbox tables or rows were not dropped as part
+  of this runtime cleanup.
+
 ## frontend-pjm-da-lmp-release-report
 
 - Status: deployed to Vercel production on `2026-06-30`.
