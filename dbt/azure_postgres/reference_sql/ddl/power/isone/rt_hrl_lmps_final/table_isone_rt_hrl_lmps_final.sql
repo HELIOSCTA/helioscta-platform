@@ -5,6 +5,9 @@
 -- Apply it manually with the helios_admin role before scheduling
 -- backend.scrapes.power.isone.rt_hrl_lmps_final or
 -- backend.orchestration.power.isone.rt_hrl_lmps_final.
+--
+-- Contract: stores ISO-NE internal hub rows only:
+-- location_id = 4000, location_name = '.H.INTERNAL_HUB', location_type = 'HUB'.
 
 CREATE TABLE IF NOT EXISTS isone.rt_hrl_lmps_final (
     date DATE NOT NULL,
@@ -18,6 +21,12 @@ CREATE TABLE IF NOT EXISTS isone.rt_hrl_lmps_final (
     marginal_loss_component DOUBLE PRECISION,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT chk_isone_rt_hrl_lmps_final_internal_hub
+        CHECK (
+            location_id = 4000
+            AND location_name = '.H.INTERNAL_HUB'
+            AND location_type = 'HUB'
+        ),
     PRIMARY KEY (
         date,
         hour_ending,
