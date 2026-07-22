@@ -1,0 +1,29 @@
+version: 2
+
+sources:
+  - name: positions_and_trades_ref
+    schema: positions_and_trades_ref
+    description: >
+      Operator-managed, approved positions/trades reference lookup tables.
+      These tables are the v3 source of truth for product matching and account
+      lookup data. dbt reads them with helios_readonly; it does not load or
+      mutate the rows.
+    tables:
+      - name: product_catalog
+        description: >
+          Approved canonical product definitions. Grain: one current runtime
+          row per product_code.
+      - name: product_alias_rules
+        description: >
+          Approved source-specific product alias rules. Grain: one current
+          runtime row per source and source_priority. NAV rules use exact or
+          regex matching against normalized product text; Clear Street
+          cusip_prefix rules match reviewed CUSIP prefixes.
+      - name: account_lookup
+        description: >
+          Approved source-specific account mappings. Grain: one current runtime
+          row per source and raw account value.
+      - name: month_codes
+        description: >
+          Approved futures month-code lookup rows. Grain: one current runtime row
+          per calendar month number.

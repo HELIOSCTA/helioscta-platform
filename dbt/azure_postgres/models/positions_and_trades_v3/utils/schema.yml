@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: utils_v3_positions_and_trades_product_catalog
+    description: >
+      Current v3 product catalog rows from
+      positions_and_trades_ref.product_catalog, projected to the v2-compatible
+      logical contract used by NAV and Clear Street matching models.
+
+  - name: utils_v3_positions_and_trades_product_aliases
+    description: >
+      Current v3 product alias rules from
+      positions_and_trades_ref.product_alias_rules, projected to the
+      v2-compatible logical contract used by source-specific product matching.
+
+  - name: utils_v3_positions_and_trades_account_lookup
+    description: >
+      Current v3 account lookup rows from
+      positions_and_trades_ref.account_lookup, projected to the v2-compatible
+      logical contract used by NAV and Clear Street account normalization.
+
+  - name: utils_v3_positions_and_trades_month_codes
+    description: >
+      Current v3 month-code rows from positions_and_trades_ref.month_codes,
+      projected to the v2-compatible logical contract used by contract parsing
+      and Excel symbol generation.

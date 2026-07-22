@@ -9,6 +9,9 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $envFile = Join-Path $projectRoot '.env'
+$profilesFile = Join-Path $projectRoot 'profiles.yml'
+$profilesExampleFile = Join-Path $projectRoot 'profiles.yml.example'
+$profilesDir = $projectRoot
 $condaEnvironmentPath = Join-Path $CondaRoot "envs\\$CondaEnvironment"
 $dbtExecutable = Join-Path $condaEnvironmentPath 'Scripts\\dbt.exe'
 
@@ -18,6 +21,16 @@ if (-not (Test-Path -LiteralPath $envFile -PathType Leaf)) {
 
 if (-not (Test-Path -LiteralPath $dbtExecutable -PathType Leaf)) {
     throw "dbt was not found in Conda environment '$CondaEnvironment': $dbtExecutable"
+}
+
+if (-not (Test-Path -LiteralPath $profilesFile -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $profilesExampleFile -PathType Leaf)) {
+        throw "Missing dbt profiles file: $profilesFile or $profilesExampleFile"
+    }
+
+    $profilesDir = Join-Path ([System.IO.Path]::GetTempPath()) 'helioscta-dbt-profile'
+    New-Item -ItemType Directory -Force -Path $profilesDir | Out-Null
+    Copy-Item -Force -LiteralPath $profilesExampleFile -Destination (Join-Path $profilesDir 'profiles.yml')
 }
 
 $env:CONDA_PREFIX = $condaEnvironmentPath
@@ -53,7 +66,7 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
 
 Push-Location $projectRoot
 try {
-    dbt test --profiles-dir . --select tag:product_matching
+    dbt test --profiles-dir $profilesDir --select tag:product_matching_v3
     exit $LASTEXITCODE
 }
 finally {

@@ -48,3 +48,17 @@ models:
         +enabled: true
         +schema: positions_and_trades_v2
         +materialized: ephemeral
+
+    positions_and_trades_v3:
+      utils:
+        +enabled: true
+        +schema: positions_and_trades_v3
+        +materialized: ephemeral
+      clear_street_eod_transactions:
+        +enabled: true
+        +schema: positions_and_trades_v3
+        +materialized: ephemeral
+      nav_positions:
+        +enabled: true
+        +schema: positions_and_trades_v3
+        +materialized: ephemeral

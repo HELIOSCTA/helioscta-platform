@@ -18,3 +18,4 @@ CREATE SCHEMA IF NOT EXISTS ice_python AUTHORIZATION helios_admin;
 CREATE SCHEMA IF NOT EXISTS ice_trade_blotter AUTHORIZATION helios_admin;
 CREATE SCHEMA IF NOT EXISTS clear_street AUTHORIZATION helios_admin;
 CREATE SCHEMA IF NOT EXISTS nav AUTHORIZATION helios_admin;
+CREATE SCHEMA IF NOT EXISTS positions_and_trades_ref AUTHORIZATION helios_admin;

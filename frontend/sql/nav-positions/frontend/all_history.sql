@@ -1,10 +1,10 @@
 -- Frontend-facing all-history NAV position rows.
 --
--- This is a thin projection over the canonical v2 all-history mart. Product,
--- contract, account, and rule matching logic stays upstream in v2; this model
+-- This is a thin projection over the canonical v3 all-history mart. Product,
+-- contract, account, and rule matching logic stays upstream in v3; this model
 -- only exposes stable names and helper fields for the NAV positions UI.
 
-with  __dbt__cte__nav_00_src_positions as (
+with  __dbt__cte__nav_v3_00_src_positions as (
 with source_rows as (
     select * from "helios_prod"."nav"."positions"
 ),
@@ -59,50 +59,29 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_account_lookup as (
-with account_lookup(account_name, account, source, source_label) as (
-    values
-
-        -- ACIM
-        ('ACIM', 'UBE 10051', 'nav', 'NAV Position File'),
-        ('ACIM', '51014112.0', 'nav', 'NAV Position File'),
-        ('ACIM', '51014112', 'nav', 'NAV Position File'),
-        -- IOAGR ... EFD, 365
-        ('ACIM', 'EFD', 'clear_street', 'Clear Street Trades'),
-        ('ACIM', '365', 'clear_street', 'Clear Street Trades'),
-
-        -- PNT
-        ('PNT', 'ABN AMRO_1251PT034', 'nav', 'NAV Position File'),
-        -- IOPNT ... FCR,  690
-        ('PNT', 'FCR', 'clear_street', 'Clear Street Trades'),
-        ('PNT', '690', 'clear_street', 'Clear Street Trades'),
-
-        -- DICKSON
-        ('DICKSON', 'RJO_35511229', 'nav', 'NAV Position File'),
-        -- IOMOR ... RJO, 685
-        ('DICKSON', 'RJO', 'clear_street', 'Clear Street Trades'),
-        ('DICKSON', '685', 'clear_street', 'Clear Street Trades'),
-
-        -- TITAN
-        ('TITAN', '969 ESKHL', 'nav', 'NAV Position File'),
-        -- ITITA ... ADU, 905
-        ('TITAN', 'ADU', 'clear_street', 'Clear Street Trades'),
-        ('TITAN', '905', 'clear_street', 'Clear Street Trades')
+),  __dbt__cte__utils_v3_positions_and_trades_account_lookup as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
 ),
 
 FINAL as (
-    select * from account_lookup
+    select
+        account_name,
+        account,
+        source,
+        source_label
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__nav_10_int_clean as (
+),  __dbt__cte__nav_v3_10_int_clean as (
 with positions as (
-    select * from __dbt__cte__nav_00_src_positions
+    select * from __dbt__cte__nav_v3_00_src_positions
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
     where source = 'nav'
 ),
 
@@ -140,84 +119,32 @@ left join accounts
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_product_aliases as (
-with product_aliases(
-    source_priority,
-    source,
-    match_type,
-    pattern,
-    product_code,
-    option_type
-) as (
-    values
-        (1, 'nav', 'regex', '^ICE NGAS HH SWG DLY DAY-[0-9]+$', 'HHD', null),
-        (2, 'nav', 'exact', 'ICE NGAS HH SWING DAILY', 'HHD', null),
-        (3, 'nav', 'exact', 'NATURAL GAS', 'NG', null),
-        (4, 'nav', 'exact', 'GLOBEX NATURAL GAS LD', 'HH', null),
-        (5, 'nav', 'exact', 'NYMEX HENRY HUB FINANCIAL LDO', 'HH', null),
-        (6, 'nav', 'exact', 'NYMEX HENRY HUB NATURAL GAS', 'HP', null),
-        (7, 'nav', 'exact', 'HENRY PENULTIMATE NATURAL GAS', 'HP', null),
-        (8, 'nav', 'exact', 'NATURAL GAS LD1 FUTURE', 'H', null),
-        (9, 'nav', 'exact', 'HENRY HUB NATURAL GAS', 'H', null),
-        (10, 'nav', 'exact', 'ICE PHH', 'PHH', null),
-        (11, 'nav', 'exact', 'ICE PHE', 'PHE', 'option'),
-        (12, 'nav', 'exact', 'ICE HH EQ', 'PHE', 'option'),
-        (13, 'nav', 'exact', 'ICE NGAS PEN HENRY HUB', 'PHE', 'option'),
-        (14, 'nav', 'exact', 'NYM EUR NATURAL GAS', 'LN', 'option'),
-        (15, 'nav', 'exact', 'NATURAL GAS CLEARPORT', 'LN', 'option'),
-        (16, 'nav', 'exact', 'NATURAL GAS FINANCIAL WEEK 1', 'LN1', 'option'),
-        (17, 'nav', 'exact', 'NATURAL GAS FINANCIAL WEEK 2', 'LN2', 'option'),
-        (18, 'nav', 'exact', 'NATURAL GAS FINANCIAL WEEK 3', 'LN3', 'option'),
-        (19, 'nav', 'exact', 'NATURAL GAS FINANCIAL WEEK 4', 'LN4', 'option'),
-        (20, 'nav', 'exact', 'NATURAL GAS FINANCIAL WEEK 5', 'LN5', 'option'),
-        (21, 'nav', 'exact', 'NATURAL GAS 3M CSO', 'G3', 'option'),
-        (22, 'nav', 'exact', 'NATURAL GAS FINANCIAL 1M SO', 'G4', 'option'),
-        (23, 'nav', 'exact', 'NATURAL GAS 1M CSO', 'G4', 'option'),
-        (24, 'nav', 'exact', 'ICE PJM WH RTD', 'PDP', null),
-        (25, 'nav', 'exact', 'ICE PWA', 'PWA', null),
-        (26, 'nav', 'exact', 'ICE PJMWHPKDAY', 'PDA', null),
-        (27, 'nav', 'exact', 'ICE PJL', 'PJL', null),
-        (28, 'nav', 'exact', 'ICE PDA', 'PDA', null),
-        (29, 'nav', 'exact', 'ICE PJL DAILY', 'PJL', null),
-        (30, 'nav', 'regex', '^ICE (PJM MINI|MINIPJMRT|PJM WHREAL TYM PK MINI)([-_][0-9]+)?$', 'PMI', null),
-        (31, 'nav', 'exact', 'ICE PJM WHRT PEAK OPT_4096', 'P1X', 'option'),
-        (32, 'nav', 'regex', '^ICE PJM OFF PK[-_][0-9]+$', 'OPJ', null),
-        (33, 'nav', 'exact', 'ICE ERA', 'ERA', null),
-        (34, 'nav', 'exact', 'ERCOT N 345 KV RT PEAK DLY', 'ERN', null),
-        (35, 'nav', 'exact', 'ICE END', 'END', null),
-        (36, 'nav', 'regex', '^ICE ERCOT NORTH 345KV 7X8[-_][0-9]+$', 'ECI', null),
-        (37, 'nav', 'regex', '^(ISO ENG MASS HUB D-PK-[0-9]+|ICE NEPOOL PK MNTH-[0-9]+)$', 'NEP', null),
-        (38, 'nav', 'regex', '^ICE SP 15 PEAK([_-][0-9]+)?$', 'SPM', null),
-        (39, 'nav', 'regex', '^ICE NP 15 PEAK([_-][0-9]+)?$', 'NPM', null),
-        (40, 'nav', 'regex', '^ICE MID-C PEAK([_-][0-9]+)?$', 'MDC', null),
-        (41, 'nav', 'exact', 'AB NIT BASIS FUTURE', 'AEC', null),
-        (42, 'nav', 'exact', 'ICE ALQCTYGTSW', 'ALQ', null),
-        (43, 'nav', 'exact', 'ICE CIG ROCKIES BASIS', 'CRI', null),
-        (44, 'nav', 'exact', 'ICE CHICAGO BASIS FUT', 'DGD', null),
-        (45, 'nav', 'exact', 'ICE EASTERN GAS SOUTH BASIS FU', 'DOM', null),
-        (46, 'nav', 'exact', 'ICE HSC BASIS', 'HXS', null),
-        (47, 'nav', 'exact', 'NGPL TXOK BASIS FUTURE', 'NTO', null),
-        (48, 'nav', 'exact', 'ICE NGAS NYM NWP RK', 'NWR', null),
-        (49, 'nav', 'exact', 'ICE NGAS NYM PG&E', 'PGE', null),
-        (50, 'nav', 'exact', 'ICE TETCO SWP', 'TMT', null),
-        (51, 'nav', 'exact', 'ICE TRANSCO STATION 85 ZONE 4', 'TRZ', null),
-        (52, 'nav', 'exact', 'ICE TCOZN4BASI', 'TRZ', null),
-        (53, 'nav', 'exact', 'ICE SDP', 'SDP', null)
+),  __dbt__cte__utils_v3_positions_and_trades_product_aliases as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
 ),
 
 FINAL as (
-    select * from product_aliases
+    select
+        source_priority,
+        source,
+        match_type,
+        pattern,
+        product_code,
+        option_type,
+        marex_product
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__nav_20_int_product_matches as (
+),  __dbt__cte__nav_v3_20_int_product_matches as (
 with positions as (
-    select * from __dbt__cte__nav_10_int_clean
+    select * from __dbt__cte__nav_v3_10_int_clean
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_product_aliases
+    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
     where source = 'nav'
 ),
 
@@ -253,81 +180,31 @@ left join lateral (
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_product_catalog as (
-with product_catalog(
-    product_code,
-    product_family,
-    market_name,
-    underlying_product_code,
-    bbg_exchange_code,
-    default_exchange_name
-) as (
-    values
-        ('HHD', 'Gas', 'Henry Hub', null, null, 'IFED'),
-        ('NG', 'Gas', 'Henry Hub', null, 'NG', 'NYME'),
-        ('HH', 'Gas', 'Henry Hub', null, 'IW', 'NYME'),
-        ('HP', 'Gas', 'Henry Hub', null, 'ZA', 'NYME'),
-        ('H', 'Gas', 'Henry Hub', null, null, 'IFED'),
-        ('PHH', 'Gas', 'Henry Hub', null, null, 'IFED'),
-        ('PHE', 'Gas', 'Henry Hub', 'NG', null, 'IFED'),
-        ('LN', 'Gas', 'Henry Hub', 'NG', 'NG', 'NYME'),
-        ('LN1', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-        ('LN2', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-        ('LN3', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-        ('LN4', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-        ('LN5', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-        ('JN1', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-        ('KN2', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-        ('KN3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-        ('KN4', 'Gas', 'Henry Hub', 'NG', 'HZI', 'NYME'),
-        ('G3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-        ('G4', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-        ('PDP', 'Power', 'PJM', null, null, 'IFED'),
-        ('PWA', 'Power', 'PJM', null, null, 'IFED'),
-        ('DDP', 'Power', 'PJM', null, null, 'IFED'),
-        ('PDA', 'Power', 'PJM', null, null, 'IFED'),
-        ('PJL', 'Power', 'PJM', null, null, 'IFED'),
-        ('PMI', 'Power', 'PJM', 'PMI', null, 'IFED'),
-        ('P1X', 'Power', 'PJM', 'PMI', null, 'IFED'),
-        ('OPJ', 'Power', 'PJM', null, null, 'IFED'),
-        ('ODP', 'Power', 'PJM', null, null, 'IFED'),
-        ('ERA', 'Power', 'ERCOT', null, null, 'IFED'),
-        ('ERN', 'Power', 'ERCOT', null, null, 'IFED'),
-        ('END', 'Power', 'ERCOT', null, null, 'IFED'),
-        ('ECI', 'Power', 'ERCOT', null, null, 'IFED'),
-        ('NEZ', 'Power', 'NEPOOL', null, null, 'IFED'),
-        ('NEP', 'Power', 'NEPOOL', null, null, 'IFED'),
-        ('SPM', 'Power', 'CAISO', null, null, 'IFED'),
-        ('SDP', 'Power', 'CAISO', null, null, 'IFED'),
-        ('NPM', 'Power', 'CAISO', null, null, 'IFED'),
-        ('MDC', 'Power', 'Mid-C', null, null, 'IFED'),
-        ('AEC', 'Basis', 'AECO', null, null, 'IFED'),
-        ('ALQ', 'Basis', 'Algonquin', null, null, 'IFED'),
-        ('CRI', 'Basis', 'CIG Rockies', null, null, 'IFED'),
-        ('DGD', 'Basis', 'Chicago', null, null, 'IFED'),
-        ('DOM', 'Basis', 'Eastern Gas South', null, null, 'IFED'),
-        ('HXS', 'Basis', 'Houston Ship Channel', null, null, 'IFED'),
-        ('UCS', 'Basis', 'Houston Ship Channel', null, null, 'IFED'),
-        ('NTO', 'Basis', 'NGPL TXOK', null, null, 'IFED'),
-        ('NWR', 'Basis', 'Northwest Rockies', null, null, 'IFED'),
-        ('PGE', 'Basis', 'PG&E Citygate', null, null, 'IFED'),
-        ('TMT', 'Basis', 'Tetco M3', null, null, 'IFED'),
-        ('TRZ', 'Basis', 'Transco Zone 4', null, null, 'IFED')
+),  __dbt__cte__utils_v3_positions_and_trades_product_catalog as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
 ),
 
 FINAL as (
-    select * from product_catalog
+    select
+        product_code,
+        product_family,
+        market_name,
+        underlying_product_code,
+        bbg_exchange_code,
+        default_exchange_name
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__nav_30_int_rules as (
+),  __dbt__cte__nav_v3_30_int_rules as (
 with positions as (
-    select * from __dbt__cte__nav_20_int_product_matches
+    select * from __dbt__cte__nav_v3_20_int_product_matches
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
 ),
 
 FINAL as (
@@ -403,9 +280,9 @@ left join product_catalog
 
 select *
 from FINAL
-),  __dbt__cte__nav_40_positions_all_history as (
+),  __dbt__cte__nav_v3_40_positions_all_history as (
 with positions as (
-    select * from __dbt__cte__nav_30_int_rules
+    select * from __dbt__cte__nav_v3_30_int_rules
 ),
 
 FINAL as (
@@ -416,7 +293,7 @@ FINAL as (
 select *
 from FINAL
 ), positions as (
-    select * from __dbt__cte__nav_40_positions_all_history
+    select * from __dbt__cte__nav_v3_40_positions_all_history
 ),
 
 FINAL as (

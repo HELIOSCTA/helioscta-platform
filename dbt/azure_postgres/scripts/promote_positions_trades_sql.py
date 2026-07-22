@@ -14,7 +14,15 @@ DBT_COMPILED_ROOT = (
     / "compiled"
     / "helioscta_platform"
     / "models"
-    / "positions_and_trades_v2"
+    / "positions_and_trades_v3"
+)
+GENERATED_SQL_ROOT = (
+    REPO_ROOT
+    / "backend"
+    / "scrapes"
+    / "positions_and_trades"
+    / "sql"
+    / "generated"
 )
 
 
@@ -29,24 +37,19 @@ class SqlArtifact:
 ARTIFACTS = (
     SqlArtifact(
         name="Clear Street all-history review",
-        model_path=Path("clear_street_eod_transactions/marts/cs_65_eod_all_history.sql"),
+        model_path=Path("clear_street_eod_transactions/marts/cs_v3_65_eod_all_history.sql"),
         targets=(
             FRONTEND_ROOT
             / "sql"
             / "clear-street-trades"
             / "marts"
             / "eod_all_history.sql",
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "clear_street_trades"
             / "all_history_validation.sql",
         ),
         required_markers=(
-            "__dbt__cte__cs_00_src_eod_txns",
+            "__dbt__cte__cs_v3_00_src_eod_txns",
             "rule_status",
             "rule_match_source",
             "from FINAL",
@@ -54,20 +57,15 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="Clear Street MUFG latest export",
-        model_path=Path("clear_street_eod_transactions/marts/cs_80_mufg_latest.sql"),
+        model_path=Path("clear_street_eod_transactions/marts/cs_v3_80_mufg_latest.sql"),
         targets=(
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "clear_street_trades"
             / "mufg"
             / "latest.sql",
         ),
         required_markers=(
-            "__dbt__cte__cs_70_eod_latest",
+            "__dbt__cte__cs_v3_70_eod_latest",
             "product_code_grouping",
             "product_code_region",
             "from FINAL",
@@ -75,20 +73,15 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="Clear Street MUFG all-history export",
-        model_path=Path("clear_street_eod_transactions/marts/cs_85_mufg_all_history.sql"),
+        model_path=Path("clear_street_eod_transactions/marts/cs_v3_85_mufg_all_history.sql"),
         targets=(
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "clear_street_trades"
             / "mufg"
             / "all_history.sql",
         ),
         required_markers=(
-            "__dbt__cte__cs_65_eod_all_history",
+            "__dbt__cte__cs_v3_65_eod_all_history",
             "product_code_grouping",
             "product_code_region",
             "from FINAL",
@@ -96,20 +89,15 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="NAV positions all-history review",
-        model_path=Path("nav_positions/marts/nav_40_positions_all_history.sql"),
+        model_path=Path("nav_positions/marts/nav_v3_40_positions_all_history.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "marts" / "all_history.sql",
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "nav_positions"
             / "all_history.sql",
         ),
         required_markers=(
-            "__dbt__cte__nav_00_src_positions",
+            "__dbt__cte__nav_v3_00_src_positions",
             "product_family",
             "market_name",
             "rule_status",
@@ -118,20 +106,15 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="NAV positions latest review",
-        model_path=Path("nav_positions/marts/nav_50_positions_latest.sql"),
+        model_path=Path("nav_positions/marts/nav_v3_50_positions_latest.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "marts" / "latest.sql",
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "nav_positions"
             / "latest.sql",
         ),
         required_markers=(
-            "__dbt__cte__nav_00_src_positions",
+            "__dbt__cte__nav_v3_00_src_positions",
             "product_family",
             "market_name",
             "rule_status",
@@ -140,21 +123,16 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="NAV positions frontend all-history contract",
-        model_path=Path("nav_positions/frontend/nav_frontend_positions_all_history.sql"),
+        model_path=Path("nav_positions/frontend/nav_v3_frontend_positions_all_history.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "frontend" / "all_history.sql",
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "nav_positions"
             / "frontend"
             / "all_history.sql",
         ),
         required_markers=(
-            "__dbt__cte__nav_40_positions_all_history",
+            "__dbt__cte__nav_v3_40_positions_all_history",
             "product_norm",
             "normalization_status",
             "contract_date",
@@ -163,21 +141,16 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="NAV positions frontend latest contract",
-        model_path=Path("nav_positions/frontend/nav_frontend_positions_latest.sql"),
+        model_path=Path("nav_positions/frontend/nav_v3_frontend_positions_latest.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "frontend" / "latest.sql",
-            REPO_ROOT
-            / "backend"
-            / "scrapes"
-            / "positions_and_trades"
-            / "sql"
-            / "generated"
+            GENERATED_SQL_ROOT
             / "nav_positions"
             / "frontend"
             / "latest.sql",
         ),
         required_markers=(
-            "__dbt__cte__nav_50_positions_latest",
+            "__dbt__cte__nav_v3_50_positions_latest",
             "product_norm",
             "normalization_status",
             "contract_date",
@@ -186,28 +159,94 @@ ARTIFACTS = (
     ),
     SqlArtifact(
         name="Positions/trades rule exceptions",
-        model_path=Path("nav_positions/marts/pat_90_rule_exceptions.sql"),
+        model_path=Path("nav_positions/marts/pat_v3_90_rule_exceptions.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "checks" / "rule_exceptions.sql",
         ),
         required_markers=(
-            "__dbt__cte__cs_50_int_rules",
-            "__dbt__cte__nav_30_int_rules",
+            "__dbt__cte__cs_v3_50_int_rules",
+            "__dbt__cte__nav_v3_30_int_rules",
             "rule_status",
             "from FINAL",
         ),
     ),
     SqlArtifact(
         name="NAV positions latest rule exceptions",
-        model_path=Path("nav_positions/marts/nav_55_rule_exceptions_latest.sql"),
+        model_path=Path("nav_positions/marts/nav_v3_55_rule_exceptions_latest.sql"),
         targets=(
             FRONTEND_ROOT / "sql" / "nav-positions" / "checks" / "rule_exceptions_latest.sql",
         ),
         required_markers=(
-            "__dbt__cte__nav_50_positions_latest",
+            "__dbt__cte__nav_v3_50_positions_latest",
             "rule_status",
             "from FINAL",
         ),
+    ),
+    SqlArtifact(
+        name="NAV Excel SFTP metadata",
+        model_path=Path("nav_positions/excel/nav_v3_excel_sftp_metadata.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "sftp_metadata.sql",),
+        required_markers=("__dbt__cte__nav_v3_40_positions_all_history", "sftp_upload_timestamp", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel ICE settles",
+        model_path=Path("nav_positions/excel/nav_v3_excel_ice_settles.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "ice_settles.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "ICE XL", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel ICE balday",
+        model_path=Path("nav_positions/excel/nav_v3_excel_ice_balday.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "ice_balday.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "ICE XL", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel ICE options",
+        model_path=Path("nav_positions/excel/nav_v3_excel_ice_options.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "ice_options.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "ICE XL", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel ICE futures",
+        model_path=Path("nav_positions/excel/nav_v3_excel_ice_futures.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "ice_futures.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "ICE XL", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas options",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_options.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_options.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "CME Symbol", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas futures",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_futures.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_futures.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "CME Symbol", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas balmo",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_balmo.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_balmo.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "MAREX Settle", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas options other",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_options_other.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_options_other.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "CME Symbol", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas futures pivot",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_futures_pivot.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_futures_pivot.sql",),
+        required_markers=("__dbt__cte__nav_v3_40_positions_all_history", "cme_excel_symbol", "from FINAL"),
+    ),
+    SqlArtifact(
+        name="NAV Excel gas options pivot",
+        model_path=Path("nav_positions/excel/nav_v3_excel_gas_options_pivot.sql"),
+        targets=(GENERATED_SQL_ROOT / "nav_positions" / "excel" / "gas_options_pivot.sql",),
+        required_markers=("__dbt__cte__nav_v3_excel_30_positions_grouped_latest", "Option Description", "from FINAL"),
     ),
 )
 
@@ -296,7 +335,7 @@ def main() -> int:
 
     section("Promotion complete")
     detail("artifacts_promoted", len(ARTIFACTS))
-    print("All configured frontend/backend SQL artifacts now match compiled dbt output.")
+    print("All configured frontend/backend/Excel SQL artifacts now match compiled dbt output.")
     return 0
 
 

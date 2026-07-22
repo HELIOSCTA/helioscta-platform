@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -177,7 +178,7 @@ MAX_SUPPORT_TABLE_UPDATED_LAG_HOURS = 36
 MAX_LMP_REPAIR_SUCCESS_LAG_HOURS = 36
 MAX_RECOVERED_API_FAILURE_RATE = 0.5
 LMP_REPAIR_FAMILY = "lmp_price_backfill_7_day"
-DBT_PRODUCT_MATCHING_SELECT = "tag:product_matching"
+DBT_PRODUCT_MATCHING_SELECT = "tag:product_matching_v3"
 DBT_PRODUCT_MATCHING_TIMEOUT_SECONDS = 180
 PRODUCT_MATCHING_GENERATED_SQL_CHECKS: tuple[tuple[str, str, str], ...] = (
     (
@@ -611,11 +612,12 @@ def _support_table_summary(database: str | None) -> list[dict[str, Any]]:
 def _dbt_product_matching_test(database: str | None = None) -> dict[str, Any]:
     repo_root = Path(__file__).resolve().parents[3]
     dbt_project_dir = repo_root / "dbt" / "azure_postgres"
+    profiles_dir_arg = "."
     command = [
         _resolve_dbt_executable(),
         "test",
         "--profiles-dir",
-        ".",
+        profiles_dir_arg,
         "--select",
         DBT_PRODUCT_MATCHING_SELECT,
     ]
@@ -644,6 +646,17 @@ def _dbt_product_matching_test(database: str | None = None) -> dict[str, Any]:
             command=command,
             database=database,
         )
+
+    temp_profiles_dir: tempfile.TemporaryDirectory[str] | None = None
+    profiles_dir_arg, temp_profiles_dir = _dbt_profiles_dir_arg(dbt_project_dir)
+    command = [
+        _resolve_dbt_executable(),
+        "test",
+        "--profiles-dir",
+        profiles_dir_arg,
+        "--select",
+        DBT_PRODUCT_MATCHING_SELECT,
+    ]
 
     try:
         completed = subprocess.run(
@@ -687,6 +700,9 @@ def _dbt_product_matching_test(database: str | None = None) -> dict[str, Any]:
             if line
         )
         return fallback
+    finally:
+        if temp_profiles_dir is not None:
+            temp_profiles_dir.cleanup()
 
     return {
         "status": "pass" if completed.returncode == 0 else "fail",
@@ -780,6 +796,21 @@ def _dbt_test_environment() -> dict[str, str]:
         if value and not env.get(name):
             env[name] = str(value)
     return env
+
+
+def _dbt_profiles_dir_arg(
+    dbt_project_dir: Path,
+) -> tuple[str, tempfile.TemporaryDirectory[str] | None]:
+    if (dbt_project_dir / "profiles.yml").exists():
+        return ".", None
+
+    profile_template = dbt_project_dir / "profiles.yml.example"
+    if not profile_template.exists():
+        return ".", None
+
+    temp_profiles_dir = tempfile.TemporaryDirectory(prefix="helios_dbt_profiles_")
+    shutil.copy2(profile_template, Path(temp_profiles_dir.name) / "profiles.yml")
+    return temp_profiles_dir.name, temp_profiles_dir
 
 
 def _resolve_dbt_executable() -> str:

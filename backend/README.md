@@ -69,7 +69,7 @@ Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
 environment variable names still say `WRITER`, but the configured database user
 is now the app owner role, `helios_admin`.
 
-The production health digest also runs the dbt `tag:product_matching` suite
+The production health digest also runs the dbt `tag:product_matching_v3` suite
 under `dbt/azure_postgres`. Keep `DBT_POSTGRES_READONLY_USER` and
 `DBT_POSTGRES_READONLY_PASSWORD` configured with the read-only role; host,
 port, database, and SSL mode can mirror the writer connection. The VM service
@@ -428,7 +428,7 @@ After the source file loads, the scheduled path runs the MUFG upload leg from
 leg reads the generated read-only SQL at
 `backend/scrapes/positions_and_trades/sql/generated/clear_street_trades/mufg/latest.sql`,
 which is promoted from the dbt
-`positions_and_trades_v2.clear_street_eod_transactions.cs_80_mufg_latest`
+`positions_and_trades_v3.clear_street_eod_transactions.cs_v3_80_mufg_latest`
 model with `python scripts/promote_positions_trades_sql.py` after
 `dbt compile`,
 uses the Clear Street target trade date for the exported

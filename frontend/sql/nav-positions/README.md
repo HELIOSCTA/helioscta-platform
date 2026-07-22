@@ -7,10 +7,11 @@ Generate the dbt SQL first:
 
 ```powershell
 cd dbt\azure_postgres
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v2
+dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
 ```
 
-Promote the compiled positions/trades SQL to the frontend and backend:
+Promote the compiled positions/trades SQL to the frontend, backend, and
+Excel-facing generated paths:
 
 ```powershell
 cd dbt\azure_postgres
@@ -22,9 +23,12 @@ python scripts\promote_positions_trades_sql.py
 The source of truth is:
 
 ```text
-dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_40_positions_all_history.sql
-dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/nav_50_positions_latest.sql
-dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/marts/pat_90_rule_exceptions.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_40_positions_all_history.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_50_positions_latest.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/frontend/nav_v3_frontend_positions_all_history.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/frontend/nav_v3_frontend_positions_latest.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/pat_v3_90_rule_exceptions.sql
+dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_55_rule_exceptions_latest.sql
 ```
 
 The frontend API reads:
@@ -36,8 +40,11 @@ frontend/sql/nav-positions/checks/rule_exceptions.sql
 frontend/sql/nav-positions/checks/rule_exceptions_latest.sql
 ```
 
-Do not edit promoted SQL files directly. Change the dbt model or upstream
-int/util models, run `dbt compile`, then promote the compiled SQL.
+Do not edit promoted SQL files directly. For lookup-only product/account/month
+changes, update and apply the reference values sync SQL under
+`dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/`;
+no frontend SQL copy is needed. For query logic or output-contract changes,
+change the v3 dbt model, run `dbt compile`, then promote the compiled SQL.
 
 ## Files
 

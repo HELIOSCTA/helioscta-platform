@@ -323,7 +323,7 @@ def test_health_evaluation_fails_for_product_matching_test_failure():
         product_matching_test={
             "status": "fail",
             "message": "dbt product matching tests failed.",
-            "command": "dbt test --profiles-dir . --select tag:product_matching",
+            "command": "dbt test --profiles-dir . --select tag:product_matching_v3",
         },
         service_statuses=[
             _service("helios-pjm-da-hrl-lmps.service", "success"),
@@ -351,6 +351,35 @@ def test_resolve_dbt_executable_prefers_python_environment_scripts(monkeypatch, 
     monkeypatch.setattr(prod_health_check.shutil, "which", lambda _: None)
 
     assert Path(prod_health_check._resolve_dbt_executable()) == dbt_exe
+
+
+def test_dbt_profiles_dir_arg_uses_checked_in_template(tmp_path):
+    template = tmp_path / "profiles.yml.example"
+    template.write_text("helioscta_platform:\n  target: readonly\n", encoding="utf-8")
+
+    profiles_dir_arg, temp_profiles_dir = prod_health_check._dbt_profiles_dir_arg(tmp_path)
+
+    try:
+        assert profiles_dir_arg != "."
+        assert (Path(profiles_dir_arg) / "profiles.yml").read_text(
+            encoding="utf-8"
+        ) == template.read_text(encoding="utf-8")
+    finally:
+        if temp_profiles_dir is not None:
+            temp_profiles_dir.cleanup()
+
+
+def test_dbt_profiles_dir_arg_prefers_local_profile(tmp_path):
+    (tmp_path / "profiles.yml").write_text(
+        "helioscta_platform:\n  target: readonly\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "profiles.yml.example").write_text("template", encoding="utf-8")
+
+    profiles_dir_arg, temp_profiles_dir = prod_health_check._dbt_profiles_dir_arg(tmp_path)
+
+    assert profiles_dir_arg == "."
+    assert temp_profiles_dir is None
 
 
 def test_generated_product_matching_sql_test_passes_when_no_failures(monkeypatch):

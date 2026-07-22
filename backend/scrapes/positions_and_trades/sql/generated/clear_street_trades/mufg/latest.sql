@@ -4,7 +4,7 @@
 -- transaction columns first, then appends the derived status/product/vendor
 -- fields expected by the MUFG upload workflow.
 
-with  __dbt__cte__cs_00_src_eod_txns as (
+with  __dbt__cte__cs_v3_00_src_eod_txns as (
 -- Clear Street source projection.
 --
 -- Keep this model intentionally close to the raw source table contract:
@@ -120,7 +120,7 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__cs_10_int_clean_fields as (
+),  __dbt__cte__cs_v3_10_int_clean_fields as (
 -- Field-level cleanup for raw Clear Street strings.
 --
 -- The source table preserves the CSV payload as loaded. Some text fields can
@@ -129,7 +129,7 @@ from FINAL
 -- rule matching while preserving the original raw columns from trades.*.
 
 with trades as (
-    select * from __dbt__cte__cs_00_src_eod_txns
+    select * from __dbt__cte__cs_v3_00_src_eod_txns
 ),
 
 FINAL as (
@@ -164,44 +164,22 @@ from trades
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_month_codes as (
-with month_codes(month_number, month_name, month_code) as (
-
-    values
-
-        (1, 'Jan', 'F'),
-
-        (2, 'Feb', 'G'),
-
-        (3, 'Mar', 'H'),
-
-        (4, 'Apr', 'J'),
-
-        (5, 'May', 'K'),
-
-        (6, 'Jun', 'M'),
-
-        (7, 'Jul', 'N'),
-
-        (8, 'Aug', 'Q'),
-
-        (9, 'Sep', 'U'),
-
-        (10, 'Oct', 'V'),
-
-        (11, 'Nov', 'X'),
-
-        (12, 'Dec', 'Z')
-
+),  __dbt__cte__utils_v3_positions_and_trades_month_codes as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."month_codes"
 ),
 
 FINAL as (
-    select * from month_codes
+    select
+        month_number,
+        month_name,
+        month_code
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__cs_20_int_contracts as (
+),  __dbt__cte__cs_v3_20_int_contracts as (
 -- Contract and date parsing.
 --
 -- This stage turns cleaned source strings into typed date/contract helpers.
@@ -209,11 +187,11 @@ from FINAL
 -- independently reviewable when source files contain malformed dates or months.
 
 with trades as (
-    select * from __dbt__cte__cs_10_int_clean_fields
+    select * from __dbt__cte__cs_v3_10_int_clean_fields
 ),
 
 month_codes as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_month_codes
+    select * from __dbt__cte__utils_v3_positions_and_trades_month_codes
 ),
 
 contract_base as (
@@ -267,72 +245,23 @@ left join month_codes
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_account_lookup as (
-with account_lookup(account_name, account, source, source_label) as (
-
-    values
-
-
-
-        -- ACIM
-
-        ('ACIM', 'UBE 10051', 'nav', 'NAV Position File'),
-
-        ('ACIM', '51014112.0', 'nav', 'NAV Position File'),
-
-        ('ACIM', '51014112', 'nav', 'NAV Position File'),
-
-        -- IOAGR ... EFD, 365
-
-        ('ACIM', 'EFD', 'clear_street', 'Clear Street Trades'),
-
-        ('ACIM', '365', 'clear_street', 'Clear Street Trades'),
-
-
-
-        -- PNT
-
-        ('PNT', 'ABN AMRO_1251PT034', 'nav', 'NAV Position File'),
-
-        -- IOPNT ... FCR,  690
-
-        ('PNT', 'FCR', 'clear_street', 'Clear Street Trades'),
-
-        ('PNT', '690', 'clear_street', 'Clear Street Trades'),
-
-
-
-        -- DICKSON
-
-        ('DICKSON', 'RJO_35511229', 'nav', 'NAV Position File'),
-
-        -- IOMOR ... RJO, 685
-
-        ('DICKSON', 'RJO', 'clear_street', 'Clear Street Trades'),
-
-        ('DICKSON', '685', 'clear_street', 'Clear Street Trades'),
-
-
-
-        -- TITAN
-
-        ('TITAN', '969 ESKHL', 'nav', 'NAV Position File'),
-
-        -- ITITA ... ADU, 905
-
-        ('TITAN', 'ADU', 'clear_street', 'Clear Street Trades'),
-
-        ('TITAN', '905', 'clear_street', 'Clear Street Trades')
-
+),  __dbt__cte__utils_v3_positions_and_trades_account_lookup as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
 ),
 
 FINAL as (
-    select * from account_lookup
+    select
+        account_name,
+        account,
+        source,
+        source_label
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__cs_30_int_trade_attrs as (
+),  __dbt__cte__cs_v3_30_int_trade_attrs as (
 -- Trade attributes used by account, option, and product-rule logic.
 --
 -- This stage adds business-facing helpers that are not raw source fields:
@@ -340,11 +269,11 @@ from FINAL
 -- exchange-name normalization, and source product text for review diagnostics.
 
 with trades as (
-    select * from __dbt__cte__cs_20_int_contracts
+    select * from __dbt__cte__cs_v3_20_int_contracts
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
     where source = 'clear_street'
 ),
 
@@ -421,6 +350,7 @@ FINAL as (
         and upper(coalesce(prepared_trades.security_description_clean, '')) = 'UNITED STATES DOLLAR'
         and (
             upper(coalesce(prepared_trades.instrument_description_clean, '')) like 'RESID ADJ%'
+            or upper(coalesce(prepared_trades.instrument_description_clean, '')) like 'RESUD ADH%'
             or upper(coalesce(prepared_trades.instrument_description_clean, '')) = 'APS RES'
             or upper(coalesce(prepared_trades.instrument_description_clean, '')) like '%EXCHANGE FEE ADJ%'
         )
@@ -441,160 +371,75 @@ left join accounts
 
 select *
 from FINAL
-),  __dbt__cte__utils_v2_positions_and_trades_product_catalog as (
-with product_catalog(
-
-    product_code,
-
-    product_family,
-
-    market_name,
-
-    underlying_product_code,
-
-    bbg_exchange_code,
-
-    default_exchange_name
-
-) as (
-
-    values
-
-        ('HHD', 'Gas', 'Henry Hub', null, null, 'IFED'),
-
-        ('NG', 'Gas', 'Henry Hub', null, 'NG', 'NYME'),
-
-        ('HH', 'Gas', 'Henry Hub', null, 'IW', 'NYME'),
-
-        ('HP', 'Gas', 'Henry Hub', null, 'ZA', 'NYME'),
-
-        ('H', 'Gas', 'Henry Hub', null, null, 'IFED'),
-
-        ('PHH', 'Gas', 'Henry Hub', null, null, 'IFED'),
-
-        ('PHE', 'Gas', 'Henry Hub', 'NG', null, 'IFED'),
-
-        ('LN', 'Gas', 'Henry Hub', 'NG', 'NG', 'NYME'),
-
-        ('LN1', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-
-        ('LN2', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-
-        ('LN3', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-
-        ('LN4', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-
-        ('LN5', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
-
-        ('JN1', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-
-        ('KN2', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-
-        ('KN3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-
-        ('KN4', 'Gas', 'Henry Hub', 'NG', 'HZI', 'NYME'),
-
-        ('G3', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-
-        ('G4', 'Gas', 'Henry Hub', 'NG', null, 'NYME'),
-
-        ('PDP', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('PWA', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('DDP', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('PDA', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('PJL', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('PMI', 'Power', 'PJM', 'PMI', null, 'IFED'),
-
-        ('P1X', 'Power', 'PJM', 'PMI', null, 'IFED'),
-
-        ('OPJ', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('ODP', 'Power', 'PJM', null, null, 'IFED'),
-
-        ('ERA', 'Power', 'ERCOT', null, null, 'IFED'),
-
-        ('ERN', 'Power', 'ERCOT', null, null, 'IFED'),
-
-        ('END', 'Power', 'ERCOT', null, null, 'IFED'),
-
-        ('ECI', 'Power', 'ERCOT', null, null, 'IFED'),
-
-        ('NEZ', 'Power', 'NEPOOL', null, null, 'IFED'),
-
-        ('NEP', 'Power', 'NEPOOL', null, null, 'IFED'),
-
-        ('SPM', 'Power', 'CAISO', null, null, 'IFED'),
-
-        ('SDP', 'Power', 'CAISO', null, null, 'IFED'),
-
-        ('NPM', 'Power', 'CAISO', null, null, 'IFED'),
-
-        ('MDC', 'Power', 'Mid-C', null, null, 'IFED'),
-
-        ('AEC', 'Basis', 'AECO', null, null, 'IFED'),
-
-        ('ALQ', 'Basis', 'Algonquin', null, null, 'IFED'),
-
-        ('CRI', 'Basis', 'CIG Rockies', null, null, 'IFED'),
-
-        ('DGD', 'Basis', 'Chicago', null, null, 'IFED'),
-
-        ('DOM', 'Basis', 'Eastern Gas South', null, null, 'IFED'),
-
-        ('HXS', 'Basis', 'Houston Ship Channel', null, null, 'IFED'),
-
-        ('UCS', 'Basis', 'Houston Ship Channel', null, null, 'IFED'),
-
-        ('NTO', 'Basis', 'NGPL TXOK', null, null, 'IFED'),
-
-        ('NWR', 'Basis', 'Northwest Rockies', null, null, 'IFED'),
-
-        ('PGE', 'Basis', 'PG&E Citygate', null, null, 'IFED'),
-
-        ('TMT', 'Basis', 'Tetco M3', null, null, 'IFED'),
-
-        ('TRZ', 'Basis', 'Transco Zone 4', null, null, 'IFED')
-
+),  __dbt__cte__utils_v3_positions_and_trades_product_catalog as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
 ),
 
 FINAL as (
-    select * from product_catalog
+    select
+        product_code,
+        product_family,
+        market_name,
+        underlying_product_code,
+        bbg_exchange_code,
+        default_exchange_name
+    from source_rows
 )
 
 select *
 from FINAL
-),  __dbt__cte__cs_40_int_product_matches as (
+),  __dbt__cte__utils_v3_positions_and_trades_product_aliases as (
+with source_rows as (
+    select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
+),
+
+FINAL as (
+    select
+        source_priority,
+        source,
+        match_type,
+        pattern,
+        product_code,
+        option_type,
+        marex_product
+    from source_rows
+)
+
+select *
+from FINAL
+),  __dbt__cte__cs_v3_40_int_product_matches as (
 -- Product match candidates for Clear Street rows.
 --
 -- Matching runs in priority order:
--- 1. targeted CUSIP override for PMI/P1X options
+-- 1. reviewed Clear Street CUSIP-prefix alias rules
 -- 2. explicit Clear Street exchange commodity code in the product catalog
 
 with trades as (
-    select * from __dbt__cte__cs_30_int_trade_attrs
+    select * from __dbt__cte__cs_v3_30_int_trade_attrs
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v2_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
+),
+
+product_aliases as (
+    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
+    where source = 'clear_street'
 ),
 
 FINAL as (
     select
     trades.*,
 
-    -- Targeted CUSIP override handles PMI/P1X option rows where the CUSIP is
-    -- the clearest product discriminator.
-    cusip_catalog.product_code as cusip_product_code,
-    cusip_catalog.product_family as cusip_product_family,
-    cusip_catalog.market_name as cusip_market_name,
-    cusip_catalog.underlying_product_code as cusip_underlying_product_code,
-    cusip_catalog.bbg_exchange_code as cusip_bbg_exchange_code,
-    cusip_catalog.default_exchange_name as cusip_default_exchange_name,
+    -- Clear Street CUSIP-prefix alias rules handle option rows where the CUSIP
+    -- is the clearest product discriminator.
+    cusip_match.product_code as cusip_product_code,
+    cusip_match.product_family as cusip_product_family,
+    cusip_match.market_name as cusip_market_name,
+    cusip_match.underlying_product_code as cusip_underlying_product_code,
+    cusip_match.bbg_exchange_code as cusip_bbg_exchange_code,
+    cusip_match.default_exchange_name as cusip_default_exchange_name,
 
     -- Direct product-code matches from Clear Street exchange commodity codes.
     explicit_catalog.product_code as explicit_product_code,
@@ -604,33 +449,42 @@ FINAL as (
     explicit_catalog.bbg_exchange_code as explicit_bbg_exchange_code,
     explicit_catalog.default_exchange_name as explicit_default_exchange_name
 from trades
-left join product_catalog as cusip_catalog
-    on trades.is_option
-    and (
-        (
-            upper(trades.cusip) like 'IFEDPMI%'
-            and cusip_catalog.product_code = 'PMI'
+left join lateral (
+    select
+        product_catalog.product_code,
+        product_catalog.product_family,
+        product_catalog.market_name,
+        product_catalog.underlying_product_code,
+        product_catalog.bbg_exchange_code,
+        product_catalog.default_exchange_name
+    from product_aliases
+    inner join product_catalog
+        on product_catalog.product_code = product_aliases.product_code
+    where product_aliases.match_type = 'cusip_prefix'
+        and trades.is_option
+        and upper(trades.cusip) like product_aliases.pattern || '%'
+        and (
+            product_aliases.option_type is null
+            or product_aliases.option_type = 'option'
         )
-        or (
-            upper(trades.cusip) like 'IFEDP1X%'
-            and cusip_catalog.product_code = 'P1X'
-        )
-    )
+    order by product_aliases.source_priority
+    limit 1
+) as cusip_match on true
 left join product_catalog as explicit_catalog
-    on cusip_catalog.product_code is null
+    on cusip_match.product_code is null
     and explicit_catalog.product_code = upper(trades.exch_comm_cd_clean)
 )
 
 select *
 from FINAL
-),  __dbt__cte__cs_50_int_rules as (
+),  __dbt__cte__cs_v3_50_int_rules as (
 -- Resolve product matches into canonical rule fields.
 --
 -- This stage collapses the explicit/CUSIP candidates into one product
 -- contract per row and assigns a rule_status that review queries can filter on.
 
 with product_matches as (
-    select * from __dbt__cte__cs_40_int_product_matches
+    select * from __dbt__cte__cs_v3_40_int_product_matches
 ),
 
 FINAL as (
@@ -689,7 +543,7 @@ from product_matches
 
 select *
 from FINAL
-),  __dbt__cte__cs_60_int_export_codes as (
+),  __dbt__cte__cs_v3_60_int_export_codes as (
 -- Vendor product-code construction.
 --
 -- This stage derives product identifiers used by downstream MUFG review/export
@@ -698,7 +552,7 @@ from FINAL
 -- contract month helpers rather than raw Clear Street strings.
 
 with trades as (
-    select * from __dbt__cte__cs_50_int_rules
+    select * from __dbt__cte__cs_v3_50_int_rules
 ),
 
 strike_base as (
@@ -908,7 +762,7 @@ from export_base
 
 select *
 from FINAL
-),  __dbt__cte__cs_70_eod_latest as (
+),  __dbt__cte__cs_v3_70_eod_latest as (
 -- Latest Clear Street source file.
 --
 -- Clear Street can send multiple uploads for the same SFTP trade date. This
@@ -916,7 +770,7 @@ from FINAL
 -- timestamp within that trade date, preserving all rows from that source file.
 
 with trades as (
-    select * from __dbt__cte__cs_60_int_export_codes
+    select * from __dbt__cte__cs_v3_60_int_export_codes
 ),
 
 latest_sftp_date as (
@@ -1070,7 +924,7 @@ order by
     product_family,
     market_name
 ), trades as (
-    select * from __dbt__cte__cs_70_eod_latest
+    select * from __dbt__cte__cs_v3_70_eod_latest
 ),
 
 FINAL as (

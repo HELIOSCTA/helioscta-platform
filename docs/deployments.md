@@ -43,6 +43,34 @@ boundary, or log path changes.
 - Database note: historical chat outbox tables or rows were not dropped as part
   of this runtime cleanup.
 
+## positions-trades-v3-reference-workflow
+
+- Status: database reference rollout applied to `helios_prod` on
+  `2026-07-22 19:43 UTC`; VM code fast-forward is pending a committed/pushed
+  change.
+- Workflow: positions/trades v3 product matching for NAV positions, Clear
+  Street trades, backend generated SQL exports, frontend SQL review paths, and
+  Excel SQL extracts.
+- Reference schema: `positions_and_trades_ref`.
+- Applied SQL:
+  - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/table_positions_and_trades_reference_tables.sql`
+  - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/index_positions_and_trades_reference_tables.sql`
+  - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/upsert_positions_and_trades_reference_values.sql`
+- Current production row counts: `product_catalog=50`,
+  `product_alias_rules=55`, `account_lookup=14`, `month_codes=12`.
+- Validation: read-only checks reported zero duplicate priorities, duplicate
+  alias patterns, duplicate accounts, aliases without catalog rows, or missing
+  month codes. The v3 dbt product-matching gate passed with
+  `PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2`.
+- Health-check note: local backend validation confirms
+  `backend.orchestration.health.prod_health_check` now selects
+  `tag:product_matching_v3` and can run from the checked-in
+  `profiles.yml.example` template when an ignored local dbt `profiles.yml` is
+  absent.
+- VM deployment boundary: after this change is committed and pushed,
+  fast-forward `/opt/helioscta-platform`, reinstall the backend package, and
+  restart `helios-prod-health-check.timer`.
+
 ## frontend-pjm-da-lmp-release-report
 
 - Status: deployed to Vercel production on `2026-06-30`.

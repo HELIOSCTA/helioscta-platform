@@ -1,0 +1,117 @@
+version: 2
+
+models:
+  - name: nav_v3_excel_10_position_rows
+    description: >
+      Narrow V3-native NAV Excel base rows. Source contract: NAV SFTP
+      Position Valuation Detail rows promoted through nav_v3_40_positions_all_history,
+      filtered to the latest upload per fund_code and nav_date. Grain: one NAV
+      source row per fund_code, nav_date, sftp_upload_timestamp, source_file_name,
+      and source_file_row_number. Workbook consumer notes: this is an internal
+      helper, not a v0 nav_position clone; it keeps only the row-level product,
+      account, contract, quantity, lot, settle, and trade-price facts needed by
+      the workbook tabs.
+
+  - name: nav_v3_excel_20_positions_grouped
+    description: >
+      Narrow V3-native grouped helper for Excel tabs. Source contract:
+      nav_v3_excel_10_position_rows. Grain: one row per NAV date, exchange/product,
+      option side and strike, contract month/day, and normalized gas lot size.
+      Workbook consumer notes: computes a stable position_group_key for
+      downstream previous-day matching, derives shared display symbols after
+      grouping, and exposes only the quantity buckets and settle/trade measures
+      used by the tab models.
+
+  - name: nav_v3_excel_30_positions_grouped_latest
+    description: >
+      Latest-date V3 NAV grouped Excel mart. Source contract:
+      nav_v3_excel_20_positions_grouped. Grain: one latest NAV date row per grouped
+      position key. Workbook consumer notes: uses the latest two distinct
+      sftp_date/nav_date values present in v3 data to calculate previous settle,
+      previous quantity, day-over-day quantity, daily change, and daily PnL.
+      Legacy null-only fields such as expiration, DTE, and Marex delta are
+      emitted directly by the final tab models instead of being carried here.
+
+  - name: nav_v3_excel_sftp_metadata
+    description: >
+      V3-native SFTP_METADATA workbook tab source. Source contract:
+      nav_v3_40_positions_all_history. Grain: one row per NAV fund freshness label.
+      Workbook consumer notes: reports the latest available sftp_date and
+      sftp_upload_timestamp for ACIM, PNT, DICKSON, and TITAN without using the
+      legacy per-fund v0 models.
+
+  - name: nav_v3_excel_ice_settles
+    description: >
+      V3-native ICE_SETTLES workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped row per
+      power future, power option, or basis contract. Workbook consumer notes:
+      preserves the tab's legacy display aliases and excludes PDA.
+
+  - name: nav_v3_excel_ice_balday
+    description: >
+      V3-native ICE_BALDAY workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped row per
+      selected short-term power contract. Workbook consumer notes: preserves the
+      PWA, PDP, and PDA tab filters and legacy display aliases.
+
+  - name: nav_v3_excel_ice_options
+    description: >
+      V3-native ICE_OPTIONS workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped PJM PMI
+      option row per contract month, put/call, and strike. Workbook consumer
+      notes: preserves ICE XL, settle, previous settle, quantity, delta, and PnL
+      display columns.
+
+  - name: nav_v3_excel_ice_futures
+    description: >
+      V3-native ICE_FUTURES workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped PJM PMI
+      future row per contract month. Workbook consumer notes: preserves legacy
+      ICE XL, settle, previous settle, quantity, and PnL display columns.
+
+  - name: nav_v3_excel_gas_options
+    description: >
+      V3-native GAS_OPTIONS workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped LN or PHE
+      gas option row per contract month, put/call, and strike. Workbook consumer
+      notes: preserves the workbook's existing month cutoff and display aliases.
+
+  - name: nav_v3_excel_gas_futures
+    description: >
+      V3-native GAS_FUTURES workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped gas futures
+      row per contract month and product. Workbook consumer notes: exposes CME
+      gas lot, CME symbol, quantity bucket, settle, previous settle, and PnL
+      columns with legacy aliases.
+
+  - name: nav_v3_excel_gas_balmo
+    description: >
+      V3-native GAS_BALMO workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped HHD daily
+      gas contract row. Workbook consumer notes: preserves the legacy BALMO
+      current-date contract filter and date display alias.
+
+  - name: nav_v3_excel_gas_options_other
+    description: >
+      V3-native GAS_OPTIONS_OTHER workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one latest grouped gas option
+      row outside LN and PHE. Workbook consumer notes: preserves the legacy tab's
+      quantity, settle, delta, and CME symbol display aliases.
+
+  - name: nav_v3_excel_gas_futures_pivot
+    description: >
+      V3-native GAS_FUTURES_PIVOT workbook tab source. Source contract:
+      nav_v3_40_positions_all_history filtered to the latest upload per fund_code
+      and nav_date. Grain: one latest NAV row-level gas futures position row
+      before Excel pivoting. Workbook consumer notes: this model intentionally
+      exposes the full 44-column legacy nav_position shape because the current
+      workbook loads GAS_FUTURES_PIVOT into an external pivot cache that stores
+      the legacy field list.
+
+  - name: nav_v3_excel_gas_options_pivot
+    description: >
+      V3-native GAS_OPTIONS_PIVOT workbook tab source. Source contract:
+      nav_v3_excel_30_positions_grouped_latest. Grain: one grouped gas option row
+      per month, option code, exchange code, put/call, strike, and Bloomberg
+      option description before Excel pivoting. Workbook consumer notes:
+      preserves the legacy pivot-ready aliases and aggregations.
