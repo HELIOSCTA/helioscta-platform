@@ -2912,3 +2912,67 @@ WHERE dataset IN (
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## helios-ice-python-coordinators
+
+- Status: deployed on `DESKTOP-T5BCP1P` on `2026-07-22 14:05 UTC`; migrated from
+  the previous ICE host.
+- Host: `DESKTOP-T5BCP1P` (licensed Windows ICE XL workstation).
+- Runtime path: `C:\Users\Kapil\helioscta-prod\helioscta-platform`.
+- Deployed commit: `222afa4`. Verify on the host with
+  `git -C $env:HELIOS_ICE_REPO_ROOT rev-parse HEAD`.
+- Python environment: `helioscta-platform-backend` (`backend/environment.yml`),
+  at `C:\Users\Kapil\miniconda3\envs\helioscta-platform-backend\python.exe`.
+- Host configuration: user environment variables `HELIOS_ICE_REPO_ROOT` and
+  `HELIOS_ICE_PYTHON_EXE`. Every ICE script defaults `-RepoRoot`/`-PythonExe`
+  from these. A bare `python` resolves to conda `base` on this host and fails
+  with `ModuleNotFoundError: numpy`.
+- Proprietary runtime: `theice.com_ICEPython-0.0.6` installed from
+  `%LOCALAPPDATA%\ICE Data Services\ICE XL\bin` into the environment above.
+  Not available from PyPI; not committed.
+- Scheduled tasks:
+  - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Short Term Coordinator` —
+    `job_group=short_term`, weekdays every 15 minutes from local `05:10`
+    through `22:55`.
+  - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Futures Coordinator` —
+    `job_group=futures`, weekdays hourly at local hours `05` through `22`.
+  - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Status` — no trigger; visible
+    operator window.
+- Log path: `C:\Users\Kapil\helioscta-prod\logs`, set via `HELIOS_LOG_DIR` in
+  the host's untracked `backend\.env` rather than the installer's `-LogDir`.
+  `backend/utils/credentials.py` loads `.env` with `load_dotenv(override=True)`,
+  so a `.env` carrying the Linux VM default `/var/log/helioscta` overrides the
+  wrapper and writes per-pull logs to `C:\var\log\helioscta` while lock and
+  state files still resolve correctly. Corrected on this host on
+  `2026-07-22`; a `.env.bak-20260722` backup sits beside the live file.
+- State path: `C:\Users\Kapil\helioscta-prod\state`.
+- Logon type: `Interactive`, user `DESKTOP-T5BCP1P\Kapil`. Coordinators run only
+  while that profile is logged on. AC standby and hibernate are disabled so the
+  host stays awake across the run window.
+- Migration note: the previous host `C:\Users\AidanKeaveny\helioscta-prod` and
+  the legacy `HeliosCTA-IcePython` NSSM service both stopped writing
+  `ops.api_fetch_log` on `2026-07-21`. Their scheduled tasks were not disabled
+  from this host and remain registered on the outgoing machine; disable them
+  there before that machine returns to service to avoid duplicate pulls.
+- Operator docs: `infrastructure/windows-task-scheduler/README.md`.
+- Verification:
+  - Manual tick: `run_ice_python_once.ps1 -JobGroup short_term`.
+  - Task state: `Get-ScheduledTaskInfo -TaskPath "\HeliosCTA\ICE Python\"`.
+  - Owning-host check, confirming a single `log_file_path` prefix:
+
+```sql
+SELECT
+    metadata ->> 'runtime'       AS runtime,
+    metadata ->> 'log_file_path' AS log_path,
+    status,
+    COUNT(*)                     AS runs,
+    MAX(created_at)              AS latest
+FROM ops.api_fetch_log
+WHERE provider = 'ice_python'
+  AND created_at > NOW() - INTERVAL '2 days'
+GROUP BY 1, 2, 3
+ORDER BY latest DESC;
+```
+
+- Freshness targets: `ice_python.settlements`,
+  `ice_python.settlement_contract_dates`.

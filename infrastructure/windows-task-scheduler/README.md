@@ -76,20 +76,50 @@ inside the coordinator/status scripts. The legacy `all` coordinator can remain
 registered as a fallback, but it should be disabled once the short-term and
 futures coordinators are active to avoid duplicate pulls.
 
+## Scheduler Host
+
+The ICE coordinators are host-specific: they need a licensed ICE XL runtime and
+the proprietary `icepython` wheel, so they run on one designated Windows host at
+a time.
+
+Current ICE host: `DESKTOP-T5BCP1P` (`helioscta-prod` layout under the operator
+profile). The ICE sections below are written host-neutral. Every ICE script
+resolves its two host-specific values from environment variables, so set these
+once per host instead of hardcoding paths into commands:
+
+```powershell
+[Environment]::SetEnvironmentVariable(
+    "HELIOS_ICE_REPO_ROOT", "$env:USERPROFILE\helioscta-prod\helioscta-platform", "User")
+[Environment]::SetEnvironmentVariable(
+    "HELIOS_ICE_PYTHON_EXE", "$env:USERPROFILE\miniconda3\envs\helioscta-platform-backend\python.exe", "User")
+```
+
+The conda environment name is the one declared in `backend/environment.yml`
+(`helioscta-platform-backend`). Do not schedule against a bare `python`: on a
+miniconda host that resolves to the `base` environment, which lacks the backend
+dependencies and fails every tick with `ModuleNotFoundError: numpy`.
+
+Do not place the scheduled clone inside a OneDrive-synced folder. Sync can hold
+file locks and dehydrate files to cloud placeholders, which stalls or fails a
+pull mid-run. Keep a separate development clone if the working copy is synced.
+
+The scheduler-host sections that follow assume a new PowerShell session, so the
+variables above are present in the process environment.
+
 ## Runtime Setup
 
 On the licensed Windows ICE host:
 
 ```powershell
-cd C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -m pip install -r backend\requirements-local-windows.txt -e backend
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py
+cd $env:HELIOS_ICE_REPO_ROOT
+& $env:HELIOS_ICE_PYTHON_EXE -m pip install -r backend\requirements-local-windows.txt -e backend
+& $env:HELIOS_ICE_PYTHON_EXE .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py
 ```
 
 Recommended local runtime layout:
 
 ```text
-C:\Users\AidanKeaveny\helioscta-prod\
+%USERPROFILE%\helioscta-prod\
   helioscta-platform\
   state\
   logs\
@@ -101,15 +131,20 @@ bin directory, defaulting to
 else, pass `--wheel` or `--ice-bin`:
 
 ```powershell
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py `
+& $env:HELIOS_ICE_PYTHON_EXE .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py `
   --wheel "C:\Path\To\theice.com_ICEPython-0.0.6-py3-none-any.whl"
 ```
 
 Then verify:
 
 ```powershell
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -c "import icepython; print('icepython ok')"
+& $env:HELIOS_ICE_PYTHON_EXE -c "import icepython; print('icepython ok')"
 ```
+
+The wheel declares no dependencies of its own but needs `pywin32` at runtime,
+which `backend\requirements-local-windows.txt` pins. Install the wheel into the
+same environment the scheduled tasks use; installing it into `base` is a common
+mistake that leaves the coordinators unable to import it.
 
 Configure Azure Postgres writer credentials using machine/user environment
 variables or an untracked `backend\.env` in the production clone. Do not commit
@@ -124,18 +159,20 @@ changes. Omit it for routine scheduler-only updates.
 
 Install or update the short-term coordinator:
 
+`-RepoRoot` and `-PythonExe` default from `HELIOS_ICE_REPO_ROOT` and
+`HELIOS_ICE_PYTHON_EXE`, so they are omitted below. Pass them explicitly only
+when targeting a checkout or interpreter other than the host defaults.
+
 ```powershell
 .\infrastructure\windows-task-scheduler\ice_python\install_ice_python_task.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
-  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -TaskName "HeliosCTA ICE Python Short Term Coordinator" `
   -JobGroup short_term `
   -RunStartHour 5 `
   -RunEndHour 22 `
   -StartMinute 10 `
   -IntervalMinutes 15 `
-  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
-  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -LogDir $env:USERPROFILE\helioscta-prod\logs `
+  -StateDir $env:USERPROFILE\helioscta-prod\state `
   -PullLatest `
   -InstallDependencies `
   -InstallIcePython `
@@ -146,16 +183,31 @@ Install or update the futures coordinator:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\ice_python\install_ice_python_task.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
-  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -TaskName "HeliosCTA ICE Python Futures Coordinator" `
   -JobGroup futures `
-  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
-  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -LogDir $env:USERPROFILE\helioscta-prod\logs `
+  -StateDir $env:USERPROFILE\helioscta-prod\state `
   -PullLatest `
   -InstallDependencies `
   -RunImportSmoke
 ```
+
+The installer registers coordinators in the enabled `Ready` state and the
+short-term trigger can fire within 15 minutes. When standing up a new ICE host
+while another host still owns the schedule, disable both coordinators
+immediately after registering, then enable them only once the previous writers
+are confirmed stopped:
+
+```powershell
+foreach ($name in @(
+    "HeliosCTA ICE Python Short Term Coordinator",
+    "HeliosCTA ICE Python Futures Coordinator")) {
+    Disable-ScheduledTask -TaskPath "\HeliosCTA\ICE Python\" -TaskName $name
+}
+```
+
+Disabled coordinators can still be exercised on demand with
+`Start-ScheduledTask`, so staging this way stays verifiable.
 
 The installer:
 
@@ -171,10 +223,8 @@ Install or update the visible status task:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\ice_python\install_ice_python_status_task.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
-  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
-  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
-  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -LogDir $env:USERPROFILE\helioscta-prod\logs `
+  -StateDir $env:USERPROFILE\helioscta-prod\state `
   -HistoryPerFeed 5
 ```
 
@@ -208,12 +258,50 @@ Run one short-term coordinator tick directly:
 
 ```powershell
 .\infrastructure\windows-task-scheduler\ice_python\run_ice_python_once.ps1 `
-  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
-  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
-  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
-  -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
+  -LogDir $env:USERPROFILE\helioscta-prod\logs `
+  -StateDir $env:USERPROFILE\helioscta-prod\state `
   -JobGroup short_term
 ```
+
+This writes to production Postgres and consumes shared ICE symbol entitlement.
+Point `-LogDir` and `-StateDir` at scratch directories when the intent is only
+to prove the runtime imports and connects.
+
+A single feed can also be run directly, which is useful when isolating one
+registry:
+
+```powershell
+cd $env:HELIOS_ICE_REPO_ROOT\backend\orchestration\ice_python\settlements
+& $env:HELIOS_ICE_PYTHON_EXE .\pjm_short_term.py
+```
+
+Direct module runs bypass `run_ice_python_once.ps1`, so the per-window state and
+coordinator log that the status window reads are not updated. The pull itself is
+real: it writes rows and `ops.api_fetch_log` telemetry like any scheduled run.
+
+### `HELIOS_LOG_DIR` And `.env` Precedence
+
+`backend/utils/credentials.py` loads `backend\.env` with
+`load_dotenv(override=True)`, so any value defined there **overrides** the
+process environment, including variables the scheduler wrapper just set.
+
+`run_ice_python_once.ps1` sets `HELIOS_LOG_DIR` and `HELIOS_STATE_DIR` from
+`-LogDir` and `-StateDir`. Only `HELIOS_STATE_DIR` reliably survives, because
+`HELIOS_LOG_DIR` is a key the repo's `.env` commonly carries with the Linux VM
+value `/var/log/helioscta`. On a Windows host that resolves to
+`C:\var\log\helioscta`, so per-pull logs silently land off-host while lock and
+state files land correctly — a split that makes a healthy host look
+misconfigured when reading `ops.api_fetch_log`.
+
+On a Windows ICE host, set the key in `backend\.env` to the host log directory
+rather than relying on `-LogDir`:
+
+```text
+HELIOS_LOG_DIR=C:\Users\<operator>\helioscta-prod\logs
+```
+
+Keep `-LogDir` matching that value. `-LogDir` still governs the coordinator tick
+log written by the PowerShell wrapper itself, which is unaffected by `.env`.
 
 Start a scheduled coordinator manually. This runs quietly; open the status task
 to inspect latest results and feed history.
@@ -235,7 +323,7 @@ Get-ScheduledTaskInfo `
   -TaskPath "\HeliosCTA\ICE Python\" `
   -TaskName "HeliosCTA ICE Python Short Term Coordinator"
 
-Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
+Get-Content $env:USERPROFILE\helioscta-prod\logs\ice-python-task-scheduler.log -Tail 100
 ```
 
 Open the status window from PowerShell:
@@ -256,13 +344,13 @@ If a historical log opens in VS Code with red `NUL` markers, strip NUL
 characters while viewing it:
 
 ```powershell
-(Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.log -Raw) `
+(Get-Content $env:USERPROFILE\helioscta-prod\logs\ice-python-task-scheduler.log -Raw) `
   -replace "`0", "" |
-  Set-Content C:\Users\AidanKeaveny\helioscta-prod\logs\ice-python-task-scheduler.clean.log
+  Set-Content $env:USERPROFILE\helioscta-prod\logs\ice-python-task-scheduler.clean.log
 ```
 
 Per-pull application logs still live under
-`C:\Users\AidanKeaveny\helioscta-prod\logs`. Successful per-pull logs are deleted by
+`%USERPROFILE%\helioscta-prod\logs`. Successful per-pull logs are deleted by
 default; failed per-pull logs are retained.
 
 ## Verify Data
@@ -667,6 +755,54 @@ The cleanup script exports legacy task definitions to
 `C:\ProgramData\HeliosCTA\state\task-backups`, stops and disables the legacy
 per-feed ICE tasks, stops lingering ICE Python processes, and disables the old
 `HeliosCTA-IcePython` NSSM service startup.
+
+## Cutover Between ICE Hosts
+
+`disable_legacy_ice_tasks.ps1` only acts on the machine it runs on. It cannot
+stop coordinators owned by a different ICE host, so a host move needs the
+outgoing host handled explicitly.
+
+Only one host may own the ICE schedule at a time. Two enabled hosts duplicate
+every pull and consume the shared ICE symbol entitlement twice, which surfaces
+as `IceRegistryValidationError: contract_dates returned zero rows` with a
+`missing_symbol_count` equal to `symbols_requested`.
+
+Identify which runtimes are currently writing before enabling a new host:
+
+```sql
+SELECT
+    metadata ->> 'runtime'       AS runtime,
+    metadata ->> 'log_file_path' AS log_path,
+    MAX(created_at)              AS latest,
+    COUNT(*)                     AS runs
+FROM ops.api_fetch_log
+WHERE provider = 'ice_python'
+  AND created_at > NOW() - INTERVAL '2 days'
+GROUP BY 1, 2
+ORDER BY latest DESC;
+```
+
+The `log_file_path` prefix identifies the owning host. Cut over in this order:
+
+1. Register the coordinators on the incoming host, then disable them.
+2. Disable the coordinators on the outgoing host and stop its lingering ICE
+   Python processes.
+3. Confirm the query above shows no writes from the outgoing host.
+4. Enable the incoming host's coordinators.
+5. Re-run the query and confirm the new `log_file_path` prefix is the only one
+   producing rows.
+
+Keep the outgoing host's tasks disabled rather than deleted until the incoming
+host has completed a full weekday cycle.
+
+Scheduled coordinators use `Interactive` logon, so they run only while the
+operator profile is logged on. On a laptop or workstation host, confirm the
+power plan will not sleep the machine during the run window:
+
+```powershell
+powercfg /change standby-timeout-ac 0
+powercfg /change hibernate-timeout-ac 0
+```
 
 ## Remove
 
