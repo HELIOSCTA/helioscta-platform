@@ -7,5 +7,7 @@
 pywin32==306
 
 # The proprietary ICE Python package is supplied by the licensed ICE XL
-# installation and is not available from PyPI. Install that wheel locally on
-# the Windows scheduler host before enabling ICE workflows.
+# installation and is not available from PyPI. Use
+# infrastructure/windows-task-scheduler/ice_python/install_ice_python.py to
+# install that wheel locally on the Windows scheduler host before enabling ICE
+# workflows.

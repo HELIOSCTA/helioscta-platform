@@ -83,6 +83,7 @@ On the licensed Windows ICE host:
 ```powershell
 cd C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -m pip install -r backend\requirements-local-windows.txt -e backend
+C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py
 ```
 
 Recommended local runtime layout:
@@ -94,7 +95,17 @@ C:\Users\AidanKeaveny\helioscta-prod\
   logs\
 ```
 
-Install the proprietary ICE Python wheel outside this repo, then verify:
+The ICE Python installer resolves the proprietary wheel from the licensed ICE XL
+bin directory, defaulting to
+`%LOCALAPPDATA%\ICE Data Services\ICE XL\bin`. If the wheel lives somewhere
+else, pass `--wheel` or `--ice-bin`:
+
+```powershell
+C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py `
+  --wheel "C:\Path\To\theice.com_ICEPython-0.0.6-py3-none-any.whl"
+```
+
+Then verify:
 
 ```powershell
 C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe -c "import icepython; print('icepython ok')"
@@ -107,6 +118,9 @@ secrets.
 ## Install Or Update
 
 Run from the production clone in PowerShell.
+
+Use `-InstallIcePython` on the first install or after the licensed ICE XL wheel
+changes. Omit it for routine scheduler-only updates.
 
 Install or update the short-term coordinator:
 
@@ -124,6 +138,7 @@ Install or update the short-term coordinator:
   -StateDir C:\Users\AidanKeaveny\helioscta-prod\state `
   -PullLatest `
   -InstallDependencies `
+  -InstallIcePython `
   -RunImportSmoke
 ```
 

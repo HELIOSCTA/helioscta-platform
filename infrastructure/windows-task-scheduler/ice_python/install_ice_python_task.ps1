@@ -28,6 +28,11 @@ param(
     [string]$GitHubToken = $(if ($env:GITHUB_TOKEN) { $env:GITHUB_TOKEN } else { "" }),
     [switch]$PullLatest,
     [switch]$InstallDependencies,
+    [switch]$InstallIcePython,
+    [string]$IcePythonWheel = "",
+    [string]$IcePythonBinPath = "",
+    [string]$IcePythonWheelName = "",
+    [switch]$NoIcePythonForceReinstall,
     [switch]$RunImportSmoke
 )
 
@@ -369,6 +374,33 @@ if ($InstallDependencies) {
         "-e",
         (Join-Path $resolvedRepoRoot "backend")
     ) -WorkingDirectory $resolvedRepoRoot
+}
+
+if ($InstallIcePython) {
+    $icePythonInstallScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\ice_python\install_ice_python.py"
+    if (-not (Test-Path -Path $icePythonInstallScript)) {
+        throw "ICE Python installer is missing: $icePythonInstallScript"
+    }
+
+    $icePythonInstallArgs = @(
+        $icePythonInstallScript,
+        "--python-exe",
+        $resolvedPythonExe
+    )
+    if ($IcePythonWheel) {
+        $icePythonInstallArgs += @("--wheel", $IcePythonWheel)
+    }
+    if ($IcePythonBinPath) {
+        $icePythonInstallArgs += @("--ice-bin", $IcePythonBinPath)
+    }
+    if ($IcePythonWheelName) {
+        $icePythonInstallArgs += @("--wheel-name", $IcePythonWheelName)
+    }
+    if ($NoIcePythonForceReinstall) {
+        $icePythonInstallArgs += "--no-force-reinstall"
+    }
+
+    Invoke-External -FilePath $resolvedPythonExe -Arguments $icePythonInstallArgs -WorkingDirectory $resolvedRepoRoot
 }
 
 if ($RunImportSmoke) {

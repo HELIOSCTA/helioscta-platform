@@ -35,8 +35,10 @@ def get_icepython_module():
         return importlib.import_module("icepython")
     except ModuleNotFoundError as exc:
         raise ModuleNotFoundError(
-            "Local Windows ICE runtime required: install ICE XL and the ICE "
-            "Python package before running backend.scrapes.ice_python modules."
+            "Local Windows ICE runtime required: install ICE XL, then run "
+            "`python infrastructure/windows-task-scheduler/ice_python/"
+            "install_ice_python.py` before running backend.scrapes.ice_python "
+            "modules."
         ) from exc
 
 

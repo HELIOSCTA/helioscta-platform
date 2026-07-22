@@ -495,11 +495,13 @@ For local Windows ICE Python runs only:
 
 ```powershell
 python -m pip install -r backend\requirements-local-windows.txt -e backend
+python .\infrastructure\windows-task-scheduler\ice_python\install_ice_python.py
 ```
 
-Install the proprietary ICE Python wheel from the licensed ICE XL installation
-outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
-install the local Windows Task Scheduler coordinator from
+The installer resolves the proprietary ICE Python wheel from the licensed ICE XL
+installation without committing the wheel to this repo. Set
+`HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and install the local Windows
+Task Scheduler coordinator from
 `infrastructure/windows-task-scheduler/ice_python/`.
 
 For local SFTP runs only:
