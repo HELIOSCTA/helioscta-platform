@@ -2444,6 +2444,11 @@ LIMIT 10;
   was fast-forwarded through that commit on `2026-07-21 18:47 UTC`. VM
   `compileall` and WSI import smoke checks passed, and the six-hour timer
   remained enabled.
+- Index optimization deployment: commit `ec144a6` replaced the former wide
+  region/time covering index with
+  `idx_weather_wsi_hourly_obs_region_time_key` and keeps cleanup SQL for the
+  old wide/redundant indexes. Production DDL was applied on
+  `2026-07-22 01:14 UTC`; the six-hour timer schedule was unchanged.
 - VM verification: manual service run on `2026-06-18 13:54 UTC` exited
   `status=0/SUCCESS`, upserted 1,935 rows for 34 PJM station IDs, wrote
   successful WSI API telemetry, and emitted
@@ -2534,6 +2539,10 @@ LIMIT 20;
   `/opt/helioscta-platform` was fast-forwarded through that commit on
   `2026-07-21 18:47 UTC`. VM `compileall` and WSI import smoke checks passed,
   and the six-hour timer remained enabled.
+- Index optimization deployment: commit `ec144a6` replaced the former wide
+  latest-issue covering index with `idx_weather_wsi_hourly_fcst_latest_key`
+  and keeps cleanup SQL for the old wide index. Production DDL was applied on
+  `2026-07-22 01:14 UTC`; the six-hour timer schedule was unchanged.
 - Production refresh verification: local orchestration run on
   `2026-06-18 14:19 UTC` upserted 12,240 rows for 34 PJM station IDs and one
   WSI forecast issue, wrote four successful batched WSI API telemetry rows,
