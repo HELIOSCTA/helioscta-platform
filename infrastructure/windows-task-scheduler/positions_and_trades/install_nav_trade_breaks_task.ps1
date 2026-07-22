@@ -5,7 +5,7 @@
 # workbook attached, and writes ops.api_fetch_log telemetry.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT) { $env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
+    [string]$RepoRoot = $(if ($env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT) { $env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
     [string]$PythonExe = $(if ($env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE) { $env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA NAV Trade Breaks",
     [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
@@ -254,7 +254,7 @@ if ($RunImportSmoke) {
     ) -WorkingDirectory $resolvedRepoRoot
 }
 
-$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\run_nav_trade_breaks_once.ps1"
+$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\positions_and_trades\run_nav_trade_breaks_once.ps1"
 if (-not (Test-Path -Path $runScript)) {
     throw "Run script is missing: $runScript"
 }

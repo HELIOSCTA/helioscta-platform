@@ -1,12 +1,15 @@
-# Installs or updates the visible local positions/trades status Task Scheduler task.
+# Installs or updates the visible local ICE Python status Task Scheduler task.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_POSITIONS_TRADES_REPO_ROOT) { $env:HELIOS_POSITIONS_TRADES_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
-    [string]$TaskName = "HeliosCTA Positions And Trades Status",
-    [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
+    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
+    [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
+    [string]$TaskName = "HeliosCTA ICE Python Status",
+    [string]$TaskPath = "\HeliosCTA\ICE Python\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
-    [int]$HistoryLines = 35,
+    [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
+    [int]$JobTimeoutSeconds = 2700,
+    [int]$HistoryPerFeed = 5,
     [int]$ExecutionTimeLimitMinutes = 30
 )
 
@@ -39,6 +42,24 @@ function Ensure-TaskFolder {
     }
 }
 
+function Resolve-CommandPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Executable
+    )
+
+    if (Test-Path -Path $Executable) {
+        return (Resolve-Path -Path $Executable).Path
+    }
+
+    $command = Get-Command $Executable -ErrorAction SilentlyContinue
+    if ($null -ne $command) {
+        return $command.Source
+    }
+
+    throw "Could not resolve executable: $Executable"
+}
+
 function Quote-TaskArgument {
     param(
         [Parameter(Mandatory = $true)]
@@ -48,26 +69,30 @@ function Quote-TaskArgument {
     return '"' + ($Value -replace '"', '\"') + '"'
 }
 
-if ($HistoryLines -lt 1) {
-    throw "HistoryLines must be at least 1."
+if ($HistoryPerFeed -lt 1) {
+    throw "HistoryPerFeed must be at least 1."
 }
 
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
+$resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 if (-not (Test-Path -Path (Join-Path $resolvedRepoRoot ".git"))) {
     throw "RepoRoot is not a git checkout: $resolvedRepoRoot"
 }
 
-$statusScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\show_positions_trades_status.ps1"
+$statusScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\ice_python\show_ice_python_status.ps1"
 if (-not (Test-Path -Path $statusScript)) {
     throw "Status script is missing: $statusScript"
 }
 
-Write-Host "Installing positions/trades status Task Scheduler task"
+Write-Host "Installing ICE Python status Task Scheduler task"
 Write-Host "RepoRoot: $resolvedRepoRoot"
+Write-Host "Python: $resolvedPythonExe"
 Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
 Write-Host "LogDir: $LogDir"
-Write-Host "HistoryLines: $HistoryLines"
+Write-Host "StateDir: $StateDir"
+Write-Host "JobTimeoutSeconds: $JobTimeoutSeconds"
+Write-Host "HistoryPerFeed: $HistoryPerFeed"
 
 Ensure-TaskFolder -FolderPath $TaskPath
 
@@ -79,10 +104,16 @@ $actionArguments = @(
     (Quote-TaskArgument $statusScript),
     "-RepoRoot",
     (Quote-TaskArgument $resolvedRepoRoot),
+    "-PythonExe",
+    (Quote-TaskArgument $resolvedPythonExe),
     "-LogDir",
     (Quote-TaskArgument $LogDir),
-    "-HistoryLines",
-    [string]$HistoryLines
+    "-StateDir",
+    (Quote-TaskArgument $StateDir),
+    "-JobTimeoutSeconds",
+    [string]$JobTimeoutSeconds,
+    "-HistoryPerFeed",
+    [string]$HistoryPerFeed
 ) -join " "
 
 $action = New-ScheduledTaskAction `
@@ -105,7 +136,7 @@ $task = New-ScheduledTask `
     -Action $action `
     -Settings $settings `
     -Principal $principal `
-    -Description "Shows latest NAV and Clear Street scheduler status in a visible PowerShell window."
+    -Description "Shows latest ICE Python scheduler summary and feed history in a visible PowerShell window."
 
 Register-ScheduledTask `
     -TaskName $TaskName `

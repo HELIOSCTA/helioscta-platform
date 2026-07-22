@@ -6,7 +6,7 @@
 # ops.api_fetch_log telemetry stay in Python.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
+    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
     [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
     [string]$TaskName = "HeliosCTA ICE Python Coordinator",
     [string]$TaskPath = "\HeliosCTA\ICE Python\",
@@ -378,7 +378,7 @@ if ($RunImportSmoke) {
     ) -WorkingDirectory $resolvedRepoRoot
 }
 
-$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\run_ice_python_once.ps1"
+$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\ice_python\run_ice_python_once.ps1"
 if (-not (Test-Path -Path $runScript)) {
     throw "Run script is missing: $runScript"
 }

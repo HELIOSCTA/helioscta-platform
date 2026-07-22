@@ -5,6 +5,14 @@ ICE Python requires a licensed Windows ICE XL / ICE Python runtime, and Clear
 Street EOD transaction pulls use local SFTP credentials, so these jobs remain
 excluded from Linux VM systemd until explicitly promoted there.
 
+## Folder Layout
+
+```text
+ice_python/                 ICE Python coordinator, status, and legacy cleanup
+positions_and_trades/       NAV and Clear Street scheduled jobs and status
+wm_natgasdatafeed_import/   WoodMac/Genscape migration reference package
+```
+
 ## Production Model
 
 Task Scheduler runs two ICE coordinator tasks:
@@ -103,7 +111,7 @@ Run from the production clone in PowerShell.
 Install or update the short-term coordinator:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
+.\infrastructure\windows-task-scheduler\ice_python\install_ice_python_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -TaskName "HeliosCTA ICE Python Short Term Coordinator" `
@@ -122,7 +130,7 @@ Install or update the short-term coordinator:
 Install or update the futures coordinator:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 `
+.\infrastructure\windows-task-scheduler\ice_python\install_ice_python_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -TaskName "HeliosCTA ICE Python Futures Coordinator" `
@@ -147,7 +155,7 @@ The installer:
 Install or update the visible status task:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_ice_python_status_task.ps1 `
+.\infrastructure\windows-task-scheduler\ice_python\install_ice_python_status_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -184,7 +192,7 @@ can import `icepython`, access the Python environment, and read writer config.
 Run one short-term coordinator tick directly:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\run_ice_python_once.ps1 `
+.\infrastructure\windows-task-scheduler\ice_python\run_ice_python_once.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -316,7 +324,7 @@ operator surface for task state, recent logs, and explicit manual starts.
 Install or update the visible status task:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_positions_trades_status_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_positions_trades_status_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -HistoryLines 35
@@ -395,7 +403,7 @@ remains successful.
 Run from the production clone in PowerShell:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_clear_street_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -419,7 +427,7 @@ defaults to the legacy NAV recipient list.
 Manual smoke:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\run_clear_street_transactions_poll.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\run_clear_street_transactions_poll.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -501,7 +509,7 @@ NAV workbooks attached; actual Microsoft Graph delivery still depends on
 Run from the production clone in PowerShell:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_nav_positions_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_nav_positions_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -517,7 +525,7 @@ variables or the untracked `backend\.env` in the production clone.
 Manual smoke:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\run_nav_positions_once.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\run_nav_positions_once.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs
@@ -569,7 +577,7 @@ the polling window.
 Run from the production clone in PowerShell:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\install_nav_trade_breaks_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_nav_trade_breaks_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
@@ -580,7 +588,7 @@ Run from the production clone in PowerShell:
 Manual smoke:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\run_nav_trade_breaks_once.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\run_nav_trade_breaks_once.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs
@@ -637,7 +645,7 @@ consumers have been verified.
 Run the cutover cleanup from an elevated PowerShell session:
 
 ```powershell
-.\infrastructure\windows-task-scheduler\disable_legacy_ice_tasks.ps1
+.\infrastructure\windows-task-scheduler\ice_python\disable_legacy_ice_tasks.ps1
 ```
 
 The cleanup script exports legacy task definitions to
@@ -648,5 +656,5 @@ per-feed ICE tasks, stops lingering ICE Python processes, and disables the old
 ## Remove
 
 ```powershell
-.\infrastructure\windows-task-scheduler\remove_ice_python_task.ps1
+.\infrastructure\windows-task-scheduler\ice_python\remove_ice_python_task.ps1
 ```

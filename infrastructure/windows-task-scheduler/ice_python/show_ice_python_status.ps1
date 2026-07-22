@@ -1,7 +1,7 @@
 # Shows local ICE Python scheduler status in a visible Task Scheduler window.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
+    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
     [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",

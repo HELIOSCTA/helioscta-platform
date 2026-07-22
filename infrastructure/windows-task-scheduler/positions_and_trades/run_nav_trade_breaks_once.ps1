@@ -1,12 +1,12 @@
-# Runs one NAV positions scheduled poll for Windows Task Scheduler.
+# Runs one NAV trade-break scheduled poll for Windows Task Scheduler.
 #
-# The Python orchestration owns SFTP polling, workbook parsing, database upsert,
-# and ops.api_fetch_log telemetry. This wrapper sets the local Windows runtime
-# environment and captures stdout.
+# The Python orchestration owns SFTP polling, workbook parsing, email outbox
+# enqueue/drain, and ops.api_fetch_log telemetry. This wrapper sets the local
+# Windows runtime environment and captures stdout.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_NAV_POSITIONS_REPO_ROOT) { $env:HELIOS_NAV_POSITIONS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
-    [string]$PythonExe = $(if ($env:HELIOS_NAV_POSITIONS_PYTHON_EXE) { $env:HELIOS_NAV_POSITIONS_PYTHON_EXE } else { "python" }),
+    [string]$RepoRoot = $(if ($env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT) { $env:HELIOS_NAV_TRADE_BREAKS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
+    [string]$PythonExe = $(if ($env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE) { $env:HELIOS_NAV_TRADE_BREAKS_PYTHON_EXE } else { "python" }),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [int]$LookbackDays = 1,
     [int]$PollWaitSeconds = 300,
@@ -59,14 +59,14 @@ $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 
-$coordinatorLog = Join-Path $LogDir "nav-positions-task-scheduler.log"
+$coordinatorLog = Join-Path $LogDir "nav-trade-breaks-task-scheduler.log"
 
 $env:HELIOS_LOG_DIR = $LogDir
 $env:PYTHONUNBUFFERED = "1"
 
 $startedAt = Get-Date
 Add-Content -Path $coordinatorLog -Value (
-    "[$($startedAt.ToString('s'))] Starting NAV positions scheduled poll " +
+    "[$($startedAt.ToString('s'))] Starting NAV trade-breaks scheduled poll " +
     "repo=$resolvedRepoRoot python=$resolvedPythonExe lookback_days=$LookbackDays " +
     "poll_wait=$PollWaitSeconds poll_window_minutes=$PollWindowMinutes " +
     "poll_deadline_hour=$PollDeadlineHour"
@@ -80,8 +80,8 @@ try {
         $targetArg = "'$escapedTarget'"
     }
     $pythonSnippet = (
-        "from backend.orchestration.nav import positions; " +
-        "raise SystemExit(positions.scheduled_main(" +
+        "from backend.orchestration.nav import trade_breaks_email; " +
+        "raise SystemExit(trade_breaks_email.scheduled_main(" +
         "lookback_days=$LookbackDays, " +
         "poll_wait_seconds=$PollWaitSeconds, " +
         "poll_window_minutes=$PollWindowMinutes, " +
@@ -99,7 +99,7 @@ finally {
 
 $finishedAt = Get-Date
 Add-Content -Path $coordinatorLog -Value (
-    "[$($finishedAt.ToString('s'))] Finished NAV positions scheduled poll exit_code=$exitCode"
+    "[$($finishedAt.ToString('s'))] Finished NAV trade-breaks scheduled poll exit_code=$exitCode"
 )
 
 exit $exitCode

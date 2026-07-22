@@ -1,22 +1,20 @@
-# Installs or updates the local NAV positions Task Scheduler job.
+# Installs or updates the local Clear Street overnight Task Scheduler job.
 #
-# Task Scheduler starts one process daily. The Python orchestration polls for
-# the target NAV position valuation workbooks, upserts nav.positions after all
-# selected funds are available, and writes ops.api_fetch_log telemetry.
+# Task Scheduler starts one process at 19:00 local time. The Python
+# orchestration polls every 5 minutes until the target trade-date file arrives
+# or the 05:00 local timeout is reached.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_NAV_POSITIONS_REPO_ROOT) { $env:HELIOS_NAV_POSITIONS_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
-    [string]$PythonExe = $(if ($env:HELIOS_NAV_POSITIONS_PYTHON_EXE) { $env:HELIOS_NAV_POSITIONS_PYTHON_EXE } else { "python" }),
-    [string]$TaskName = "HeliosCTA NAV Positions",
+    [string]$RepoRoot = $(if ($env:HELIOS_CLEAR_STREET_REPO_ROOT) { $env:HELIOS_CLEAR_STREET_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
+    [string]$PythonExe = $(if ($env:HELIOS_CLEAR_STREET_PYTHON_EXE) { $env:HELIOS_CLEAR_STREET_PYTHON_EXE } else { "python" }),
+    [string]$TaskName = "HeliosCTA Clear Street EOD Transactions",
     [string]$TaskPath = "\HeliosCTA\Positions And Trades\",
     [string]$TaskUser = "$env:USERDOMAIN\$env:USERNAME",
-    [int]$RunHour = 4,
+    [int]$RunHour = 19,
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
-    [int]$LookbackDays = 1,
+    [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
     [int]$PollWaitSeconds = 300,
-    [int]$PollWindowMinutes = 420,
-    [int]$PollDeadlineHour = 11,
-    [int]$ExecutionTimeLimitHours = 8,
+    [int]$ExecutionTimeLimitHours = 11,
     [switch]$InstallDependencies,
     [switch]$RunImportSmoke
 )
@@ -133,16 +131,40 @@ function Assert-Config {
             Names = @("AZURE_POSTGRES_WRITER_PASSWORD", "AZURE_POSTGRESQL_DB_PASSWORD")
         },
         @{
-            Label = "NAV SFTP host"
-            Names = @("NAV_SFTP_HOST")
+            Label = "Clear Street SFTP host"
+            Names = @("CLEAR_STREET_SFTP_HOST")
         },
         @{
-            Label = "NAV SFTP user"
-            Names = @("NAV_SFTP_USER")
+            Label = "Clear Street SFTP user"
+            Names = @("CLEAR_STREET_SFTP_USER")
         },
         @{
-            Label = "NAV SFTP password"
-            Names = @("NAV_SFTP_PASSWORD")
+            Label = "Clear Street SSH key"
+            Names = @("CLEAR_STREET_SSH_KEY_CONTENT")
+        },
+        @{
+            Label = "MUFG SFTP host"
+            Names = @("MUFG_SFTP_HOST")
+        },
+        @{
+            Label = "MUFG SFTP user"
+            Names = @("MUFG_SFTP_USER")
+        },
+        @{
+            Label = "MUFG SFTP password"
+            Names = @("MUFG_SFTP_PASSWORD")
+        },
+        @{
+            Label = "Azure Outlook Graph client id"
+            Names = @("AZURE_OUTLOOK_CLIENT_ID")
+        },
+        @{
+            Label = "Azure Outlook Graph tenant id"
+            Names = @("AZURE_OUTLOOK_TENANT_ID")
+        },
+        @{
+            Label = "Azure Outlook Graph client secret"
+            Names = @("AZURE_OUTLOOK_CLIENT_SECRET")
         }
     )
 
@@ -155,7 +177,7 @@ function Assert-Config {
 
     if ($missing.Count -gt 0) {
         throw (
-            "Production checkout is missing NAV positions schedule config: " +
+            "Production checkout is missing Clear Street/MUFG/NAV email schedule config: " +
             ($missing -join ", ") +
             ". Set machine/user environment variables or create an " +
             "untracked backend\.env file in the production clone before scheduling."
@@ -202,17 +224,8 @@ function Quote-TaskArgument {
 if ($RunHour -lt 0 -or $RunHour -gt 23) {
     throw "RunHour must be between 0 and 23."
 }
-if ($LookbackDays -lt 1) {
-    throw "LookbackDays must be at least 1."
-}
 if ($PollWaitSeconds -lt 1) {
     throw "PollWaitSeconds must be at least 1."
-}
-if ($PollWindowMinutes -lt 1) {
-    throw "PollWindowMinutes must be at least 1."
-}
-if ($PollDeadlineHour -lt 0 -or $PollDeadlineHour -gt 23) {
-    throw "PollDeadlineHour must be between 0 and 23."
 }
 
 $resolvedRepoRoot = (Resolve-Path -Path $RepoRoot).Path
@@ -222,16 +235,13 @@ if (-not (Test-Path -Path (Join-Path $resolvedRepoRoot ".git"))) {
     throw "RepoRoot is not a git checkout: $resolvedRepoRoot"
 }
 
-Write-Host "Installing NAV Positions Task Scheduler job"
+Write-Host "Installing Clear Street Task Scheduler job"
 Write-Host "RepoRoot: $resolvedRepoRoot"
 Write-Host "Python: $resolvedPythonExe"
 Write-Host "Task: $TaskPath$TaskName"
 Write-Host "TaskUser: $TaskUser"
 Write-Host "RunHour: $RunHour"
-Write-Host "LookbackDays: $LookbackDays"
 Write-Host "PollWaitSeconds: $PollWaitSeconds"
-Write-Host "PollWindowMinutes: $PollWindowMinutes"
-Write-Host "PollDeadlineHour: $PollDeadlineHour"
 
 Assert-Config -RepoRoot $resolvedRepoRoot
 
@@ -250,16 +260,17 @@ if ($InstallDependencies) {
 if ($RunImportSmoke) {
     Invoke-External -FilePath $resolvedPythonExe -Arguments @(
         "-c",
-        "from backend.orchestration.nav import positions; print('nav positions runtime import ok')"
+        "from backend.orchestration.clear_street import transactions; print('clear street runtime import ok')"
     ) -WorkingDirectory $resolvedRepoRoot
 }
 
-$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\run_nav_positions_once.ps1"
+$runScript = Join-Path $resolvedRepoRoot "infrastructure\windows-task-scheduler\positions_and_trades\run_clear_street_transactions_poll.ps1"
 if (-not (Test-Path -Path $runScript)) {
     throw "Run script is missing: $runScript"
 }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 Ensure-TaskFolder -FolderPath $TaskPath
 
 $actionArguments = @(
@@ -276,14 +287,10 @@ $actionArguments = @(
     (Quote-TaskArgument $resolvedPythonExe),
     "-LogDir",
     (Quote-TaskArgument $LogDir),
-    "-LookbackDays",
-    [string]$LookbackDays,
+    "-StateDir",
+    (Quote-TaskArgument $StateDir),
     "-PollWaitSeconds",
-    [string]$PollWaitSeconds,
-    "-PollWindowMinutes",
-    [string]$PollWindowMinutes,
-    "-PollDeadlineHour",
-    [string]$PollDeadlineHour
+    [string]$PollWaitSeconds
 ) -join " "
 
 $action = New-ScheduledTaskAction `
@@ -309,7 +316,7 @@ $task = New-ScheduledTask `
     -Trigger $trigger `
     -Settings $settings `
     -Principal $principal `
-    -Description "Polls for daily NAV position valuation workbooks."
+    -Description "Polls Clear Street EOD transactions nightly from 19:00 to 05:00."
 
 Register-ScheduledTask `
     -TaskName $TaskName `
@@ -323,4 +330,4 @@ Get-ScheduledTask `
     -TaskPath $TaskPath `
     -ErrorAction Stop | Format-List TaskName,TaskPath,State
 Write-Host "Installed or updated Task Scheduler job: $TaskPath$TaskName"
-Write-Host "Coordinator log: $(Join-Path $LogDir 'nav-positions-task-scheduler.log')"
+Write-Host "Coordinator log: $(Join-Path $LogDir 'clear-street-task-scheduler.log')"

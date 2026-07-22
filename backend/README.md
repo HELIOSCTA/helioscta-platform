@@ -370,7 +370,7 @@ file/fund metadata only. Product-code, product-group, contract,
 instrument-type, and normalization-status fields are derived by read-only SQL
 at query time, not persisted in the source table. The active runtime is the
 local Windows Task Scheduler job installed from
-`infrastructure/windows-task-scheduler/install_nav_positions_task.ps1`; do not
+`infrastructure/windows-task-scheduler/positions_and_trades/install_nav_positions_task.ps1`; do not
 add NAV systemd units unless the workflow is explicitly promoted to the Linux
 VM. Downloaded raw NAV workbooks are cached under
 `backend/scrapes/nav/downloads/` by default and that folder is gitignored. The
@@ -500,28 +500,28 @@ python -m pip install -r backend\requirements-local-windows.txt -e backend
 Install the proprietary ICE Python wheel from the licensed ICE XL installation
 outside this repo, set `HELIOS_LOG_DIR=C:\ProgramData\HeliosCTA\logs`, and
 install the local Windows Task Scheduler coordinator from
-`infrastructure/windows-task-scheduler/`.
+`infrastructure/windows-task-scheduler/ice_python/`.
 
 For local SFTP runs only:
 
 ```powershell
 python -m pip install -r backend\requirements-local-sftp.txt -e backend
 python -m backend.orchestration.nav.positions
-.\infrastructure\windows-task-scheduler\install_nav_positions_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_nav_positions_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -InstallDependencies `
   -RunImportSmoke
 python -m backend.orchestration.nav.trade_breaks_email
-.\infrastructure\windows-task-scheduler\install_nav_trade_breaks_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_nav_trade_breaks_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
   -InstallDependencies `
   -RunImportSmoke
 python -m backend.orchestration.clear_street.transactions
-.\infrastructure\windows-task-scheduler\install_clear_street_task.ps1 `
+.\infrastructure\windows-task-scheduler\positions_and_trades\install_clear_street_task.ps1 `
   -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
   -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\python.exe `
   -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `

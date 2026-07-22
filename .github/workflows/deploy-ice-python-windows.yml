@@ -75,4 +75,4 @@ jobs:
             $deployArgs.RunImportSmoke = $true
           }
 
-          .\infrastructure\windows-task-scheduler\install_ice_python_task.ps1 @deployArgs
+          .\infrastructure\windows-task-scheduler\ice_python\install_ice_python_task.ps1 @deployArgs

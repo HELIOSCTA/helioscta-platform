@@ -1,7 +1,7 @@
 # Shows local positions/trades scheduler status in a visible Task Scheduler window.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_POSITIONS_TRADES_REPO_ROOT) { $env:HELIOS_POSITIONS_TRADES_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
+    [string]$RepoRoot = $(if ($env:HELIOS_POSITIONS_TRADES_REPO_ROOT) { $env:HELIOS_POSITIONS_TRADES_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [int]$HistoryLines = 35,
     [switch]$NoPause

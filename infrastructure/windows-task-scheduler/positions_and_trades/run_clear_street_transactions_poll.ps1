@@ -1,17 +1,15 @@
-# Runs one ICE Python scheduler tick for Windows Task Scheduler.
+# Runs the Clear Street overnight transaction poll for Windows Task Scheduler.
 #
-# The Python module keeps the due-job policy, per-window state, local lock, child
-# process hard timeouts, and ops.api_fetch_log telemetry. This wrapper only sets
-# the local Windows runtime environment and captures coordinator stdout/stderr.
+# The Python orchestration owns the target-date policy, 5-minute polling loop,
+# timeout handling and ops.api_fetch_log telemetry.
+# This wrapper sets the local Windows runtime environment and captures stdout.
 
 param(
-    [string]$RepoRoot = $(if ($env:HELIOS_ICE_REPO_ROOT) { $env:HELIOS_ICE_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..").Path }),
-    [string]$PythonExe = $(if ($env:HELIOS_ICE_PYTHON_EXE) { $env:HELIOS_ICE_PYTHON_EXE } else { "python" }),
+    [string]$RepoRoot = $(if ($env:HELIOS_CLEAR_STREET_REPO_ROOT) { $env:HELIOS_CLEAR_STREET_REPO_ROOT } else { (Resolve-Path "$PSScriptRoot\..\..\..").Path }),
+    [string]$PythonExe = $(if ($env:HELIOS_CLEAR_STREET_PYTHON_EXE) { $env:HELIOS_CLEAR_STREET_PYTHON_EXE } else { "python" }),
     [string]$LogDir = "C:\ProgramData\HeliosCTA\logs",
     [string]$StateDir = "C:\ProgramData\HeliosCTA\state",
-    [int]$JobTimeoutSeconds = 2700,
-    [ValidateSet("all", "short_term", "futures")]
-    [string]$JobGroup = "all"
+    [int]$PollWaitSeconds = 300
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,25 +44,21 @@ $resolvedPythonExe = Resolve-CommandPath -Executable $PythonExe
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 
-$lockPath = Join-Path $StateDir "ice_python_jobs.lock"
-$coordinatorLog = Join-Path $LogDir "ice-python-task-scheduler.log"
+$coordinatorLog = Join-Path $LogDir "clear-street-task-scheduler.log"
 
 $env:HELIOS_LOG_DIR = $LogDir
 $env:HELIOS_STATE_DIR = $StateDir
-$env:HELIOS_ICE_JOB_TIMEOUT_SECONDS = [string]$JobTimeoutSeconds
-$env:HELIOS_ICE_JOB_LOCK_FILE = $lockPath
 $env:PYTHONUNBUFFERED = "1"
 
 $startedAt = Get-Date
 Add-Content -Path $coordinatorLog -Value (
-    "[$($startedAt.ToString('s'))] Starting ICE Python scheduler tick " +
-    "repo=$resolvedRepoRoot python=$resolvedPythonExe timeout=$JobTimeoutSeconds " +
-    "job_group=$JobGroup"
+    "[$($startedAt.ToString('s'))] Starting Clear Street scheduled poll " +
+    "repo=$resolvedRepoRoot python=$resolvedPythonExe poll_wait=$PollWaitSeconds"
 )
 
 Push-Location $resolvedRepoRoot
 try {
-    $pythonSnippet = "from backend.orchestration.ice_python import service; raise SystemExit(service.main(run_once=True, job_group='$JobGroup'))"
+    $pythonSnippet = "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=$PollWaitSeconds))"
     & $resolvedPythonExe -c $pythonSnippet 2>&1 |
         Remove-LogNullCharacters |
         Tee-Object -FilePath $coordinatorLog -Append
@@ -76,7 +70,7 @@ finally {
 
 $finishedAt = Get-Date
 Add-Content -Path $coordinatorLog -Value (
-    "[$($finishedAt.ToString('s'))] Finished ICE Python scheduler tick exit_code=$exitCode"
+    "[$($finishedAt.ToString('s'))] Finished Clear Street scheduled poll exit_code=$exitCode"
 )
 
 exit $exitCode
