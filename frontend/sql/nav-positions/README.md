@@ -10,8 +10,7 @@ cd dbt\azure_postgres
 dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
 ```
 
-Promote the compiled positions/trades SQL to the frontend, backend, and
-Excel-facing generated paths:
+Promote the compiled positions/trades SQL to the frontend snapshots:
 
 ```powershell
 cd dbt\azure_postgres

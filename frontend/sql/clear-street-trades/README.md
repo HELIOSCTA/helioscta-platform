@@ -10,8 +10,7 @@ cd dbt\azure_postgres
 dbt compile --profiles-dir . --select cs_v3_65_eod_all_history
 ```
 
-Promote the compiled positions/trades SQL to the frontend, backend, and
-Excel-facing generated paths:
+Promote the compiled positions/trades SQL to the frontend snapshot:
 
 ```powershell
 cd dbt\azure_postgres

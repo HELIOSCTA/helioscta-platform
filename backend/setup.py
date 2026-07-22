@@ -7,18 +7,8 @@ setup(
     packages=["backend"] + ["backend." + p for p in find_packages(exclude=["tests*"])],
     include_package_data=True,
     package_data={
-        "backend.scrapes.positions_and_trades": [
-            "sql/generated/clear_street_trades/*.sql",
-            "sql/generated/clear_street_trades/mufg/*.sql",
-            "sql/generated/nav_positions/checks/*.sql",
-            "sql/generated/nav_positions/drilldowns/*.sql",
-            "sql/generated/nav_positions/frontend/*.sql",
-            "sql/generated/nav_positions/marts/*.sql",
-            "sql/generated/README.md",
-        ],
         "backend.scrapes.ice_trade_blotters": [
             "sql/inspection/*.sql",
         ],
-        "backend.scrapes.positions_and_trades.rules.data": ["*.json"],
     },
 )

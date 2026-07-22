@@ -31,7 +31,7 @@ The target v3 direction is table-backed lookup data. Live consumers should event
 - `frontend/README.md`
 - `frontend/sql/nav-positions/README.md`
 - `frontend/sql/clear-street-trades/README.md`
-- `backend/scrapes/positions_and_trades/sql/generated/README.md`
+- `frontend/sql/`
 - `backend/orchestration/health/prod_health_check.py`
 - `.agents/prompts/Wed_Jul_22_positions_trades_model_doc_v2.md`
 </source_files>
@@ -49,7 +49,7 @@ Create a v3 positions/trades dbt package and reference-table contract that repla
 6. Add an example reviewed-insert SQL file or documentation stub for future rule rows, but do not run it and do not add an upsert loader.
 7. Add v3 data tests mirroring the current v2 product-matching tests where they can compile against the v3 models. Mark or document any tests that cannot pass until the reference tables exist and have data.
 8. Update dbt docs/README references to explain that v3 lookup tables are database-backed contracts and that v3 is not cut over to frontend/backend/Excel consumers yet.
-9. Do not edit generated SQL artifacts under `frontend/sql/...` or `backend/scrapes/positions_and_trades/sql/generated/...`.
+9. Do not edit generated SQL artifacts under `frontend/sql/...`.
 </deliverables>
 
 <implementation_rules>
@@ -80,7 +80,7 @@ Create a v3 positions/trades dbt package and reference-table contract that repla
 - From `dbt/azure_postgres`: `dbt compile --profiles-dir . --select path:models/positions_and_trades_v3`
 - `rg -n "values\\s*$|values\\s*\\(" dbt/azure_postgres/models/positions_and_trades_v3/utils` returns no inline lookup value blocks for product catalog, aliases, account lookup, or month codes.
 - `rg -n "source\\('positions_and_trades_ref'|positions_and_trades_ref|product_alias|product_catalog|account_lookup|month_codes" dbt/azure_postgres/models/positions_and_trades_v3 dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables`
-- `git diff -- frontend/sql backend/scrapes/positions_and_trades/sql/generated` shows no generated runtime SQL changes.
+- `git diff -- frontend/sql` shows no generated runtime SQL changes.
 - Any skipped database/data tests are listed with the exact missing table or credential reason.
 </success_criteria>
 

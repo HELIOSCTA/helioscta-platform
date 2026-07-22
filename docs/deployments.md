@@ -49,8 +49,8 @@ boundary, or log path changes.
   `2026-07-22 19:43 UTC`; VM code fast-forward is pending a committed/pushed
   change.
 - Workflow: positions/trades v3 product matching for NAV positions, Clear
-  Street trades, backend generated SQL exports, frontend SQL review paths, and
-  Excel SQL extracts.
+  Street trades, backend dbt-compiled MUFG exports, frontend SQL review paths,
+  and Excel dbt-compiled SQL extracts.
 - Reference schema: `positions_and_trades_ref`.
 - Applied SQL:
   - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/table_positions_and_trades_reference_tables.sql`
@@ -70,6 +70,10 @@ boundary, or log path changes.
 - VM deployment boundary: after this change is committed and pushed,
   fast-forward `/opt/helioscta-platform`, reinstall the backend package, and
   restart `helios-prod-health-check.timer`.
+- Source-of-truth follow-up: the legacy
+  `backend/scrapes/positions_and_trades` package was removed after the initial
+  v3 promotion commit; frontend SQL snapshots are the only maintained promoted
+  SQL copies.
 
 ## frontend-pjm-da-lmp-release-report
 

@@ -8,7 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
-from backend.scrapes.positions_and_trades.clear_street import mufg_upload as scrape
+from backend.scrapes.clear_street import mufg_upload as scrape
 from backend.utils import email_notifications, script_logging
 from backend.utils.ops_logging import log_api_fetch, redact_secrets
 

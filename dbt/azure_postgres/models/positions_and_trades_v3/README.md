@@ -1,7 +1,8 @@
 # Positions And Trades v3
 
 `positions_and_trades_v3` is the active read-only dbt model family for
-positions/trades generated SQL promotion.
+positions/trades product matching, backend MUFG export SQL, frontend promoted
+SQL, and Excel extract SQL.
 
 The key difference from v2 is lookup ownership. v2 stores product catalog,
 product alias, account lookup, and month-code rows as inline dbt `values`
@@ -21,8 +22,9 @@ script inserts or updates rows present in the file and removes rows no longer
 present in the file.
 
 After compiling v3, run `python scripts/promote_positions_trades_sql.py` from
-`dbt/azure_postgres` to copy compiled v3 SQL into the frontend, backend, and
-Excel-facing generated SQL paths.
+`dbt/azure_postgres` only when frontend SQL snapshots need to be refreshed.
+Backend MUFG export and Excel workflows read compiled dbt SQL directly from
+`target/compiled/helioscta_platform/models/positions_and_trades_v3/`.
 
 ## Reference Sources
 

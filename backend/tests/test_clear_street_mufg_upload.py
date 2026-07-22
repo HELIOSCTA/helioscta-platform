@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from backend.orchestration.positions_and_trades import clear_street_mufg_upload
-from backend.scrapes.positions_and_trades.clear_street import (
+from backend.scrapes.clear_street import (
     mufg_upload as mufg_clear_street_trades,
 )
 
@@ -55,6 +55,30 @@ def test_load_mufg_extract_sql_strips_trailing_semicolon(tmp_path):
     )
 
     assert sql == "select 1"
+
+
+def test_load_mufg_extract_sql_uses_compiled_dbt_model(monkeypatch):
+    calls: list[object] = []
+
+    def fake_load_model_sql(model_path, **kwargs):
+        calls.append((model_path, kwargs))
+        return "select 1"
+
+    monkeypatch.setattr(
+        mufg_clear_street_trades.dbt_compiled_sql,
+        "load_positions_trades_v3_model_sql",
+        fake_load_model_sql,
+    )
+
+    sql = mufg_clear_street_trades.load_mufg_extract_sql()
+
+    assert sql == "select 1"
+    assert calls == [
+        (
+            mufg_clear_street_trades.DEFAULT_DBT_MODEL_PATH,
+            {"compile_before_load": True},
+        )
+    ]
 
 
 def test_write_mufg_extract_csv_uses_legacy_filename(tmp_path):

@@ -13,6 +13,7 @@ import paramiko
 
 from backend import credentials
 from backend.utils import db
+from backend.utils import dbt_compiled_sql
 
 API_SCRAPE_NAME = "clear_street_trades_mufg_upload"
 SOURCE_SYSTEM = "mufg_sftp"
@@ -20,11 +21,13 @@ SOURCE_FEED = "clear_street_trades"
 SOURCE_TABLE_FQN = "clear_street.eod_transactions"
 TARGET_NAME = "mufg_sftp.clear_street_trades"
 DEFAULT_SQL_FILENAME = "clear_street_trades/mufg/latest.sql"
+DEFAULT_DBT_MODEL_PATH = Path(
+    "clear_street_eod_transactions/marts/cs_v3_80_mufg_latest.sql"
+)
 DEFAULT_CSV_FILENAME_PATTERN = "Helios_Transactions"
 DEFAULT_SFTP_PORT = 22
-PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+PACKAGE_ROOT = Path(__file__).resolve().parent
 DEFAULT_LOCAL_DIR = PACKAGE_ROOT / "exports" / "mufg"
-GENERATED_SQL_DIR = PACKAGE_ROOT / "sql" / "generated"
 PRODUCT_CODE_NULL_REQUIRED_COLUMNS: tuple[str, ...] = (
     "product_code_grouping",
     "product_code_region",
@@ -148,11 +151,22 @@ def load_mufg_extract_sql(
     sql_filename: str = DEFAULT_SQL_FILENAME,
     sql_dir: str | Path | None = None,
 ) -> str:
-    resolved_dir = Path(sql_dir) if sql_dir is not None else GENERATED_SQL_DIR
-    sql_path = resolved_dir / sql_filename
-    if not sql_path.exists():
-        raise FileNotFoundError(f"MUFG Clear Street SQL file not found: {sql_path}")
-    return _normalize_sql(sql_path.read_text(encoding="utf-8"))
+    if sql_dir is not None:
+        sql_path = Path(sql_dir) / sql_filename
+        if not sql_path.exists():
+            raise FileNotFoundError(f"MUFG Clear Street SQL file not found: {sql_path}")
+        return _normalize_sql(sql_path.read_text(encoding="utf-8"))
+
+    if sql_filename != DEFAULT_SQL_FILENAME:
+        raise FileNotFoundError(
+            "Custom MUFG Clear Street SQL filenames require an explicit sql_dir. "
+            f"Got sql_filename={sql_filename!r}."
+        )
+
+    return dbt_compiled_sql.load_positions_trades_v3_model_sql(
+        DEFAULT_DBT_MODEL_PATH,
+        compile_before_load=True,
+    )
 
 
 def latest_sftp_date(df: pd.DataFrame, column: str = "sftp_date") -> date:

@@ -49,7 +49,7 @@ The runner loads `.env` without printing values, strips one paired set of
 surrounding quotes from values, activates the expected Conda paths, and runs:
 
 ```powershell
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:product_matching
+C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:product_matching_v3
 ```
 
 Success is exactly:
@@ -62,19 +62,20 @@ PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2
 
 Before diagnosing model failures, inspect the relevant local SQL:
 
-- `tests/positions_and_trades_v2/nav_positions/nav_all_history_rule_status_ok.sql`
-- `tests/positions_and_trades_v2/clear_street_eod_transactions/clear_street_all_history_rule_status_ok.sql`
-- `models/positions_and_trades_v2/utils/`
-- `models/positions_and_trades_v2/nav_positions/`
-- `models/positions_and_trades_v2/clear_street_eod_transactions/`
+- `tests/positions_and_trades_v3/nav_positions/nav_v3_all_history_rule_status_ok.sql`
+- `tests/positions_and_trades_v3/clear_street_eod_transactions/clear_street_v3_all_history_rule_status_ok.sql`
+- `models/positions_and_trades_v3/utils/`
+- `models/positions_and_trades_v3/nav_positions/`
+- `models/positions_and_trades_v3/clear_street_eod_transactions/`
 
 Paths are repo-root relative unless explicitly noted. For generated SQL
 consumers, inspect:
 
 - `scripts/promote_positions_trades_sql.py`
-- `backend/scrapes/positions_and_trades/sql/generated/`
 - `frontend/sql/clear-street-trades/`
 - `frontend/sql/nav-positions/`
+- `target/compiled/helioscta_platform/models/positions_and_trades_v3/` after
+  `dbt compile`
 
 For canonical failure sampling commands, read
 `references/sample-failure-queries.md` only when Azure Postgres connects and a
@@ -137,7 +138,7 @@ run the smallest meaningful checks:
 
 ```powershell
 dbt parse --profiles-dir .
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v2
+dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
 .\scripts\run_product_matching_tests.ps1
 ```
 

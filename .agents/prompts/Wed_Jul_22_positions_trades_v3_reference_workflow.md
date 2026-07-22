@@ -3,7 +3,7 @@ You are a senior HeliosCTA dbt/backend architecture agent. Document and harden t
 </role>
 
 <context>
-`positions_and_trades_v2` is still the promoted runtime path for backend, frontend, and Excel-generated SQL. `positions_and_trades_v3` is the parallel candidate model family. v3 reads `positions_and_trades_ref` tables instead of embedding product catalog, product alias, account lookup, and month-code values in dbt SQL.
+`positions_and_trades_v3` is the promoted runtime model family. v3 reads `positions_and_trades_ref` tables instead of embedding product catalog, product alias, account lookup, and month-code values in dbt SQL. Frontend SQL is promoted as committed snapshots; backend MUFG and Excel SQL should use dbt compiled output directly.
 
 The workflow has changed from "edit dbt inline values, compile, and promote SQL everywhere" to "review lookup changes, update the maintained reference values SQL, sync approved rows into `positions_and_trades_ref`, and let compiled table-backed SQL read the updated rows." The values SQL is a current-state sync: rows in the file are inserted or updated, and rows removed from the file are deleted from the live tables.
 
@@ -21,18 +21,18 @@ Runtime lookup tables do not use `approval_status`, `is_active`, `valid_from`, `
 - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/`
 - `dbt/azure_postgres/scripts/promote_positions_trades_sql.py`
 - `frontend/sql/`
-- `backend/scrapes/positions_and_trades/sql/generated/`
+- `backend/scrapes/clear_street/mufg_upload.py`
 </source_files>
 
 <task>
-Create a production-grade workflow document for positions/trades v3 reference-data maintenance and eventual consumer cutover. Explain how product matching changes are made now, what remains v2-only until cutover, how operators apply and verify lookup changes, and when dbt compile or generated SQL promotion is still required.
+Create a production-grade workflow document for positions/trades v3 reference-data maintenance. Explain how product matching changes are made now, how operators apply and verify lookup changes, and when dbt compile or frontend SQL promotion is still required.
 </task>
 
 <deliverables>
 1. Document the `positions_and_trades_ref` table contracts for `product_catalog`, `product_alias_rules`, `account_lookup`, and `month_codes`.
 2. Add an operator runbook: edit values SQL, review diff, apply DDL or migration only if needed, apply values sync, apply indexes, run verification SQL, run dbt tests.
-3. Add a decision table for product-matching failures: reference-data change, parser/model-code change, generated SQL promotion, or frontend/backend/Excel cutover work.
-4. Document that v2 production consumers still need dbt compile and generated SQL promotion when v2 model SQL changes; after v3 cutover, ordinary lookup row changes should not.
+3. Add a decision table for product-matching failures: reference-data change, parser/model-code change, frontend SQL promotion, or backend/Excel dbt compile refresh.
+4. Document that ordinary lookup row changes should not require dbt compile or SQL promotion after v3 cutover.
 5. Include the Clear Street `cusip_prefix` rule pattern and the `IFEDPMI -> PMI`, `IFEDP1X -> P1X` rows as examples.
 </deliverables>
 
@@ -42,7 +42,7 @@ Create a production-grade workflow document for positions/trades v3 reference-da
 - Treat `upsert_positions_and_trades_reference_values.sql` as the maintained source of truth despite its historical filename. Why: it now syncs live rows exactly to file contents.
 - Do not reintroduce runtime approval or active-window columns. Why: current approved state is represented by the maintained values file.
 - Keep Clear Street CUSIP-prefix logic in `product_alias_rules`. Why: new CUSIP-prefix fixes should be reviewed data changes, not dbt SQL edits.
-- Do not promote v3 generated SQL unless the user explicitly asks for cutover. Why: promotion changes consumer behavior.
+- Promote frontend SQL only when v3 model logic or frontend output contracts change. Why: lookup-only changes are read from reference tables at query time.
 </implementation_rules>
 
 <open_questions>

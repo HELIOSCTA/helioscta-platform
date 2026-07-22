@@ -159,14 +159,14 @@ dbt show --profiles-dir . --select nav_v3_50_positions_latest --limit 5
 ```
 
 After compiling the active v3 positions/trades models, promote the compiled
-standalone SQL artifacts consumed by the frontend, backend, and Excel-facing
-workflows:
+standalone SQL artifacts consumed by the frontend:
 
 ```powershell
 python scripts/promote_positions_trades_sql.py
 ```
 
-The copied SQL under `frontend/sql/...` and
-`backend/scrapes/positions_and_trades/sql/generated/...` is generated output.
-Do not edit those files directly; change the dbt source/int/mart models and
-promote compiled SQL again.
+The copied SQL under `frontend/sql/...` is generated output. Do not edit those
+files directly; change the dbt source/int/mart models and promote compiled SQL
+again. Backend MUFG export and Excel SQL extracts use dbt compiled output
+directly from `target/compiled/helioscta_platform/models/positions_and_trades_v3/`
+after `dbt compile`; no generated backend SQL package is maintained.

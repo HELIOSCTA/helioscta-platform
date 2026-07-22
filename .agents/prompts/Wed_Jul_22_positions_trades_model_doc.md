@@ -30,8 +30,7 @@ This repo is a clean production workspace. The Azure Postgres dbt project is rea
 - `frontend/app/api/dev/clear-street-trades/route.ts`
 - `frontend/components/nav/NavPositions.tsx`
 - `frontend/components/clear-street/ClearStreetTrades.tsx`
-- `backend/scrapes/positions_and_trades/sql/generated/README.md`
-- `backend/scrapes/positions_and_trades/clear_street/mufg_upload.py`
+- `backend/scrapes/clear_street/mufg_upload.py`
 - `backend/orchestration/nav/positions.py`
 - `backend/orchestration/clear_street/transactions.py`
 - `backend/orchestration/health/prod_health_check.py`
@@ -49,7 +48,7 @@ Create `docs/positions-and-trades-dbt-model.md` that documents the current posit
 1. A new documentation page at `docs/positions-and-trades-dbt-model.md`.
 2. A source-contract section for `nav.positions` and `clear_street.eod_transactions`, including source system, grain, primary key, freshness field, write owner, and safe rerun behavior.
 3. A dbt model map for shared `utils`, NAV `src/int/marts/frontend/excel`, Clear Street `src/int/marts`, and product-matching tests.
-4. A generated-artifact map from dbt model to `frontend/sql/...` and `backend/scrapes/positions_and_trades/sql/generated/...` targets.
+4. A generated-artifact map from dbt model to `frontend/sql/...` targets and dbt compiled output consumed directly by backend/Excel workflows.
 5. Consumer sections for frontend, backend orchestration, MUFG/NAV handoffs, production health checks, and Excel workbook/report tabs.
 6. Verification and operator commands for docs-only review, dbt compile/promotion when SQL changes, product-matching tests, frontend API checks, and Windows Task Scheduler telemetry checks.
 7. A short residual-risk/open-gaps section covering credentials, live database access, Excel workbook parity, and generated SQL drift.
@@ -59,7 +58,7 @@ Create `docs/positions-and-trades-dbt-model.md` that documents the current posit
 - Base every factual claim on the source files above. Why: this repo is production-bound and the doc should not invent runtime behavior.
 - Keep NAV positions and Clear Street trades separate until the shared utility layer. Why: they have different source systems, grains, schedules, and consumers.
 - Preserve role boundaries: backend source writes use `helios_admin`; dbt, frontend, and inspection reads use `helios_readonly`; DDL is operator-applied reference SQL. Why: mixing roles would mislead future operators.
-- Treat `frontend/sql/...` and `backend/scrapes/positions_and_trades/sql/generated/...` as generated artifacts. Why: direct edits would be overwritten by `dbt compile` plus `promote_positions_trades_sql.py`.
+- Treat `frontend/sql/...` as generated frontend snapshots. Why: direct edits would be overwritten by `dbt compile` plus `promote_positions_trades_sql.py`; backend/Excel SQL should come from dbt compiled output.
 - Include the v2 Excel layer and the legacy workbook gap analysis. Why: Excel is an explicit consumer and has workbook-tab contracts separate from the frontend API contract.
 - Include access and cache behavior for NAV Positions and local-only status for Clear Street Trades. Why: frontend visibility differs between production and local dev.
 - Include product-matching and frontend-contract tests by name. Why: those tests are the main guardrails for rule completeness and API SQL shape.

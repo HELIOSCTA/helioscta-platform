@@ -183,15 +183,12 @@ DBT_PRODUCT_MATCHING_TIMEOUT_SECONDS = 180
 PRODUCT_MATCHING_GENERATED_SQL_CHECKS: tuple[tuple[str, str, str], ...] = (
     (
         "nav",
-        "scrapes/positions_and_trades/sql/generated/nav_positions/all_history.sql",
+        "frontend/sql/nav-positions/marts/all_history.sql",
         "rule_status IS DISTINCT FROM 'ok'",
     ),
     (
         "clear_street",
-        (
-            "scrapes/positions_and_trades/sql/generated/"
-            "clear_street_trades/all_history_validation.sql"
-        ),
+        "frontend/sql/clear-street-trades/marts/eod_all_history.sql",
         (
             "rule_status IS DISTINCT FROM 'ok' "
             "AND rule_status IS DISTINCT FROM 'non_product_cash_adjustment'"
@@ -774,8 +771,8 @@ def _generated_product_matching_sql_test(database: str | None = None) -> dict[st
 
 
 def _load_generated_sql(relative_path: str) -> str:
-    backend_root = Path(__file__).resolve().parents[2]
-    sql_path = backend_root / relative_path
+    repo_root = Path(__file__).resolve().parents[3]
+    sql_path = repo_root / relative_path
     return sql_path.read_text(encoding="utf-8")
 
 
