@@ -32,6 +32,15 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_temp_date
         source_issue_at_utc DESC NULLS LAST
     );
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_temp_issue_cutoff
+    ON weather.wsi_daily_weighted_temperature_forecasts (
+        (COALESCE(source_issue_at_utc, scrape_run_at_utc)) DESC,
+        source_issue_key,
+        model,
+        forecast_type,
+        request_region
+    );
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_temp_updated
     ON weather.wsi_daily_weighted_temperature_forecasts (
         updated_at DESC
