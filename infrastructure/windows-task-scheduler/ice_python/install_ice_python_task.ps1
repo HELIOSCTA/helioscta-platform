@@ -441,9 +441,18 @@ $actionArguments = @(
     $JobGroup
 ) -join " "
 
+# Routine coordinator ticks must not steal focus from the interactive operator
+# session. "-WindowStyle Hidden" is a PowerShell argument, so Windows still
+# allocates and paints a console before PowerShell can hide it, which shows as a
+# window flashing on every tick. Launching through "conhost.exe --headless"
+# suppresses the console at creation time instead.
+#
+# The coordinator deliberately keeps an interactive-logon principal: icepython
+# reaches ICE XL through COM in the logged-on session, so moving these tasks to
+# a session 0 principal would remove the flash but break ICE access.
 $action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument $actionArguments `
+    -Execute "conhost.exe" `
+    -Argument "--headless powershell.exe $actionArguments" `
     -WorkingDirectory $resolvedRepoRoot
 
 $triggers = @()

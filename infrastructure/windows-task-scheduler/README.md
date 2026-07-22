@@ -70,6 +70,21 @@ writes durable telemetry to `ops.api_fetch_log`.
 Routine scheduled coordinator actions launch hidden under the interactive
 Windows user. Use the visible status task as the operator surface.
 
+Coordinator actions run through `conhost.exe --headless`. `-WindowStyle Hidden`
+is a PowerShell argument, so Windows still allocates and paints a console before
+PowerShell can hide it, and that shows as a console window flashing on every
+tick. On the short-term coordinator that is every 15 minutes. Launching through
+headless `conhost` suppresses the console at creation time instead.
+
+The coordinators keep an interactive-logon principal on purpose. Switching them
+to "run whether user is logged on or not" would also remove the flash, but
+`icepython` reaches ICE XL through COM in the logged-on session, so a session 0
+principal is expected to break ICE access. The status task is intentionally left
+as a normal visible console.
+
+Re-run the coordinator installers after pulling a repo version that includes the
+headless console behavior so the registered task actions pick it up.
+
 This is intentionally one scheduled coordinator task per job group, not one
 Task Scheduler entry per ICE feed. Feed-level status and retries are handled
 inside the coordinator/status scripts. The legacy `all` coordinator can remain
