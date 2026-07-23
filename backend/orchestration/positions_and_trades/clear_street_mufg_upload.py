@@ -15,6 +15,8 @@ from backend.utils.ops_logging import log_api_fetch, redact_secrets
 PIPELINE_NAME = scrape.API_SCRAPE_NAME
 PROVIDER = scrape.SOURCE_SYSTEM
 OPERATION_NAME = scrape.API_SCRAPE_NAME
+DEFAULT_SQL_DIR = Path(__file__).resolve().parent / "sql"
+DEFAULT_SQL_FILENAME = scrape.DEFAULT_SQL_FILENAME
 
 
 def main(
@@ -26,8 +28,11 @@ def main(
     metadata: dict[str, Any] | None = None,
     send_email: bool = True,
     run_logger: Any | None = None,
+    sql_dir: str | Path | None = None,
+    sql_filename: str = DEFAULT_SQL_FILENAME,
 ) -> int:
     """Upload the latest generated Clear Street MUFG trade file."""
+    resolved_sql_dir = _resolve_sql_dir(sql_dir)
     owns_logger = run_logger is None
     if run_logger is None:
         run_logger = script_logging.init_logging(
@@ -52,13 +57,25 @@ def main(
             expected_trade_date=expected_trade_date,
             local_dir=local_dir,
             database=database,
+            sql_dir=resolved_sql_dir,
+            sql_filename=sql_filename,
         )
         rows_uploaded = int(summary.get("rows_uploaded", 0) or 0)
         if send_email:
-            _notify_mufg_email_success(
-                summary=summary,
-                database=database,
-                run_logger=run_logger,
+            summary.update(
+                _notify_mufg_email_success(
+                    summary=summary,
+                    database=database,
+                    run_logger=run_logger,
+                )
+            )
+        else:
+            summary.update(
+                _email_notification_summary(
+                    status="disabled_by_call",
+                    queued=0,
+                    processed=0,
+                )
             )
         run_logger.success(
             f"{PIPELINE_NAME} completed; {rows_uploaded:,} rows uploaded."
@@ -68,11 +85,6 @@ def main(
         status = "failure"
         error_type = type(exc).__name__
         error_message = redact_secrets(str(exc))
-        failure_summary = _failure_summary(
-            expected_trade_date=expected_trade_date,
-            local_dir=local_dir,
-            metadata=metadata,
-        )
         run_logger.exception(
             f"Clear Street MUFG upload orchestration failed: {error_message}"
         )
@@ -90,6 +102,8 @@ def main(
             database=database,
             expected_trade_date=expected_trade_date,
             local_dir=local_dir,
+            sql_dir=resolved_sql_dir,
+            sql_filename=sql_filename,
         )
         if owns_logger:
             script_logging.close_logging()
@@ -100,15 +114,22 @@ def _notify_mufg_email_success(
     summary: dict[str, object],
     database: str | None,
     run_logger: Any,
-) -> int:
+) -> dict[str, object]:
     try:
         attachment_path = _mufg_summary_file_path(summary)
-    except Exception:
+    except Exception as exc:
+        error_message = redact_secrets(str(exc))
         run_logger.exception(
             "Skipping MUFG upload email notification; uploaded CSV could not "
             "be resolved."
         )
-        return 0
+        return _email_notification_summary(
+            status="skipped_missing_attachment",
+            queued=0,
+            processed=0,
+            error_type=type(exc).__name__,
+            error_message=error_message,
+        )
 
     queued = 0
     try:
@@ -132,7 +153,11 @@ def _notify_mufg_email_success(
                 f"MUFG upload email notification queued={queued}; "
                 "sending is disabled."
             )
-            return queued
+            return _email_notification_summary(
+                status="queued_sending_disabled",
+                queued=queued,
+                processed=0,
+            )
 
         processed = email_notifications.send_due_email_notifications(
             limit=20,
@@ -142,13 +167,44 @@ def _notify_mufg_email_success(
             "MUFG upload email notification "
             f"queued={queued}, processed={len(processed)}."
         )
-        return queued
-    except Exception:
+        return _email_notification_summary(
+            status="processed",
+            queued=queued,
+            processed=len(processed),
+        )
+    except Exception as exc:
+        error_message = redact_secrets(str(exc))
         run_logger.exception(
             "MUFG upload email notification handling failed; "
             "upload telemetry remains committed."
         )
-        return 0
+        return _email_notification_summary(
+            status="failure",
+            queued=queued,
+            processed=0,
+            error_type=type(exc).__name__,
+            error_message=error_message,
+        )
+
+
+def _email_notification_summary(
+    *,
+    status: str,
+    queued: int,
+    processed: int,
+    error_type: str | None = None,
+    error_message: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "email_notification_status": status,
+        "email_notifications_queued": queued,
+        "email_notifications_processed": processed,
+    }
+    if error_type:
+        payload["email_notification_error_type"] = error_type
+    if error_message:
+        payload["email_notification_error_message"] = error_message
+    return payload
 
 
 def _mufg_summary_file_path(summary: dict[str, object]) -> Path:
@@ -178,12 +234,16 @@ def _log_fetch(
     database: str | None,
     expected_trade_date: str | date | datetime | None,
     local_dir: str | Path | None,
+    sql_dir: str | Path,
+    sql_filename: str,
 ) -> None:
     rows = int(summary.get("rows_uploaded", 0)) if summary else None
     telemetry_metadata: dict[str, Any] = {
         "run_mode": run_mode,
         "expected_trade_date": _expected_trade_date_metadata(expected_trade_date),
         "local_dir": str(scrape.resolve_local_dir(local_dir)),
+        "sql_dir": str(sql_dir),
+        "sql_filename": sql_filename,
         **(metadata or {}),
     }
     if summary:
@@ -210,25 +270,6 @@ def _log_fetch(
     )
 
 
-def _failure_summary(
-    *,
-    expected_trade_date: str | date | datetime | None,
-    local_dir: str | Path | None,
-    metadata: dict[str, Any] | None,
-) -> dict[str, object]:
-    expected = _expected_trade_date_metadata(expected_trade_date)
-    return {
-        "target_table": scrape.TARGET_NAME,
-        "source_table": scrape.SOURCE_TABLE_FQN,
-        "sql_filename": scrape.DEFAULT_SQL_FILENAME,
-        "expected_trade_date_from_sftp": expected,
-        "sftp_date": _display_trade_date(expected),
-        "local_dir": str(scrape.resolve_local_dir(local_dir)),
-        "remote_dir": os.environ.get("MUFG_SFTP_REMOTE_DIR") or "/",
-        **(metadata or {}),
-    }
-
-
 def _expected_trade_date_metadata(
     value: str | date | datetime | None,
 ) -> str | None:
@@ -237,10 +278,10 @@ def _expected_trade_date_metadata(
     return scrape.normalize_trade_date(value)
 
 
-def _display_trade_date(value: str | None) -> str | None:
-    if value is None:
-        return None
-    return f"{value[:4]}-{value[4:6]}-{value[6:8]}"
+def _resolve_sql_dir(sql_dir: str | Path | None) -> Path:
+    if sql_dir is not None:
+        return Path(sql_dir)
+    return DEFAULT_SQL_DIR
 
 
 if __name__ == "__main__":

@@ -1753,6 +1753,7 @@ def _format_yyyymmdd_date(value: Any) -> str:
 
 def _clear_street_mufg_trade_date(summary: dict[str, Any]) -> str:
     for key in [
+        "expected_trade_date",
         "expected_trade_date_from_sftp",
         "trade_date",
         "sftp_date_from_sql",
@@ -1768,17 +1769,37 @@ def _clear_street_mufg_warning_lines(summary: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     if bool(summary.get("sql_extract_empty", False)):
         warnings.append("SQL extract returned 0 rows.")
-    if bool(summary.get("sql_extract_sftp_date_mismatch", False)):
-        expected = summary.get("expected_trade_date_from_sftp") or "unknown"
-        actual = summary.get("sftp_date_from_sql") or summary.get("sftp_date")
+    if bool(
+        summary.get("sql_extract_trade_date_mismatch", False)
+        or summary.get("sql_extract_sftp_date_mismatch", False)
+    ):
+        expected = (
+            summary.get("expected_trade_date")
+            or summary.get("expected_trade_date_from_sftp")
+            or "unknown"
+        )
+        actual = (
+            summary.get("sql_extract_trade_date_from_sql")
+            or summary.get("sql_extract_trade_date")
+            or summary.get("sftp_date_from_sql")
+            or summary.get("sftp_date")
+        )
         warnings.append(
-            "SQL extract SFTP date does not match expected Clear Street "
+            "SQL extract trade date does not match expected Clear Street "
             f"trade date: expected {expected}, actual {actual or 'unknown'}."
         )
-    non_ok_rows = int(summary.get("non_ok_trade_status_rows", 0) or 0)
-    if non_ok_rows > 0:
+    unexpected_status_rows = int(
+        summary.get(
+            "unexpected_trade_status_rows",
+            summary.get("non_ok_trade_status_rows", 0),
+        )
+        or 0
+    )
+    if unexpected_status_rows > 0:
+        expected_status = str(summary.get("expected_trade_status") or "New")
         warnings.append(
-            f"{non_ok_rows:,} rows have non-ok trade_status: "
+            f"{unexpected_status_rows:,} rows have unexpected trade_status "
+            f"(expected {expected_status}): "
             f"{_format_counts(summary.get('trade_status_counts'))}."
         )
 
@@ -1798,7 +1819,7 @@ def _clear_street_mufg_warning_lines(summary: dict[str, Any]) -> list[str]:
         )
         product_text = f": {products}" if products else "."
         warnings.append(
-            "Product mapping needed for "
+            "Vendor code mapping needed for "
             f"{null_rows:,} rows across {product_count:,} source "
             f"{product_word}{product_text}"
         )

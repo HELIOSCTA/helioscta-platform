@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -13,32 +14,27 @@ from backend.scrapes.clear_street import (
 
 def _extract_df(
     *,
-    sftp_date: date = date(2026, 7, 6),
-    trade_status: str = "ok",
+    trade_date: date = date(2026, 7, 6),
+    trade_status: str = "New",
 ) -> pd.DataFrame:
     return pd.DataFrame(
         [
             {
-                "record_id": "T",
-                "account_number": "GHELI",
-                "give_in_out_firm_num": "905",
-                "sftp_date": sftp_date,
-                "sftp_upload_timestamp": datetime(
-                    2026,
-                    7,
-                    7,
-                    2,
-                    8,
-                    17,
-                    tzinfo=timezone.utc,
-                ),
+                "RECORD_ID": "T",
+                "ACCOUNT_NUMBER": "GHELI",
+                "TRADE_DATE": trade_date.strftime("%Y%m%d"),
+                "GIVE_IN_OUT_FIRM_NUM": "905",
+                "SECURITY_DESCRIPTION": "NATURAL GAS HENRY HUB FUTURE",
+                "INSTRUMENT_DESCRIPTION": "NYMEX HENRY HUB NATURAL GAS FUTURE",
+                "SYMBOL": "NG",
+                "FUTURES_CODE": "Q6",
+                "EXCH_COMM_CD": "NG",
+                "EXCHANGE_NAME": "NYME",
                 "trade_status": trade_status,
-                "product_code_grouping": "Natural Gas",
-                "product_code_region": "Henry Hub",
-                "product_code_underlying": "NG",
                 "ice_product_code": "NG Q26-IUS",
                 "cme_product_code": "NGQ6",
                 "bbg_product_code": "NGQ6 Comdty",
+                "product_code_grouping": "gas_future",
             }
         ]
     )
@@ -57,87 +53,178 @@ def test_load_mufg_extract_sql_strips_trailing_semicolon(tmp_path):
     assert sql == "select 1"
 
 
-def test_load_mufg_extract_sql_uses_compiled_dbt_model(monkeypatch):
-    calls: list[object] = []
+def test_load_mufg_extract_sql_requires_generated_sql_dir():
+    with pytest.raises(FileNotFoundError, match="generated SQL requires"):
+        mufg_clear_street_trades.load_mufg_extract_sql()
 
-    def fake_load_model_sql(model_path, **kwargs):
-        calls.append((model_path, kwargs))
-        return "select 1"
 
-    monkeypatch.setattr(
-        mufg_clear_street_trades.dbt_compiled_sql,
-        "load_positions_trades_v3_model_sql",
-        fake_load_model_sql,
+def test_default_generated_sql_artifact_is_packaged_and_loadable():
+    sql_path = (
+        clear_street_mufg_upload.DEFAULT_SQL_DIR
+        / clear_street_mufg_upload.DEFAULT_SQL_FILENAME
+    )
+    assert sql_path.is_file()
+
+    sql = mufg_clear_street_trades.load_mufg_extract_sql(
+        sql_dir=clear_street_mufg_upload.DEFAULT_SQL_DIR,
     )
 
-    sql = mufg_clear_street_trades.load_mufg_extract_sql()
-
-    assert sql == "select 1"
-    assert calls == [
-        (
-            mufg_clear_street_trades.DEFAULT_DBT_MODEL_PATH,
-            {"compile_before_load": True},
-        )
-    ]
+    assert "__dbt__cte__cs_ref_70_eod_latest" in sql
+    assert "trade_status" in sql
+    assert "product_code_grouping" in sql
+    assert "where give_in_out_firm_num in ('ADU', '905')" in sql
 
 
-def test_write_mufg_extract_csv_uses_legacy_filename(tmp_path):
+def test_clear_street_scheduler_import_smoke_checks_generated_sql():
+    repo_root = Path(__file__).resolve().parents[2]
+    installer = (
+        repo_root
+        / "infrastructure"
+        / "windows-task-scheduler"
+        / "positions_and_trades"
+        / "install_clear_street_task.ps1"
+    )
+
+    script = installer.read_text(encoding="utf-8")
+
+    assert "clear_street_mufg_upload.DEFAULT_SQL_DIR" in script
+    assert "clear_street_mufg_upload.DEFAULT_SQL_FILENAME" in script
+    assert "mufg_upload.load_mufg_extract_sql" in script
+
+
+def test_write_mufg_extract_csv_uses_v3_filename(tmp_path):
     local_path = mufg_clear_street_trades.write_mufg_extract_csv(
         df=_extract_df(),
-        sftp_date=date(2026, 7, 6),
+        trade_date=date(2026, 7, 6),
         local_dir=tmp_path,
     )
 
-    assert local_path == tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    assert local_path == tmp_path / "helios_transactions_v3_20260706_filtered.csv"
     assert "ice_product_code" in local_path.read_text(encoding="utf-8")
 
 
-def test_product_code_null_summary_uses_group_region_and_vendor_code_criteria():
+def test_product_code_null_summary_uses_exchange_route_vendor_code_criteria():
     df = pd.DataFrame(
         [
             {
-                "product_code_grouping": "Natural Gas",
-                "product_code_region": "Henry Hub",
-                "product_code_underlying": "",
-                "ice_product_code": "NG Q26-IUS",
+                "SECURITY_DESCRIPTION": "NYME gas row with Bloomberg only",
+                "EXCHANGE_NAME": "NYME",
+                "product_code_grouping": "gas_future",
+                "ice_product_code": "",
                 "cme_product_code": None,
                 "bbg_product_code": "NGQ6 Comdty",
             },
             {
-                "security_description": "ALQ-Algonquin Citygates Basis Future",
-                "futures_code": "H9",
-                "exch_comm_cd": "ALQ",
-                "exchange_name": "IPE",
-                "contract_year_month": "202611",
-                "product_code_grouping": "",
-                "product_code_region": "",
-                "product_code_underlying": "ALQ",
-                "ice_product_code": " ",
-                "cme_product_code": "ALQX6",
-                "bbg_product_code": "ALQX6 Comdty",
-            },
-            {
-                "product_code_grouping": "",
-                "product_code_region": "PJM",
-                "product_code_underlying": "PJM",
-                "ice_product_code": "PJM X26-IUS",
-                "cme_product_code": "PJM",
+                "SECURITY_DESCRIPTION": "CRI basis row with ICE only",
+                "FUTURES_CODE": "H9",
+                "EXCH_COMM_CD": "CRI",
+                "EXCHANGE_NAME": "IPE",
+                "CONTRACT_YEAR_MONTH": "202611",
+                "product_code_grouping": "gas_future",
+                "ice_product_code": "CRI Q26-IUS",
+                "cme_product_code": "",
                 "bbg_product_code": "",
             },
             {
-                "product_code_grouping": "",
-                "product_code_region": "",
-                "product_code_underlying": "PGE",
-                "ice_product_code": "PGE X26-IUS",
-                "cme_product_code": "PGE",
-                "bbg_product_code": "PGE Comdty",
+                "SECURITY_DESCRIPTION": "IPE row missing ICE",
+                "FUTURES_CODE": "PJM",
+                "EXCH_COMM_CD": "PJM",
+                "EXCHANGE_NAME": "IFE",
+                "CONTRACT_YEAR_MONTH": "202611",
+                "product_code_grouping": "power_future",
+                "ice_product_code": "",
+                "cme_product_code": "PJM",
+                "bbg_product_code": "PJM X26 Comdty",
             },
             {
-                "product_code_grouping": "Power",
-                "product_code_region": "PJM",
-                "product_code_underlying": "PJM",
-                "ice_product_code": "PJM X26-IUS",
-                "cme_product_code": "PJM",
+                "SECURITY_DESCRIPTION": "PWA weekly strip missing weekly code",
+                "FUTURES_CODE": "NF",
+                "EXCH_COMM_CD": "PWA",
+                "EXCHANGE_NAME": "IFE",
+                "TRADE_DATE": "20260706",
+                "CONTRACT_YEAR_MONTH": "202607",
+                "PROMPT_DAY": "15",
+                "CUSIP": "IFEDPWA20260715",
+                "product_code_grouping": "power_future",
+                "ice_product_code": "",
+                "cme_product_code": "",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "PDA Friday to Monday next business day",
+                "FUTURES_CODE": "YA",
+                "EXCH_COMM_CD": "PDA",
+                "EXCHANGE_NAME": "IFE",
+                "TRADE_DATE": "20260626",
+                "CONTRACT_YEAR_MONTH": "202606",
+                "PROMPT_DAY": "29",
+                "CUSIP": "IFEDPDA20260629",
+                "product_code_grouping": "power_future",
+                "ice_product_code": "",
+                "cme_product_code": "",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "PDA weekend delivery unverified",
+                "FUTURES_CODE": "YA",
+                "EXCH_COMM_CD": "PDA",
+                "EXCHANGE_NAME": "IFE",
+                "TRADE_DATE": "20260625",
+                "CONTRACT_YEAR_MONTH": "202606",
+                "PROMPT_DAY": "28",
+                "CUSIP": "IFEDPDA20260628",
+                "product_code_grouping": "power_future",
+                "ice_product_code": "",
+                "cme_product_code": "",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "NYM row missing CME and Bloomberg",
+                "FUTURES_CODE": "Q6",
+                "EXCH_COMM_CD": "NG",
+                "EXCHANGE_NAME": "NYM",
+                "CONTRACT_YEAR_MONTH": "202608",
+                "product_code_grouping": "gas_future",
+                "ice_product_code": "NG Q26-IUS",
+                "cme_product_code": "",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "NMY row with CME only",
+                "FUTURES_CODE": "KN4",
+                "EXCH_COMM_CD": "KN4",
+                "EXCHANGE_NAME": "NMY",
+                "CONTRACT_YEAR_MONTH": "202608",
+                "product_code_grouping": "gas_option",
+                "ice_product_code": "",
+                "cme_product_code": "1|G|XNYM:O:KN4:202608:C:3.5",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "PGE row missing grouping",
+                "EXCHANGE_NAME": "IPE",
+                "product_code_grouping": "",
+                "ice_product_code": "PGE X26-IUS",
+                "cme_product_code": "",
+                "bbg_product_code": "",
+            },
+            {
+                "SECURITY_DESCRIPTION": "Unsupported exchange row",
+                "EXCHANGE_NAME": "CBOT",
+                "product_code_grouping": "gas_future",
+                "ice_product_code": "GC Z26-IUS",
+                "cme_product_code": "GCZ6",
+                "bbg_product_code": "GCZ6 Comdty",
+            },
+            {
+                "SECURITY_DESCRIPTION": "United States Dollar",
+                "INSTRUMENT_DESCRIPTION": "RESID ADJ CASH",
+                "EXCHANGE_NAME": "NYM",
+                "QUANTITY": 0,
+                "CONTRACT_YEAR_MONTH": 0,
+                "product_code_grouping": "",
+                "ice_product_code": "",
+                "cme_product_code": "",
                 "bbg_product_code": "",
             },
         ]
@@ -146,45 +233,52 @@ def test_product_code_null_summary_uses_group_region_and_vendor_code_criteria():
     summary = mufg_clear_street_trades.summarize_product_code_nulls(df)
 
     assert summary["overall_null_counts"] == {
-        "product_code_grouping": 3,
-        "product_code_region": 2,
-        "ice_product_code": 1,
-        "cme_product_code": 1,
-        "bbg_product_code": 2,
+        "product_code_grouping": 2,
+        "exchange_name": 0,
+        "ice_product_code": 7,
+        "cme_product_code": 8,
+        "bbg_product_code": 8,
     }
+    assert "UNITED STATES DOLLAR" in summary["sql_where"]
+    assert "'NMY'" in summary["sql_where"]
+    assert "nullif(trim(product_code_grouping::text), '') is null" in summary["sql_where"]
+    assert summary["ice_exchange_names"] == ["IFED", "IFE", "IPE"]
+    assert summary["cme_bbg_exchange_names"] == ["NYME", "NYM", "NYMEX", "NMY"]
     assert summary["null_counts"] == {
         "product_code_grouping": 1,
-        "product_code_region": 1,
-        "ice_product_code": 1,
-        "cme_product_code": 0,
-        "bbg_product_code": 0,
+        "exchange_name": 0,
+        "ice_product_code": 4,
+        "cme_product_code": 5,
+        "bbg_product_code": 5,
+    }
+    assert summary["issue_counts"] == {
+        "product_code_grouping_blank": 1,
+        "exchange_name_blank": 0,
+        "unsupported_exchange_name": 1,
+        "ice_exchange_missing_ice_product_code": 4,
+        "cme_bbg_exchange_missing_cme_and_bbg_product_code": 1,
     }
     assert summary["null_columns"] == [
         "product_code_grouping",
-        "product_code_region",
         "ice_product_code",
+        "cme_product_code",
+        "bbg_product_code",
     ]
-    assert summary["null_rows"] == 1
+    assert summary["null_rows"] == 7
     assert summary["missing_columns"] == []
     assert summary["has_nulls"] is True
-    assert summary["affected_product_count"] == 1
-    assert summary["affected_products"] == [
-        {
-            "product": "ALQ-Algonquin Citygates Basis Future",
-            "row_count": 1,
-            "source_fields": {
-                "security_description": "ALQ-Algonquin Citygates Basis Future",
-                "instrument_description": None,
-                "symbol": None,
-                "futures_code": "H9",
-                "exch_comm_cd": "ALQ",
-                "exchange_name": "IPE",
-            },
-            "contract_year_months": ["202611"],
-            "put_calls": [],
-            "trade_statuses": [],
-        }
-    ]
+    assert summary["affected_product_count"] == 7
+    assert {
+        product["product"] for product in summary["affected_products"]
+    } == {
+        "IPE row missing ICE",
+        "PWA weekly strip missing weekly code",
+        "PDA Friday to Monday next business day",
+        "PDA weekend delivery unverified",
+        "NYM row missing CME and Bloomberg",
+        "PGE row missing grouping",
+        "Unsupported exchange row",
+    }
 
 
 def test_run_clear_street_trades_mufg_upload_uploads_csv(monkeypatch, tmp_path):
@@ -224,10 +318,17 @@ def test_run_clear_street_trades_mufg_upload_uploads_csv(monkeypatch, tmp_path):
     )
 
     assert summary["rows_uploaded"] == 1
-    assert summary["sftp_date"] == "2026-07-06"
-    assert summary["filename"] == "Helios_Transactions_20260706_filtered.csv"
-    assert summary["remote_path"] == "/upload/Helios_Transactions_20260706_filtered.csv"
-    assert summary["trade_status_counts"] == {"ok": 1}
+    assert summary["trade_date"] == "2026-07-06"
+    assert summary["sql_extract_trade_date"] == "2026-07-06"
+    assert summary["sql_extract_trade_date_from_sql"] == "20260706"
+    assert summary["sql_extract_trade_date_source"] == "TRADE_DATE"
+    assert summary["expected_trade_date"] == "20260706"
+    assert summary["sftp_date"] is None
+    assert summary["filename"] == "helios_transactions_v3_20260706_filtered.csv"
+    assert summary["remote_path"] == "/upload/helios_transactions_v3_20260706_filtered.csv"
+    assert summary["expected_trade_status"] == "New"
+    assert summary["trade_status_counts"] == {"New": 1}
+    assert summary["unexpected_trade_status_rows"] == 0
     assert summary["non_ok_trade_status_rows"] == 0
     assert summary["product_code_null_check"]["has_nulls"] is False
     assert calls["remote_path"] == summary["remote_path"]
@@ -257,7 +358,7 @@ def test_run_mufg_upload_records_date_mismatch_without_blocking(
     monkeypatch.setattr(
         mufg_clear_street_trades,
         "pull_mufg_extract_from_db",
-        lambda **kwargs: _extract_df(sftp_date=date(2026, 7, 5)),
+        lambda **kwargs: _extract_df(trade_date=date(2026, 7, 5)),
     )
     monkeypatch.setattr(
         mufg_clear_street_trades,
@@ -275,12 +376,17 @@ def test_run_mufg_upload_records_date_mismatch_without_blocking(
 
     assert summary["rows_uploaded"] == 1
     assert summary["trade_date"] == "2026-07-06"
-    assert summary["sftp_date"] == "2026-07-05"
-    assert summary["sftp_date_from_sql"] == "20260705"
+    assert summary["sql_extract_trade_date"] == "2026-07-05"
+    assert summary["sql_extract_trade_date_from_sql"] == "20260705"
+    assert summary["sql_extract_trade_date_source"] == "TRADE_DATE"
+    assert summary["expected_trade_date"] == "20260706"
+    assert summary["sftp_date"] is None
+    assert summary["sftp_date_from_sql"] is None
     assert summary["expected_trade_date_from_sftp"] == "20260706"
-    assert summary["sql_extract_sftp_date_mismatch"] is True
-    assert summary["filename"] == "Helios_Transactions_20260706_filtered.csv"
-    assert calls["remote_path"] == "/Helios_Transactions_20260706_filtered.csv"
+    assert summary["sql_extract_trade_date_mismatch"] is True
+    assert summary["sql_extract_sftp_date_mismatch"] is False
+    assert summary["filename"] == "helios_transactions_v3_20260706_filtered.csv"
+    assert calls["remote_path"] == "/helios_transactions_v3_20260706_filtered.csv"
     assert "NG Q26-IUS" in str(calls["content"])
 
 
@@ -306,7 +412,15 @@ def test_run_mufg_upload_records_zero_row_extract_without_blocking(
         mufg_clear_street_trades,
         "pull_mufg_extract_from_db",
         lambda **kwargs: pd.DataFrame(
-            columns=["sftp_date", "trade_status", "ice_product_code"]
+            columns=[
+                "RECORD_ID",
+                "TRADE_DATE",
+                "trade_status",
+                "ice_product_code",
+                "cme_product_code",
+                "bbg_product_code",
+                "product_code_grouping",
+            ]
         ),
     )
     monkeypatch.setattr(
@@ -325,14 +439,19 @@ def test_run_mufg_upload_records_zero_row_extract_without_blocking(
 
     assert summary["rows_uploaded"] == 0
     assert summary["trade_date"] == "2026-07-06"
+    assert summary["sql_extract_trade_date"] is None
+    assert summary["sql_extract_trade_date_from_sql"] is None
+    assert summary["sql_extract_trade_date_source"] is None
+    assert summary["expected_trade_date"] == "20260706"
     assert summary["sftp_date"] is None
     assert summary["sftp_date_from_sql"] is None
     assert summary["sql_extract_empty"] is True
+    assert summary["sql_extract_trade_date_mismatch"] is False
     assert summary["sql_extract_sftp_date_mismatch"] is False
     assert summary["product_code_null_check"]["has_nulls"] is False
-    assert summary["filename"] == "Helios_Transactions_20260706_filtered.csv"
-    assert calls["remote_path"] == "/Helios_Transactions_20260706_filtered.csv"
-    assert str(calls["content"]).startswith("sftp_date,trade_status,ice_product_code")
+    assert summary["filename"] == "helios_transactions_v3_20260706_filtered.csv"
+    assert calls["remote_path"] == "/helios_transactions_v3_20260706_filtered.csv"
+    assert str(calls["content"]).startswith("RECORD_ID,TRADE_DATE,trade_status")
 
 
 def test_run_mufg_upload_requires_date_for_zero_row_manual_extract(
@@ -342,7 +461,7 @@ def test_run_mufg_upload_requires_date_for_zero_row_manual_extract(
     monkeypatch.setattr(
         mufg_clear_street_trades,
         "pull_mufg_extract_from_db",
-        lambda **kwargs: pd.DataFrame(columns=["sftp_date"]),
+        lambda **kwargs: pd.DataFrame(columns=["RECORD_ID", "TRADE_DATE"]),
     )
 
     with pytest.raises(ValueError, match="expected_trade_date"):
@@ -354,7 +473,10 @@ def test_run_mufg_upload_requires_date_for_zero_row_manual_extract(
         )
 
 
-def test_run_mufg_upload_does_not_gate_non_ok_trade_status(monkeypatch, tmp_path):
+def test_run_mufg_upload_does_not_gate_unexpected_trade_status(
+    monkeypatch,
+    tmp_path,
+):
     class FakeSftp:
         def putfo(self, *_args):
             pass
@@ -369,7 +491,7 @@ def test_run_mufg_upload_does_not_gate_non_ok_trade_status(monkeypatch, tmp_path
     monkeypatch.setattr(
         mufg_clear_street_trades,
         "pull_mufg_extract_from_db",
-        lambda **kwargs: _extract_df(trade_status="unresolved_product"),
+        lambda **kwargs: _extract_df(trade_status="Rejected"),
     )
     monkeypatch.setattr(
         mufg_clear_street_trades,
@@ -386,30 +508,38 @@ def test_run_mufg_upload_does_not_gate_non_ok_trade_status(monkeypatch, tmp_path
     )
 
     assert summary["rows_uploaded"] == 1
-    assert summary["trade_status_counts"] == {"unresolved_product": 1}
+    assert summary["expected_trade_status"] == "New"
+    assert summary["trade_status_counts"] == {"Rejected": 1}
+    assert summary["unexpected_trade_status_rows"] == 1
     assert summary["non_ok_trade_status_rows"] == 1
 
 
 def test_mufg_orchestration_logs_success(monkeypatch, tmp_path):
     telemetry: list[dict[str, object]] = []
+    scrape_calls: list[dict[str, object]] = []
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades/mufg/latest.sql",
+        "sql_filename": "clear_street_mufg_latest.sql",
         "rows_exported": 1,
         "rows_uploaded": 1,
-        "sftp_date": "2026-07-06",
-        "sftp_date_from_sql": "20260706",
-        "filename": "Helios_Transactions_20260706_filtered.csv",
+        "trade_date": "2026-07-06",
+        "sql_extract_trade_date": "2026-07-06",
+        "sql_extract_trade_date_from_sql": "20260706",
+        "sql_extract_trade_date_source": "TRADE_DATE",
+        "expected_trade_date": "20260706",
+        "sftp_date": None,
+        "sftp_date_from_sql": None,
+        "filename": "helios_transactions_v3_20260706_filtered.csv",
         "remote_dir": "/",
-        "remote_path": "/Helios_Transactions_20260706_filtered.csv",
+        "remote_path": "/helios_transactions_v3_20260706_filtered.csv",
     }
 
     monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
     monkeypatch.setattr(
         clear_street_mufg_upload.scrape,
         "run_clear_street_trades_mufg_upload",
-        lambda **kwargs: summary,
+        lambda **kwargs: scrape_calls.append(kwargs) or summary,
     )
     monkeypatch.setattr(
         clear_street_mufg_upload,
@@ -424,23 +554,32 @@ def test_mufg_orchestration_logs_success(monkeypatch, tmp_path):
     )
 
     assert exit_code == 0
+    assert scrape_calls[0]["sql_dir"] == clear_street_mufg_upload.DEFAULT_SQL_DIR
+    assert scrape_calls[0]["sql_filename"] == "clear_street_mufg_latest.sql"
     assert len(telemetry) == 1
     assert telemetry[0]["provider"] == "mufg_sftp"
     assert telemetry[0]["operation_name"] == "clear_street_trades_mufg_upload"
     assert telemetry[0]["status"] == "success"
     assert telemetry[0]["rows_written"] == 1
     assert telemetry[0]["metadata"]["expected_trade_date"] == "20260706"
+    assert telemetry[0]["metadata"]["sql_dir"] == str(
+        clear_street_mufg_upload.DEFAULT_SQL_DIR
+    )
+    assert telemetry[0]["metadata"]["sql_filename"] == "clear_street_mufg_latest.sql"
+    assert telemetry[0]["metadata"]["email_notification_status"] == (
+        "skipped_missing_attachment"
+    )
     assert telemetry[0]["database"] == "stage_db"
 
 
 def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
-    local_file = tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    local_file = tmp_path / "helios_transactions_v3_20260706_filtered.csv"
     local_file.write_text("record_id\n1\n", encoding="utf-8")
     email_calls: list[dict[str, object]] = []
     summary = {
         "target_table": mufg_clear_street_trades.TARGET_NAME,
         "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
-        "sql_filename": "clear_street_trades/mufg/latest.sql",
+        "sql_filename": "clear_street_mufg_latest.sql",
         "rows_exported": 1,
         "rows_uploaded": 1,
         "trade_date": "2026-07-06",
@@ -482,7 +621,7 @@ def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
         lambda: False,
     )
 
-    queued = clear_street_mufg_upload._notify_mufg_email_success(
+    email_summary = clear_street_mufg_upload._notify_mufg_email_success(
         summary=summary,
         database="stage_db",
         run_logger=type(
@@ -495,10 +634,89 @@ def test_mufg_orchestration_queues_upload_email_with_csv(monkeypatch, tmp_path):
         )(),
     )
 
-    assert queued == 1
+    assert email_summary == {
+        "email_notification_status": "queued_sending_disabled",
+        "email_notifications_queued": 1,
+        "email_notifications_processed": 0,
+    }
     assert email_calls[0]["database"] == "stage_db"
     assert email_calls[0]["recipient_email"] == "ops@example.test"
     assert email_calls[0]["payload"]["attachment_paths"] == [str(local_file)]
+
+
+def test_mufg_orchestration_keeps_upload_success_when_email_fails(
+    monkeypatch,
+    tmp_path,
+):
+    local_file = tmp_path / "helios_transactions_v3_20260706_filtered.csv"
+    local_file.write_text("record_id\n1\n", encoding="utf-8")
+    telemetry: list[dict[str, object]] = []
+    summary = {
+        "target_table": mufg_clear_street_trades.TARGET_NAME,
+        "source_table": mufg_clear_street_trades.SOURCE_TABLE_FQN,
+        "sql_filename": "clear_street_mufg_latest.sql",
+        "rows_exported": 1,
+        "rows_uploaded": 1,
+        "trade_date": "2026-07-06",
+        "filename": local_file.name,
+        "local_file_path": str(local_file),
+        "remote_dir": "/",
+        "remote_path": f"/{local_file.name}",
+    }
+
+    monkeypatch.setenv("HELIOS_LOG_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        clear_street_mufg_upload.scrape,
+        "run_clear_street_trades_mufg_upload",
+        lambda **kwargs: dict(summary),
+    )
+    monkeypatch.setattr(
+        clear_street_mufg_upload.email_notifications.credentials,
+        "HELIOS_EMAIL_RECIPIENTS",
+        ["ops@example.test"],
+    )
+    monkeypatch.setattr(
+        clear_street_mufg_upload.email_notifications,
+        "build_clear_street_mufg_upload_success_email",
+        lambda **kwargs: {
+            "notification_key": "mufg:email:upload",
+            "recipient_email": kwargs["recipient_email"],
+            "subject": "MUFG uploaded",
+            "body_text": "Attached.",
+            "body_html": None,
+            "dataset": "clear_street_trades_mufg_upload",
+            "source_event_key": "mufg",
+            "source_event_id": None,
+            "payload": {"attachment_paths": [str(kwargs["attachment_path"])]},
+        },
+    )
+    monkeypatch.setattr(
+        clear_street_mufg_upload.email_notifications,
+        "enqueue_email_notification",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("outbox unavailable")),
+    )
+    monkeypatch.setattr(
+        clear_street_mufg_upload,
+        "log_api_fetch",
+        lambda **kwargs: telemetry.append(kwargs),
+    )
+
+    exit_code = clear_street_mufg_upload.main(
+        expected_trade_date="20260706",
+        local_dir=tmp_path,
+        database="stage_db",
+    )
+
+    assert exit_code == 0
+    assert len(telemetry) == 1
+    assert telemetry[0]["status"] == "success"
+    assert telemetry[0]["error_type"] is None
+    assert telemetry[0]["rows_written"] == 1
+    assert telemetry[0]["metadata"]["email_notification_status"] == "failure"
+    assert telemetry[0]["metadata"]["email_notification_error_type"] == "RuntimeError"
+    assert "outbox unavailable" in telemetry[0]["metadata"][
+        "email_notification_error_message"
+    ]
 
 
 def test_mufg_orchestration_logs_failure(monkeypatch, tmp_path):
@@ -527,3 +745,4 @@ def test_mufg_orchestration_logs_failure(monkeypatch, tmp_path):
     assert telemetry[0]["status"] == "failure"
     assert telemetry[0]["error_type"] == "RuntimeError"
     assert telemetry[0]["metadata"]["expected_trade_date"] == "20260706"
+    assert telemetry[0]["metadata"]["sql_filename"] == "clear_street_mufg_latest.sql"

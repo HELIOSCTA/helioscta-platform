@@ -556,7 +556,7 @@ def test_nav_trade_breaks_file_email_states_when_no_breaks_found(tmp_path):
 
 
 def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_path):
-    attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    attachment = tmp_path / "helios_transactions_v3_20260706_filtered.csv"
     attachment.write_text("record_id\n1\n", encoding="utf-8")
 
     message = email_notifications.build_clear_street_mufg_upload_success_email(
@@ -568,7 +568,9 @@ def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_pat
             "rows_uploaded": 2,
             "filename": attachment.name,
             "remote_path": f"/{attachment.name}",
-            "trade_status_counts": {"New": 2},
+            "expected_trade_status": "New",
+            "trade_status_counts": {"Rejected": 2},
+            "unexpected_trade_status_rows": 2,
             "non_ok_trade_status_rows": 2,
             "product_code_null_check": {
                 "null_rows": 2,
@@ -602,7 +604,9 @@ def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_pat
         "HeliosCTA | Clear Street | MUFG Upload | Warning"
     )
     assert "Warnings:" in message["body_text"]
-    assert "Product mapping needed" in message["body_text"]
+    assert "unexpected trade_status" in message["body_text"]
+    assert "expected New" in message["body_text"]
+    assert "Vendor code mapping needed" in message["body_text"]
     assert "ALQ-Algonquin Citygates Basis Future" in message["body_text"]
     assert "HeliosCTA Alerts" in message["body_html"]
     assert "Clear Street MUFG Upload Complete" in message["body_html"]
@@ -615,7 +619,7 @@ def test_clear_street_mufg_upload_email_includes_warnings_and_attachment(tmp_pat
 def test_clear_street_mufg_upload_email_subject_omits_warning_tag_without_warnings(
     tmp_path,
 ):
-    attachment = tmp_path / "Helios_Transactions_20260706_filtered.csv"
+    attachment = tmp_path / "helios_transactions_v3_20260706_filtered.csv"
     attachment.write_text("record_id\n1\n", encoding="utf-8")
 
     message = email_notifications.build_clear_street_mufg_upload_success_email(
