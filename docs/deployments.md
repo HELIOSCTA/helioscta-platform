@@ -1629,9 +1629,7 @@ Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
 - Source system: PJM eDART Transmission Facilities Outage List
   `https://edart.pjm.com/reports/linesout.txt`.
 - Destination table: `pjm.transmission_outages_raw`.
-- Source grain: one parsed outage/equipment record per source text file,
-  keyed by `(source_file_sha256, source_row_number)`, where
-  `source_row_number` is the first source line for that parsed record.
+- Source grain: one raw `linesout.txt` file per `source_file_sha256`.
 - Retention: successful runs purge rows where `ingested_at` is older than
   7 days.
 - API telemetry: `ops.api_fetch_log` with provider `pjm_edart` and operation
@@ -1652,39 +1650,23 @@ Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
   replay after VM downtime.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-pjm-transmission-outages.lock`.
-- Safe rerun story: each run replaces parsed records for the source file hash,
-  then validates the table by section, typed source columns, raw record text,
-  and row hash.
-- Local verification: `2026-07-23`; live repair wrote and validated 14,918
-  parsed records for source report timestamp `2026-07-23 14:08:28` with zero
-  duplicate row keys, zero unparsed `RAW LINE` fallbacks, zero
-  header/delimiter rows, and zero expired rows after retention.
+- Safe rerun story: idempotent upsert on `source_file_sha256`, then validates
+  that stored `raw_text`, timestamp, and line count match the fetched TXT file.
+- Local verification: `2026-07-23`; live reset wrote and validated one raw TXT
+  file row for source report timestamp `2026-07-23 15:03:28`.
 
 Verification SQL for latest raw capture:
 
 ```sql
 SELECT
-    COUNT(*) AS latest_file_rows,
+    COUNT(*) AS source_files,
     MAX(source_report_timestamp) AS latest_report_timestamp,
     MAX(ingested_at) AS latest_ingested_at,
-    COUNT(*) FILTER (WHERE source_columns ? 'RAW LINE') AS unparsed_rows,
-    COUNT(*) FILTER (WHERE facility_name IS NOT NULL) AS rows_with_facility_name,
-    COUNT(*) FILTER (WHERE start_datetime IS NOT NULL) AS rows_with_start_datetime,
-    COUNT(*) FILTER (WHERE dupes.row_count > 1) AS duplicate_row_number_keys
-FROM pjm.transmission_outages_raw tor
-LEFT JOIN (
-    SELECT source_file_sha256, source_row_number, COUNT(*) AS row_count
-    FROM pjm.transmission_outages_raw
-    GROUP BY source_file_sha256, source_row_number
-) dupes
-  ON dupes.source_file_sha256 = tor.source_file_sha256
- AND dupes.source_row_number = tor.source_row_number
-WHERE tor.source_file_sha256 = (
-    SELECT source_file_sha256
-    FROM pjm.transmission_outages_raw
-    ORDER BY ingested_at DESC
-    LIMIT 1
-);
+    MAX(source_line_count) AS latest_source_line_count,
+    MAX(LENGTH(raw_text)) AS latest_raw_text_chars,
+    COUNT(*) FILTER (WHERE ingested_at < NOW() - INTERVAL '7 days')
+        AS expired_files
+FROM pjm.transmission_outages_raw;
 ```
 
 Verification SQL for API telemetry:
