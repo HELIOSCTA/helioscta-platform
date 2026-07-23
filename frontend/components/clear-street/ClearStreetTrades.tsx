@@ -106,8 +106,8 @@ type RawRowColumn = {
 type SortableValue = string | number | null | undefined;
 
 const API_CACHE_TTL_MS = 2 * 60 * 1000;
-const SUMMARY_API_PATH = "/api/dev/clear-street-trades";
-const DRILLDOWN_API_PATH = "/api/dev/clear-street-trades/drilldown";
+const SUMMARY_API_PATH = "/api/clear-street-trades";
+const DRILLDOWN_API_PATH = "/api/clear-street-trades/drilldown";
 const RAW_ROW_LIMIT = 100;
 const FILTER_LABEL_CLASS = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
 const PILL_DROPDOWN_CLASS =
@@ -199,7 +199,7 @@ function buildDrilldownApiUrl({
 
 function cacheKey(filters: ClearStreetApiFilters, limit: number): string {
   return [
-    "api:dev:clear-street-trades",
+    "api:clear-street-trades",
     filters.selectedDate || "latest",
     stableFilterValues(filters.accounts).join(",") || "all-accounts",
     stableFilterValues(filters.productCodes).join(",") || "all-products",
@@ -216,7 +216,7 @@ function drilldownCacheKey(
   drilldown: ClearStreetTradesDrilldownFilter | null,
 ): string {
   return [
-    "api:dev:clear-street-trades",
+    "api:clear-street-trades",
     "drilldown",
     cacheKey(filters, RAW_ROW_LIMIT),
     drilldown ? JSON.stringify(drilldown) : "all-rows",

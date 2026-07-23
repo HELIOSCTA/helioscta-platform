@@ -96,6 +96,14 @@
       "maxDuration": 30,
       "regions": ["iad1"]
     },
+    "app/api/clear-street-trades/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/clear-street-trades/drilldown/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
     "app/api/ice-trade-blotter/raw/route.ts": {
       "maxDuration": 30,
       "regions": ["iad1"]

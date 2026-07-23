@@ -81,9 +81,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     navItems: [
       { id: "positions-home", label: "Positions Home" },
       { id: "nav-positions", label: "NAV Positions" },
-      ...(showLocalDevFeatures
-        ? [{ id: "clear-street-trades" as const, label: "Clear Street Trades" }]
-        : []),
+      { id: "clear-street-trades", label: "Clear Street Trades" },
       { id: "ice-trade-blotter", label: "ICE Trade Blotter" },
     ],
   });

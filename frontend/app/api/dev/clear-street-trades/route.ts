@@ -44,11 +44,11 @@ export const maxDuration = 30;
 const CACHE_HEADER = "no-store";
 const DEFAULT_LIMIT = 500;
 const ROUTE_CONFIG = {
-  route: "/api/dev/clear-street-trades",
+  route: "/api/clear-street-trades",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "local-dev-only, no-store",
+  cachePolicy: "no-store",
   owner: "frontend",
-  purpose: "DEV-only Clear Street trades summary and aggregate rows",
+  purpose: "Clear Street trades summary and aggregate rows",
   p95TargetMs: 3_000,
   freshnessSource: "dbt Clear Street Trades Review Contract sftp_upload_timestamp",
 } as const;
@@ -57,7 +57,7 @@ function responseCacheHeaders(): HeadersInit {
   return {
     "Cache-Control": CACHE_HEADER,
     "Vercel-CDN-Cache-Control": CACHE_HEADER,
-    "X-Helios-Cache-Policy": "local-dev-only no-store",
+    "X-Helios-Cache-Policy": "no-store",
   };
 }
 
@@ -69,17 +69,6 @@ function statusArray(value: unknown): ClearStreetReviewStatus[] {
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return {
-      status: 404,
-      payload: {
-        error: "Clear Street trades review is local-only.",
-      },
-      headers: responseCacheHeaders(),
-      rowCount: 0,
-    };
-  }
-
   const { searchParams } = new URL(request.url);
   const limit = parseLimit(searchParams.get("limit"), DEFAULT_LIMIT);
   const filters = parseClearStreetTradesFilters(searchParams);
@@ -190,5 +179,16 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 });
 
 export function GET(request: Request): Promise<Response> {
+  const pathname = new URL(request.url).pathname;
+  const isDevAlias = pathname.startsWith("/api/dev/");
+  if (isDevAlias && !isLocalOnlyFeatureEnabled()) {
+    return Promise.resolve(
+      new Response(null, {
+        status: 404,
+        headers: responseCacheHeaders(),
+      }),
+    );
+  }
+
   return observedGET(request);
 }

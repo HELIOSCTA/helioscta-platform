@@ -267,7 +267,7 @@ function parseInitialSection(
   if (value === "ice-trade-blotter") {
     return "ice-trade-blotter";
   }
-  if (showLocalDevFeatures && value === "clear-street-trades") {
+  if (value === "clear-street-trades") {
     return "clear-street-trades";
   }
   if (value === "ice-settlements") {
@@ -575,13 +575,13 @@ export default function HomePageClient({
           "ICE Trade Blotter | Source: ice_trade_blotter.ice_trade_blotter / Azure PostgreSQL",
       };
     }
-    if (showLocalDevFeatures && activeSection === "clear-street-trades") {
+    if (activeSection === "clear-street-trades") {
       return {
         title: "Clear Street Trades",
         subtitle:
-          "Local DEV Clear Street MUFG trades derived with frontend JSON and TypeScript product rules.",
+          "Clear Street MUFG trade review with product matching, aggregate signatures, and bounded raw-row drilldowns.",
         footer:
-          "Clear Street Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
+          "Clear Street Trades | Source: clear_street.eod_transactions / Azure PostgreSQL",
       };
     }
     if (activeSection === "ice-settlements") {
@@ -982,7 +982,7 @@ export default function HomePageClient({
               />
             )}
 
-            {showLocalDevFeatures && activeSection === "clear-street-trades" && (
+            {activeSection === "clear-street-trades" && (
               <FreshnessCard
                 statusLabel={clearStreetTradesFreshness.status}
                 statusClass={clearStreetTradesFreshness.statusClass}
@@ -1261,7 +1261,7 @@ export default function HomePageClient({
               onFreshnessChange={setRawIceBlotterFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "clear-street-trades" && (
+          {activeSection === "clear-street-trades" && (
             <ClearStreetTrades
               refreshToken={clearStreetTradesRefreshToken}
               onFreshnessChange={setClearStreetTradesFreshness}
