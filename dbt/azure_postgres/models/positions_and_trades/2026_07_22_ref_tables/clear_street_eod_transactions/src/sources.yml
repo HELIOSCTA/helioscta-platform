@@ -1,0 +1,9 @@
+version: 2
+
+sources:
+  - name: clear_street
+    schema: clear_street
+    description: Clear Street source tables for the active positions/trades model.
+    tables:
+      - name: eod_transactions
+        description: Clear Street end-of-day transaction rows.

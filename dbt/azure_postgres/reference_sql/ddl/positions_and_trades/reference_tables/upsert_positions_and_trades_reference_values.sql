@@ -5,7 +5,7 @@
 -- Apply it manually with the helios_admin role after
 -- table_positions_and_trades_reference_tables.sql.
 --
--- Source system: existing positions_and_trades_v2 utility model values.
+-- Source system: archived 2026_07_21_sql_embedded utility model values.
 -- Grain: one approved current runtime row per reference-table business key.
 -- Safe rerun: this transaction syncs the live reference tables to the expected
 -- rows represented here. Rows removed from this file are removed from
@@ -36,7 +36,7 @@ INSERT INTO expected_product_catalog (
     ('HP', 'Gas', 'Henry Hub', NULL, 'ZA', 'NYME'),
     ('H', 'Gas', 'Henry Hub', NULL, NULL, 'IFED'),
     ('PHH', 'Gas', 'Henry Hub', NULL, NULL, 'IFED'),
-    ('PHE', 'Gas', 'Henry Hub', 'NG', NULL, 'IFED'),
+    ('PHE', 'Gas', 'Henry Hub', 'NG', 'NG', 'IFED'),
     ('LN', 'Gas', 'Henry Hub', 'NG', 'NG', 'NYME'),
     ('LN1', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
     ('LN2', 'Gas', 'Henry Hub', 'NG', 'NGW', 'NYME'),
@@ -48,12 +48,13 @@ INSERT INTO expected_product_catalog (
     ('KN3', 'Gas', 'Henry Hub', 'NG', NULL, 'NYME'),
     ('KN4', 'Gas', 'Henry Hub', 'NG', 'HZI', 'NYME'),
     ('G3', 'Gas', 'Henry Hub', 'NG', NULL, 'NYME'),
-    ('G4', 'Gas', 'Henry Hub', 'NG', NULL, 'NYME'),
+    ('G4', 'Gas', 'Henry Hub', 'NG', 'G4X', 'NYME'),
     ('PDP', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('PWA', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('DDP', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('PDA', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('PJL', 'Power', 'PJM', NULL, NULL, 'IFED'),
+    ('PDO', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('PMI', 'Power', 'PJM', 'PMI', NULL, 'IFED'),
     ('P1X', 'Power', 'PJM', 'PMI', NULL, 'IFED'),
     ('OPJ', 'Power', 'PJM', NULL, NULL, 'IFED'),

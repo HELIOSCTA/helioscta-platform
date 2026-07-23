@@ -1,0 +1,83 @@
+{
+  "contractId": "positions_and_trades",
+  "displayName": "Positions & Trades Reference Model",
+  "dbtModelFamily": "2026_07_22_ref_tables",
+  "dbtModelFamilyPath": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables",
+  "dbtModelChangeSummary": "Moves product catalog, product alias rules, account lookup, and month codes from SQL-embedded dbt utility models into operator-maintained Postgres reference tables.",
+  "archivedModelFamilies": [
+    {
+      "name": "2026_01_01_old_dbt_model",
+      "displayName": "Old NAV workbook compatibility model",
+      "path": "dbt/azure_postgres/archived_models/positions_and_trades/2026_01_01_old_dbt_model"
+    },
+    {
+      "name": "2026_07_21_sql_embedded",
+      "displayName": "SQL-embedded positions/trades model",
+      "path": "dbt/azure_postgres/archived_models/positions_and_trades/2026_07_21_sql_embedded"
+    }
+  ],
+  "referenceSchema": "positions_and_trades_ref",
+  "referenceTables": [
+    "product_catalog",
+    "product_alias_rules",
+    "account_lookup",
+    "month_codes"
+  ],
+  "generatedBy": "dbt/azure_postgres/scripts/promote_positions_trades_sql.py",
+  "artifacts": {
+    "clear_street_trades_review": {
+      "displayName": "Clear Street Trades Review Contract",
+      "promotedSql": "frontend/sql/clear-street-trades/marts/eod_all_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/clear_street_eod_transactions/marts/cs_ref_65_eod_all_history.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/clear_street_eod_transactions/marts/cs_ref_65_eod_all_history.sql"
+    },
+    "nav_positions_all_history": {
+      "displayName": "NAV Positions All History",
+      "promotedSql": "frontend/sql/nav-positions/marts/all_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_40_positions_all_history.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_40_positions_all_history.sql"
+    },
+    "nav_positions_latest": {
+      "displayName": "NAV Positions Latest",
+      "promotedSql": "frontend/sql/nav-positions/marts/latest.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_50_positions_latest.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_50_positions_latest.sql"
+    },
+    "nav_frontend_all_history": {
+      "displayName": "NAV Positions Frontend All History Contract",
+      "promotedSql": "frontend/sql/nav-positions/frontend/all_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_all_history.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_all_history.sql"
+    },
+    "nav_frontend_latest": {
+      "displayName": "NAV Positions Frontend Contract",
+      "promotedSql": "frontend/sql/nav-positions/frontend/latest.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_latest.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_latest.sql"
+    },
+    "positions_trades_rule_exceptions": {
+      "displayName": "Positions & Trades Rule Exceptions",
+      "promotedSql": "frontend/sql/nav-positions/checks/rule_exceptions.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_90_rule_exceptions.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_90_rule_exceptions.sql"
+    },
+    "nav_rule_exceptions_latest": {
+      "displayName": "NAV Positions Latest Rule Exceptions",
+      "promotedSql": "frontend/sql/nav-positions/checks/rule_exceptions_latest.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_55_rule_exceptions_latest.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_55_rule_exceptions_latest.sql"
+    },
+    "positions_trades_validation_summary": {
+      "displayName": "Positions & Trades Validation Summary",
+      "promotedSql": "frontend/sql/positions-and-trades/checks/validation_summary.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_95_validation_summary.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_95_validation_summary.sql"
+    },
+    "positions_trades_validation_failures": {
+      "displayName": "Positions & Trades Validation Failures",
+      "promotedSql": "frontend/sql/positions-and-trades/checks/validation_failures.sql",
+      "dbtModel": "dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_96_validation_failures.sql",
+      "dbtCompiledSql": "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_96_validation_failures.sql"
+    }
+  }
+}

@@ -1,4 +1,4 @@
-with  __dbt__cte__cs_v3_00_src_eod_txns as (
+with  __dbt__cte__cs_ref_00_src_eod_txns as (
 -- Clear Street source projection.
 --
 -- Keep this model intentionally close to the raw source table contract:
@@ -114,7 +114,7 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_10_int_clean_fields as (
+),  __dbt__cte__cs_ref_10_int_clean_fields as (
 -- Field-level cleanup for raw Clear Street strings.
 --
 -- The source table preserves the CSV payload as loaded. Some text fields can
@@ -123,7 +123,7 @@ from FINAL
 -- rule matching while preserving the original raw columns from trades.*.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_00_src_eod_txns
+    select * from __dbt__cte__cs_ref_00_src_eod_txns
 ),
 
 FINAL as (
@@ -158,7 +158,7 @@ from trades
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_month_codes as (
+),  __dbt__cte__utils_ref_positions_and_trades_month_codes as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."month_codes"
 ),
@@ -173,7 +173,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_20_int_contracts as (
+),  __dbt__cte__cs_ref_20_int_contracts as (
 -- Contract and date parsing.
 --
 -- This stage turns cleaned source strings into typed date/contract helpers.
@@ -181,11 +181,11 @@ from FINAL
 -- independently reviewable when source files contain malformed dates or months.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_10_int_clean_fields
+    select * from __dbt__cte__cs_ref_10_int_clean_fields
 ),
 
 month_codes as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_month_codes
+    select * from __dbt__cte__utils_ref_positions_and_trades_month_codes
 ),
 
 contract_base as (
@@ -239,7 +239,7 @@ left join month_codes
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_account_lookup as (
+),  __dbt__cte__utils_ref_positions_and_trades_account_lookup as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
 ),
@@ -255,7 +255,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_30_int_trade_attrs as (
+),  __dbt__cte__cs_ref_30_int_trade_attrs as (
 -- Trade attributes used by account, option, and product-rule logic.
 --
 -- This stage adds business-facing helpers that are not raw source fields:
@@ -263,11 +263,11 @@ from FINAL
 -- exchange-name normalization, and source product text for review diagnostics.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_20_int_contracts
+    select * from __dbt__cte__cs_ref_20_int_contracts
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_ref_positions_and_trades_account_lookup
     where source = 'clear_street'
 ),
 
@@ -287,10 +287,12 @@ prepared_trades as (
         upper(trades.security_type_code_clean) as security_type_code_norm,
         upper(trades.instr_type_clean) as instr_type_norm,
 
-        -- Clear Street uses several source labels for the same exchange family.
+        -- Clear Street uses several source labels and short codes for the same exchange family.
         case upper(trades.exchange_name_clean)
             when 'NYM' then 'NYME'
             when 'NYME' then 'NYME'
+            when 'NYMEX' then 'NYME'
+            when 'NMY' then 'NYME'
             when 'IFE' then 'IFED'
             when 'IPE' then 'IFED'
             when 'IFED' then 'IFED'
@@ -298,44 +300,9 @@ prepared_trades as (
     from trades
 ),
 
-FINAL as (
+with_trade_flags as (
     select
     prepared_trades.*,
-    accounts.account_name,
-
-    -- Prefer the explicit security description, falling back to instrument/symbol.
-    coalesce(
-        prepared_trades.security_description_clean,
-        prepared_trades.instrument_description_clean,
-        prepared_trades.symbol_clean
-    ) as rule_product,
-
-    -- Upper/space-normalized product text is kept for diagnostics and review.
-    nullif(
-        upper(regexp_replace(coalesce(
-            prepared_trades.security_description_clean,
-            prepared_trades.instrument_description_clean,
-            prepared_trades.symbol_clean,
-            ''
-        ), '[[:space:]]+', ' ', 'g')),
-        ''
-    ) as rule_product_norm,
-
-    -- Clear Street side codes: 1 = buy, 2 = sell.
-    case
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 1 then 'B'
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 2 then 'S'
-    end as buy_sell_cleaned,
-
-    -- Signed quantity lets grouped views sum buys and sells directly.
-    case
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 1 then prepared_trades.quantity
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 2 then -1 * prepared_trades.quantity
-    end as quantity_cleaned,
-    case
-        when prepared_trades.strike_price is not null and prepared_trades.strike_price <> 0
-        then round(prepared_trades.strike_price::numeric, 3)::double precision
-    end as strike_price_normalized,
 
     -- Residual cash adjustment rows should not be treated as missing products.
     (
@@ -358,14 +325,64 @@ FINAL as (
         or prepared_trades.instr_type_norm in ('O', 'OPT', 'OPTION')
         or prepared_trades.instr_type_norm like '%OPTION%'
     ) as is_option
-from prepared_trades
+    from prepared_trades
+),
+
+FINAL as (
+    select
+    with_trade_flags.*,
+    with_trade_flags.give_in_out_firm_num_clean as source_account_key,
+    accounts.account_name as account_code,
+    accounts.account_name,
+    case
+        when accounts.account_name is not null then 'matched'
+        when nullif(trim(with_trade_flags.give_in_out_firm_num_clean), '') is null then 'missing_source_account'
+        else 'unmapped'
+    end as account_lookup_status,
+    with_trade_flags.exchange_name as source_exchange_name,
+    not with_trade_flags.is_non_product_cash_adjustment as is_product_record,
+
+    -- Prefer the explicit security description, falling back to instrument/symbol.
+    coalesce(
+        with_trade_flags.security_description_clean,
+        with_trade_flags.instrument_description_clean,
+        with_trade_flags.symbol_clean
+    ) as rule_product,
+
+    -- Upper/space-normalized product text is kept for diagnostics and review.
+    nullif(
+        upper(regexp_replace(coalesce(
+            with_trade_flags.security_description_clean,
+            with_trade_flags.instrument_description_clean,
+            with_trade_flags.symbol_clean,
+            ''
+        ), '[[:space:]]+', ' ', 'g')),
+        ''
+    ) as rule_product_norm,
+
+    -- Clear Street side codes: 1 = buy, 2 = sell.
+    case
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 1 then 'B'
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 2 then 'S'
+    end as buy_sell_cleaned,
+
+    -- Signed quantity lets grouped views sum buys and sells directly.
+    case
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 1 then with_trade_flags.quantity
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 2 then -1 * with_trade_flags.quantity
+    end as quantity_cleaned,
+    case
+        when with_trade_flags.strike_price is not null and with_trade_flags.strike_price <> 0
+        then round(with_trade_flags.strike_price::numeric, 3)::double precision
+    end as strike_price_normalized
+from with_trade_flags
 left join accounts
-    on prepared_trades.give_in_out_firm_num_clean = accounts.account
+    on with_trade_flags.give_in_out_firm_num_clean = accounts.account
 )
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_catalog as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_catalog as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
 ),
@@ -383,7 +400,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_aliases as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_aliases as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
 ),
@@ -402,7 +419,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_40_int_product_matches as (
+),  __dbt__cte__cs_ref_40_int_product_matches as (
 -- Product match candidates for Clear Street rows.
 --
 -- Matching runs in priority order:
@@ -410,15 +427,15 @@ from FINAL
 -- 2. explicit Clear Street exchange commodity code in the product catalog
 
 with trades as (
-    select * from __dbt__cte__cs_v3_30_int_trade_attrs
+    select * from __dbt__cte__cs_ref_30_int_trade_attrs
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_catalog
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_aliases
     where source = 'clear_street'
 ),
 
@@ -471,26 +488,51 @@ left join product_catalog as explicit_catalog
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_50_int_rules as (
+),  __dbt__cte__cs_ref_50_int_rules as (
 -- Resolve product matches into canonical rule fields.
 --
 -- This stage collapses the explicit/CUSIP candidates into one product
 -- contract per row and assigns a rule_status that review queries can filter on.
 
 with product_matches as (
-    select * from __dbt__cte__cs_v3_40_int_product_matches
+    select * from __dbt__cte__cs_ref_40_int_product_matches
 ),
 
-FINAL as (
+resolved_rules as (
     select
     product_matches.*,
 
     -- Product identity is selected by the priority established in cs_40.
     coalesce(cusip_product_code, explicit_product_code) as product_code,
+    coalesce(cusip_product_family, explicit_product_family) as product_code_family,
+    case
+        when
+            coalesce(cusip_product_family, explicit_product_family) in ('Gas', 'Basis')
+            and is_option
+        then 'gas_option'
+        when coalesce(cusip_product_family, explicit_product_family) in ('Gas', 'Basis')
+        then 'gas_future'
+        when
+            coalesce(cusip_product_family, explicit_product_family) = 'Power'
+            and is_option
+        then 'power_option'
+        when coalesce(cusip_product_family, explicit_product_family) = 'Power'
+        then 'power_future'
+    end as product_code_grouping,
+    coalesce(cusip_market_name, explicit_market_name) as product_code_region,
     coalesce(cusip_product_family, explicit_product_family) as product_family,
     coalesce(cusip_market_name, explicit_market_name) as market_name,
 
     -- Underlying product is only relevant for option rows.
+    case
+        when is_option
+        then coalesce(
+            cusip_underlying_product_code,
+            explicit_underlying_product_code
+        )
+    end as product_code_underlying,
+
+    -- Legacy/internal alias retained for existing review consumers.
     case
         when is_option
         then coalesce(
@@ -505,7 +547,7 @@ FINAL as (
         exchange_name_normalized,
         cusip_default_exchange_name,
         explicit_default_exchange_name
-    ) as rule_exchange_name,
+    ) as exchange_route_code,
 
     -- Rule status explains whether a row is ready for downstream export/review.
     case
@@ -533,11 +575,24 @@ FINAL as (
         then futures_month_code || right(contract_year::text, 2)
     end as futures_month_code_yy
 from product_matches
+),
+
+FINAL as (
+    select
+    resolved_rules.*,
+    resolved_rules.exchange_route_code as rule_exchange_name,
+    case
+        when resolved_rules.exchange_route_code in ('IFED', 'IFE', 'IPE') then 'ice'
+        when resolved_rules.exchange_route_code in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'nymex'
+        when resolved_rules.exchange_route_code is null then 'missing'
+        else 'unsupported'
+    end as route_family
+from resolved_rules
 )
 
 select *
 from FINAL
-),  __dbt__cte__nav_v3_00_src_positions as (
+),  __dbt__cte__nav_ref_00_src_positions as (
 with source_rows as (
     select * from "helios_prod"."nav"."positions"
 ),
@@ -592,20 +647,29 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__nav_v3_10_int_clean as (
+),  __dbt__cte__nav_ref_10_int_clean as (
 with positions as (
-    select * from __dbt__cte__nav_v3_00_src_positions
+    select * from __dbt__cte__nav_ref_00_src_positions
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_ref_positions_and_trades_account_lookup
     where source = 'nav'
 ),
 
 FINAL as (
     select
     positions.*,
+    positions.account as source_account_key,
+    accounts.account_name as account_code,
     accounts.account_name,
+    case
+        when accounts.account_name is not null then 'matched'
+        when nullif(trim(positions.account), '') is null then 'missing_source_account'
+        else 'unmapped'
+    end as account_lookup_status,
+    positions.exchange_name as source_exchange_name,
+    true as is_product_record,
     upper(regexp_replace(coalesce(positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
     (
         upper(coalesce(positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
@@ -636,13 +700,13 @@ left join accounts
 
 select *
 from FINAL
-),  __dbt__cte__nav_v3_20_int_product_matches as (
+),  __dbt__cte__nav_ref_20_int_product_matches as (
 with positions as (
-    select * from __dbt__cte__nav_v3_10_int_clean
+    select * from __dbt__cte__nav_ref_10_int_clean
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_aliases
     where source = 'nav'
 ),
 
@@ -678,13 +742,37 @@ left join lateral (
 
 select *
 from FINAL
-),  __dbt__cte__nav_v3_30_int_rules as (
+),  __dbt__cte__nav_ref_30_int_rules as (
 with positions as (
-    select * from __dbt__cte__nav_v3_20_int_product_matches
+    select * from __dbt__cte__nav_ref_20_int_product_matches
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_catalog
+),
+
+positions_with_effective_product as (
+    select
+        positions.*,
+
+        -- NAV can label PJM Western Hub day-ahead weekend deliveries as PDA.
+        -- Keep the source product/rule diagnostics intact, but expose the
+        -- effective ICE short-term weekend product downstream.
+        case
+            when
+                positions.matched_product_code = 'PDA'
+                and not positions.is_option
+                and positions.contract_yyyymm ~ '^\d{6}$'
+                and positions.contract_day is not null
+                and extract(isodow from to_date(
+                    positions.contract_yyyymm
+                    || lpad(positions.contract_day::text, 2, '0'),
+                    'YYYYMMDD'
+                ))::integer in (6, 7)
+            then 'PDO'
+            else positions.matched_product_code
+        end as effective_product_code
+    from positions
 ),
 
 FINAL as (
@@ -698,7 +786,10 @@ FINAL as (
     positions.broker_name,
     positions.account_group,
     positions.account,
+    positions.source_account_key,
+    positions.account_code,
     positions.account_name,
+    positions.account_lookup_status,
     positions.trade_date,
     positions.product_id_internal,
     positions.product,
@@ -726,6 +817,39 @@ FINAL as (
     positions.sub_sector,
     positions.country,
     positions.exchange_name,
+    positions.source_exchange_name,
+    coalesce(
+        product_catalog.default_exchange_name,
+        case
+            when upper(trim(coalesce(positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+            when trim(coalesce(positions.exchange_name, '')) <> '' then 'IFED'
+        end
+    ) as exchange_route_code,
+    case
+        when coalesce(
+            product_catalog.default_exchange_name,
+            case
+                when upper(trim(coalesce(positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                when trim(coalesce(positions.exchange_name, '')) <> '' then 'IFED'
+            end
+        ) in ('IFED', 'IFE', 'IPE') then 'ice'
+        when coalesce(
+            product_catalog.default_exchange_name,
+            case
+                when upper(trim(coalesce(positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                when trim(coalesce(positions.exchange_name, '')) <> '' then 'IFED'
+            end
+        ) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'nymex'
+        when coalesce(
+            product_catalog.default_exchange_name,
+            case
+                when upper(trim(coalesce(positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                when trim(coalesce(positions.exchange_name, '')) <> '' then 'IFED'
+            end
+        ) is null then 'missing'
+        else 'unsupported'
+    end as route_family,
+    positions.is_product_record,
     positions.source_1_symbol,
     positions.source_3_symbol,
     positions.one_chicago_symbol,
@@ -733,12 +857,25 @@ FINAL as (
     positions.option_style,
     positions.created_at,
     positions.updated_at,
-    product_catalog.product_code,
-    product_catalog.product_family,
-    product_catalog.market_name,
-    case when positions.is_option then product_catalog.underlying_product_code end as underlying_product_code,
-    product_catalog.bbg_exchange_code,
-    product_catalog.default_exchange_name,
+    positions.effective_product_code as product_code,
+    coalesce(effective_product_catalog.product_family, product_catalog.product_family) as product_code_family,
+    case
+        when coalesce(effective_product_catalog.product_family, product_catalog.product_family) in ('Gas', 'Basis') and positions.is_option
+        then 'gas_option'
+        when coalesce(effective_product_catalog.product_family, product_catalog.product_family) in ('Gas', 'Basis')
+        then 'gas_future'
+        when coalesce(effective_product_catalog.product_family, product_catalog.product_family) = 'Power' and positions.is_option
+        then 'power_option'
+        when coalesce(effective_product_catalog.product_family, product_catalog.product_family) = 'Power'
+        then 'power_future'
+    end as product_code_grouping,
+    coalesce(effective_product_catalog.market_name, product_catalog.market_name) as product_code_region,
+    case when positions.is_option then coalesce(effective_product_catalog.underlying_product_code, product_catalog.underlying_product_code) end as product_code_underlying,
+    coalesce(effective_product_catalog.product_family, product_catalog.product_family) as product_family,
+    coalesce(effective_product_catalog.market_name, product_catalog.market_name) as market_name,
+    case when positions.is_option then coalesce(effective_product_catalog.underlying_product_code, product_catalog.underlying_product_code) end as underlying_product_code,
+    coalesce(effective_product_catalog.bbg_exchange_code, product_catalog.bbg_exchange_code) as bbg_exchange_code,
+    coalesce(effective_product_catalog.default_exchange_name, product_catalog.default_exchange_name) as default_exchange_name,
     positions.contract_yyyymm,
     positions.contract_day,
     positions.put_call_code as put_call_code,
@@ -753,9 +890,11 @@ FINAL as (
     positions.rule_priority,
     positions.rule_match_type,
     positions.rule_pattern
-from positions
+from positions_with_effective_product as positions
 left join product_catalog
     on product_catalog.product_code = positions.matched_product_code
+left join product_catalog as effective_product_catalog
+    on effective_product_catalog.product_code = positions.effective_product_code
 )
 
 select *
@@ -768,13 +907,20 @@ from FINAL
         null::text as fund_code,
         null::text as source_file_name,
         null::integer as source_file_row_number,
+        source_account_key,
+        account_code,
         account_name,
+        account_lookup_status,
         null::text as account_group,
         account_number as account,
         rule_product as source_product,
         null::text as source_type,
         null::text as month_year,
-        null::text as exchange_name,
+        exchange_name,
+        source_exchange_name,
+        exchange_route_code,
+        route_family,
+        is_product_record,
         product_code,
         product_family,
         market_name,
@@ -788,8 +934,9 @@ from FINAL
         rule_match_source,
         null::text as rule_match_type,
         null::text as rule_match_pattern
-    from __dbt__cte__cs_v3_50_int_rules
+    from __dbt__cte__cs_ref_50_int_rules
     where rule_status <> 'ok'
+      and is_product_record
 ),
 
 nav_exceptions as (
@@ -800,13 +947,20 @@ nav_exceptions as (
         fund_code,
         source_file_name,
         source_file_row_number,
+        source_account_key,
+        account_code,
         account_name,
+        account_lookup_status,
         account_group,
         account,
         product as source_product,
         type as source_type,
         month_year,
         exchange_name,
+        source_exchange_name,
+        exchange_route_code,
+        route_family,
+        is_product_record,
         product_code,
         product_family,
         market_name,
@@ -820,8 +974,9 @@ nav_exceptions as (
         null::text as rule_match_source,
         rule_match_type,
         rule_pattern as rule_match_pattern
-    from __dbt__cte__nav_v3_30_int_rules
+    from __dbt__cte__nav_ref_30_int_rules
     where rule_status <> 'ok'
+      and is_product_record
 ),
 
 FINAL as (

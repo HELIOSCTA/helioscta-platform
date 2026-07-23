@@ -1,6 +1,6 @@
 ---
 name: positions-trades-product-matching
-description: Run, monitor, or triage HeliosCTA positions/trades product-matching dbt tests under dbt/azure_postgres. Use when working on scheduled or manual dbt tag:product_matching runs, unresolved product rule_status failures, NAV positions or Clear Street all-history rule-status tests, product alias/catalog fixes, dbt target artifacts, or failure reports for positions_and_trades_v2.
+description: Run, monitor, or triage HeliosCTA positions/trades product-matching dbt tests under dbt/azure_postgres. Use when working on scheduled or manual dbt tag:positions_trades_product_matching runs, unresolved product rule_status failures, NAV positions or Clear Street all-history rule-status tests, product alias/catalog fixes, dbt target artifacts, or failure reports for the active 2026_07_22_ref_tables model family.
 ---
 
 # Positions/Trades Product Matching
@@ -49,7 +49,7 @@ The runner loads `.env` without printing values, strips one paired set of
 surrounding quotes from values, activates the expected Conda paths, and runs:
 
 ```powershell
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:product_matching_v3
+C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:positions_trades_product_matching
 ```
 
 Success is exactly:
@@ -62,11 +62,11 @@ PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2
 
 Before diagnosing model failures, inspect the relevant local SQL:
 
-- `tests/positions_and_trades_v3/nav_positions/nav_v3_all_history_rule_status_ok.sql`
-- `tests/positions_and_trades_v3/clear_street_eod_transactions/clear_street_v3_all_history_rule_status_ok.sql`
-- `models/positions_and_trades_v3/utils/`
-- `models/positions_and_trades_v3/nav_positions/`
-- `models/positions_and_trades_v3/clear_street_eod_transactions/`
+- `tests/positions_and_trades/2026_07_22_ref_tables/nav_positions/nav_all_history_product_matching_must_be_ok.sql`
+- `tests/positions_and_trades/2026_07_22_ref_tables/clear_street_eod_transactions/clear_street_all_history_product_matching_must_be_ok.sql`
+- `models/positions_and_trades/2026_07_22_ref_tables/utils/`
+- `models/positions_and_trades/2026_07_22_ref_tables/nav_positions/`
+- `models/positions_and_trades/2026_07_22_ref_tables/clear_street_eod_transactions/`
 
 Paths are repo-root relative unless explicitly noted. For generated SQL
 consumers, inspect:
@@ -74,7 +74,7 @@ consumers, inspect:
 - `scripts/promote_positions_trades_sql.py`
 - `frontend/sql/clear-street-trades/`
 - `frontend/sql/nav-positions/`
-- `target/compiled/helioscta_platform/models/positions_and_trades_v3/` after
+- `target/compiled/helioscta_platform/models/positions_and_trades/2026_07_22_ref_tables/` after
   `dbt compile`
 
 For canonical failure sampling commands, read
@@ -138,7 +138,7 @@ run the smallest meaningful checks:
 
 ```powershell
 dbt parse --profiles-dir .
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
+dbt compile --profiles-dir . --select path:models/positions_and_trades/2026_07_22_ref_tables
 .\scripts\run_product_matching_tests.ps1
 ```
 

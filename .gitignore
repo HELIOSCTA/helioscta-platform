@@ -32,8 +32,13 @@ infrastructure/azure-postgres/bootstrap/
 # Local-only modelling workspace
 modelling/
 
+# Local Excel workbook binaries
+excel/**/*.xls*
+
 # dbt generated artifacts
 dbt/**/target/
+dbt/**/profiles.yml
+dbt/**/.user.yml
 
 # Runtime logs
 *.log

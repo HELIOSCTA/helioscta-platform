@@ -1,7 +1,7 @@
 # Positions And Trades Reference Tables
 
 This directory contains operator-applied SQL for the approved runtime lookup
-tables used by `models/positions_and_trades_v3/`.
+tables used by `models/positions_and_trades/2026_07_22_ref_tables/`.
 
 dbt reads these tables through the `positions_and_trades_ref` source with the
 `helios_readonly` profile. dbt does not create the schema, load rows, upsert

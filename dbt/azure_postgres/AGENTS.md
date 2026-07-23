@@ -32,23 +32,20 @@ product-matching behavior, read:
 - `README.md`
 - `dbt_project.yml`
 - The relevant source, int, mart, or test SQL under
-  `models/positions_and_trades_v2/` and `tests/positions_and_trades_v2/`, or
-  the matching `positions_and_trades_v3` paths when editing the v3 model family
+  `models/positions_and_trades/2026_07_22_ref_tables/` and
+  `tests/positions_and_trades/2026_07_22_ref_tables/` when editing the active
+  positions/trades ref-table model family
 - `scripts/promote_positions_trades_sql.py` when generated frontend/backend SQL
   artifacts are affected
 
 For positions/trades product matching, also inspect:
 
-- `models/positions_and_trades_v2/utils/`
-- `models/positions_and_trades_v3/utils/` when working on v3
-- `models/positions_and_trades_v2/nav_positions/`
-- `models/positions_and_trades_v2/clear_street_eod_transactions/`
-- `models/positions_and_trades_v3/nav_positions/` when working on v3
-- `models/positions_and_trades_v3/clear_street_eod_transactions/` when working
-  on v3
-- `tests/positions_and_trades_v2/nav_positions/nav_all_history_rule_status_ok.sql`
-- `tests/positions_and_trades_v2/clear_street_eod_transactions/clear_street_all_history_rule_status_ok.sql`
-- `tests/positions_and_trades_v3/` when working on v3
+- `models/positions_and_trades/2026_07_22_ref_tables/utils/`
+- `models/positions_and_trades/2026_07_22_ref_tables/nav_positions/`
+- `models/positions_and_trades/2026_07_22_ref_tables/clear_street_eod_transactions/`
+- `tests/positions_and_trades/2026_07_22_ref_tables/`
+- `archived_models/positions_and_trades/2026_07_21_sql_embedded/` only when
+  comparing against the frozen pre-reference-table implementation
 
 ## Model Style
 
@@ -58,7 +55,7 @@ For positions/trades product matching, also inspect:
   data in `utils`, and review/export-facing shapes in `marts`.
 - Keep product aliases, product catalog rows, account lookups, and month-code
   rules in the shared utility models unless the rule is genuinely
-  source-specific. For v3, utility models should project the approved
+  source-specific. For the active ref-table model, utility models should project the approved
   `positions_and_trades_ref` tables rather than reintroducing inline lookup
   `values` blocks.
 - Preserve the source contracts documented in `README.md`: raw Clear Street and
@@ -89,7 +86,7 @@ single or double quotes from each value.
 The exact dbt command is:
 
 ```powershell
-C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:product_matching_v3
+C:\Users\AidanKeaveny\miniconda3\envs\helioscta-azure-backend\Scripts\dbt.exe test --profiles-dir . --select tag:positions_trades_product_matching
 ```
 
 Success means:
@@ -117,16 +114,14 @@ For dbt-only changes, prefer the smallest meaningful checks:
 
 ```powershell
 dbt parse --profiles-dir .
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v2
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
+dbt compile --profiles-dir . --select path:models/positions_and_trades/2026_07_22_ref_tables
 .\scripts\run_product_matching_tests.ps1
 ```
 
 For positions/trades SQL style checks, run from the repo root:
 
 ```powershell
-python .agents\skills\helioscta-dbt-final-cte\scripts\check_final_cte.py dbt\azure_postgres\models\positions_and_trades_v2
-python .agents\skills\helioscta-dbt-final-cte\scripts\check_final_cte.py dbt\azure_postgres\models\positions_and_trades_v3
+python .agents\skills\helioscta-dbt-final-cte\scripts\check_final_cte.py dbt\azure_postgres\models\positions_and_trades\2026_07_22_ref_tables
 ```
 
 For repo skill validation, run from the repo root:
@@ -136,7 +131,7 @@ python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_v
 python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\helioscta-dbt-final-cte
 ```
 
-If active v3 generated SQL changes, also run:
+If active generated SQL changes, also run:
 
 ```powershell
 python scripts/promote_positions_trades_sql.py
@@ -144,6 +139,7 @@ python scripts/promote_positions_trades_sql.py
 
 Then review the generated diff for intended changes only.
 
-The active positions/trades promotion source is `positions_and_trades_v3`.
-Treat `positions_and_trades_v2` as frozen unless the user explicitly asks to
-repair the archived baseline.
+The active positions/trades promotion source is
+`models/positions_and_trades/2026_07_22_ref_tables`. Treat archived models
+under `archived_models/positions_and_trades/` as frozen unless the user
+explicitly asks to repair an archived baseline.

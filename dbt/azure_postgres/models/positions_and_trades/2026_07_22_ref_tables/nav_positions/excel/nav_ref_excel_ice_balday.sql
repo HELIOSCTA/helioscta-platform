@@ -1,0 +1,55 @@
+with grouped_latest as (
+    select * from {{ ref('nav_ref_excel_30_positions_grouped_latest') }}
+),
+
+FINAL as (
+    select
+        sftp_date as "SFTP Date",
+        previous_sftp_date as "Previous SFTP Date",
+        contract_yyyymmdd as "Expiration",
+        daily_contract_business_offset_days::numeric as "DTE",
+        exchange_code as "Exchange Code",
+        exchange_code_grouping as "Grouping",
+        exchange_code_region as "Region",
+        left(contract_yyyymm, 4) || '-' || right(contract_yyyymm, 2) as "YYYYMM",
+        contract_yyyymmdd as "YYYYMMDD",
+        marex_description as "MAREX Description",
+        ice_xl_symbol as "ICE XL",
+        lots as "ICE Lots",
+        qty_total as "QTY",
+        dod_qty_total as "DoD QTY",
+        qty_acim as "ACIM",
+        qty_pnt as "PNT",
+        qty_dickson as "DICKSON",
+        qty_titan as "TITAN",
+        round(settlement_price_total::numeric, 3) as "MAREX Settle",
+        round(previous_settlement_price_total::numeric, 3) as "Previous MAREX Settle",
+        round(daily_change_total::numeric, 3) as "Change between Settles",
+        round(daily_pnl_total::numeric, 0) as "PnL from Settles"
+    from grouped_latest
+    where route_family = 'ice'
+      and not is_option
+      and exchange_code_grouping in ('SHORT_TERM_POWER_RT', 'SHORT_TERM_POWER')
+      and contract_yyyymmdd is not null
+      and (
+        daily_contract_business_offset_days >= -1
+        or daily_contract_business_offset_days is null
+      )
+)
+
+select *
+from FINAL
+order by
+    "SFTP Date" desc,
+    "YYYYMMDD",
+    "Exchange Code",
+    case "Grouping"
+        when 'SHORT_TERM_POWER_RT' then 1
+        when 'SHORT_TERM_POWER' then 2
+        else 999
+    end,
+    case "Region"
+        when 'PJM' then 1
+        else 999
+    end,
+    "DTE"

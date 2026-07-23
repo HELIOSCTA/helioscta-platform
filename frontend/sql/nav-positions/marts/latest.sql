@@ -3,7 +3,7 @@
 -- Keep this latest mart optimized for frontend review: choose each fund's
 -- latest NAV date and upload before running product matching.
 
-with  __dbt__cte__nav_v3_00_src_positions as (
+with  __dbt__cte__nav_ref_00_src_positions as (
 with source_rows as (
     select * from "helios_prod"."nav"."positions"
 ),
@@ -58,7 +58,7 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_account_lookup as (
+),  __dbt__cte__utils_ref_positions_and_trades_account_lookup as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
 ),
@@ -74,7 +74,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_aliases as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_aliases as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
 ),
@@ -93,7 +93,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_catalog as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_catalog as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
 ),
@@ -112,21 +112,21 @@ FINAL as (
 select *
 from FINAL
 ), source_positions as (
-    select * from __dbt__cte__nav_v3_00_src_positions
+    select * from __dbt__cte__nav_ref_00_src_positions
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_ref_positions_and_trades_account_lookup
     where source = 'nav'
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_aliases
     where source = 'nav'
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_catalog
 ),
 
 latest_file_by_fund as (
@@ -150,10 +150,19 @@ latest_positions as (
        and latest_file_by_fund.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
 ),
 
-clean_positions as (
+    clean_positions as (
     select
         latest_positions.*,
+        latest_positions.account as source_account_key,
+        accounts.account_name as account_code,
         accounts.account_name,
+        case
+            when accounts.account_name is not null then 'matched'
+            when nullif(trim(latest_positions.account), '') is null then 'missing_source_account'
+            else 'unmapped'
+        end as account_lookup_status,
+        latest_positions.exchange_name as source_exchange_name,
+        true as is_product_record,
         upper(regexp_replace(coalesce(latest_positions.product, ''), '[[:space:]]+', ' ', 'g')) as product_norm,
         (
             upper(coalesce(latest_positions.call_put, '')) in ('CALL', 'PUT', 'C', 'P')
@@ -212,6 +221,26 @@ matched_positions as (
     ) as matched_alias on true
 ),
 
+matched_positions_with_effective_product as (
+    select
+        matched_positions.*,
+        case
+            when
+                matched_positions.matched_product_code = 'PDA'
+                and not matched_positions.is_option
+                and matched_positions.contract_yyyymm ~ '^\d{6}$'
+                and matched_positions.contract_day is not null
+                and extract(isodow from to_date(
+                    matched_positions.contract_yyyymm
+                    || lpad(matched_positions.contract_day::text, 2, '0'),
+                    'YYYYMMDD'
+                ))::integer in (6, 7)
+            then 'PDO'
+            else matched_positions.matched_product_code
+        end as effective_product_code
+    from matched_positions
+),
+
 FINAL as (
     select
         matched_positions.fund_code,
@@ -223,7 +252,10 @@ FINAL as (
         matched_positions.broker_name,
         matched_positions.account_group,
         matched_positions.account,
+        matched_positions.source_account_key,
+        matched_positions.account_code,
         matched_positions.account_name,
+        matched_positions.account_lookup_status,
         matched_positions.trade_date,
         matched_positions.product_id_internal,
         matched_positions.product,
@@ -251,6 +283,39 @@ FINAL as (
         matched_positions.sub_sector,
         matched_positions.country,
         matched_positions.exchange_name,
+        matched_positions.source_exchange_name,
+        coalesce(
+            product_catalog.default_exchange_name,
+            case
+                when upper(trim(coalesce(matched_positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                when trim(coalesce(matched_positions.exchange_name, '')) <> '' then 'IFED'
+            end
+        ) as exchange_route_code,
+        case
+            when coalesce(
+                product_catalog.default_exchange_name,
+                case
+                    when upper(trim(coalesce(matched_positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                    when trim(coalesce(matched_positions.exchange_name, '')) <> '' then 'IFED'
+                end
+            ) in ('IFED', 'IFE', 'IPE') then 'ice'
+            when coalesce(
+                product_catalog.default_exchange_name,
+                case
+                    when upper(trim(coalesce(matched_positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                    when trim(coalesce(matched_positions.exchange_name, '')) <> '' then 'IFED'
+                end
+            ) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'nymex'
+            when coalesce(
+                product_catalog.default_exchange_name,
+                case
+                    when upper(trim(coalesce(matched_positions.exchange_name, ''))) in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'NYME'
+                    when trim(coalesce(matched_positions.exchange_name, '')) <> '' then 'IFED'
+                end
+            ) is null then 'missing'
+            else 'unsupported'
+        end as route_family,
+        matched_positions.is_product_record,
         matched_positions.source_1_symbol,
         matched_positions.source_3_symbol,
         matched_positions.one_chicago_symbol,
@@ -258,12 +323,25 @@ FINAL as (
         matched_positions.option_style,
         matched_positions.created_at,
         matched_positions.updated_at,
-        product_catalog.product_code,
-        product_catalog.product_family,
-        product_catalog.market_name,
-        case when matched_positions.is_option then product_catalog.underlying_product_code end as underlying_product_code,
-        product_catalog.bbg_exchange_code,
-        product_catalog.default_exchange_name,
+        matched_positions.effective_product_code as product_code,
+        coalesce(effective_product_catalog.product_family, product_catalog.product_family) as product_code_family,
+        case
+            when coalesce(effective_product_catalog.product_family, product_catalog.product_family) in ('Gas', 'Basis') and matched_positions.is_option
+            then 'gas_option'
+            when coalesce(effective_product_catalog.product_family, product_catalog.product_family) in ('Gas', 'Basis')
+            then 'gas_future'
+            when coalesce(effective_product_catalog.product_family, product_catalog.product_family) = 'Power' and matched_positions.is_option
+            then 'power_option'
+            when coalesce(effective_product_catalog.product_family, product_catalog.product_family) = 'Power'
+            then 'power_future'
+        end as product_code_grouping,
+        coalesce(effective_product_catalog.market_name, product_catalog.market_name) as product_code_region,
+        case when matched_positions.is_option then coalesce(effective_product_catalog.underlying_product_code, product_catalog.underlying_product_code) end as product_code_underlying,
+        coalesce(effective_product_catalog.product_family, product_catalog.product_family) as product_family,
+        coalesce(effective_product_catalog.market_name, product_catalog.market_name) as market_name,
+        case when matched_positions.is_option then coalesce(effective_product_catalog.underlying_product_code, product_catalog.underlying_product_code) end as underlying_product_code,
+        coalesce(effective_product_catalog.bbg_exchange_code, product_catalog.bbg_exchange_code) as bbg_exchange_code,
+        coalesce(effective_product_catalog.default_exchange_name, product_catalog.default_exchange_name) as default_exchange_name,
         matched_positions.contract_yyyymm,
         matched_positions.contract_day,
         matched_positions.put_call_code as put_call_code,
@@ -278,9 +356,11 @@ FINAL as (
         matched_positions.rule_priority,
         matched_positions.rule_match_type,
         matched_positions.rule_pattern
-    from matched_positions
+    from matched_positions_with_effective_product as matched_positions
     left join product_catalog
         on product_catalog.product_code = matched_positions.matched_product_code
+    left join product_catalog as effective_product_catalog
+        on effective_product_catalog.product_code = matched_positions.effective_product_code
 )
 
 select *

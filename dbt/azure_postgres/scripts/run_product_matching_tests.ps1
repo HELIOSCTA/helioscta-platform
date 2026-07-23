@@ -66,7 +66,7 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
 
 Push-Location $projectRoot
 try {
-    dbt test --profiles-dir $profilesDir --select tag:product_matching_v3
+    dbt test --profiles-dir $profilesDir --select tag:positions_trades_product_matching
     exit $LASTEXITCODE
 }
 finally {

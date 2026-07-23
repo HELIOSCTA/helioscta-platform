@@ -2,9 +2,9 @@
 --
 -- Clear Street can send multiple uploads for the same SFTP trade date. This
 -- model keeps every loaded source row with the same curated review/export
--- contract used by cs_v3_70_eod_latest, without narrowing to the latest file.
+-- contract used by cs_ref_70_eod_latest, without narrowing to the latest file.
 
-with  __dbt__cte__cs_v3_00_src_eod_txns as (
+with  __dbt__cte__cs_ref_00_src_eod_txns as (
 -- Clear Street source projection.
 --
 -- Keep this model intentionally close to the raw source table contract:
@@ -120,7 +120,7 @@ from source_rows
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_10_int_clean_fields as (
+),  __dbt__cte__cs_ref_10_int_clean_fields as (
 -- Field-level cleanup for raw Clear Street strings.
 --
 -- The source table preserves the CSV payload as loaded. Some text fields can
@@ -129,7 +129,7 @@ from FINAL
 -- rule matching while preserving the original raw columns from trades.*.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_00_src_eod_txns
+    select * from __dbt__cte__cs_ref_00_src_eod_txns
 ),
 
 FINAL as (
@@ -164,7 +164,7 @@ from trades
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_month_codes as (
+),  __dbt__cte__utils_ref_positions_and_trades_month_codes as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."month_codes"
 ),
@@ -179,7 +179,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_20_int_contracts as (
+),  __dbt__cte__cs_ref_20_int_contracts as (
 -- Contract and date parsing.
 --
 -- This stage turns cleaned source strings into typed date/contract helpers.
@@ -187,11 +187,11 @@ from FINAL
 -- independently reviewable when source files contain malformed dates or months.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_10_int_clean_fields
+    select * from __dbt__cte__cs_ref_10_int_clean_fields
 ),
 
 month_codes as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_month_codes
+    select * from __dbt__cte__utils_ref_positions_and_trades_month_codes
 ),
 
 contract_base as (
@@ -245,7 +245,7 @@ left join month_codes
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_account_lookup as (
+),  __dbt__cte__utils_ref_positions_and_trades_account_lookup as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
 ),
@@ -261,7 +261,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_30_int_trade_attrs as (
+),  __dbt__cte__cs_ref_30_int_trade_attrs as (
 -- Trade attributes used by account, option, and product-rule logic.
 --
 -- This stage adds business-facing helpers that are not raw source fields:
@@ -269,11 +269,11 @@ from FINAL
 -- exchange-name normalization, and source product text for review diagnostics.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_20_int_contracts
+    select * from __dbt__cte__cs_ref_20_int_contracts
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_account_lookup
+    select * from __dbt__cte__utils_ref_positions_and_trades_account_lookup
     where source = 'clear_street'
 ),
 
@@ -293,10 +293,12 @@ prepared_trades as (
         upper(trades.security_type_code_clean) as security_type_code_norm,
         upper(trades.instr_type_clean) as instr_type_norm,
 
-        -- Clear Street uses several source labels for the same exchange family.
+        -- Clear Street uses several source labels and short codes for the same exchange family.
         case upper(trades.exchange_name_clean)
             when 'NYM' then 'NYME'
             when 'NYME' then 'NYME'
+            when 'NYMEX' then 'NYME'
+            when 'NMY' then 'NYME'
             when 'IFE' then 'IFED'
             when 'IPE' then 'IFED'
             when 'IFED' then 'IFED'
@@ -304,44 +306,9 @@ prepared_trades as (
     from trades
 ),
 
-FINAL as (
+with_trade_flags as (
     select
     prepared_trades.*,
-    accounts.account_name,
-
-    -- Prefer the explicit security description, falling back to instrument/symbol.
-    coalesce(
-        prepared_trades.security_description_clean,
-        prepared_trades.instrument_description_clean,
-        prepared_trades.symbol_clean
-    ) as rule_product,
-
-    -- Upper/space-normalized product text is kept for diagnostics and review.
-    nullif(
-        upper(regexp_replace(coalesce(
-            prepared_trades.security_description_clean,
-            prepared_trades.instrument_description_clean,
-            prepared_trades.symbol_clean,
-            ''
-        ), '[[:space:]]+', ' ', 'g')),
-        ''
-    ) as rule_product_norm,
-
-    -- Clear Street side codes: 1 = buy, 2 = sell.
-    case
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 1 then 'B'
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 2 then 'S'
-    end as buy_sell_cleaned,
-
-    -- Signed quantity lets grouped views sum buys and sells directly.
-    case
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 1 then prepared_trades.quantity
-        when prepared_trades.buy_sell_clean ~ '^\d+$' and prepared_trades.buy_sell_clean::integer = 2 then -1 * prepared_trades.quantity
-    end as quantity_cleaned,
-    case
-        when prepared_trades.strike_price is not null and prepared_trades.strike_price <> 0
-        then round(prepared_trades.strike_price::numeric, 3)::double precision
-    end as strike_price_normalized,
 
     -- Residual cash adjustment rows should not be treated as missing products.
     (
@@ -364,14 +331,64 @@ FINAL as (
         or prepared_trades.instr_type_norm in ('O', 'OPT', 'OPTION')
         or prepared_trades.instr_type_norm like '%OPTION%'
     ) as is_option
-from prepared_trades
+    from prepared_trades
+),
+
+FINAL as (
+    select
+    with_trade_flags.*,
+    with_trade_flags.give_in_out_firm_num_clean as source_account_key,
+    accounts.account_name as account_code,
+    accounts.account_name,
+    case
+        when accounts.account_name is not null then 'matched'
+        when nullif(trim(with_trade_flags.give_in_out_firm_num_clean), '') is null then 'missing_source_account'
+        else 'unmapped'
+    end as account_lookup_status,
+    with_trade_flags.exchange_name as source_exchange_name,
+    not with_trade_flags.is_non_product_cash_adjustment as is_product_record,
+
+    -- Prefer the explicit security description, falling back to instrument/symbol.
+    coalesce(
+        with_trade_flags.security_description_clean,
+        with_trade_flags.instrument_description_clean,
+        with_trade_flags.symbol_clean
+    ) as rule_product,
+
+    -- Upper/space-normalized product text is kept for diagnostics and review.
+    nullif(
+        upper(regexp_replace(coalesce(
+            with_trade_flags.security_description_clean,
+            with_trade_flags.instrument_description_clean,
+            with_trade_flags.symbol_clean,
+            ''
+        ), '[[:space:]]+', ' ', 'g')),
+        ''
+    ) as rule_product_norm,
+
+    -- Clear Street side codes: 1 = buy, 2 = sell.
+    case
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 1 then 'B'
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 2 then 'S'
+    end as buy_sell_cleaned,
+
+    -- Signed quantity lets grouped views sum buys and sells directly.
+    case
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 1 then with_trade_flags.quantity
+        when with_trade_flags.buy_sell_clean ~ '^\d+$' and with_trade_flags.buy_sell_clean::integer = 2 then -1 * with_trade_flags.quantity
+    end as quantity_cleaned,
+    case
+        when with_trade_flags.strike_price is not null and with_trade_flags.strike_price <> 0
+        then round(with_trade_flags.strike_price::numeric, 3)::double precision
+    end as strike_price_normalized
+from with_trade_flags
 left join accounts
-    on prepared_trades.give_in_out_firm_num_clean = accounts.account
+    on with_trade_flags.give_in_out_firm_num_clean = accounts.account
 )
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_catalog as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_catalog as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
 ),
@@ -389,7 +406,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__utils_v3_positions_and_trades_product_aliases as (
+),  __dbt__cte__utils_ref_positions_and_trades_product_aliases as (
 with source_rows as (
     select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
 ),
@@ -408,7 +425,7 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_40_int_product_matches as (
+),  __dbt__cte__cs_ref_40_int_product_matches as (
 -- Product match candidates for Clear Street rows.
 --
 -- Matching runs in priority order:
@@ -416,15 +433,15 @@ from FINAL
 -- 2. explicit Clear Street exchange commodity code in the product catalog
 
 with trades as (
-    select * from __dbt__cte__cs_v3_30_int_trade_attrs
+    select * from __dbt__cte__cs_ref_30_int_trade_attrs
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_catalog
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_catalog
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_v3_positions_and_trades_product_aliases
+    select * from __dbt__cte__utils_ref_positions_and_trades_product_aliases
     where source = 'clear_street'
 ),
 
@@ -477,26 +494,51 @@ left join product_catalog as explicit_catalog
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_50_int_rules as (
+),  __dbt__cte__cs_ref_50_int_rules as (
 -- Resolve product matches into canonical rule fields.
 --
 -- This stage collapses the explicit/CUSIP candidates into one product
 -- contract per row and assigns a rule_status that review queries can filter on.
 
 with product_matches as (
-    select * from __dbt__cte__cs_v3_40_int_product_matches
+    select * from __dbt__cte__cs_ref_40_int_product_matches
 ),
 
-FINAL as (
+resolved_rules as (
     select
     product_matches.*,
 
     -- Product identity is selected by the priority established in cs_40.
     coalesce(cusip_product_code, explicit_product_code) as product_code,
+    coalesce(cusip_product_family, explicit_product_family) as product_code_family,
+    case
+        when
+            coalesce(cusip_product_family, explicit_product_family) in ('Gas', 'Basis')
+            and is_option
+        then 'gas_option'
+        when coalesce(cusip_product_family, explicit_product_family) in ('Gas', 'Basis')
+        then 'gas_future'
+        when
+            coalesce(cusip_product_family, explicit_product_family) = 'Power'
+            and is_option
+        then 'power_option'
+        when coalesce(cusip_product_family, explicit_product_family) = 'Power'
+        then 'power_future'
+    end as product_code_grouping,
+    coalesce(cusip_market_name, explicit_market_name) as product_code_region,
     coalesce(cusip_product_family, explicit_product_family) as product_family,
     coalesce(cusip_market_name, explicit_market_name) as market_name,
 
     -- Underlying product is only relevant for option rows.
+    case
+        when is_option
+        then coalesce(
+            cusip_underlying_product_code,
+            explicit_underlying_product_code
+        )
+    end as product_code_underlying,
+
+    -- Legacy/internal alias retained for existing review consumers.
     case
         when is_option
         then coalesce(
@@ -511,7 +553,7 @@ FINAL as (
         exchange_name_normalized,
         cusip_default_exchange_name,
         explicit_default_exchange_name
-    ) as rule_exchange_name,
+    ) as exchange_route_code,
 
     -- Rule status explains whether a row is ready for downstream export/review.
     case
@@ -539,11 +581,24 @@ FINAL as (
         then futures_month_code || right(contract_year::text, 2)
     end as futures_month_code_yy
 from product_matches
+),
+
+FINAL as (
+    select
+    resolved_rules.*,
+    resolved_rules.exchange_route_code as rule_exchange_name,
+    case
+        when resolved_rules.exchange_route_code in ('IFED', 'IFE', 'IPE') then 'ice'
+        when resolved_rules.exchange_route_code in ('NYME', 'NYM', 'NYMEX', 'NMY') then 'nymex'
+        when resolved_rules.exchange_route_code is null then 'missing'
+        else 'unsupported'
+    end as route_family
+from resolved_rules
 )
 
 select *
 from FINAL
-),  __dbt__cte__cs_v3_60_int_export_codes as (
+),  __dbt__cte__cs_ref_60_int_export_codes as (
 -- Vendor product-code construction.
 --
 -- This stage derives product identifiers used by downstream MUFG review/export
@@ -552,10 +607,10 @@ from FINAL
 -- contract month helpers rather than raw Clear Street strings.
 
 with trades as (
-    select * from __dbt__cte__cs_v3_50_int_rules
+    select * from __dbt__cte__cs_ref_50_int_rules
 ),
 
-strike_base as (
+strike_base_raw as (
     select
         contract_base.*,
 
@@ -568,7 +623,7 @@ strike_base as (
                 trailing '0'
                 from to_char(strike_price_normalized, 'FM999999999.999')
             )
-        ) as strike_text,
+        ) as strike_text_raw,
 
         -- Daily/weekly ICE short-term symbols are not based on contract_yyyymm.
         -- For Clear Street rows, the most precise delivery date is usually the
@@ -578,23 +633,72 @@ strike_base as (
             contract_base.cusip_contract_date,
             contract_base.contract_date_from_parts
         ) as daily_contract_date,
+        extract(isodow from coalesce(
+            contract_base.cusip_contract_date,
+            contract_base.contract_date_from_parts
+        ))::integer between 1 and 5 as daily_contract_is_weekday,
 
         -- Prefer the Clear Street trade date; sftp_date is only a fallback for
         -- malformed or missing trade_date strings.
         coalesce(contract_base.trade_date_parsed, contract_base.sftp_date) as daily_trade_date,
 
-        -- Calendar-day offset from trade date to delivery date. This is used
-        -- only for exact D0/D1 classification. A positive offset greater than
-        -- one is not automatically D1 because PDP/PWA can represent weekly or
-        -- forward short-term strips.
+        -- Calendar-day offset from trade date to delivery date. Keep this for
+        -- audit/debugging; D0/D1 symbol classification uses the weekday-only
+        -- business offset below.
+        coalesce(
+            contract_base.cusip_contract_date,
+            contract_base.contract_date_from_parts
+        ) - coalesce(contract_base.trade_date_parsed, contract_base.sftp_date) as daily_contract_calendar_offset_days,
+
+        -- Backward-compatible alias for the original calendar offset.
         coalesce(
             contract_base.cusip_contract_date,
             contract_base.contract_date_from_parts
         ) - coalesce(contract_base.trade_date_parsed, contract_base.sftp_date) as daily_contract_offset_days,
 
+        -- Mon-Fri business-day offset from trade date to delivery date.
+        -- Friday trade / Monday delivery is therefore D1, while true forward
+        -- daily strips remain greater than one business day.
+        case
+            when coalesce(
+                    contract_base.cusip_contract_date,
+                    contract_base.contract_date_from_parts
+                ) is null
+                or coalesce(contract_base.trade_date_parsed, contract_base.sftp_date) is null
+            then null
+            when coalesce(
+                    contract_base.cusip_contract_date,
+                    contract_base.contract_date_from_parts
+                ) >= coalesce(contract_base.trade_date_parsed, contract_base.sftp_date)
+            then (
+                select count(*)::integer
+                from generate_series(
+                    coalesce(contract_base.trade_date_parsed, contract_base.sftp_date) + interval '1 day',
+                    coalesce(
+                        contract_base.cusip_contract_date,
+                        contract_base.contract_date_from_parts
+                    ),
+                    interval '1 day'
+                ) as business_days(calendar_date)
+                where extract(isodow from business_days.calendar_date)::integer between 1 and 5
+            )
+            else -1 * (
+                select count(*)::integer
+                from generate_series(
+                    coalesce(
+                        contract_base.cusip_contract_date,
+                        contract_base.contract_date_from_parts
+                    ) + interval '1 day',
+                    coalesce(contract_base.trade_date_parsed, contract_base.sftp_date),
+                    interval '1 day'
+                ) as business_days(calendar_date)
+                where extract(isodow from business_days.calendar_date)::integer between 1 and 5
+            )
+        end as daily_contract_business_offset_days,
+
         -- Monday-start week offset between trade week and delivery week.
-        -- This supports PDP W0-W4 mapping, which matches the local PJM ICE
-        -- registry. Other products are left null unless explicitly supported.
+        -- This supports PDP/PWA W0-W4 mapping. Other products are left null
+        -- unless explicitly supported.
         floor((
             date_trunc('week', coalesce(
                 contract_base.cusip_contract_date,
@@ -627,100 +731,163 @@ strike_base as (
     ) as contract_base
 ),
 
-export_base as (
+strike_base as (
+    select
+        strike_base_raw.*,
+        case
+            when strike_base_raw.strike_text_raw like '.%' then '0' || strike_base_raw.strike_text_raw
+            when strike_base_raw.strike_text_raw like '-.%' then '-0' || substring(strike_base_raw.strike_text_raw from 2)
+            else strike_base_raw.strike_text_raw
+        end as strike_text
+    from strike_base_raw
+),
+
+effective_product_base as (
     select
         strike_base.*,
+
+        -- Clear Street can label PJM Western Hub day-ahead weekend deliveries
+        -- as PDA in source/CUSIP. The effective ICE short-term weekend product
+        -- is PDO, while the raw source fields remain available for audit.
+        case
+            when
+                strike_base.product_code = 'PDA'
+                and not strike_base.is_option
+                and strike_base.daily_contract_date is not null
+                and not strike_base.daily_contract_is_weekday
+            then 'PDO'
+            else strike_base.product_code
+        end as product_code_effective
+    from strike_base
+),
+
+export_base as (
+    select
+        effective_product_base.*,
 
         -- ICE codes cover IFED futures/options plus daily and weekly products.
         -- For short-term products, derive only symbols supported by the local
         -- PJM/ICE registries from Clear Street trade date and CUSIP date.
         case
-            -- Same-day PJM RT daily products.
+            -- Weekend day-ahead rows map to the explicit PJM DA off-peak
+            -- weekend short-term symbol.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code in ('PDP', 'PWA')
-                and strike_base.daily_contract_offset_days = 0
-            then strike_base.product_code || ' D0-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective = 'PDO'
+                and effective_product_base.daily_contract_date is not null
+                and not effective_product_base.daily_contract_is_weekday
+            then 'PDO P1-IUS'
 
-            -- Next-day daily products. Keep this to offset = 1 only; larger
-            -- offsets may be weekly/forward strips and should not be forced
-            -- into a D1 symbol.
+            -- Same-day RT daily products with exact symbols in the local ICE registry.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code in ('PDP', 'PWA', 'PDA', 'PJL', 'SDP', 'END')
-                and strike_base.daily_contract_offset_days = 1
-            then strike_base.product_code || ' D1-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA', 'DDP', 'ERA', 'END')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days = 0
+            then effective_product_base.product_code_effective || ' D0-IUS'
 
-            -- PDP has explicit weekly symbols in the PJM registry. Map only
-            -- week buckets that exist locally; leave other products/null cases
-            -- unresolved for review rather than guessing.
+            -- Next-day daily products with exact symbols in the local ICE registry.
+            -- Larger offsets may be weekly/forward strips and should not be
+            -- forced into a D1 symbol.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code = 'PDP'
-                and strike_base.daily_contract_offset_days > 1
-                and strike_base.daily_contract_week_offset between 0 and 4
-            then strike_base.product_code || ' W' || strike_base.daily_contract_week_offset::text || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA', 'PDA', 'PJL', 'SDP', 'ERA', 'END', 'NEZ')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days = 1
+            then effective_product_base.product_code_effective || ' D1-IUS'
+
+            -- PDP/PWA have weekly W0-W4 symbol patterns. Map only weekday
+            -- delivery rows with a forward business offset greater than D1.
+            when
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days > 1
+                and effective_product_base.daily_contract_week_offset between 0 and 4
+            then effective_product_base.product_code_effective || ' W' || effective_product_base.daily_contract_week_offset::text || '-IUS'
 
             -- Henry Hub daily swing style code.
-            when strike_base.rule_exchange_name = 'IFED' and strike_base.product_code = 'HHD'
-            then strike_base.product_code || ' B0-IUS'
+            when effective_product_base.rule_exchange_name = 'IFED' and effective_product_base.product_code_effective = 'HHD'
+            then effective_product_base.product_code_effective || ' B0-IUS'
 
             -- ICE option symbols include product, month/year, put/call, and
             -- strike. Use strike_text so decimal strikes such as 3.75 are not
             -- rounded to whole numbers.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and strike_base.is_option
-                and strike_base.put_call_code is not null
-                and strike_base.strike_text is not null
-                and strike_base.futures_month_code_yy is not null
-            then strike_base.product_code || ' ' || strike_base.futures_month_code_yy || strike_base.put_call_code
-                || strike_base.strike_text || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and effective_product_base.is_option
+                and effective_product_base.put_call_code is not null
+                and effective_product_base.strike_text is not null
+                and effective_product_base.futures_month_code_yy is not null
+            then effective_product_base.product_code_effective || ' ' || effective_product_base.futures_month_code_yy || effective_product_base.put_call_code
+                || effective_product_base.strike_text || '-IUS'
 
             -- Standard monthly IFED futures.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.contract_day is null
-                and strike_base.futures_month_code_yy is not null
-            then strike_base.product_code || ' ' || strike_base.futures_month_code_yy || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.contract_day is null
+                and effective_product_base.futures_month_code_yy is not null
+            then effective_product_base.product_code_effective || ' ' || effective_product_base.futures_month_code_yy || '-IUS'
         end as ice_product_code
-    from strike_base
+    from effective_product_base
 ),
 
 FINAL as (
     select
     export_base.*,
 
-    -- CME Excel codes are only available for products covered by the legacy map.
+    -- CME Excel codes are emitted for NYMEX-routed rows and the PHE Excel
+    -- exception. MUFG-specific models mask ICE-routed CME/BBG fields back to
+    -- null so the handoff remains ICE-code only for ICE rows.
     -- Products outside this explicit list intentionally remain null until a
     -- verified vendor-code pattern is added.
     case
-        when product_code in ('HP', 'PHH', 'HH', 'H', 'NG') and contract_yyyymm is not null
+        when
+            route_family = 'nymex'
+            and product_code in ('HP', 'PHH', 'HH', 'H', 'NG')
+            and contract_yyyymm is not null
         then '1|G|XNYM:F:NG:' || contract_yyyymm
         when
-            product_code in ('LN', 'PHE')
+            route_family = 'nymex'
+            and product_code = 'LN'
             and contract_yyyymm is not null
             and put_call_code is not null
             and strike_price_normalized is not null
         then '1|G|XNYM:O:LN:' || contract_yyyymm || ':' || put_call_code || ':' || strike_text
         when
-            product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
+            product_code = 'PHE'
+            and contract_yyyymm is not null
+            and put_call_code is not null
+            and strike_price_normalized is not null
+        then '1|G|XNYM:O:LN:' || contract_yyyymm || ':' || put_call_code || ':' || strike_text
+        when
+            route_family = 'nymex'
+            and product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
             and contract_yyyymm is not null
             and put_call_code is not null
             and strike_price_normalized is not null
         then '1|G|XNYM:O:KN' || substring(product_code from 3) || ':'
             || contract_yyyymm || ':' || put_call_code || ':' || strike_text
         when
-            product_code in ('JN1', 'KN2', 'KN3', 'KN4')
+            route_family = 'nymex'
+            and product_code in ('JN1', 'KN2', 'KN3', 'KN4')
             and contract_yyyymm is not null
             and put_call_code is not null
             and strike_price_normalized is not null
         then '1|G|XNYM:O:' || product_code || ':'
             || contract_yyyymm || ':' || put_call_code || ':' || strike_text
+        when
+            route_family = 'nymex'
+            and product_code = 'G4'
+            and contract_yyyymm is not null
+            and put_call_code is not null
+            and strike_price_normalized is not null
+        then '1|G|XNYM:O:G4:' || contract_yyyymm || ':' || put_call_code || ':' || strike_text
     end as cme_product_code,
 
     -- Bloomberg codes depend on product-specific exchange prefixes.
@@ -728,14 +895,27 @@ FINAL as (
     -- stay null so review queries can find gaps instead of receiving invented
     -- Bloomberg symbols.
     case
-        when product_code = 'HP' and bbg_exchange_code = 'ZA' and futures_month_code_y is not null
+        when
+            route_family = 'nymex'
+            and product_code = 'HP'
+            and bbg_exchange_code = 'ZA'
+            and futures_month_code_y is not null
         then bbg_exchange_code || futures_month_code_y || ' COMDTY'
-        when product_code = 'HH' and bbg_exchange_code = 'IW' and futures_month_code_y is not null
+        when
+            route_family = 'nymex'
+            and product_code = 'HH'
+            and bbg_exchange_code = 'IW'
+            and futures_month_code_y is not null
         then bbg_exchange_code || futures_month_code_y || ' COMDTY'
-        when product_code = 'NG' and bbg_exchange_code = 'NG' and futures_month_code_yy is not null
+        when
+            route_family = 'nymex'
+            and product_code = 'NG'
+            and bbg_exchange_code = 'NG'
+            and futures_month_code_yy is not null
         then bbg_exchange_code || futures_month_code_yy || ' COMDTY'
         when
-            product_code in ('LN', 'PHE')
+            route_family = 'nymex'
+            and product_code = 'LN'
             and bbg_exchange_code = 'NG'
             and futures_month_code_y is not null
             and put_call_code is not null
@@ -743,19 +923,36 @@ FINAL as (
         then bbg_exchange_code || futures_month_code_y || put_call_code || ' '
             || strike_text || ' COMDTY'
         when
-            product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
+            product_code = 'PHE'
+            and futures_month_code_y is not null
+            and put_call_code is not null
+            and strike_text is not null
+        then coalesce(bbg_exchange_code, 'NG') || futures_month_code_y || put_call_code || ' '
+            || strike_text || ' COMDTY'
+        when
+            route_family = 'nymex'
+            and product_code in ('LN1', 'LN2', 'LN3', 'LN4', 'LN5')
             and futures_month_code_yy is not null
             and put_call_code is not null
             and strike_text is not null
         then bbg_exchange_code || futures_month_code_yy || put_call_code
             || substring(product_code from 3) || ' ' || strike_text || ' COMB'
         when
-            product_code in ('JN1', 'KN2', 'KN3', 'KN4')
+            route_family = 'nymex'
+            and product_code in ('JN1', 'KN2', 'KN3', 'KN4')
             and futures_month_code_yy is not null
             and put_call_code is not null
             and strike_text is not null
         then bbg_exchange_code || futures_month_code_yy || put_call_code
             || substring(product_code from 3) || ' ' || strike_text || ' Comdty'
+        when
+            route_family = 'nymex'
+            and product_code = 'G4'
+            and futures_month_code_y is not null
+            and put_call_code is not null
+            and strike_text is not null
+        then coalesce(bbg_exchange_code, 'G4X') || futures_month_code_y || put_call_code
+            || ' ' || strike_text || ' COMDTY'
     end as bbg_product_code
 from export_base
 )
@@ -763,7 +960,7 @@ from export_base
 select *
 from FINAL
 ), trades as (
-    select * from __dbt__cte__cs_v3_60_int_export_codes
+    select * from __dbt__cte__cs_ref_60_int_export_codes
 ),
 
 FINAL as (
@@ -865,14 +1062,31 @@ FINAL as (
 
         -- Curated derived fields for review/export. Keep intermediate cleanup,
         -- match-candidate, and vendor-code helper columns in int models.
+        source_account_key,
+        account_code,
         account_name,
+        account_lookup_status,
+        source_exchange_name,
+        exchange_route_code,
+        route_family,
+        is_product_record,
         buy_sell_cleaned,
         quantity_cleaned,
         contract_yyyymm,
         contract_day,
+        daily_trade_date,
+        daily_contract_date,
+        daily_contract_is_weekday,
+        daily_contract_calendar_offset_days,
+        daily_contract_business_offset_days,
+        daily_contract_week_offset,
         put_call_code,
         strike_price_normalized,
-        product_code,
+        product_code_effective as product_code,
+        product_code_family,
+        product_code_grouping,
+        product_code_region,
+        product_code_underlying,
         product_family,
         market_name,
         underlying_product_code,

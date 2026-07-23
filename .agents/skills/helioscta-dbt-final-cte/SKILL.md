@@ -1,6 +1,6 @@
 ---
 name: helioscta-dbt-final-cte
-description: Enforce HeliosCTA dbt SQL model style for dbt/azure_postgres. Use when creating, editing, reviewing, or formatting dbt .sql models, especially positions_and_trades_v2 marts and export/review models, so models use an explicit terminal FINAL CTE and end with SELECT * FROM FINAL.
+description: Enforce HeliosCTA dbt SQL model style for dbt/azure_postgres. Use when creating, editing, reviewing, or formatting dbt .sql models, especially active positions/trades marts and export/review models, so models use an explicit terminal FINAL CTE and end with SELECT * FROM FINAL.
 ---
 
 # HeliosCTA dbt FINAL CTE
@@ -55,7 +55,7 @@ positions/trades models.
 4. Run the checker from the repo root:
 
 ```powershell
-python .agents\skills\helioscta-dbt-final-cte\scripts\check_final_cte.py dbt\azure_postgres\models\positions_and_trades_v2
+python .agents\skills\helioscta-dbt-final-cte\scripts\check_final_cte.py dbt\azure_postgres\models\positions_and_trades\2026_07_22_ref_tables
 ```
 
 5. Run dbt verification from `dbt/azure_postgres`:

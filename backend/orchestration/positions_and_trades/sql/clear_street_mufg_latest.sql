@@ -742,70 +742,99 @@ strike_base as (
     from strike_base_raw
 ),
 
-export_base as (
+effective_product_base as (
     select
         strike_base.*,
+
+        -- Clear Street can label PJM Western Hub day-ahead weekend deliveries
+        -- as PDA in source/CUSIP. The effective ICE short-term weekend product
+        -- is PDO, while the raw source fields remain available for audit.
+        case
+            when
+                strike_base.product_code = 'PDA'
+                and not strike_base.is_option
+                and strike_base.daily_contract_date is not null
+                and not strike_base.daily_contract_is_weekday
+            then 'PDO'
+            else strike_base.product_code
+        end as product_code_effective
+    from strike_base
+),
+
+export_base as (
+    select
+        effective_product_base.*,
 
         -- ICE codes cover IFED futures/options plus daily and weekly products.
         -- For short-term products, derive only symbols supported by the local
         -- PJM/ICE registries from Clear Street trade date and CUSIP date.
         case
+            -- Weekend day-ahead rows map to the explicit PJM DA off-peak
+            -- weekend short-term symbol.
+            when
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective = 'PDO'
+                and effective_product_base.daily_contract_date is not null
+                and not effective_product_base.daily_contract_is_weekday
+            then 'PDO P1-IUS'
+
             -- Same-day RT daily products with exact symbols in the local ICE registry.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code in ('PDP', 'PWA', 'DDP', 'ERA', 'END')
-                and strike_base.daily_contract_is_weekday
-                and strike_base.daily_contract_business_offset_days = 0
-            then strike_base.product_code || ' D0-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA', 'DDP', 'ERA', 'END')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days = 0
+            then effective_product_base.product_code_effective || ' D0-IUS'
 
             -- Next-day daily products with exact symbols in the local ICE registry.
             -- Larger offsets may be weekly/forward strips and should not be
             -- forced into a D1 symbol.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code in ('PDP', 'PWA', 'PDA', 'PJL', 'SDP', 'ERA', 'END', 'NEZ')
-                and strike_base.daily_contract_is_weekday
-                and strike_base.daily_contract_business_offset_days = 1
-            then strike_base.product_code || ' D1-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA', 'PDA', 'PJL', 'SDP', 'ERA', 'END', 'NEZ')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days = 1
+            then effective_product_base.product_code_effective || ' D1-IUS'
 
             -- PDP/PWA have weekly W0-W4 symbol patterns. Map only weekday
             -- delivery rows with a forward business offset greater than D1.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.product_code in ('PDP', 'PWA')
-                and strike_base.daily_contract_is_weekday
-                and strike_base.daily_contract_business_offset_days > 1
-                and strike_base.daily_contract_week_offset between 0 and 4
-            then strike_base.product_code || ' W' || strike_base.daily_contract_week_offset::text || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.product_code_effective in ('PDP', 'PWA')
+                and effective_product_base.daily_contract_is_weekday
+                and effective_product_base.daily_contract_business_offset_days > 1
+                and effective_product_base.daily_contract_week_offset between 0 and 4
+            then effective_product_base.product_code_effective || ' W' || effective_product_base.daily_contract_week_offset::text || '-IUS'
 
             -- Henry Hub daily swing style code.
-            when strike_base.rule_exchange_name = 'IFED' and strike_base.product_code = 'HHD'
-            then strike_base.product_code || ' B0-IUS'
+            when effective_product_base.rule_exchange_name = 'IFED' and effective_product_base.product_code_effective = 'HHD'
+            then effective_product_base.product_code_effective || ' B0-IUS'
 
             -- ICE option symbols include product, month/year, put/call, and
             -- strike. Use strike_text so decimal strikes such as 3.75 are not
             -- rounded to whole numbers.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and strike_base.is_option
-                and strike_base.put_call_code is not null
-                and strike_base.strike_text is not null
-                and strike_base.futures_month_code_yy is not null
-            then strike_base.product_code || ' ' || strike_base.futures_month_code_yy || strike_base.put_call_code
-                || strike_base.strike_text || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and effective_product_base.is_option
+                and effective_product_base.put_call_code is not null
+                and effective_product_base.strike_text is not null
+                and effective_product_base.futures_month_code_yy is not null
+            then effective_product_base.product_code_effective || ' ' || effective_product_base.futures_month_code_yy || effective_product_base.put_call_code
+                || effective_product_base.strike_text || '-IUS'
 
             -- Standard monthly IFED futures.
             when
-                strike_base.rule_exchange_name = 'IFED'
-                and not strike_base.is_option
-                and strike_base.contract_day is null
-                and strike_base.futures_month_code_yy is not null
-            then strike_base.product_code || ' ' || strike_base.futures_month_code_yy || '-IUS'
+                effective_product_base.rule_exchange_name = 'IFED'
+                and not effective_product_base.is_option
+                and effective_product_base.contract_day is null
+                and effective_product_base.futures_month_code_yy is not null
+            then effective_product_base.product_code_effective || ' ' || effective_product_base.futures_month_code_yy || '-IUS'
         end as ice_product_code
-    from strike_base
+    from effective_product_base
 ),
 
 FINAL as (
@@ -1085,7 +1114,7 @@ FINAL as (
         daily_contract_week_offset,
         put_call_code,
         strike_price_normalized,
-        product_code,
+        product_code_effective as product_code,
         product_code_family,
         product_code_grouping,
         product_code_region,

@@ -3,7 +3,7 @@
 -- This file is reference/operator SQL only. It is outside dbt model-paths and
 -- should not be run by dbt. Read-only dbt credentials cannot run this.
 -- Apply it manually with the helios_admin role before running
--- positions_and_trades_v3 dbt tests against Azure Postgres.
+-- the active positions/trades ref-table dbt tests against Azure Postgres.
 --
 -- Source system: manually reviewed positions/trades product matching changes.
 -- Grain: one current approved runtime row per table-specific business key.

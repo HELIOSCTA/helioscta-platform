@@ -7,7 +7,7 @@ Generate the dbt SQL first:
 
 ```powershell
 cd dbt\azure_postgres
-dbt compile --profiles-dir . --select path:models/positions_and_trades_v3
+dbt compile --profiles-dir . --select path:models/positions_and_trades/2026_07_22_ref_tables
 ```
 
 Promote the compiled positions/trades SQL to the frontend snapshots:
@@ -22,12 +22,12 @@ python scripts\promote_positions_trades_sql.py
 The source of truth is:
 
 ```text
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_40_positions_all_history.sql
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_50_positions_latest.sql
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/frontend/nav_v3_frontend_positions_all_history.sql
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/frontend/nav_v3_frontend_positions_latest.sql
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/pat_v3_90_rule_exceptions.sql
-dbt/azure_postgres/models/positions_and_trades_v3/nav_positions/marts/nav_v3_55_rule_exceptions_latest.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_40_positions_all_history.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_50_positions_latest.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_all_history.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/frontend/nav_ref_frontend_positions_latest.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/pat_ref_90_rule_exceptions.sql
+dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/marts/nav_ref_55_rule_exceptions_latest.sql
 ```
 
 The frontend API reads:
@@ -43,7 +43,15 @@ Do not edit promoted SQL files directly. For lookup-only product/account/month
 changes, update and apply the reference values sync SQL under
 `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/`;
 no frontend SQL copy is needed. For query logic or output-contract changes,
-change the v3 dbt model, run `dbt compile`, then promote the compiled SQL.
+change the active ref-table dbt model, run `dbt compile`, then promote the
+compiled SQL.
+
+NAV promoted review SQL exposes the same standardized account and route fields
+as Clear Street where the row grain supports them: `source_account_key`,
+`account_code`, `account_lookup_status`, `source_exchange_name`,
+`exchange_route_code`, `route_family`, and `is_product_record`. New consumers
+should use `exchange_route_code` and `route_family` instead of treating
+`exchange_name` as a standardized route.
 
 ## Files
 
