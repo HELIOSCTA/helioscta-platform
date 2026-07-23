@@ -1617,6 +1617,92 @@ LIMIT 20;
 
 Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
 
+## helios-pjm-transmission-outages
+
+- Status: promoted for VM deployment; DDL has been applied in `helios_prod`,
+  local live upsert and source-text validation succeeded, and timer should be
+  enabled after pulling this repo update on `helioscta-prod-vm-01`.
+- Workflow: PJM eDART transmission outage raw text refresh.
+- Runtime module: `backend.orchestration.power.pjm.transmission_outages`.
+- Lower-level scrape module:
+  `backend.scrapes.power.pjm.transmission_outages`.
+- Source system: PJM eDART Transmission Facilities Outage List
+  `https://edart.pjm.com/reports/linesout.txt`.
+- Destination table: `pjm.transmission_outages_raw`.
+- Source grain: one parsed outage/equipment record per source text file,
+  keyed by `(source_file_sha256, source_row_number)`, where
+  `source_row_number` is the first source line for that parsed record.
+- Retention: successful runs purge rows where `ingested_at` is older than
+  180 days.
+- API telemetry: `ops.api_fetch_log` with provider `pjm_edart` and operation
+  `linesout_txt`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-transmission-outages.service`
+  - `infrastructure/systemd/helios-pjm-transmission-outages.timer`
+- VM path: `/opt/helioscta-platform`.
+- Azure VM host/name: `helioscta-prod-vm-01`.
+- Service user: `helios`.
+- Environment file: `/etc/helioscta/backend.env`.
+- Journal logs: `journalctl -u helios-pjm-transmission-outages.service`.
+- Schedule: every 15 minutes at `:07`, `:22`, `:37`, and `:52` UTC with
+  `Persistent=false`, `RandomizedDelaySec=1min`, and `AccuracySec=1min`.
+  The cadence stays above the observed 300-second eDART unchanged-file throttle
+  and avoids replay bursts after VM downtime.
+- Timer behavior: current-snapshot captures only; missed timer starts do not
+  replay after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-transmission-outages.lock`.
+- Safe rerun story: each run replaces parsed records for the source file hash,
+  then validates the table by section, typed source columns, raw record text,
+  and row hash.
+- Local verification: `2026-07-23`; live repair wrote and validated 14,918
+  parsed records for source report timestamp `2026-07-23 14:08:28` with zero
+  duplicate row keys, zero unparsed `RAW LINE` fallbacks, zero
+  header/delimiter rows, and zero expired rows after retention.
+
+Verification SQL for latest raw capture:
+
+```sql
+SELECT
+    COUNT(*) AS latest_file_rows,
+    MAX(source_report_timestamp) AS latest_report_timestamp,
+    MAX(ingested_at) AS latest_ingested_at,
+    COUNT(*) FILTER (WHERE source_columns ? 'RAW LINE') AS unparsed_rows,
+    COUNT(*) FILTER (WHERE facility_name IS NOT NULL) AS rows_with_facility_name,
+    COUNT(*) FILTER (WHERE start_datetime IS NOT NULL) AS rows_with_start_datetime,
+    COUNT(*) FILTER (WHERE dupes.row_count > 1) AS duplicate_row_number_keys
+FROM pjm.transmission_outages_raw tor
+LEFT JOIN (
+    SELECT source_file_sha256, source_row_number, COUNT(*) AS row_count
+    FROM pjm.transmission_outages_raw
+    GROUP BY source_file_sha256, source_row_number
+) dupes
+  ON dupes.source_file_sha256 = tor.source_file_sha256
+ AND dupes.source_row_number = tor.source_row_number
+WHERE tor.source_file_sha256 = (
+    SELECT source_file_sha256
+    FROM pjm.transmission_outages_raw
+    ORDER BY ingested_at DESC
+    LIMIT 1
+);
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    status,
+    http_status,
+    rows_returned,
+    rows_written,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'transmission_outages'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
 ## helios-pjm-hrl-load-prelim
 
 - Status: promoted for VM deployment; timer should be enabled after pulling this

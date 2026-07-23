@@ -1,0 +1,15 @@
+[Unit]
+Description=Quarter-hour HeliosCTA PJM eDART transmission outage raw refresh timer
+
+[Timer]
+OnCalendar=*-*-* *:07:00 UTC
+OnCalendar=*-*-* *:22:00 UTC
+OnCalendar=*-*-* *:37:00 UTC
+OnCalendar=*-*-* *:52:00 UTC
+Persistent=false
+RandomizedDelaySec=1min
+AccuracySec=1min
+Unit=helios-pjm-transmission-outages.service
+
+[Install]
+WantedBy=timers.target

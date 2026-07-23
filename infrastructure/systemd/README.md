@@ -219,6 +219,30 @@ generation-by-fuel window as the repair path.
 
 The service uses `flock` with `/tmp/helios-pjm-hourly-bucket.lock`.
 
+## PJM eDART Transmission Outages
+
+The PJM eDART transmission outage raw feed has its own current-snapshot timer:
+
+```text
+helios-pjm-transmission-outages.service
+helios-pjm-transmission-outages.timer
+```
+
+It runs `backend.orchestration.power.pjm.transmission_outages`, downloads
+PJM eDART `linesout.txt`, upserts one typed, raw-preserved row per parsed
+outage/equipment record into `pjm.transmission_outages_raw`, validates the
+table rows against the fetched text file, purges captures older than 180 days,
+and writes API fetch telemetry to `ops.api_fetch_log`. The timer runs every
+15 minutes at `:07`, `:22`, `:37`, and `:52` UTC with `Persistent=false`,
+`RandomizedDelaySec=1min`, and `AccuracySec=1min`. This stays above PJM
+eDART's observed 300-second unchanged-file throttle and avoids replay bursts
+after VM downtime.
+
+Before enabling the timer, apply the required table and index DDL for
+`pjm.transmission_outages_raw`.
+
+The service uses `flock` with `/tmp/helios-pjm-transmission-outages.lock`.
+
 ## PJM Generation Outages By Type
 
 The PJM seven-day generation outage by type feed has its own daily timer:
@@ -1010,6 +1034,14 @@ For the PJM generation outages by type refresh:
 systemctl status helios-pjm-gen-outages-by-type.service
 systemctl status helios-pjm-gen-outages-by-type.timer
 journalctl -u helios-pjm-gen-outages-by-type.service -n 200 --no-pager
+```
+
+For the PJM eDART transmission outage raw refresh:
+
+```bash
+systemctl status helios-pjm-transmission-outages.service
+systemctl status helios-pjm-transmission-outages.timer
+journalctl -u helios-pjm-transmission-outages.service -n 200 --no-pager
 ```
 
 For the PJM hourly preliminary load refresh:
