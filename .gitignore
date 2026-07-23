@@ -22,6 +22,7 @@ infrastructure/azure-postgres/bootstrap/
 .vscode/
 .idea/
 *.code-workspace
+.tmp/
 
 # Local-only context workspace
 .local/*
@@ -37,6 +38,7 @@ excel/**/*.xls*
 
 # dbt generated artifacts
 dbt/**/target/
+dbt/**/logs/
 dbt/**/profiles.yml
 dbt/**/.user.yml
 
