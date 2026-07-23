@@ -13,9 +13,10 @@ import {
 } from "recharts";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import PjmTransmissionOutages from "@/components/pjm/PjmTransmissionOutages";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type OutagesView = "forecast" | "seasonal";
+type OutagesView = "forecast" | "seasonal" | "transmission";
 type OutageMetricKey =
   | "total_outages_mw"
   | "planned_outages_mw"
@@ -382,6 +383,12 @@ export default function PjmOutages({
     };
   }, [region, refreshToken, onFreshnessChange]);
 
+  useEffect(() => {
+    if (activeView !== "transmission" && data?.forecast) {
+      onFreshnessChange?.(freshnessFromPayload(data.forecast));
+    }
+  }, [activeView, data?.forecast, onFreshnessChange]);
+
   const regions = data?.forecast.regions.length ? data.forecast.regions : [region];
   const rows = useMemo(() => data?.forecast.rows ?? [], [data]);
   const seasonalRows = useMemo(() => data?.seasonal.rows ?? [], [data]);
@@ -495,69 +502,79 @@ export default function PjmOutages({
 
   return (
     <div className="space-y-4">
-      <SectionCard
-        title="Controls"
-        subtitle={
-          data
-            ? `${data.forecast.region} | ${data.forecast.rowCount.toLocaleString()} forecast rows | ${data.seasonal.rowCount.toLocaleString()} seasonal rows`
-            : undefined
-        }
-      >
-        <div className="grid gap-3 md:grid-cols-[180px]">
-          <label className="block">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Region
-            </span>
-            <select
-              value={region}
-              onChange={(event) => setRegion(event.target.value)}
-              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-            >
-              {regions.map((item) => (
-                <option key={item} value={item}>
-                  {REGION_LABELS[item] ?? item}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-      </SectionCard>
+      <div className="flex flex-wrap gap-2" role="tablist" aria-label="PJM outage views">
+        {[
+          { key: "forecast" as const, label: "Forecast Tables" },
+          { key: "seasonal" as const, label: "Seasonal Plots" },
+          { key: "transmission" as const, label: "Transmission" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={activeView === tab.key}
+            onClick={() => setActiveView(tab.key)}
+            className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+              activeView === tab.key
+                ? "border-sky-500/50 bg-sky-500/10 text-white"
+                : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-      {error && (
+      {activeView !== "transmission" && (
+        <SectionCard
+          title="Controls"
+          subtitle={
+            data
+              ? `${data.forecast.region} | ${data.forecast.rowCount.toLocaleString()} forecast rows | ${data.seasonal.rowCount.toLocaleString()} seasonal rows`
+              : undefined
+          }
+        >
+          <div className="grid gap-3 md:grid-cols-[180px]">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Region
+              </span>
+              <select
+                value={region}
+                onChange={(event) => setRegion(event.target.value)}
+                className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+              >
+                {regions.map((item) => (
+                  <option key={item} value={item}>
+                    {REGION_LABELS[item] ?? item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </SectionCard>
+      )}
+
+      {activeView !== "transmission" && error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
           {error}
         </div>
       )}
-      {loading && (
+      {activeView !== "transmission" && loading && (
         <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
           Loading outages...
         </div>
       )}
 
-      {data && !loading && (
-        <>
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="PJM outage views">
-            {[
-              { key: "forecast" as const, label: "Forecast Tables" },
-              { key: "seasonal" as const, label: "Seasonal Plots" },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={activeView === tab.key}
-                onClick={() => setActiveView(tab.key)}
-                className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                  activeView === tab.key
-                    ? "border-sky-500/50 bg-sky-500/10 text-white"
-                    : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+      {activeView === "transmission" && (
+        <PjmTransmissionOutages
+          refreshToken={refreshToken}
+          onFreshnessChange={onFreshnessChange}
+        />
+      )}
 
+      {data && !loading && activeView !== "transmission" && (
+        <>
           {activeView === "seasonal" &&
             seasonalMetrics.map((item) => (
               <div key={item.key} className="space-y-4">
@@ -648,6 +665,7 @@ export default function PjmOutages({
                 </table>
               </DataTableShell>
             ))}
+
         </>
       )}
     </div>

@@ -69,7 +69,8 @@ Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
 environment variable names still say `WRITER`, but the configured database user
 is now the app owner role, `helios_admin`.
 
-The production health digest also runs the dbt `tag:product_matching_v3` suite
+The production health digest also runs the dbt
+`tag:positions_trades_product_matching` suite
 under `dbt/azure_postgres`. Keep `DBT_POSTGRES_READONLY_USER` and
 `DBT_POSTGRES_READONLY_PASSWORD` configured with the read-only role; host,
 port, database, and SSL mode can mirror the writer connection. The VM service
@@ -344,7 +345,9 @@ batch instead of skipping jobs that already failed earlier in the same hour.
 It launches jobs in child Python processes with hard timeouts, prevents
 overlapping manual/scheduled pulls with a local lock file, persists per-window
 state with explicit success/failure/timeout statuses, and writes durable job
-telemetry to `ops.api_fetch_log`.
+telemetry to `ops.api_fetch_log`. The scheduled short-term group includes PJM,
+ERCOT, western power daily, eastern power daily, gas next-day, and gas BALMO
+settlement symbols.
 
 ICE trade blotter helpers are local manual-file workflows. They live under
 `backend.scrapes.ice_trade_blotters` and
@@ -425,20 +428,22 @@ Graph credentials. Attachment paths are stored in the email outbox payload, so
 cached CSVs must remain available until the email sender processes the row.
 After the source file loads, the scheduled path runs the MUFG upload leg from
 `backend.orchestration.positions_and_trades.clear_street_mufg_upload`. That
-leg compiles and reads the dbt
-`positions_and_trades_v3.clear_street_eod_transactions.cs_v3_80_mufg_latest`
-model with read-only dbt credentials. The scheduler environment therefore
-needs the `dbt` CLI plus `DBT_POSTGRES_*` read-only variables available,
-uses the Clear Street target trade date for the exported
-`Helios_Transactions_YYYYMMDD_filtered.csv` filename when available, uploads
+leg reads the promoted dbt-compiled SQL artifact at
+`backend/orchestration/positions_and_trades/sql/clear_street_mufg_latest.sql`,
+generated from the dbt
+`positions_and_trades/2026_07_22_ref_tables.clear_street_eod_transactions.mufg.cs_ref_80_mufg_latest`
+model. The scheduled Clear Street/MUFG handoff does not need the `dbt` CLI or
+`DBT_POSTGRES_*` variables at runtime. It uses the Clear Street target trade
+date for the exported
+`helios_transactions_v3_YYYYMMDD_filtered.csv` filename when available, uploads
 the CSV to MUFG SFTP, logs separate `ops.api_fetch_log` telemetry with
 `provider = 'mufg_sftp'`. The scheduler's only freshness gate is the arrival
 and load of the target Clear Street source file. MUFG upload success also
 enqueues an internal email to `HELIOS_EMAIL_RECIPIENTS` with the generated
 filtered MUFG CSV attached; the email body includes any MUFG-side warnings such
-as empty extract, SQL `sftp_date` mismatch, non-ok `trade_status`, or product
-mapping issues. These conditions are recorded in metadata for diagnosis instead
-of blocking the v1 upload.
+as empty extract, SQL trade-date mismatch, unexpected `trade_status` values
+other than `New`, or product mapping issues. These conditions are recorded in
+metadata for diagnosis instead of blocking the v3 upload.
 
 ## Permissions Contract
 

@@ -43,12 +43,12 @@ boundary, or log path changes.
 - Database note: historical chat outbox tables or rows were not dropped as part
   of this runtime cleanup.
 
-## positions-trades-v3-reference-workflow
+## positions-trades-ref-table-workflow
 
 - Status: database reference rollout applied to `helios_prod` on
   `2026-07-22 19:43 UTC`; VM code fast-forward is pending a committed/pushed
   change.
-- Workflow: positions/trades v3 product matching for NAV positions, Clear
+- Workflow: active ref-table product matching for NAV positions, Clear
   Street trades, backend dbt-compiled MUFG exports, frontend SQL review paths,
   and Excel dbt-compiled SQL extracts.
 - Reference schema: `positions_and_trades_ref`.
@@ -60,20 +60,19 @@ boundary, or log path changes.
   `product_alias_rules=55`, `account_lookup=14`, `month_codes=12`.
 - Validation: read-only checks reported zero duplicate priorities, duplicate
   alias patterns, duplicate accounts, aliases without catalog rows, or missing
-  month codes. The v3 dbt product-matching gate passed with
+  month codes. The active ref-table dbt product-matching gate passed with
   `PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2`.
 - Health-check note: local backend validation confirms
   `backend.orchestration.health.prod_health_check` now selects
-  `tag:product_matching_v3` and can run from the checked-in
+  `tag:positions_trades_product_matching` and can run from the checked-in
   `profiles.yml.example` template when an ignored local dbt `profiles.yml` is
   absent.
 - VM deployment boundary: after this change is committed and pushed,
   fast-forward `/opt/helioscta-platform`, reinstall the backend package, and
   restart `helios-prod-health-check.timer`.
-- Source-of-truth follow-up: the legacy
-  `backend/scrapes/positions_and_trades` package was removed after the initial
-  v3 promotion commit; frontend SQL snapshots are the only maintained promoted
-  SQL copies.
+- Source-of-truth follow-up: legacy `backend/scrapes/positions_and_trades`
+  removal should be handled separately after the dbt promotion is committed;
+  frontend SQL snapshots are the only maintained promoted SQL copies.
 
 ## frontend-pjm-da-lmp-release-report
 
@@ -3033,7 +3032,8 @@ LIMIT 20;
 - Scheduled tasks:
   - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Short Term Coordinator` —
     `job_group=short_term`, weekdays every 15 minutes from local `05:10`
-    through `22:55`.
+    through `22:55`; runs `pjm_short_term`, `ercot_short_term`,
+    `west_power_daily`, `east_power_daily`, `gas_next_day`, and `gas_balmo`.
   - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Futures Coordinator` —
     `job_group=futures`, weekdays hourly at local hours `05` through `22`.
   - `\HeliosCTA\ICE Python\HeliosCTA ICE Python Status` — no trigger; visible

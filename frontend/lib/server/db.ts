@@ -1,6 +1,6 @@
 import "server-only";
 
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolConfig, type QueryConfig } from "pg";
 import { recordDbQuery } from "@/lib/server/apiObservability";
 
 declare global {
@@ -12,6 +12,10 @@ const REQUIRED_USER = "helios_readonly";
 const DEFAULT_STATEMENT_TIMEOUT_MS = 25_000;
 const DEFAULT_QUERY_TIMEOUT_MS = 28_000;
 const DEFAULT_CONNECTION_TIMEOUT_MS = 12_000;
+
+interface QueryConfigWithTimeout extends QueryConfig<unknown[]> {
+  query_timeout?: number;
+}
 
 function envInt(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -115,4 +119,42 @@ export async function query<T>(
   const res = await pool.query(text, values as unknown[] | undefined);
   recordDbQuery(performance.now() - startedAt, res.rowCount ?? res.rows.length);
   return res.rows as T[];
+}
+
+export async function queryWithStatementTimeout<T>(
+  text: string,
+  values?: ReadonlyArray<unknown>,
+  options: {
+    statementTimeoutMs: number;
+    queryTimeoutMs: number;
+  } = {
+    statementTimeoutMs: DEFAULT_STATEMENT_TIMEOUT_MS,
+    queryTimeoutMs: DEFAULT_QUERY_TIMEOUT_MS,
+  },
+): Promise<T[]> {
+  const pool = getPool();
+  const client = await pool.connect();
+  const startedAt = performance.now();
+  let rowCount = 0;
+
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('statement_timeout', $1, true)", [
+      String(Math.trunc(options.statementTimeoutMs)),
+    ]);
+    const res = await client.query({
+      text,
+      values: values ? [...values] : undefined,
+      query_timeout: options.queryTimeoutMs,
+    } as QueryConfigWithTimeout);
+    rowCount = res.rowCount ?? res.rows.length;
+    await client.query("COMMIT");
+    return res.rows as T[];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    recordDbQuery(performance.now() - startedAt, rowCount);
+    client.release();
+  }
 }

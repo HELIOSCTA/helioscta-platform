@@ -174,7 +174,7 @@ const DEFAULT_PRODUCT_REGION_FILTERS = ["PJM"];
 const DEFAULT_FRESHNESS: NavPositionsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "Positions --",
+  summary: "NAV Positions --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -2255,7 +2255,7 @@ export default function NavPositions({
   return (
     <div className="w-full space-y-4">
       <div className="mx-auto w-full max-w-4xl">
-        <ControlCard title="Positions">
+        <ControlCard title="NAV Positions">
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -2432,7 +2432,7 @@ export default function NavPositions({
       {data && !loading && (
         <DataTableShell
           title="NAV Position Summary"
-          subtitle={`NAV snapshot ${data.selectedDate ?? "--"} | Anchor Date ${effectiveAnchorDate || "--"} | Net quantity by contract bucket from ${data.metadata.promotedSql}.`}
+          subtitle={`NAV snapshot ${data.selectedDate ?? "--"} | Anchor Date ${effectiveAnchorDate || "--"} | Net quantity by contract bucket from ${data.metadata.artifactDisplayName}.`}
           className="w-full"
           bodyClassName="w-full max-h-[calc(100vh-260px)] overflow-y-auto"
           action={

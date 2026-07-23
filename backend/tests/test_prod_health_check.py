@@ -323,7 +323,7 @@ def test_health_evaluation_fails_for_product_matching_test_failure():
         product_matching_test={
             "status": "fail",
             "message": "dbt product matching tests failed.",
-            "command": "dbt test --profiles-dir . --select tag:product_matching_v3",
+            "command": "dbt test --profiles-dir . --select tag:positions_trades_product_matching",
         },
         service_statuses=[
             _service("helios-pjm-da-hrl-lmps.service", "success"),

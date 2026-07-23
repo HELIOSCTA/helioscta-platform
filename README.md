@@ -22,6 +22,7 @@ Promote one backend script or workflow at a time:
 
 - `backend/` - promoted Python scrapes, orchestration, and runtime helpers.
 - `frontend/` - dashboard code when promoted into this repo.
+- `excel/` - versioned Excel workbook models and workbook-specific reference artifacts.
 - `infrastructure/` - Azure VM setup, systemd timers, local Windows Task
   Scheduler config, and deployment notes.
 - `docs/` - migration, deployment, and operating playbooks.

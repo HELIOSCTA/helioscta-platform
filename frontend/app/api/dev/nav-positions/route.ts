@@ -139,7 +139,14 @@ interface RawPositionDbRow {
   contract_yyyymm: string | null;
   contract_day: number | string | null;
   account: string | null;
+  source_account_key: string | null;
+  account_code: string | null;
   account_name: string | null;
+  account_lookup_status: string | null;
+  source_exchange_name: string | null;
+  exchange_route_code: string | null;
+  route_family: string | null;
+  is_product_record: boolean | null;
   long_short: string | null;
   quantity_1: number | string | null;
   multiplier_and_tick_value: number | string | null;
@@ -464,7 +471,14 @@ function mapDebugRow(row: RawPositionDbRow) {
     contractYyyymm: row.contract_yyyymm,
     contractDay: toNumber(row.contract_day),
     account: row.account,
+    sourceAccountKey: row.source_account_key,
+    accountCode: row.account_code,
     accountName: row.account_name,
+    accountLookupStatus: row.account_lookup_status,
+    sourceExchangeName: row.source_exchange_name,
+    exchangeRouteCode: row.exchange_route_code,
+    routeFamily: row.route_family,
+    isProductRecord: row.is_product_record,
     longShort: row.long_short,
     quantity1: round(row.quantity_1, 6),
     multiplierAndTickValue: round(row.multiplier_and_tick_value, 6),
@@ -545,7 +559,14 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
                 contract_yyyymm,
                 contract_day,
                 account,
+                source_account_key,
+                account_code,
                 account_name,
+                account_lookup_status,
+                source_exchange_name,
+                exchange_route_code,
+                route_family,
+                is_product_record,
                 long_short,
                 quantity_1::double precision AS quantity_1,
                 multiplier_and_tick_value::double precision AS multiplier_and_tick_value,
@@ -580,7 +601,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 
     return {
       payload: {
-        source: `dbt:${promotedArtifact.dbtModelPath}`,
+        source: `${promotedArtifact.contractDisplayName} / ${promotedArtifact.artifactDisplayName}`,
         selectedDate,
         requestedDate,
         asOf,
@@ -602,6 +623,13 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         },
         rows: rawRows.map(mapDebugRow),
         metadata: {
+          contractId: promotedArtifact.contractId,
+          contractDisplayName: promotedArtifact.contractDisplayName,
+          artifactId: promotedArtifact.artifactId,
+          artifactDisplayName: promotedArtifact.artifactDisplayName,
+          dbtModelFamily: promotedArtifact.dbtModelFamily,
+          referenceSchema: promotedArtifact.referenceSchema,
+          referenceTables: promotedArtifact.referenceTables,
           dbtModel: promotedArtifact.dbtModelPath,
           promotedSql: promotedArtifact.promotedSqlPath,
           compiledSql: promotedArtifact.dbtCompiledPath,
@@ -849,7 +877,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const latestDate = availableDates[0]?.navDate ?? summaryRow?.max_nav_date ?? null;
 
   const payload = {
-    source: `dbt:${promotedArtifact.dbtModelPath}`,
+    source: `${promotedArtifact.contractDisplayName} / ${promotedArtifact.artifactDisplayName}`,
     selectedDate,
     latestDate,
     selectedDateRange: {
@@ -902,6 +930,13 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         "normalized_strike_price",
       ],
       productSummaryLimit: PRODUCT_SUMMARY_LIMIT,
+      contractId: promotedArtifact.contractId,
+      contractDisplayName: promotedArtifact.contractDisplayName,
+      artifactId: promotedArtifact.artifactId,
+      artifactDisplayName: promotedArtifact.artifactDisplayName,
+      dbtModelFamily: promotedArtifact.dbtModelFamily,
+      referenceSchema: promotedArtifact.referenceSchema,
+      referenceTables: promotedArtifact.referenceTables,
       dbtModel: promotedArtifact.dbtModelPath,
       promotedSql: promotedArtifact.promotedSqlPath,
       compiledSql: promotedArtifact.dbtCompiledPath,

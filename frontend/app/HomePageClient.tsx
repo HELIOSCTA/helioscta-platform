@@ -15,6 +15,9 @@ import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
+import PositionsHome, {
+  type PositionsHomeFreshnessSummary,
+} from "@/components/positions/PositionsHome";
 import RawIceTradeBlotter, {
   type RawIceTradeBlotterFreshnessSummary,
 } from "@/components/positions/RawIceTradeBlotter";
@@ -189,7 +192,16 @@ const DEFAULT_PJM_WEATHER_FRESHNESS: WeatherDashboardFreshnessSummary = {
 const DEFAULT_NAV_POSITIONS_FRESHNESS: NavPositionsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "Positions --",
+  summary: "NAV Positions --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_POSITIONS_HOME_FRESHNESS: PositionsHomeFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Positions health --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -208,7 +220,7 @@ const DEFAULT_RAW_ICE_BLOTTER_FRESHNESS: RawIceTradeBlotterFreshnessSummary = {
 const DEFAULT_CLEAR_STREET_TRADES_FRESHNESS: ClearStreetTradesFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "Trades --",
+  summary: "Clear Street Trades --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -245,6 +257,9 @@ function parseInitialSection(
   if (value === "power-lmp-adders") return "power-lmp-adders";
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
+  }
+  if (value === "positions-home") {
+    return "positions-home";
   }
   if (value === "nav-positions") {
     return "nav-positions";
@@ -387,6 +402,7 @@ export default function HomePageClient({
   const [pjmForecastsRefreshToken, setPjmForecastsRefreshToken] = useState(0);
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
+  const [positionsHomeRefreshToken, setPositionsHomeRefreshToken] = useState(0);
   const [navPositionsRefreshToken, setNavPositionsRefreshToken] = useState(0);
   const [rawIceBlotterRefreshToken, setRawIceBlotterRefreshToken] = useState(0);
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
@@ -407,6 +423,7 @@ export default function HomePageClient({
   const [pjmForecastsFreshnessOpen, setPjmForecastsFreshnessOpen] = useState(false);
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
+  const [positionsHomeFreshnessOpen, setPositionsHomeFreshnessOpen] = useState(false);
   const [navPositionsFreshnessOpen, setNavPositionsFreshnessOpen] = useState(false);
   const [rawIceBlotterFreshnessOpen, setRawIceBlotterFreshnessOpen] = useState(false);
   const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
@@ -447,6 +464,8 @@ export default function HomePageClient({
     useState<PjmOutagesFreshnessSummary>(DEFAULT_PJM_OUTAGES_FRESHNESS);
   const [pjmWeatherFreshness, setPjmWeatherFreshness] =
     useState<WeatherDashboardFreshnessSummary>(DEFAULT_PJM_WEATHER_FRESHNESS);
+  const [positionsHomeFreshness, setPositionsHomeFreshness] =
+    useState<PositionsHomeFreshnessSummary>(DEFAULT_POSITIONS_HOME_FRESHNESS);
   const [navPositionsFreshness, setNavPositionsFreshness] =
     useState<NavPositionsFreshnessSummary>(DEFAULT_NAV_POSITIONS_FRESHNESS);
   const [rawIceBlotterFreshness, setRawIceBlotterFreshness] =
@@ -530,12 +549,21 @@ export default function HomePageClient({
         footer: "Historical Settlements | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
+    if (activeSection === "positions-home") {
+      return {
+        title: "Positions Home",
+        subtitle:
+          "Expected source files, source stability, and reference repair status across positions and trades.",
+        footer:
+          "Positions Home | Sources: NAV SFTP, Clear Street SFTP, ICE Deal Report, and positions_and_trades_ref",
+      };
+    }
     if (activeSection === "nav-positions") {
       return {
-        title: "Positions",
+        title: "NAV Positions",
         subtitle:
           "Position valuation snapshots aggregated by product, with drilldown rows and product-code rules.",
-        footer: "Positions | Source: nav.positions / Azure PostgreSQL",
+        footer: "NAV Positions | Source: nav.positions / Azure PostgreSQL",
       };
     }
     if (activeSection === "ice-trade-blotter") {
@@ -549,11 +577,11 @@ export default function HomePageClient({
     }
     if (showLocalDevFeatures && activeSection === "clear-street-trades") {
       return {
-        title: "Trades",
+        title: "Clear Street Trades",
         subtitle:
           "Local DEV Clear Street MUFG trades derived with frontend JSON and TypeScript product rules.",
         footer:
-          "Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
+          "Clear Street Trades | Source: clear_street.eod_transactions / JSON + TypeScript rules",
       };
     }
     if (activeSection === "ice-settlements") {
@@ -882,6 +910,33 @@ export default function HomePageClient({
               />
             )}
 
+            {activeSection === "positions-home" && (
+              <FreshnessCard
+                statusLabel={positionsHomeFreshness.status}
+                statusClass={positionsHomeFreshness.statusClass}
+                summary={positionsHomeFreshness.summary}
+                items={[
+                  ...(positionsHomeFreshness.status === "Stable"
+                    ? []
+                    : [
+                        {
+                          label: "Health Status",
+                          value: positionsHomeFreshness.status,
+                          className: positionsHomeFreshness.statusClass,
+                        },
+                      ]),
+                  { label: "Review Date", value: positionsHomeFreshness.targetDateLabel },
+                  { label: "Feeds", value: positionsHomeFreshness.latestDateLabel },
+                  { label: "Generated", value: positionsHomeFreshness.latestUpdateLabel },
+                ]}
+                open={positionsHomeFreshnessOpen}
+                onToggle={() => setPositionsHomeFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPositionsHomeRefreshToken((value) => value + 1)}
+                showStatusBadge={positionsHomeFreshness.status !== "Stable"}
+              />
+            )}
+
             {activeSection === "nav-positions" && (
               <FreshnessCard
                 statusLabel={navPositionsFreshness.status}
@@ -1186,6 +1241,12 @@ export default function HomePageClient({
           {activeSection === "pjm-historical-settlements" && (
             <PjmHistoricalSettlements
               initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
+            />
+          )}
+          {activeSection === "positions-home" && (
+            <PositionsHome
+              refreshToken={positionsHomeRefreshToken}
+              onFreshnessChange={setPositionsHomeFreshness}
             />
           )}
           {activeSection === "nav-positions" && (

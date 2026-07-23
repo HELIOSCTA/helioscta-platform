@@ -51,7 +51,14 @@ export interface NavPositionDebugRow {
   contractYyyymm: string | null;
   contractDay: number | null;
   account: string | null;
+  sourceAccountKey: string | null;
+  accountCode: string | null;
   accountName: string | null;
+  accountLookupStatus: string | null;
+  sourceExchangeName: string | null;
+  exchangeRouteCode: string | null;
+  routeFamily: string | null;
+  isProductRecord: boolean | null;
   longShort: string | null;
   quantity1: number | null;
   multiplierAndTickValue: number | null;
@@ -108,6 +115,13 @@ export interface NavPositionsPayload {
     productFilterOptions: NavPositionsProductFilterOption[];
     aggregationGrain: string[];
     productSummaryLimit: number;
+    contractId: string;
+    contractDisplayName: string;
+    artifactId: string;
+    artifactDisplayName: string;
+    dbtModelFamily: string;
+    referenceSchema: string;
+    referenceTables: string[];
     dbtModel: string;
     promotedSql: string;
     compiledSql: string;
@@ -132,6 +146,13 @@ export interface NavPositionsDebugPayload {
   };
   rows: NavPositionDebugRow[];
   metadata: {
+    contractId: string;
+    contractDisplayName: string;
+    artifactId: string;
+    artifactDisplayName: string;
+    dbtModelFamily: string;
+    referenceSchema: string;
+    referenceTables: string[];
     dbtModel: string;
     promotedSql: string;
     compiledSql: string;

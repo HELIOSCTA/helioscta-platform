@@ -14,8 +14,8 @@ ice_python/
     pjm.py             PJM short-term symbols and futures products
     ercot.py           ERCOT short-term symbols and futures products
     gas.py             Gas next-day, BALMO, and futures products
-    west_power.py      Mid-C and SP15 monthly power futures products
-    east_power.py      NEPOOL monthly power futures products
+    west_power.py      Mid-C/SP15 monthly futures plus SP15 daily symbols
+    east_power.py      NEPOOL monthly futures plus Mass Hub daily symbols
   contract_dates/      Contract-date pulls for settlement symbols
   settlements/         Settlement time series pulls and formatting
   logs/                Runtime logs
@@ -46,6 +46,8 @@ python -m backend.orchestration.ice_python.settlements.pjm_short_term
 python -m backend.orchestration.ice_python.settlements.pjm_futures
 python -m backend.orchestration.ice_python.settlements.ercot_short_term
 python -m backend.orchestration.ice_python.settlements.ercot_futures
+python -m backend.orchestration.ice_python.settlements.west_power_daily
+python -m backend.orchestration.ice_python.settlements.east_power_daily
 python -m backend.orchestration.ice_python.settlements.west_power_futures
 python -m backend.orchestration.ice_python.settlements.east_power_futures
 python -m backend.orchestration.ice_python.settlements.gas_next_day
@@ -74,10 +76,11 @@ Linux systemd units for ICE Python.
 Each wrapper defaults to today's contract-date snapshot plus a 14-day inclusive
 settlement lookback window. Set `lookback_days=0` for single-date behavior.
 PJM, ERCOT, western power, eastern power, and gas futures wrappers default from
-the current month through 36 months forward. The scheduled gas futures feed is
-split into core, Gulf, West, and East wrappers for clearer status and smaller
-reruns; the unsplit `gas_futures` wrapper remains available for manual backfill
-or broad ad hoc runs.
+the current month through 36 months forward. Western and eastern power daily
+wrappers pull exact daily symbols used by the positions/trades export contract.
+The scheduled gas futures feed is split into core, Gulf, West, and East wrappers
+for clearer status and smaller reruns; the unsplit `gas_futures` wrapper remains
+available for manual backfill or broad ad hoc runs.
 
 The runtime writes to `ice_python.settlements` and
 `ice_python.settlement_contract_dates`. Those tables are operator-created from

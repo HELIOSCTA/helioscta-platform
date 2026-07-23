@@ -18,6 +18,8 @@ $jobOrder = @(
     "pjm_futures",
     "ercot_short_term",
     "ercot_futures",
+    "west_power_daily",
+    "east_power_daily",
     "west_power_futures",
     "east_power_futures",
     "gas_next_day",

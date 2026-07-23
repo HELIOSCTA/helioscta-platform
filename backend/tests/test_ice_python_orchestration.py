@@ -19,8 +19,39 @@ from backend.orchestration.ice_python.settlements import gas_balmo
 from backend.orchestration.ice_python.settlements import pjm_short_term
 from backend.orchestration.ice_python.settlements import pjm_futures
 from backend.orchestration.ice_python.settlements import ercot_short_term
+from backend.orchestration.ice_python.settlements import west_power_daily
+from backend.orchestration.ice_python.settlements import east_power_daily
 from backend.orchestration.ice_python.settlements import _runtime
 from backend.orchestration.ice_python.settlements import registry
+from backend.scrapes.ice_python.symbols import east_power
+from backend.scrapes.ice_python.symbols import ercot
+from backend.scrapes.ice_python.symbols import pjm
+from backend.scrapes.ice_python.symbols import west_power
+
+
+def test_power_daily_product_dictionary_contains_positions_trades_symbols():
+    entries = {
+        entry["ice_symbol_pattern"]: entry
+        for module_entries in (
+            ercot.get_product_dictionary_entries(),
+            pjm.get_product_dictionary_entries(),
+            west_power.get_product_dictionary_entries(),
+            east_power.get_product_dictionary_entries(),
+        )
+        for entry in module_entries
+    }
+
+    expected_product_ids = {
+        "DDP D0-IUS": "6590449",
+        "ERA D0-IUS": "71544051",
+        "END D0-IUS": "6590453",
+        "SDP D1-IUS": "6590477",
+        "NEZ D1-IUS": "72265834",
+    }
+
+    for symbol, product_id in expected_product_ids.items():
+        assert entries[symbol]["ice_product_id"] == product_id
+        assert entries[symbol]["metadata_status"] == "ice_product_url_verified"
 
 
 def test_registry_runner_uses_today_snapshot_and_lookback_window(monkeypatch):
@@ -124,6 +155,8 @@ def test_gas_next_day_wrapper_selects_default_symbols(monkeypatch):
     ("module", "expected_registry"),
     [
         (ercot_short_term, "ercot_short_term"),
+        (west_power_daily, "west_power_daily"),
+        (east_power_daily, "east_power_daily"),
         (gas_next_day, "gas_next_day"),
         (gas_balmo, "gas_balmo"),
     ],
@@ -166,6 +199,52 @@ def test_short_term_wrappers_can_skip_contract_dates_for_price_refresh(
     assert captured["lookback_days"] == 0
     assert captured["pull_contract_dates_enabled"] is False
     assert captured["require_rows"] is False
+
+
+@pytest.mark.parametrize(
+    ("module", "expected_registry", "expected_symbols"),
+    [
+        (west_power_daily, "west_power_daily", ["SDP D1-IUS"]),
+        (east_power_daily, "east_power_daily", ["NEZ D1-IUS"]),
+    ],
+)
+def test_power_daily_wrappers_select_exact_symbols(
+    monkeypatch,
+    module,
+    expected_registry,
+    expected_symbols,
+):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        module,
+        "run_with_logging",
+        lambda *, pipeline_name, log_dir, operation, database=None: operation(None),
+    )
+
+    def fake_run_registry_settlements(**kwargs):
+        captured.update(kwargs)
+        return {
+            "registry": kwargs["registry_label"],
+            "symbols": kwargs["symbols"],
+            "rows_processed": 1,
+        }
+
+    monkeypatch.setattr(
+        module.registry,
+        "run_registry_settlements",
+        fake_run_registry_settlements,
+    )
+
+    summary = module.run(fields=["Settle"], require_rows=True)
+
+    assert summary["registry"] == expected_registry
+    assert summary["symbols"] == expected_symbols
+    assert captured["symbols"] == expected_symbols
+    assert captured["fields"] == ["Settle"]
+    assert captured["require_rows"] is True
+    assert captured["pull_contract_dates_enabled"] is True
+    assert captured["require_contract_date_rows"] is False
 
 
 def test_pjm_futures_wrapper_builds_bounded_horizon(monkeypatch):
@@ -276,7 +355,8 @@ def test_pjm_short_term_tolerates_empty_contract_date_refresh(monkeypatch):
     summary = pjm_short_term.run(fields=["Settle"])
 
     assert summary["registry"] == "pjm_short_term"
-    assert len(summary["symbols"]) == 13
+    assert len(summary["symbols"]) == 14
+    assert "DDP D0-IUS" in summary["symbols"]
     assert captured["fields"] == ["Settle"]
     assert captured["require_rows"] is True
     assert captured["pull_contract_dates_enabled"] is True

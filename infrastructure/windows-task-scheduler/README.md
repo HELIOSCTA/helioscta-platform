@@ -24,11 +24,14 @@ Task Scheduler runs two ICE coordinator tasks:
 
 The short-term coordinator runs weekdays every 15 minutes from local `05:10`
 through `22:55` with `job_group=short_term`. It refreshes the near-term markets
-used by the frontend short-term price views:
+used by the frontend short-term price views and positions/trades daily power
+export symbols:
 
 ```text
 pjm_short_term
 ercot_short_term
+west_power_daily
+east_power_daily
 gas_next_day
 gas_balmo
 ```
@@ -494,18 +497,22 @@ the prior evening's target file. It exits as soon as the target
 with `operation_name = 'clear_street_eod_transactions_poll'`, `poll_count`,
 `poll_wait_seconds`, and the target trade date in metadata.
 After the source file succeeds, the same scheduled process generates
-`Helios_Transactions_YYYYMMDD_filtered.csv` from the packaged
-`sql/generated/clear_street_trades/mufg/latest.sql` extract using the Clear Street target
-trade date for the filename, uploads the CSV to MUFG SFTP, writes separate
-`ops.api_fetch_log` telemetry with `provider = 'mufg_sftp'`. The source-file
+`helios_transactions_v3_YYYYMMDD_filtered.csv` from the packaged
+`backend/orchestration/positions_and_trades/sql/clear_street_mufg_latest.sql`
+extract using the Clear Street target trade date for the filename, uploads the
+CSV to MUFG SFTP, writes separate `ops.api_fetch_log` telemetry with
+`provider = 'mufg_sftp'`. The scheduled Clear Street/MUFG handoff does not need
+the `dbt` CLI or `DBT_POSTGRES_*` variables at runtime. The source-file
 success path also enqueues an internal email to
 `HELIOS_EMAIL_RECIPIENTS` with the downloaded raw Clear Street CSV attached.
 MUFG upload success enqueues an internal email with the generated filtered MUFG
-CSV attached, and the email body includes any MUFG-side warnings. If
-the MUFG output has rows with blank/null `product_code_grouping`, blank/null
-`product_code_region`, and at least one blank/null vendor product code among
-`ice_product_code`, `cme_product_code`, or `bbg_product_code`, the email body
-includes the affected source products and their Clear Street identifiers. These
+CSV attached, and the email body includes any MUFG-side warnings. The MUFG
+bad-mapping warning flags product records with blank/null `product_code_grouping`,
+blank/unsupported Clear Street exchange routes, ICE exchange rows (`IFED`,
+`IFE`, `IPE`) with blank/null `ice_product_code`, and NYMEX route-family rows
+(`NYME`, `NYM`, `NYMEX`, `NMY`) where both `cme_product_code` and
+`bbg_product_code` are blank/null. The email
+body includes the affected source products and their Clear Street identifiers. These
 internal alert emails use `ops.email_notification_outbox`;
 attachment paths are stored in the outbox payload and require cached CSVs to
 remain available until sent. The same source CSV is also emailed to NAV through
@@ -535,7 +542,9 @@ The installer verifies writer credentials plus `CLEAR_STREET_SFTP_HOST`,
 environment variables or the untracked `backend\.env` in the production clone.
 It also verifies `MUFG_SFTP_HOST`, `MUFG_SFTP_USER`, and
 `MUFG_SFTP_PASSWORD`; `MUFG_SFTP_PORT` defaults to `22`, and
-`MUFG_SFTP_REMOTE_DIR` defaults to `/`. NAV email delivery requires
+`MUFG_SFTP_REMOTE_DIR` defaults to `/`. `-RunImportSmoke` imports the Clear
+Street runtime and validates the packaged MUFG generated SQL can be loaded
+before the task is registered. NAV email delivery requires
 `AZURE_OUTLOOK_CLIENT_ID`, `AZURE_OUTLOOK_TENANT_ID`, and
 `AZURE_OUTLOOK_CLIENT_SECRET`. Email sends default to
 `aidan.keaveny@helioscta.com` through `AZURE_OUTLOOK_SENDER` or

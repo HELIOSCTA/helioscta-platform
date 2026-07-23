@@ -1,40 +1,48 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-export const PROMOTED_ALL_HISTORY_SQL_RELATIVE_PATH =
-  "frontend/sql/nav-positions/frontend/all_history.sql";
-const PROMOTED_ALL_HISTORY_SQL_RUNTIME_PATHS = [
-  path.join(process.cwd(), "sql", "nav-positions", "frontend", "all_history.sql"),
-  path.join(process.cwd(), "frontend", "sql", "nav-positions", "frontend", "all_history.sql"),
-];
+import {
+  getPositionsAndTradesArtifact,
+  type PositionsAndTradesManifestArtifact,
+} from "@/lib/server/positionsAndTradesManifest";
 
-export const PROMOTED_LATEST_SQL_RELATIVE_PATH = "frontend/sql/nav-positions/frontend/latest.sql";
-const PROMOTED_LATEST_SQL_RUNTIME_PATHS = [
-  path.join(process.cwd(), "sql", "nav-positions", "frontend", "latest.sql"),
-  path.join(process.cwd(), "frontend", "sql", "nav-positions", "frontend", "latest.sql"),
-];
+export const NAV_POSITIONS_ALL_HISTORY_ARTIFACT_ID = "nav_frontend_all_history";
+export const NAV_POSITIONS_LATEST_ARTIFACT_ID = "nav_frontend_latest";
 
-export const DBT_ALL_HISTORY_MODEL_PATH =
-  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_all_history.sql";
-export const DBT_ALL_HISTORY_COMPILED_PATH =
-  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_all_history.sql";
-export const DBT_LATEST_MODEL_PATH =
-  "dbt/azure_postgres/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_latest.sql";
-export const DBT_LATEST_COMPILED_PATH =
-  "dbt/azure_postgres/target/compiled/helioscta_platform/models/positions_and_trades_v2/nav_positions/frontend/nav_frontend_positions_latest.sql";
+export interface PromotedNavPositionsSql {
+  sql: string;
+  promotedSqlPath: string;
+  dbtModelPath: string;
+  dbtCompiledPath: string;
+  artifactId: string;
+  artifactDisplayName: string;
+  contractId: string;
+  contractDisplayName: string;
+  dbtModelFamily: string;
+  referenceSchema: string;
+  referenceTables: string[];
+}
 
 let cachedAllHistorySql: string | null = null;
 let cachedLatestSql: string | null = null;
 
+function runtimePathsForPromotedSql(promotedSqlPath: string): string[] {
+  const frontendRelativePath = promotedSqlPath.startsWith("frontend/")
+    ? promotedSqlPath.slice("frontend/".length)
+    : promotedSqlPath;
+  return [
+    path.join(process.cwd(), ...frontendRelativePath.split("/")),
+    path.join(process.cwd(), ...promotedSqlPath.split("/")),
+  ];
+}
+
 async function loadPromotedSql({
-  relativePath,
-  runtimePaths,
+  artifact,
 }: {
-  relativePath: string;
-  runtimePaths: string[];
+  artifact: PositionsAndTradesManifestArtifact;
 }): Promise<string> {
   let content: string | null = null;
-  for (const candidatePath of runtimePaths) {
+  for (const candidatePath of runtimePathsForPromotedSql(artifact.promotedSql)) {
     try {
       content = await readFile(candidatePath, "utf8");
       break;
@@ -48,7 +56,7 @@ async function loadPromotedSql({
   }
   if (content === null) {
     throw new Error(
-      `Unable to read ${relativePath}. Run dbt/azure_postgres/scripts/promote_positions_trades_sql.py.`,
+      `Unable to read ${artifact.promotedSql}. Run dbt/azure_postgres/scripts/promote_positions_trades_sql.py.`,
     );
   }
 
@@ -58,7 +66,7 @@ async function loadPromotedSql({
     !sql.toLowerCase().includes("product_norm") ||
     !sql.includes("__dbt__cte__")
   ) {
-    throw new Error(`${relativePath} is not a compiled dbt NAV positions frontend contract.`);
+    throw new Error(`${artifact.promotedSql} is not a compiled dbt NAV positions frontend contract.`);
   }
 
   return sql;
@@ -73,29 +81,46 @@ export async function loadPromotedNavPositionsSql({
   requestedDate,
 }: {
   requestedDate: string | null;
-}): Promise<{ sql: string; promotedSqlPath: string; dbtModelPath: string; dbtCompiledPath: string }> {
+}): Promise<PromotedNavPositionsSql> {
+  const artifactId = requestedDate
+    ? NAV_POSITIONS_ALL_HISTORY_ARTIFACT_ID
+    : NAV_POSITIONS_LATEST_ARTIFACT_ID;
+  const { manifest, artifact } = await getPositionsAndTradesArtifact(artifactId);
+
   if (requestedDate) {
     cachedAllHistorySql ??= await loadPromotedSql({
-      relativePath: PROMOTED_ALL_HISTORY_SQL_RELATIVE_PATH,
-      runtimePaths: PROMOTED_ALL_HISTORY_SQL_RUNTIME_PATHS,
+      artifact,
     });
     return {
       sql: cachedAllHistorySql,
-      promotedSqlPath: PROMOTED_ALL_HISTORY_SQL_RELATIVE_PATH,
-      dbtModelPath: DBT_ALL_HISTORY_MODEL_PATH,
-      dbtCompiledPath: DBT_ALL_HISTORY_COMPILED_PATH,
+      promotedSqlPath: artifact.promotedSql,
+      dbtModelPath: artifact.dbtModel,
+      dbtCompiledPath: artifact.dbtCompiledSql,
+      artifactId,
+      artifactDisplayName: artifact.displayName,
+      contractId: manifest.contractId,
+      contractDisplayName: manifest.displayName,
+      dbtModelFamily: manifest.dbtModelFamily,
+      referenceSchema: manifest.referenceSchema,
+      referenceTables: manifest.referenceTables,
     };
   }
 
   cachedLatestSql ??= await loadPromotedSql({
-    relativePath: PROMOTED_LATEST_SQL_RELATIVE_PATH,
-    runtimePaths: PROMOTED_LATEST_SQL_RUNTIME_PATHS,
+    artifact,
   });
   return {
     sql: cachedLatestSql,
-    promotedSqlPath: PROMOTED_LATEST_SQL_RELATIVE_PATH,
-    dbtModelPath: DBT_LATEST_MODEL_PATH,
-    dbtCompiledPath: DBT_LATEST_COMPILED_PATH,
+    promotedSqlPath: artifact.promotedSql,
+    dbtModelPath: artifact.dbtModel,
+    dbtCompiledPath: artifact.dbtCompiledSql,
+    artifactId,
+    artifactDisplayName: artifact.displayName,
+    contractId: manifest.contractId,
+    contractDisplayName: manifest.displayName,
+    dbtModelFamily: manifest.dbtModelFamily,
+    referenceSchema: manifest.referenceSchema,
+    referenceTables: manifest.referenceTables,
   };
 }
 
@@ -156,7 +181,10 @@ export function selectedNavPositionsCte(promotedSql: string): string {
       latest_positions.sftp_upload_timestamp,
       latest_positions.account_group,
       latest_positions.account,
+      latest_positions.source_account_key,
+      latest_positions.account_code,
       latest_positions.account_name,
+      latest_positions.account_lookup_status,
       latest_positions.trade_date,
       latest_positions.product_id_internal,
       latest_positions.product,
@@ -169,6 +197,10 @@ export function selectedNavPositionsCte(promotedSql: string): string {
       latest_positions.product_group,
       latest_positions.product_region,
       latest_positions.underlying_product_code,
+      latest_positions.source_exchange_name,
+      latest_positions.exchange_route_code,
+      latest_positions.route_family,
+      latest_positions.is_product_record,
       latest_positions.contract_yyyymm,
       latest_positions.contract_day,
       latest_positions.put_call,

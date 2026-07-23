@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA Clear Street EOD transactions scheduled SFTP poll
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-clear-street-eod-transactions.lock /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=300, metadata={'scheduler':'systemd'}))"
+TimeoutStartSec=10h30min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-clear-street-eod-transactions
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ Source definitions:
 - https://www.ice.com/products/6590337
 - https://www.ice.com/products/73051364
 
-ICE product metadata reviewed on 2026-06-01:
+ICE product metadata reviewed on 2026-07-23:
 - ERCOT North RT/DA peak products use HE 0700-HE 2200 CPT.
 - ERCOT North RT off-peak products use HE 0100-HE 0600 and
   HE 2300-HE 2400 CPT.
@@ -22,7 +22,7 @@ from datetime import date
 
 
 ICE_PRODUCT_BASE_URL = "https://www.ice.com/products"
-PRODUCT_METADATA_REVIEWED_DATE = "2026-06-01"
+PRODUCT_METADATA_REVIEWED_DATE = "2026-07-23"
 
 STRIP_MAPPING: dict[int, str] = {
     1: "F",
@@ -41,6 +41,7 @@ STRIP_MAPPING: dict[int, str] = {
 VALID_STRIPS = set(STRIP_MAPPING.values())
 
 CONTRACT_LABEL_BY_CODE = {
+    "D0": "Same Day",
     "D1": "Next Day",
     "W0": "Bal Week",
     "W1": "Next Week",
@@ -234,6 +235,12 @@ def _enrich_futures_product(entry: dict[str, object]) -> dict[str, object]:
 
 ERCOT_SYMBOLS: list[dict] = [
     {
+        "symbol": "ERA D0-IUS",
+        "description": "ERCOT North RT Peak (16 MWh) Same Day",
+        "product_type": "power",
+        "contract_type": "Daily",
+    },
+    {
         "symbol": "ERA D1-IUS",
         "description": "ERCOT North RT Peak (16 MWh) Next Day",
         "product_type": "power",
@@ -250,6 +257,12 @@ ERCOT_SYMBOLS: list[dict] = [
         "description": "ERCOT North RT Peak (16 MWh) Next Week",
         "product_type": "power",
         "contract_type": "Weekly",
+    },
+    {
+        "symbol": "END D0-IUS",
+        "description": "ERCOT North RT Peak Same Day",
+        "product_type": "power",
+        "contract_type": "Daily",
     },
     {
         "symbol": "END D1-IUS",

@@ -125,6 +125,32 @@ EAST_POWER_FUTURES_JOB = ServiceJob(
     module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_futures",
     windows=DEFAULT_HOURLY_WINDOWS,
 )
+WEST_POWER_DAILY_JOB = ServiceJob(
+    name="west_power_daily",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.west_power_daily",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+WEST_POWER_DAILY_PRICE_JOB = ServiceJob(
+    name="west_power_daily",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.west_power_daily",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+EAST_POWER_DAILY_JOB = ServiceJob(
+    name="east_power_daily",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_daily",
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
+EAST_POWER_DAILY_PRICE_JOB = ServiceJob(
+    name="east_power_daily",
+    cadence="hourly",
+    module_name=f"{SETTLEMENTS_MODULE_ROOT}.east_power_daily",
+    module_kwargs=SHORT_TERM_PRICE_REFRESH_KWARGS,
+    windows=DEFAULT_HOURLY_WINDOWS,
+)
 GAS_NEXT_DAY_JOB = ServiceJob(
     name="gas_next_day",
     cadence="hourly",
@@ -179,6 +205,8 @@ GAS_FUTURES_EAST_JOB = ServiceJob(
 SHORT_TERM_JOBS: tuple[ServiceJob, ...] = (
     PJM_SHORT_TERM_PRICE_JOB,
     ERCOT_SHORT_TERM_PRICE_JOB,
+    WEST_POWER_DAILY_PRICE_JOB,
+    EAST_POWER_DAILY_PRICE_JOB,
     GAS_NEXT_DAY_PRICE_JOB,
     GAS_BALMO_PRICE_JOB,
 )
@@ -199,6 +227,8 @@ DEFAULT_JOBS: tuple[ServiceJob, ...] = (
     PJM_FUTURES_JOB,
     ERCOT_SHORT_TERM_JOB,
     ERCOT_FUTURES_JOB,
+    WEST_POWER_DAILY_JOB,
+    EAST_POWER_DAILY_JOB,
     WEST_POWER_FUTURES_JOB,
     EAST_POWER_FUTURES_JOB,
     GAS_NEXT_DAY_JOB,

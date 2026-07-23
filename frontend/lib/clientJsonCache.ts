@@ -23,6 +23,7 @@ type FetchJsonWithCacheOptions = {
   signal?: AbortSignal;
   cacheMode?: RequestCache;
   forceRefresh?: boolean;
+  persist?: "session";
 };
 
 function getStore(): CacheStore {
@@ -43,23 +44,96 @@ function getStore(): CacheStore {
   return window.__heliosClientJsonCache;
 }
 
-function getCachedJson<T>(key: string): T | null {
-  const store = getStore();
-  const existing = store.values.get(key);
-  if (!existing) return null;
-  if (Date.now() >= existing.expiresAt) {
-    store.values.delete(key);
-    return null;
-  }
-  return existing.payload as T;
+const SESSION_STORAGE_PREFIX = "helios:client-json-cache:";
+
+function isCacheEntry(value: unknown): value is CacheEntry {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    typeof (value as { expiresAt?: unknown }).expiresAt === "number" &&
+    "payload" in value
+  );
 }
 
-function setCachedJson<T>(key: string, payload: T, ttlMs: number): void {
+function sessionStorageKey(key: string): string {
+  return `${SESSION_STORAGE_PREFIX}${key}`;
+}
+
+function getSessionCachedEntry(key: string): CacheEntry | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.sessionStorage.getItem(sessionStorageKey(key));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isCacheEntry(parsed)) {
+      window.sessionStorage.removeItem(sessionStorageKey(key));
+      return null;
+    }
+    if (Date.now() >= parsed.expiresAt) {
+      window.sessionStorage.removeItem(sessionStorageKey(key));
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function setSessionCachedJson<T>(key: string, payload: T, ttlMs: number): void {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.sessionStorage.setItem(
+      sessionStorageKey(key),
+      JSON.stringify({
+        expiresAt: Date.now() + ttlMs,
+        payload,
+      }),
+    );
+  } catch {
+    // Session storage is an optimization only; failed writes should not break data loads.
+  }
+}
+
+function getCachedJson<T>(key: string, persist?: FetchJsonWithCacheOptions["persist"]): T | null {
+  const store = getStore();
+  const existing = store.values.get(key);
+  if (existing) {
+    if (Date.now() < existing.expiresAt) {
+      return existing.payload as T;
+    }
+    store.values.delete(key);
+  }
+
+  if (persist === "session") {
+    const persisted = getSessionCachedEntry(key);
+    if (persisted) {
+      store.values.set(key, persisted);
+      return persisted.payload as T;
+    }
+  }
+
+  return null;
+}
+
+function setCachedJson<T>(
+  key: string,
+  payload: T,
+  ttlMs: number,
+  persist?: FetchJsonWithCacheOptions["persist"],
+): void {
   const store = getStore();
   store.values.set(key, {
     expiresAt: Date.now() + ttlMs,
     payload,
   });
+  if (persist === "session") {
+    setSessionCachedJson(key, payload, ttlMs);
+  }
 }
 
 function parseJsonSafely(raw: string): { ok: true; value: unknown } | { ok: false } {
@@ -116,9 +190,10 @@ export async function fetchJsonWithCache<T>({
   signal,
   cacheMode = "default",
   forceRefresh = false,
+  persist,
 }: FetchJsonWithCacheOptions): Promise<T> {
   if (!forceRefresh) {
-    const cached = getCachedJson<T>(key);
+    const cached = getCachedJson<T>(key, persist);
     if (cached !== null) return cached;
   }
 
@@ -150,13 +225,19 @@ export async function fetchJsonWithCache<T>({
       throw new Error(`Invalid JSON from ${url}`);
     }
 
-    setCachedJson(key, json, ttlMs);
+    setCachedJson(key, json, ttlMs, persist);
     return json as T;
   })()
     .catch((error) => {
-      const fallback = store.values.get(key);
+      const fallback =
+        store.values.get(key) ??
+        (persist === "session" ? getSessionCachedEntry(key) : null);
       if (fallback) {
-        fallback.expiresAt = Date.now() + ttlMs;
+        fallback.expiresAt = Math.max(fallback.expiresAt, Date.now() + ttlMs);
+        store.values.set(key, fallback);
+        if (persist === "session") {
+          setSessionCachedJson(key, fallback.payload, ttlMs);
+        }
         return fallback.payload as T;
       }
       throw error;

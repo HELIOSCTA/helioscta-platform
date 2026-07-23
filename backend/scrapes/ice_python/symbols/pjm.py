@@ -3,6 +3,7 @@
 Source definitions:
 - https://www.ice.com/products/6590471
 - https://www.ice.com/products/6590472
+- https://www.ice.com/products/6590449
 - https://www.ice.com/products/6590502
 - https://www.ice.com/products/6590503
 - https://www.ice.com/products/6590369
@@ -11,7 +12,7 @@ Source definitions:
 - https://www.ice.com/products/71544049
 - https://www.ice.com/products/82270911
 
-ICE product metadata reviewed on 2026-06-01:
+ICE product metadata reviewed on 2026-07-23:
 - PJM daily and weekly peak settlements use HE 0800-HE 2300 EPT.
 - PJM daily off-peak settlements use HE 0100-HE 0700 and HE 2400 EPT.
 - The Western Hub pnode for PJM LMP settlement joins is WESTERN HUB.
@@ -27,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 ICE_PRODUCT_BASE_URL = "https://www.ice.com/products"
-PRODUCT_METADATA_REVIEWED_DATE = "2026-06-01"
+PRODUCT_METADATA_REVIEWED_DATE = "2026-07-23"
 
 STRIP_MAPPING: dict[int, str] = {
     1: "F",
@@ -110,6 +111,32 @@ PJM_SHORT_TERM_PRODUCT_METADATA_BY_CC: dict[str, dict[str, object]] = {
         "settlement_source_key": "pjm_rt_onpeak",
         "settlement_priority": 1,
         "reference_price": "ELECTRICITY-PJM-WESTERN HUB-REAL TIME",
+        "pjm_source_table": (
+            "pjm.rt_settlements_verified_hourly_lmps; "
+            "fallback pjm.rt_unverified_hourly_lmps"
+        ),
+    },
+    "DDP": {
+        "ice_product_id": "6590449",
+        "product_name": "PJM AEP Dayton Hub Real-Time Peak Daily Fixed Price Future",
+        "ice_trading_screen_product_name": "Peak Futures",
+        "ice_trading_screen_hub_name": "PJM AEP-Dayton Hub RT",
+        "ice_contract_symbol": "DDP",
+        "hub": "PJM AEP-Dayton Hub RT",
+        "blotter_hub_aliases": [
+            "pjm aep-dayton hub rt",
+            "pjm aep dayton hub rt",
+            "aep-dayton hub rt",
+            "aep dayton hub rt",
+        ],
+        "pjm_pnode_name": "AEP-DAYTON HUB",
+        "hour_bucket": "ONPEAK",
+        "hours": "HE 0800-HE 2300 EPT",
+        "ice_product_type": "Daily Fixed Price Future",
+        "settlement_source": "PJM_RT_LMP",
+        "settlement_source_key": "pjm_rt_aep_dayton_onpeak",
+        "settlement_priority": 1,
+        "reference_price": "ELECTRICITY-PJM-AEP-DAYTON HUB-REAL TIME",
         "pjm_source_table": (
             "pjm.rt_settlements_verified_hourly_lmps; "
             "fallback pjm.rt_unverified_hourly_lmps"
@@ -286,6 +313,7 @@ def _enrich_short_term_symbol(entry: dict[str, object]) -> dict[str, object]:
         "ice_product_url": _ice_product_url(str(metadata["ice_product_id"])),
         "contract_code": contract_code,
         "contract_label": CONTRACT_LABEL_BY_CODE.get(contract_code, contract_code),
+        "metadata_status": "ice_product_url_verified",
         "active": True,
     }
     enriched["notes"] = _metadata_note(enriched)
@@ -302,6 +330,7 @@ def _enrich_futures_product(entry: dict[str, object]) -> dict[str, object]:
         "ice_product_url": _ice_product_url(str(metadata["ice_product_id"])),
         "contract_code": "MONTH",
         "contract_label": "Monthly",
+        "metadata_status": "ice_product_url_verified",
         "active": True,
     }
     enriched["notes"] = _metadata_note(enriched)
@@ -344,6 +373,15 @@ PJM_SYMBOLS: list[dict] = [
         "market": "RT",
         "shape": "Peak",
         "contract_size": "16 MWh",
+    },
+    {
+        "symbol": "DDP D0-IUS",
+        "description": "PJM AEP-Dayton RT Peak Daily Same Day",
+        "product_type": "power",
+        "contract_type": "Daily",
+        "market": "RT",
+        "shape": "Peak",
+        "contract_size": "800 MWh",
     },
     {
         "symbol": "PDA D1-IUS",

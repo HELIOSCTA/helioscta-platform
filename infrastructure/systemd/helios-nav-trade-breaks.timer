@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily HeliosCTA NAV trade breaks scheduled SFTP email poll timer
+
+[Timer]
+OnCalendar=*-*-* 04:00:00 America/Denver
+Persistent=false
+AccuracySec=1min
+Unit=helios-nav-trade-breaks.service
+
+[Install]
+WantedBy=timers.target

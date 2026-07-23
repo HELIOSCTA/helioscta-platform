@@ -30,6 +30,8 @@ def test_resolve_job_group_selects_expected_jobs():
     assert [job.name for job in short_term_jobs] == [
         "pjm_short_term",
         "ercot_short_term",
+        "west_power_daily",
+        "east_power_daily",
         "gas_next_day",
         "gas_balmo",
     ]
@@ -60,6 +62,22 @@ def test_resolve_job_group_selects_expected_jobs():
     ]
     assert service.resolve_job_group(None) == service.DEFAULT_JOBS
     assert service.DEFAULT_JOBS[0].module_kwargs is None
+    assert [job.name for job in service.DEFAULT_JOBS] == [
+        "pjm_short_term",
+        "pjm_futures",
+        "ercot_short_term",
+        "ercot_futures",
+        "west_power_daily",
+        "east_power_daily",
+        "west_power_futures",
+        "east_power_futures",
+        "gas_next_day",
+        "gas_balmo",
+        "gas_futures_core",
+        "gas_futures_gulf",
+        "gas_futures_west",
+        "gas_futures_east",
+    ]
     with pytest.raises(ValueError, match="Unknown ICE job group"):
         service.resolve_job_group("spot")
 

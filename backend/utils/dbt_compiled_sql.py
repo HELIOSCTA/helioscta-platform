@@ -21,39 +21,42 @@ DBT_COMPILED_MODELS_ROOT = (
     / "helioscta_platform"
     / "models"
 )
-POSITIONS_TRADES_V3_COMPILED_ROOT = (
-    DBT_COMPILED_MODELS_ROOT / "positions_and_trades_v3"
+POSITIONS_TRADES_REF_TABLES_COMPILED_ROOT = (
+    DBT_COMPILED_MODELS_ROOT / "positions_and_trades" / "2026_07_22_ref_tables"
 )
 DBT_COMPILE_TIMEOUT_SECONDS = 180
 
 
-def load_positions_trades_v3_model_sql(
+def load_positions_trades_ref_tables_model_sql(
     model_path: str | Path,
     *,
     compile_before_load: bool = True,
 ) -> str:
-    """Compile and load a positions/trades v3 dbt model as executable SQL."""
+    """Compile and load an active positions/trades ref-table dbt model as executable SQL."""
     relative_model_path = Path(model_path)
     if relative_model_path.is_absolute() or ".." in relative_model_path.parts:
-        raise ValueError(f"model_path must be relative to positions_and_trades_v3: {model_path}")
+        raise ValueError(
+            "model_path must be relative to positions_and_trades/2026_07_22_ref_tables: "
+            f"{model_path}"
+        )
 
     if compile_before_load:
-        compile_positions_trades_v3_model(relative_model_path)
+        compile_positions_trades_ref_tables_model(relative_model_path)
 
-    compiled_path = POSITIONS_TRADES_V3_COMPILED_ROOT / relative_model_path
+    compiled_path = POSITIONS_TRADES_REF_TABLES_COMPILED_ROOT / relative_model_path
     if not compiled_path.exists():
         raise FileNotFoundError(
             "Compiled dbt SQL file not found: "
-            f"{compiled_path}. Run dbt compile for positions_and_trades_v3 first."
+            f"{compiled_path}. Run dbt compile for the positions/trades ref-table model first."
         )
     return _normalize_sql(compiled_path.read_text(encoding="utf-8"))
 
 
-def compile_positions_trades_v3_model(model_path: str | Path) -> None:
-    """Run dbt compile for one positions/trades v3 model using read-only env vars."""
+def compile_positions_trades_ref_tables_model(model_path: str | Path) -> None:
+    """Run dbt compile for one positions/trades ref-table model using read-only env vars."""
     relative_model_path = Path(model_path)
     select_arg = (
-        "path:models/positions_and_trades_v3/"
+        "path:models/positions_and_trades/2026_07_22_ref_tables/"
         + relative_model_path.as_posix()
     )
     env = _dbt_environment()
@@ -101,7 +104,7 @@ def compile_positions_trades_v3_model(model_path: str | Path) -> None:
         detail = "\n".join(line for line in (stdout_tail, stderr_tail) if line)
         raise RuntimeError(
             "dbt compile failed for "
-            f"positions_and_trades_v3/{relative_model_path.as_posix()}."
+            f"positions_and_trades/2026_07_22_ref_tables/{relative_model_path.as_posix()}."
             + (f"\n{detail}" if detail else "")
         )
 

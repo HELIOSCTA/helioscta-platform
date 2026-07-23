@@ -15,6 +15,7 @@ interface FreshnessCardProps {
   onToggle: () => void;
   actionLabel?: string;
   onAction?: () => void;
+  showStatusBadge?: boolean;
 }
 
 export default function FreshnessCard({
@@ -26,6 +27,7 @@ export default function FreshnessCard({
   onToggle,
   actionLabel,
   onAction,
+  showStatusBadge = true,
 }: FreshnessCardProps) {
   return (
     <div className="w-fit max-w-full rounded-lg border border-gray-800 bg-[#12141d] shadow-xl shadow-black/20">
@@ -40,9 +42,11 @@ export default function FreshnessCard({
               <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
                 Freshness
               </span>
-              <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>
-                {statusLabel}
-              </span>
+              {showStatusBadge && (
+                <span className={`rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass}`}>
+                  {statusLabel}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-xs text-gray-500">{summary}</p>
           </div>

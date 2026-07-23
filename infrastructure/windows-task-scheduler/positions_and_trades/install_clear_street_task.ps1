@@ -258,9 +258,27 @@ if ($InstallDependencies) {
 }
 
 if ($RunImportSmoke) {
+    $smokeScript = @'
+from backend.orchestration.clear_street import transactions
+from backend.orchestration.positions_and_trades import clear_street_mufg_upload
+from backend.scrapes.clear_street import mufg_upload
+
+sql_path = (
+    clear_street_mufg_upload.DEFAULT_SQL_DIR
+    / clear_street_mufg_upload.DEFAULT_SQL_FILENAME
+)
+if not sql_path.is_file():
+    raise FileNotFoundError('MUFG generated SQL is missing: ' + str(sql_path))
+
+mufg_upload.load_mufg_extract_sql(
+    sql_dir=clear_street_mufg_upload.DEFAULT_SQL_DIR,
+    sql_filename=clear_street_mufg_upload.DEFAULT_SQL_FILENAME,
+)
+print('clear street runtime import ok; MUFG generated SQL ok: ' + str(sql_path))
+'@
     Invoke-External -FilePath $resolvedPythonExe -Arguments @(
         "-c",
-        "from backend.orchestration.clear_street import transactions; print('clear street runtime import ok')"
+        $smokeScript
     ) -WorkingDirectory $resolvedRepoRoot
 }
 

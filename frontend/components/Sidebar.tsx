@@ -8,9 +8,10 @@ export type ActiveSection =
   | "pjm-da-model"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
+  | "positions-home"
   | "nav-positions"
-  | "ice-trade-blotter"
   | "clear-street-trades"
+  | "ice-trade-blotter"
   | "ice-settlements"
   | "spark-spreads"
   | "map"
@@ -78,7 +79,11 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "positions",
     label: "POSITIONS",
     navItems: [
-      { id: "nav-positions", label: "Positions" },
+      { id: "positions-home", label: "Positions Home" },
+      { id: "nav-positions", label: "NAV Positions" },
+      ...(showLocalDevFeatures
+        ? [{ id: "clear-street-trades" as const, label: "Clear Street Trades" }]
+        : []),
       { id: "ice-trade-blotter", label: "ICE Trade Blotter" },
     ],
   });
@@ -94,7 +99,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "noms", label: "Gas Noms" },
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
-        { id: "clear-street-trades", label: "Trades" },
         { id: "pjm-generation", label: "Generation" },
         { id: "pjm-tightness-lookback", label: "Tightness Lookback" },
         { id: "pjm-price-distributions", label: "Price Distributions" },
