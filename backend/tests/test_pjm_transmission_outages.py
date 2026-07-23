@@ -6,6 +6,10 @@ from backend.orchestration.power.pjm import transmission_outages as orchestratio
 from backend.scrapes.power.pjm import transmission_outages
 
 
+def test_default_retention_is_seven_days():
+    assert transmission_outages.DEFAULT_RETENTION_DAYS == 7
+
+
 SAMPLE_TEXT = """TIMESTAMP:07-23-2026 13:18:27
 ----------------------------------------------------------------------------
 The data has been provided to PJM Interconnection, L.LC. (PJM) by Transmission Owners.

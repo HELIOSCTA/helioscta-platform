@@ -51,7 +51,7 @@ TARGET_TABLE = "transmission_outages_raw"
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 LINESOUT_URL = "https://edart.pjm.com/reports/linesout.txt"
 SOURCE_REPORT_TIMEZONE = "America/New_York"
-DEFAULT_RETENTION_DAYS = 180
+DEFAULT_RETENTION_DAYS = 7
 DEFAULT_TIMEOUT_SECONDS = 120
 
 TIMESTAMP_RE = re.compile(r"TIMESTAMP:(\d{2}-\d{2}-\d{4}\s+\d{2}:\d{2}:\d{2})")

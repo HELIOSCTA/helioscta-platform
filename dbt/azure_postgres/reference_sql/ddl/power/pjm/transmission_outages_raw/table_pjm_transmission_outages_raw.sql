@@ -7,7 +7,7 @@
 -- Primary key: source_file_sha256, source_row_number, where
 -- source_row_number is the first source line for that parsed record.
 -- Freshness field: source_report_timestamp from the TXT TIMESTAMP header.
--- Retention: runtime purges ingested_at older than 180 days after successful
+-- Retention: runtime purges ingested_at older than 7 days after successful
 -- upserts by default.
 -- Downstream consumers: frontend/dbt typed projections and raw table
 -- validation.

@@ -31,7 +31,7 @@ duplicate_row_numbers AS (
 retention_violations AS (
     SELECT COUNT(*) AS expired_rows
     FROM pjm.transmission_outages_raw
-    WHERE ingested_at < NOW() - INTERVAL '180 days'
+    WHERE ingested_at < NOW() - INTERVAL '7 days'
 ),
 
 unparsed_rows AS (

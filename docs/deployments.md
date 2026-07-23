@@ -1633,7 +1633,7 @@ Use `pipeline_name = 'gen_by_fuel'` for the generation-by-fuel hourly member.
   keyed by `(source_file_sha256, source_row_number)`, where
   `source_row_number` is the first source line for that parsed record.
 - Retention: successful runs purge rows where `ingested_at` is older than
-  180 days.
+  7 days.
 - API telemetry: `ops.api_fetch_log` with provider `pjm_edart` and operation
   `linesout_txt`.
 - Unit files:

@@ -231,7 +231,7 @@ helios-pjm-transmission-outages.timer
 It runs `backend.orchestration.power.pjm.transmission_outages`, downloads
 PJM eDART `linesout.txt`, upserts one typed, raw-preserved row per parsed
 outage/equipment record into `pjm.transmission_outages_raw`, validates the
-table rows against the fetched text file, purges captures older than 180 days,
+table rows against the fetched text file, purges captures older than 7 days,
 and writes API fetch telemetry to `ops.api_fetch_log`. The timer runs every
 15 minutes at `:07`, `:22`, `:37`, and `:52` UTC with `Persistent=false`,
 `RandomizedDelaySec=1min`, and `AccuracySec=1min`. This stays above PJM
