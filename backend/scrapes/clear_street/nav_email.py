@@ -187,9 +187,31 @@ def _resolve_recipient_emails(
         if recipient_emails is not None
         else credentials.CLEAR_STREET_NAV_EMAIL_RECIPIENTS
     )
-    resolved = [recipient.strip() for recipient in recipients if recipient.strip()]
+    resolved: list[str] = []
+    seen: set[str] = set()
+    for recipient in recipients:
+        clean = recipient.strip()
+        if not clean:
+            continue
+        key = clean.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        resolved.append(clean)
     if not resolved:
         raise ValueError("At least one Clear Street NAV email recipient is required.")
+    unexpected = [
+        recipient
+        for recipient in resolved
+        if recipient.lower()
+        != credentials.CLEAR_STREET_NAV_EMAIL_RECIPIENT.lower()
+    ]
+    if unexpected:
+        raise ValueError(
+            "Clear Street NAV email recipients must only include "
+            f"{credentials.CLEAR_STREET_NAV_EMAIL_RECIPIENT}; "
+            f"unexpected recipients: {', '.join(unexpected)}"
+        )
     return resolved
 
 

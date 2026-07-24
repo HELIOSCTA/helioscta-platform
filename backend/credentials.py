@@ -103,6 +103,7 @@ AZURE_SQL_PASSWORD = os.getenv("AZURE_SQL_PASSWORD")
 DEFAULT_OUTLOOK_SENDER = "aidan.keaveny@helioscta.com"
 # Appended to backend email audiences even when env vars override defaults.
 HELIOS_REQUIRED_EMAIL_RECIPIENTS = ["Kapil.Saxena@HeliosCTA.com"]
+CLEAR_STREET_NAV_EMAIL_RECIPIENT = "HeliosCTA@navfundservices.com"
 AZURE_OUTLOOK_CLIENT_ID = os.getenv("AZURE_OUTLOOK_CLIENT_ID")
 AZURE_OUTLOOK_TENANT_ID = os.getenv("AZURE_OUTLOOK_TENANT_ID")
 AZURE_OUTLOOK_CLIENT_SECRET = os.getenv("AZURE_OUTLOOK_CLIENT_SECRET")
@@ -118,14 +119,9 @@ CLEAR_STREET_NAV_EMAIL_SENDER = _get_first_env(
     "HELIOS_EMAIL_FROM_ADDRESS",
     default=DEFAULT_OUTLOOK_SENDER,
 )
-CLEAR_STREET_NAV_EMAIL_RECIPIENTS = _with_required_email_recipients(
+CLEAR_STREET_NAV_EMAIL_RECIPIENTS = (
     _get_csv_env("CLEAR_STREET_NAV_EMAIL_RECIPIENTS")
-    or [
-        "Aidan.Keaveny@HeliosCTA.com",
-        "Kapil.Saxena@HeliosCTA.com",
-        "edi.lacic@helioscta.com",
-        "HeliosCTA@navfundservices.com",
-    ]
+    or [CLEAR_STREET_NAV_EMAIL_RECIPIENT]
 )
 
 # Email notifications. Disabled by default so production send behavior is

@@ -96,6 +96,34 @@ boundary, or log path changes.
   removal should be handled separately after the dbt promotion is committed;
   frontend SQL snapshots are the only maintained promoted SQL copies.
 
+## clear-street-nav-email-routing
+
+- Status: frontend deployed on `2026-07-24 22:14 UTC`; VM deployment in
+  progress on `2026-07-24 22:22 UTC`.
+- Workflow: Clear Street scheduled raw-file email routing and Back Office
+  Monitor recipient display.
+- Runtime paths: `/opt/helioscta-platform` for
+  `helios-clear-street-eod-transactions.timer` on `helioscta-prod-vm-01`, plus
+  `C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform` for the local
+  Windows Task Scheduler Clear Street job.
+- Frontend deployment: Vercel production deployment
+  `dpl_4wyVorURTkShZZMbwnL6RzT86qGi`, alias
+  `https://frontend-helioscta.vercel.app`.
+- Behavior: Clear Street source-file internal email continues to use
+  `HELIOS_EMAIL_RECIPIENTS` for Aidan and Kapil. The direct Clear Street to NAV
+  Microsoft Graph handoff uses `CLEAR_STREET_NAV_EMAIL_RECIPIENTS` and rejects
+  any recipient other than `HeliosCTA@navfundservices.com`. Clear Street MUFG
+  confirmation remains internal through `HELIOS_EMAIL_RECIPIENTS`.
+- Verification: backend targeted tests passed, frontend production build passed,
+  Vercel deployment reached `READY`, and the canonical Back Office Monitor API
+  returned NAV-only configured routing for `clear_street_nav`. VM verification
+  must confirm `/etc/helioscta/backend.env` sets
+  `CLEAR_STREET_NAV_EMAIL_RECIPIENTS=HeliosCTA@navfundservices.com` and that the
+  runtime resolver rejects non-NAV recipients before the next scheduled run.
+- Residual note: the latest direct NAV telemetry row still shows the prior
+  Aidan/Kapil recipients until the next successful Clear Street to NAV run
+  writes new `ops.api_fetch_log` metadata.
+
 ## frontend-pjm-da-lmp-release-report
 
 - Status: deployed to Vercel production on `2026-06-30`.

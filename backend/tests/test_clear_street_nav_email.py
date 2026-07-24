@@ -42,10 +42,10 @@ def test_run_nav_email_uses_source_summary_and_legacy_subject(
             },
         },
         sender_email="admin@helioscta.com",
-        recipient_emails=["ops@example.test", "nav@example.test"],
+        recipient_emails=["HeliosCTA@navfundservices.com"],
     )
 
-    assert summary["emails_sent"] == 2
+    assert summary["emails_sent"] == 1
     assert summary["source_filename"] == trade_file.name
     assert summary["trade_date"] == "2026-07-06"
     assert summary["trade_date_from_sftp"] == "20260706"
@@ -53,11 +53,44 @@ def test_run_nav_email_uses_source_summary_and_legacy_subject(
         "Clear Street - Helios Transactions - Mon Jul-06 2026"
     )
     assert [call["recipient_email"] for call in calls] == [
-        "ops@example.test",
-        "nav@example.test",
+        "HeliosCTA@navfundservices.com",
     ]
     assert calls[0]["sender_email"] == "admin@helioscta.com"
     assert calls[0]["attachments"] == [trade_file]
+
+
+def test_run_nav_email_rejects_non_nav_recipients(
+    monkeypatch,
+    tmp_path,
+):
+    trade_file = _write_trade_file(
+        tmp_path,
+        "Helios_Transactions_20260706.20260707_020817.csv",
+    )
+    monkeypatch.setattr(
+        nav_clear_street_trades.email_notifications,
+        "send_email_via_graph",
+        lambda **_kwargs: (_ for _ in ()).throw(
+            AssertionError("email should not send")
+        ),
+    )
+
+    with pytest.raises(ValueError, match="must only include"):
+        nav_clear_street_trades.run_clear_street_trades_nav_email(
+            expected_trade_date="20260706",
+            source_summary={
+                "local_dir": str(tmp_path),
+                "latest_trade_file": {
+                    "local_filename": trade_file.name,
+                    "trade_date_from_sftp": "20260706",
+                },
+            },
+            sender_email="admin@helioscta.com",
+            recipient_emails=[
+                "aidan.keaveny@helioscta.com",
+                "HeliosCTA@navfundservices.com",
+            ],
+        )
 
 
 def test_run_nav_email_rejects_expected_trade_date_mismatch(
@@ -87,7 +120,7 @@ def test_run_nav_email_rejects_expected_trade_date_mismatch(
                 },
             },
             sender_email="admin@helioscta.com",
-            recipient_emails=["nav@example.test"],
+            recipient_emails=["HeliosCTA@navfundservices.com"],
         )
 
 
@@ -104,7 +137,7 @@ def test_run_nav_email_fails_when_source_summary_file_is_missing(tmp_path):
                 },
             },
             sender_email="admin@helioscta.com",
-            recipient_emails=["nav@example.test"],
+            recipient_emails=["HeliosCTA@navfundservices.com"],
         )
 
 
