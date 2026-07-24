@@ -536,6 +536,7 @@ function clearStreetCoreCtes(promotedSql: string): string {
           then modelled_clear_street_trades.trade_price::numeric
         end AS trade_price_numeric,
         coalesce(
+          nullif(btrim(modelled_clear_street_trades.account_display_name::text), ''),
           nullif(btrim(modelled_clear_street_trades.account_code::text), ''),
           nullif(btrim(modelled_clear_street_trades.account_name::text), ''),
           nullif(btrim(modelled_clear_street_trades.account_number::text), ''),
@@ -656,6 +657,8 @@ export function selectedClearStreetTradesCte(promotedSql: string): string {
         (
           coalesce(cardinality(params.account_filters), 0) = 0
           OR lower(btrim(coalesce(filter_source_trades.account_display, ''))) = ANY(params.account_filters)
+          OR lower(btrim(coalesce(filter_source_trades.account_code::text, ''))) = ANY(params.account_filters)
+          OR lower(btrim(coalesce(filter_source_trades.account_name::text, ''))) = ANY(params.account_filters)
         )
         AND (
           coalesce(cardinality(params.product_code_filters), 0) = 0

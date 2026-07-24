@@ -1141,8 +1141,9 @@ function SignatureTable({
 function compactRawRowColumns(): RawRowColumn[] {
   return [
     { key: "sftp_date", label: "SFTP", width: 90 },
-    { key: "record_id", label: "Row Class", width: 146, render: rawClearStreetRowClass },
-    { key: "account_name", label: "Matched Acct", width: 118 },
+    { key: "clear_street_row_family", label: "Row Family", width: 158, render: rawClearStreetRowFamily },
+    { key: "account_display_name", label: "Account", width: 128 },
+    { key: "account_code", label: "Acct Code", width: 92 },
     { key: "source_account_key", label: "Match Key", width: 92 },
     { key: "account_number", label: "Raw Acct #", width: 96 },
     { key: "give_in_out_code", label: "Give Code", width: 82 },
@@ -1153,6 +1154,10 @@ function compactRawRowColumns(): RawRowColumn[] {
     { key: "trace_num_or_unique_identifier", label: "Trace", width: 128 },
     { key: "order_number", label: "Order #", width: 74 },
     { key: "give_io_charge", label: "Give Fee", align: "right", width: 82 },
+    { key: "allocation_total_group_qty", label: "Group Qty", align: "right", width: 88 },
+    { key: "allocation_total_match_status", label: "Total Match", width: 104 },
+    { key: "allocation_total_match_source", label: "Total Source", width: 164 },
+    { key: "allocation_total_match_qty", label: "Match Qty", align: "right", width: 88 },
     { key: "product_code", label: "Product", width: 86 },
     { key: "product_family", label: "Family", width: 118 },
     { key: "market_name", label: "Market", width: 118 },
@@ -1221,7 +1226,13 @@ function rawRowSortValue(
   return rawRowDisplayValue(row, column);
 }
 
-function rawClearStreetRowClass(row: Record<ClearStreetModelColumn, ClearStreetCellValue>): string {
+function rawClearStreetRowFamily(row: Record<ClearStreetModelColumn, ClearStreetCellValue>): string {
+  const rowFamily = String(row.clear_street_row_family ?? "").trim();
+  if (rowFamily === "allocation_give_out") return "Allocation give-out";
+  if (rowFamily === "parent_execution_total") return "Parent execution total";
+  if (rowFamily === "parent_position_mirror") return "Parent position mirror";
+  if (rowFamily) return columnLabel(rowFamily);
+
   const recordId = String(row.record_id ?? "").trim().toUpperCase();
   const giveCode = String(row.give_in_out_code ?? "").trim().toUpperCase();
   const giveFirm = String(row.give_in_out_firm_num ?? "").trim();
@@ -1229,8 +1240,8 @@ function rawClearStreetRowClass(row: Record<ClearStreetModelColumn, ClearStreetC
   const openCloseCode = String(row.open_close_code ?? "").trim().toUpperCase();
 
   if (giveCode || giveFirm || tradeType === "G") return "Allocation give-out";
-  if (recordId === "T" && openCloseCode === "O") return "Omnibus exec/offset";
-  if (recordId === "P") return "Position record";
+  if (recordId === "T" && openCloseCode === "O") return "Parent exec/offset";
+  if (recordId === "P") return "Parent position mirror";
   if (recordId === "A") return "Adjustment record";
   return recordId ? `Raw ${recordId}` : "Raw row";
 }

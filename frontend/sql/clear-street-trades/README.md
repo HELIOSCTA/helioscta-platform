@@ -40,10 +40,14 @@ compiled SQL.
 
 The promoted review mart exposes standardized account and route fields beside
 raw Clear Street columns: `source_account_key`, `account_code`,
-`account_lookup_status`, `source_exchange_name`, `exchange_route_code`,
-`route_family`, and `is_product_record`. Frontend warning logic should use
-`route_family`, require ICE codes for ICE product records, and ignore rows
-where `is_product_record = false`.
+`account_display_name`, `account_role`, `account_lookup_status`,
+`source_exchange_name`, `exchange_route_code`, `route_family`, and
+`is_product_record`. Clear Street `GHELI` parent rows display as
+`HELIOS Parent` while retaining `GHELI` as the canonical account code. The mart
+also exposes `clear_street_row_family` and allocation-total audit fields so
+allocation give-out rows can be separated from parent/mirror evidence.
+Frontend warning logic should use `route_family`, require ICE codes for ICE
+product records, and ignore rows where `is_product_record = false`.
 
 Clear Street source rows can still carry raw PDA CUSIPs for PJM day-ahead
 weekend deliveries. The promoted review SQL exposes those rows as effective
