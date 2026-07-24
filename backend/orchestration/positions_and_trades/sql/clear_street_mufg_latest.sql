@@ -610,6 +610,10 @@ with trades as (
     select * from __dbt__cte__cs_ref_50_int_rules
 ),
 
+month_codes as (
+    select * from __dbt__cte__utils_ref_positions_and_trades_month_codes
+),
+
 strike_base_raw as (
     select
         contract_base.*,
@@ -624,6 +628,22 @@ strike_base_raw as (
                 from to_char(strike_price_normalized, 'FM999999999.999')
             )
         ) as strike_text_raw,
+
+        case
+            when contract_base.contract_year is not null
+                and contract_base.contract_month_number is not null
+                and next_month_codes.month_code is not null
+            then next_month_codes.month_code || right(
+                extract(
+                    year from make_date(
+                        contract_base.contract_year,
+                        contract_base.contract_month_number,
+                        1
+                    ) + interval '1 month'
+                )::integer::text,
+                1
+            )
+        end as next_futures_month_code_y,
 
         -- Daily/weekly ICE short-term symbols are not based on contract_yyyymm.
         -- For Clear Street rows, the most precise delivery date is usually the
@@ -729,6 +749,20 @@ strike_base_raw as (
             end as contract_date_from_parts
         from trades
     ) as contract_base
+    left join month_codes as next_month_codes
+        on next_month_codes.month_number = (
+            case
+                when contract_base.contract_year is not null
+                    and contract_base.contract_month_number is not null
+                then extract(
+                    month from make_date(
+                        contract_base.contract_year,
+                        contract_base.contract_month_number,
+                        1
+                    ) + interval '1 month'
+                )::integer
+            end
+        )
 ),
 
 strike_base as (
@@ -949,10 +983,12 @@ FINAL as (
             route_family = 'nymex'
             and product_code = 'G4'
             and futures_month_code_y is not null
+            and next_futures_month_code_y is not null
             and put_call_code is not null
-            and strike_text is not null
-        then coalesce(bbg_exchange_code, 'G4X') || futures_month_code_y || put_call_code
-            || ' ' || strike_text || ' COMDTY'
+            and strike_text_raw is not null
+        then 'IW' || futures_month_code_y || put_call_code
+            || ' ' || next_futures_month_code_y
+            || ' ' || strike_text_raw || ' COMDTY'
     end as bbg_product_code
 from export_base
 )

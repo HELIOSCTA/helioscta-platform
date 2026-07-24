@@ -48,7 +48,7 @@ INSERT INTO expected_product_catalog (
     ('KN3', 'Gas', 'Henry Hub', 'NG', NULL, 'NYME'),
     ('KN4', 'Gas', 'Henry Hub', 'NG', 'HZI', 'NYME'),
     ('G3', 'Gas', 'Henry Hub', 'NG', NULL, 'NYME'),
-    ('G4', 'Gas', 'Henry Hub', 'NG', 'G4X', 'NYME'),
+    ('G4', 'Gas', 'Henry Hub', 'NG', 'IW', 'NYME'),
     ('PDP', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('PWA', 'Power', 'PJM', NULL, NULL, 'IFED'),
     ('DDP', 'Power', 'PJM', NULL, NULL, 'IFED'),
