@@ -1141,12 +1141,18 @@ function SignatureTable({
 function compactRawRowColumns(): RawRowColumn[] {
   return [
     { key: "sftp_date", label: "SFTP", width: 90 },
+    { key: "record_id", label: "Row Class", width: 146, render: rawClearStreetRowClass },
     { key: "account_name", label: "Matched Acct", width: 118 },
     { key: "source_account_key", label: "Match Key", width: 92 },
     { key: "account_number", label: "Raw Acct #", width: 96 },
     { key: "give_in_out_code", label: "Give Code", width: 82 },
     { key: "give_in_out_firm_num", label: "Give Firm", width: 86 },
     { key: "account_lookup_status", label: "Acct Status", width: 104 },
+    { key: "trade_type", label: "Trade Type", width: 82 },
+    { key: "open_close_code", label: "O/C", width: 58 },
+    { key: "trace_num_or_unique_identifier", label: "Trace", width: 128 },
+    { key: "order_number", label: "Order #", width: 74 },
+    { key: "give_io_charge", label: "Give Fee", align: "right", width: 82 },
     { key: "product_code", label: "Product", width: 86 },
     { key: "product_family", label: "Family", width: 118 },
     { key: "market_name", label: "Market", width: 118 },
@@ -1207,11 +1213,26 @@ function rawRowSortValue(
   row: Record<ClearStreetModelColumn, ClearStreetCellValue>,
   column: RawRowColumn,
 ): SortableValue {
+  if (column.render) return rawRowDisplayValue(row, column);
   const value = row[column.key];
   if (typeof value === "number" && Number.isFinite(value)) return value;
   const numeric = Number(String(value ?? "").replaceAll(",", ""));
   if (Number.isFinite(numeric) && String(value ?? "").trim() !== "") return numeric;
   return rawRowDisplayValue(row, column);
+}
+
+function rawClearStreetRowClass(row: Record<ClearStreetModelColumn, ClearStreetCellValue>): string {
+  const recordId = String(row.record_id ?? "").trim().toUpperCase();
+  const giveCode = String(row.give_in_out_code ?? "").trim().toUpperCase();
+  const giveFirm = String(row.give_in_out_firm_num ?? "").trim();
+  const tradeType = String(row.trade_type ?? "").trim().toUpperCase();
+  const openCloseCode = String(row.open_close_code ?? "").trim().toUpperCase();
+
+  if (giveCode || giveFirm || tradeType === "G") return "Allocation give-out";
+  if (recordId === "T" && openCloseCode === "O") return "Omnibus exec/offset";
+  if (recordId === "P") return "Position record";
+  if (recordId === "A") return "Adjustment record";
+  return recordId ? `Raw ${recordId}` : "Raw row";
 }
 
 function rawRowMatchesColumnFilters(
