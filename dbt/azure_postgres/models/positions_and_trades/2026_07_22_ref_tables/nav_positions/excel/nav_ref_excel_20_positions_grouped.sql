@@ -155,6 +155,17 @@ with_symbols as (
                 and contract_yyyymmdd is not null
                 and not daily_contract_is_weekday
             then 'PDO P1-IUS'
+            -- BalDay exports keep prior-business-day expiry rows. ICE XL has
+            -- no verified negative-day symbol here, so bucket these with the
+            -- current daily code used for same-day expiry rows.
+            when
+                exchange_name = 'IFED'
+                and not is_option
+                and exchange_code in ('PDP', 'PWA', 'PDA', 'PJL', 'SDP', 'DDP', 'ERA', 'END', 'NEZ', 'NED', 'NDA')
+                and contract_yyyymmdd is not null
+                and daily_contract_is_weekday
+                and daily_contract_business_offset_days = -1
+            then exchange_code || ' D0-IUS'
             when
                 exchange_name = 'IFED'
                 and not is_option

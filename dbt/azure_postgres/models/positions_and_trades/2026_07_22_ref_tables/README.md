@@ -85,10 +85,11 @@ reinterpreted as a standardized route in new consumers. `route_family` groups
 Clear Street review marts and NAV Excel vendor-code marts derive ICE vendor
 codes directly. Short-term power classification uses a simple Mon-Fri
 business-day offset and a Monday-start week offset. Weekday daily rows use
-verified D0/D1 rules, Friday-to-Monday delivery is D1, PDP/PWA weekly rows map
-through W0-W4, and PJM day-ahead PDA rows with Saturday/Sunday delivery are
-exposed downstream as the effective PDO weekend product with `PDO P1-IUS`. ICE
-holiday calendars are not applied in this model family.
+verified D0/D1 rules, prior-business-day expiry rows retained by NAV BalDay
+exports are bucketed with D0, Friday-to-Monday delivery is D1, PDP/PWA weekly
+rows map through W0-W4, and PJM day-ahead PDA rows with Saturday/Sunday
+delivery are exposed downstream as the effective PDO weekend product with
+`PDO P1-IUS`. ICE holiday calendars are not applied in this model family.
 
 Clear Street residual cash adjustment rows remain visible in review marts with
 `is_product_record = false`, but they are intentionally excluded from product
