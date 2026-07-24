@@ -51,6 +51,7 @@ infrastructure/windows-task-scheduler/wm_natgasdatafeed_import/gasdatafeed_impor
 # Local SFTP downloads
 backend/scrapes/nav/downloads/
 backend/scrapes/clear_street/downloads/
+backend/scrapes/clear_street/exports/
 backend/scrapes/positions_and_trades/exports/
 backend/scrapes/ice_trade_blotters/csv/
 
