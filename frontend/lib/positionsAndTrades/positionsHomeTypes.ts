@@ -187,6 +187,7 @@ export interface PositionsHomeReferenceStatus {
     referenceSchema: string;
     referenceTables: string[];
     manifest: string;
+    applyScript: string;
     referenceDdl: string;
     verificationSql: string;
     upsertSql: string;

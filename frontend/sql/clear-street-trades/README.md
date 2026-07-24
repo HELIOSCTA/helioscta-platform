@@ -33,7 +33,7 @@ frontend/sql/clear-street-trades/marts/eod_all_history.sql
 
 Do not edit the promoted SQL file directly. For lookup-only product/account
 changes, update and apply the reference values sync SQL under
-`dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/`;
+`dbt/azure_postgres/reference_tables/positions_and_trades/`;
 no frontend SQL copy is needed. For query logic or output-contract changes,
 change the active ref-table dbt model, run `dbt compile`, then promote the
 compiled SQL.

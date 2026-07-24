@@ -131,17 +131,22 @@ the dbt runtime contract; rows are approved by the fact that an operator has
 inserted them into these lookup tables after review. Candidate intake and
 approvals remain separate operator workflow outside this dbt project.
 
-Reference-table DDL lives under:
+Positions/trades reference-table SQL lives under:
 
 ```text
-reference_sql/ddl/positions_and_trades/reference_tables/
+reference_tables/positions_and_trades/
 ```
 
-Apply the table DDL, current-state values sync SQL, and indexes with
-`helios_admin`, then run the verification SQL and active product-matching dbt
-tests with read-only credentials. Lookup-only changes should update and apply
-the reference values sync SQL; they do not require recompiling or promoting
-generated SQL.
+Apply the table DDL, current-state values sync SQL, indexes, and verification
+with `helios_admin` through the operator wrapper:
+
+```powershell
+python scripts/apply_positions_trades_reference_tables.py
+```
+
+Then run the active product-matching dbt tests with read-only credentials.
+Lookup-only changes should update and apply the reference values sync SQL; they
+do not require recompiling or promoting generated SQL.
 
 Source contract:
 Clear Street SFTP `Helios_Transactions_*.csv` files, table grain
@@ -222,7 +227,7 @@ The copied SQL under `frontend/sql/...` and
 edit those files directly; change the dbt source/int/mart/export models and
 promote compiled SQL again. Product mapping-only changes should update and
 apply the reference-table SQL under
-`reference_sql/ddl/positions_and_trades/reference_tables/`; because the
+`reference_tables/positions_and_trades/`; because the
 generated SQL queries `positions_and_trades_ref` tables at runtime, mapping
 updates do not require dbt compile or SQL promotion unless the dbt model shape
 also changes.

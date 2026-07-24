@@ -118,12 +118,16 @@ interface InternalPipelineRun extends PositionsHomePipelineRun {
   metadata: Record<string, unknown> | null;
 }
 
+const REFERENCE_TABLES_PATH =
+  "dbt/azure_postgres/reference_tables/positions_and_trades";
+const REFERENCE_APPLY_SCRIPT_PATH =
+  "dbt/azure_postgres/scripts/apply_positions_trades_reference_tables.py";
 const REFERENCE_DDL_PATH =
-  "dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/table_positions_and_trades_reference_tables.sql";
+  `${REFERENCE_TABLES_PATH}/table_positions_and_trades_reference_tables.sql`;
 const REFERENCE_VERIFY_PATH =
-  "dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/verify_positions_and_trades_reference_tables.sql";
+  `${REFERENCE_TABLES_PATH}/verify_positions_and_trades_reference_tables.sql`;
 const REFERENCE_SYNC_PATH =
-  "dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/upsert_positions_and_trades_reference_values.sql";
+  `${REFERENCE_TABLES_PATH}/upsert_positions_and_trades_reference_values.sql`;
 
 function fallbackReferenceDocs(): PositionsHomeReferenceStatus["docs"] {
   return {
@@ -139,6 +143,7 @@ function fallbackReferenceDocs(): PositionsHomeReferenceStatus["docs"] {
       "month_codes",
     ],
     manifest: POSITIONS_AND_TRADES_MANIFEST_RELATIVE_PATH,
+    applyScript: REFERENCE_APPLY_SCRIPT_PATH,
     referenceDdl: REFERENCE_DDL_PATH,
     verificationSql: REFERENCE_VERIFY_PATH,
     upsertSql: REFERENCE_SYNC_PATH,
@@ -156,6 +161,7 @@ function referenceDocsFromManifest(
     referenceSchema: manifest.referenceSchema,
     referenceTables: manifest.referenceTables,
     manifest: POSITIONS_AND_TRADES_MANIFEST_RELATIVE_PATH,
+    applyScript: REFERENCE_APPLY_SCRIPT_PATH,
     referenceDdl: REFERENCE_DDL_PATH,
     verificationSql: REFERENCE_VERIFY_PATH,
     upsertSql: REFERENCE_SYNC_PATH,

@@ -14,7 +14,7 @@ is not implemented here.
 
 This subtree does not create database objects, load seed rows, or upsert lookup
 data. Apply the reference DDL under
-`dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/`
+`dbt/azure_postgres/reference_tables/positions_and_trades/`
 with `helios_admin` before running ref-table model tests against Azure Postgres.
 Use `upsert_positions_and_trades_reference_values.sql` in that directory to
 sync the approved current lookup rows. Despite the historical filename, that
