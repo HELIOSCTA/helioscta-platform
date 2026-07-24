@@ -46,8 +46,9 @@ boundary, or log path changes.
 ## positions-trades-ref-table-workflow
 
 - Status: database reference rollout applied to `helios_prod` on
-  `2026-07-22 19:43 UTC`; VM code fast-forward is pending a committed/pushed
-  change.
+  `2026-07-22 19:43 UTC`; G4 Bloomberg reference update applied on
+  `2026-07-24`; runtime SQL deployed to `helioscta-prod-vm-01` on
+  `2026-07-24 02:54 UTC`.
 - Workflow: active ref-table product matching for NAV positions, Clear
   Street trades, backend dbt-compiled MUFG exports, frontend SQL review paths,
   and Excel dbt-compiled SQL extracts.
@@ -58,6 +59,11 @@ boundary, or log path changes.
   - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/upsert_positions_and_trades_reference_values.sql`
 - Current production row counts: `product_catalog=50`,
   `product_alias_rules=55`, `account_lookup=14`, `month_codes=12`.
+- G4 reference update: `positions_and_trades_ref.product_catalog` now uses
+  `bbg_exchange_code = 'IW'` for `product_code = 'G4'`. The latest Clear
+  Street MUFG G4 row for trade date `20260723` and CUSIP
+  `NYMEXG4202609P-0.1` now derives Bloomberg code
+  `IWU6P V6 -.1 COMDTY`.
 - Validation: read-only checks reported zero duplicate priorities, duplicate
   alias patterns, duplicate accounts, aliases without catalog rows, or missing
   month codes. The active ref-table dbt product-matching gate passed with
@@ -67,9 +73,18 @@ boundary, or log path changes.
   `tag:positions_trades_product_matching` and can run from the checked-in
   `profiles.yml.example` template when an ignored local dbt `profiles.yml` is
   absent.
-- VM deployment boundary: after this change is committed and pushed,
-  fast-forward `/opt/helioscta-platform`, reinstall the backend package, and
-  restart `helios-prod-health-check.timer`.
+- VM deployment: `/opt/helioscta-platform` fast-forwarded from `2091cea` to
+  `f999384`; backend package reinstalled; `helios-prod-health-check.timer`
+  restarted and remained `active/waiting`.
+- VM verification: `helios-prod-health-check.service` exited
+  `Result=success`, `ExecMainStatus=0` on `2026-07-24 02:54 UTC`. The health
+  digest still reports existing warnings for stale support feeds and timers
+  enabled on the VM but not tracked under `infrastructure/systemd`; those
+  warnings were not introduced by the G4 reference update.
+- VM dirty-state note: before the fast-forward, two tracked generated
+  validation SQL files were dirty in the VM checkout. They were preserved in
+  `stash@{0}` as `pre-f999384-deploy-validation-sql`; the runtime export cache
+  under `backend/scrapes/clear_street/exports/` remains untracked.
 - Source-of-truth follow-up: legacy `backend/scrapes/positions_and_trades`
   removal should be handled separately after the dbt promotion is committed;
   frontend SQL snapshots are the only maintained promoted SQL copies.
