@@ -13,6 +13,14 @@ FINAL as (
     select
     trades.*,
 
+    -- Source-control fields used by downstream row-family and allocation logic.
+    case when lower(trim(trades.record_id)) = 'nan' then null else nullif(trim(trades.record_id), '') end as record_id_clean,
+    case when lower(trim(trades.trade_type)) = 'nan' then null else nullif(trim(trades.trade_type), '') end as trade_type_clean,
+    case when lower(trim(trades.open_close_code)) = 'nan' then null else nullif(trim(trades.open_close_code), '') end as open_close_code_clean,
+    case when lower(trim(trades.give_in_out_code)) = 'nan' then null else nullif(trim(trades.give_in_out_code), '') end as give_in_out_code_clean,
+    case when lower(trim(trades.order_number)) = 'nan' then null else nullif(trim(trades.order_number), '') end as order_number_clean,
+    case when lower(trim(trades.trace_num_or_unique_identifier)) = 'nan' then null else nullif(trim(trades.trace_num_or_unique_identifier), '') end as trace_num_or_unique_identifier_clean,
+
     -- Account and side fields used by downstream account and quantity logic.
     case when lower(trim(trades.account_number)) = 'nan' then null else nullif(trim(trades.account_number), '') end as account_number_clean,
     case when lower(trim(trades.buy_sell)) = 'nan' then null else nullif(trim(trades.buy_sell), '') end as buy_sell_clean,

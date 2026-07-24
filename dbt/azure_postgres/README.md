@@ -174,7 +174,13 @@ remain visible as vendor-code warnings until a verified code-generation rule is
 added. Review-facing NAV and Clear Street marts also expose
 `source_account_key`, `account_code`, `account_lookup_status`,
 `source_exchange_name`, `exchange_route_code`, `route_family`, and
-`is_product_record`. Clear Street residual cash adjustments remain visible with
+`is_product_record`. Clear Street review marts additionally expose
+`account_display_name` and `account_role`; the Clear Street `GHELI` parent
+account is displayed as `HELIOS Parent` while keeping `GHELI` as the canonical
+account code. Clear Street review marts also expose
+`clear_street_row_family` plus allocation-total audit fields so allocation
+give-out rows can be distinguished from parent execution totals and position
+mirror rows. Clear Street residual cash adjustments remain visible with
 `is_product_record = false` but are excluded from product-rule exceptions and
 vendor-code warnings.
 
@@ -220,3 +226,23 @@ apply the reference-table SQL under
 generated SQL queries `positions_and_trades_ref` tables at runtime, mapping
 updates do not require dbt compile or SQL promotion unless the dbt model shape
 also changes.
+
+## PJM Meteo Baseline Price Prototype
+
+`models/power/pjm/meteo_baseline_price/` is a read-only dbt compile boundary
+for the temporary PJM Meteologica baseline price model. It compiles runtime SQL
+artifacts that are promoted to:
+
+```text
+tmp/data/pjm_like_day_modelling/meteo_baseline_price/sql/
+```
+
+Runtime Python reads those promoted SQL files and binds parameters. It should
+not read dbt `target/compiled` directly.
+
+From `dbt/azure_postgres`:
+
+```powershell
+dbt compile --profiles-dir . --select path:models/power/pjm/meteo_baseline_price
+python scripts/promote_pjm_meteo_baseline_price_sql.py
+```

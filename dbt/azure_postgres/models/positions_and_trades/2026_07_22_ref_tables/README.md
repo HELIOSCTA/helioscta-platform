@@ -66,8 +66,10 @@ source changes:
 
 ```text
 source_account_key     -- raw source account value used for lookup
-account_code           -- canonical Helios account code: ACIM, PNT, DICKSON, TITAN
+account_code           -- canonical Helios account code
 account_name           -- compatibility/display alias for account_code
+account_display_name   -- user-facing account label, e.g. HELIOS Parent for GHELI
+account_role           -- allocated or parent when account_code is matched
 account_lookup_status  -- matched, missing_source_account, or unmapped
 source_exchange_name   -- raw source exchange label, untouched
 exchange_route_code    -- canonical vendor route used for generated codes
