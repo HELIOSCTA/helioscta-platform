@@ -1141,8 +1141,12 @@ function SignatureTable({
 function compactRawRowColumns(): RawRowColumn[] {
   return [
     { key: "sftp_date", label: "SFTP", width: 90 },
-    { key: "account_name", label: "Account", width: 118 },
-    { key: "account_number", label: "Acct #", width: 96 },
+    { key: "account_name", label: "Matched Acct", width: 118 },
+    { key: "source_account_key", label: "Match Key", width: 92 },
+    { key: "account_number", label: "Raw Acct #", width: 96 },
+    { key: "give_in_out_code", label: "Give Code", width: 82 },
+    { key: "give_in_out_firm_num", label: "Give Firm", width: 86 },
+    { key: "account_lookup_status", label: "Acct Status", width: 104 },
     { key: "product_code", label: "Product", width: 86 },
     { key: "product_family", label: "Family", width: 118 },
     { key: "market_name", label: "Market", width: 118 },
