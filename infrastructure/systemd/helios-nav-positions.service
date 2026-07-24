@@ -9,6 +9,7 @@ User=helios
 Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
+Environment=TZ=America/Denver
 ExecStart=/usr/bin/flock -n /tmp/helios-nav-positions.lock /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.nav import positions; raise SystemExit(positions.scheduled_main(lookback_days=1, poll_wait_seconds=300, poll_window_minutes=420, poll_deadline_hour=11, metadata={'scheduler':'systemd'}))"
 TimeoutStartSec=7h30min
 StandardOutput=journal

@@ -9,6 +9,7 @@ User=helios
 Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
+Environment=TZ=America/Denver
 ExecStart=/usr/bin/flock -n /tmp/helios-clear-street-eod-transactions.lock /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.clear_street import transactions; raise SystemExit(transactions.scheduled_main(poll_wait_seconds=300, metadata={'scheduler':'systemd'}))"
 TimeoutStartSec=10h30min
 StandardOutput=journal

@@ -331,11 +331,16 @@ with_trade_flags as (
 FINAL as (
     select
     with_trade_flags.*,
-    with_trade_flags.give_in_out_firm_num_clean as source_account_key,
-    accounts.account_name as account_code,
-    accounts.account_name,
     case
-        when accounts.account_name is not null then 'matched'
+        when nullif(trim(with_trade_flags.give_in_out_firm_num_clean), '') is not null
+        then with_trade_flags.give_in_out_firm_num_clean
+        when account_number_accounts.account_name is not null
+        then with_trade_flags.account_number_clean
+    end as source_account_key,
+    coalesce(give_in_out_accounts.account_name, account_number_accounts.account_name) as account_code,
+    coalesce(give_in_out_accounts.account_name, account_number_accounts.account_name) as account_name,
+    case
+        when coalesce(give_in_out_accounts.account_name, account_number_accounts.account_name) is not null then 'matched'
         when nullif(trim(with_trade_flags.give_in_out_firm_num_clean), '') is null then 'missing_source_account'
         else 'unmapped'
     end as account_lookup_status,
@@ -376,8 +381,11 @@ FINAL as (
         then round(with_trade_flags.strike_price::numeric, 3)::double precision
     end as strike_price_normalized
 from with_trade_flags
-left join accounts
-    on with_trade_flags.give_in_out_firm_num_clean = accounts.account
+left join accounts as give_in_out_accounts
+    on with_trade_flags.give_in_out_firm_num_clean = give_in_out_accounts.account
+left join accounts as account_number_accounts
+    on nullif(trim(with_trade_flags.give_in_out_firm_num_clean), '') is null
+   and with_trade_flags.account_number_clean = account_number_accounts.account
 )
 
 select *
