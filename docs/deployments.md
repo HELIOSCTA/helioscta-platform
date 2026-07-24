@@ -98,8 +98,8 @@ boundary, or log path changes.
 
 ## clear-street-nav-email-routing
 
-- Status: frontend deployed on `2026-07-24 22:14 UTC`; VM deployment in
-  progress on `2026-07-24 22:22 UTC`.
+- Status: frontend deployed on `2026-07-24 22:14 UTC`; VM deployed on
+  `2026-07-24 22:23 UTC`.
 - Workflow: Clear Street scheduled raw-file email routing and Back Office
   Monitor recipient display.
 - Runtime paths: `/opt/helioscta-platform` for
@@ -117,9 +117,11 @@ boundary, or log path changes.
 - Verification: backend targeted tests passed, frontend production build passed,
   Vercel deployment reached `READY`, and the canonical Back Office Monitor API
   returned NAV-only configured routing for `clear_street_nav`. VM verification
-  must confirm `/etc/helioscta/backend.env` sets
-  `CLEAR_STREET_NAV_EMAIL_RECIPIENTS=HeliosCTA@navfundservices.com` and that the
-  runtime resolver rejects non-NAV recipients before the next scheduled run.
+  confirmed `/etc/helioscta/backend.env` sets
+  `CLEAR_STREET_NAV_EMAIL_RECIPIENTS=HeliosCTA@navfundservices.com`; the runtime
+  resolver returns only `HeliosCTA@navfundservices.com`; non-NAV recipients raise
+  `ValueError`; and `helios-clear-street-eod-transactions.timer` is enabled and
+  active.
 - Residual note: the latest direct NAV telemetry row still shows the prior
   Aidan/Kapil recipients until the next successful Clear Street to NAV run
   writes new `ops.api_fetch_log` metadata.
