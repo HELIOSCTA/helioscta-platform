@@ -656,7 +656,6 @@ export function selectedClearStreetTradesCte(promotedSql: string): string {
         (
           coalesce(cardinality(params.account_filters), 0) = 0
           OR lower(btrim(coalesce(filter_source_trades.account_display, ''))) = ANY(params.account_filters)
-          OR lower(btrim(coalesce(filter_source_trades.account_number::text, ''))) = ANY(params.account_filters)
         )
         AND (
           coalesce(cardinality(params.product_code_filters), 0) = 0
