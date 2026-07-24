@@ -57,8 +57,13 @@ boundary, or log path changes.
   - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/table_positions_and_trades_reference_tables.sql`
   - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/index_positions_and_trades_reference_tables.sql`
   - `dbt/azure_postgres/reference_sql/ddl/positions_and_trades/reference_tables/upsert_positions_and_trades_reference_values.sql`
-- Current production row counts: `product_catalog=50`,
-  `product_alias_rules=55`, `account_lookup=14`, `month_codes=12`.
+- Current production row counts: `product_catalog=51`,
+  `product_alias_rules=55`, `account_lookup=23`, `month_codes=12`.
+- Clear Street account reference update: latest account matching now maps
+  `118` and `MCU` to `ACIM`, `686` and `FCI` to `DICKSON`, and supports
+  reviewed `ACCOUNT_NUMBER` fallbacks `IOAGR`, `IOMOR`, `IOPNT`, and `ITITA`
+  when `GIVE_IN_OUT_FIRM_NUM` is blank. The main/omnibus `GHELI` account
+  number maps to canonical Clear Street account `GHELI`.
 - G4 reference update: `positions_and_trades_ref.product_catalog` now uses
   `bbg_exchange_code = 'IW'` for `product_code = 'G4'`. The latest Clear
   Street MUFG G4 row for trade date `20260723` and CUSIP
@@ -67,7 +72,9 @@ boundary, or log path changes.
 - Validation: read-only checks reported zero duplicate priorities, duplicate
   alias patterns, duplicate accounts, aliases without catalog rows, or missing
   month codes. The active ref-table dbt product-matching gate passed with
-  `PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2`.
+  `PASS=2 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=2`, and the Clear Street
+  nonblank-account matching guard passed with
+  `PASS=1 WARN=0 ERROR=0 SKIP=0 NO-OP=0 TOTAL=1`.
 - Health-check note: local backend validation confirms
   `backend.orchestration.health.prod_health_check` now selects
   `tag:positions_trades_product_matching` and can run from the checked-in

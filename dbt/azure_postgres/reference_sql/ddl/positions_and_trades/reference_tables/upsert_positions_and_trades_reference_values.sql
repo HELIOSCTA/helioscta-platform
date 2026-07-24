@@ -95,18 +95,27 @@ INSERT INTO expected_account_lookup (
     source,
     source_label
 ) VALUES
+    ('GHELI', 'GHELI', 'clear_street', 'Clear Street Trades'),
     ('ACIM', 'UBE 10051', 'nav', 'NAV Position File'),
     ('ACIM', '51014112.0', 'nav', 'NAV Position File'),
     ('ACIM', '51014112', 'nav', 'NAV Position File'),
+    ('ACIM', 'IOAGR', 'clear_street', 'Clear Street Trades'),
     ('ACIM', 'EFD', 'clear_street', 'Clear Street Trades'),
     ('ACIM', '365', 'clear_street', 'Clear Street Trades'),
+    ('ACIM', 'MCU', 'clear_street', 'Clear Street Trades'),
+    ('ACIM', '118', 'clear_street', 'Clear Street Trades'),
     ('PNT', 'ABN AMRO_1251PT034', 'nav', 'NAV Position File'),
+    ('PNT', 'IOPNT', 'clear_street', 'Clear Street Trades'),
     ('PNT', 'FCR', 'clear_street', 'Clear Street Trades'),
     ('PNT', '690', 'clear_street', 'Clear Street Trades'),
     ('DICKSON', 'RJO_35511229', 'nav', 'NAV Position File'),
+    ('DICKSON', 'IOMOR', 'clear_street', 'Clear Street Trades'),
     ('DICKSON', 'RJO', 'clear_street', 'Clear Street Trades'),
     ('DICKSON', '685', 'clear_street', 'Clear Street Trades'),
+    ('DICKSON', 'FCI', 'clear_street', 'Clear Street Trades'),
+    ('DICKSON', '686', 'clear_street', 'Clear Street Trades'),
     ('TITAN', '969 ESKHL', 'nav', 'NAV Position File'),
+    ('TITAN', 'ITITA', 'clear_street', 'Clear Street Trades'),
     ('TITAN', 'ADU', 'clear_street', 'Clear Street Trades'),
     ('TITAN', '905', 'clear_street', 'Clear Street Trades');
 
