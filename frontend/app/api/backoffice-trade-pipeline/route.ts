@@ -33,17 +33,6 @@ const LOCAL_DISPLAY_TIME_ZONE = "America/Denver";
 const TITAN_EXPORT_WHERE = "give_in_out_firm_num in ('ADU', '905')";
 const SOURCE_CHECKS =
   "Sources: promoted Clear Street all-history model, clear_street.eod_transactions, and ops.api_fetch_log MUFG telemetry";
-const CHECKSUM_METADATA_KEYS = [
-  "file_sha256",
-  "sha256",
-  "checksum",
-  "file_checksum",
-  "artifact_checksum",
-  "local_file_sha256",
-  "remote_file_sha256",
-  "file_md5",
-  "md5",
-] as const;
 
 interface DateSummaryRow {
   sftp_date: string;
@@ -190,14 +179,6 @@ function yyyymmdd(value: string): string {
 
 function clearStreetSelectedArgs(selectedDate: string): unknown[] {
   return [selectedDate, [], [], [], [], [], null];
-}
-
-function telemetryChecksum(row: TelemetryRow | undefined): string | null {
-  for (const key of CHECKSUM_METADATA_KEYS) {
-    const value = metadataText(row, key);
-    if (value) return value;
-  }
-  return null;
 }
 
 function defaultTitanFile(value: string): string {
@@ -501,7 +482,6 @@ function buildArtifacts({
         builtAtLabel: formatTimestamp(builtAt),
         rowsLabel,
         warnings: warningCount(mufg),
-        checksum: telemetryChecksum(mufg),
       };
     });
 }
@@ -529,7 +509,6 @@ function buildSummary({
     artifactFile: file,
     builtAt,
     builtAtLabel: formatTimestamp(builtAt),
-    checksum: telemetryChecksum(mufg),
     artifactRowsLabel: titanRows > 0 ? `${rowsUploaded || titanRows}/${titanRows}` : "-",
   };
 }

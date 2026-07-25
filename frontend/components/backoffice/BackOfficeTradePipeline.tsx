@@ -58,11 +58,6 @@ function validationDetailsApiUrl(
   return `${VALIDATION_DETAILS_API_PATH}?${params.toString()}`;
 }
 
-function checksumLabel(value: string | null | undefined): string {
-  if (!value) return "Not logged";
-  return value.length > 24 ? `${value.slice(0, 10)}...${value.slice(-8)}` : value;
-}
-
 function fmtDateTime(value: string | null | undefined): string {
   if (!value) return "--";
   const parsed = new Date(value);
@@ -456,7 +451,7 @@ function ArtifactsTable({ payload }: { payload: BackOfficeTradePipelinePayload }
         <div>
           <p className="text-sm font-semibold text-gray-200">Built Titan Artifacts</p>
           <p className="text-xs text-gray-500">
-            Archived nightly Titan files with VM checksum telemetry when the upload run logged it.
+            Archived nightly Titan files from the MUFG upload telemetry.
           </p>
         </div>
       </button>
@@ -470,7 +465,6 @@ function ArtifactsTable({ payload }: { payload: BackOfficeTradePipelinePayload }
                 <th className="px-3 py-2 font-medium">Built At</th>
                 <th className="px-3 py-2 text-right font-medium">Rows</th>
                 <th className="px-3 py-2 text-right font-medium">Warnings</th>
-                <th className="px-3 py-2 font-medium">VM SHA-256</th>
               </tr>
             </thead>
             <tbody>
@@ -486,12 +480,6 @@ function ArtifactsTable({ payload }: { payload: BackOfficeTradePipelinePayload }
                   <td className="px-3 py-2 text-gray-200">{row.builtAtLabel}</td>
                   <td className="px-3 py-2 text-right font-semibold text-gray-200">{row.rowsLabel}</td>
                   <td className="px-3 py-2 text-right font-semibold text-emerald-200">{row.warnings}</td>
-                  <td
-                    className="px-3 py-2 font-mono text-[11px] text-gray-200"
-                    title={row.checksum ?? "Historical VM telemetry did not log a checksum."}
-                  >
-                    {checksumLabel(row.checksum)}
-                  </td>
                 </tr>
               ))}
             </tbody>

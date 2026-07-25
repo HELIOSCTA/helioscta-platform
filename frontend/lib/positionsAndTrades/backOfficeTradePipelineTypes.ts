@@ -26,7 +26,6 @@ export interface BackOfficeTradePipelineArtifactRow {
   builtAtLabel: string;
   rowsLabel: string;
   warnings: number;
-  checksum: string | null;
 }
 
 export interface BackOfficeTradePipelineSummary {
@@ -39,7 +38,6 @@ export interface BackOfficeTradePipelineSummary {
   artifactFile: string | null;
   builtAt: string | null;
   builtAtLabel: string;
-  checksum: string | null;
   artifactRowsLabel: string;
 }
 
