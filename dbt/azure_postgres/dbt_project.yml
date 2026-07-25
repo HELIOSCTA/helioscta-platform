@@ -33,3 +33,24 @@ models:
           +enabled: true
           +schema: positions_and_trades_ref_tables
           +materialized: ephemeral
+    pjm_da_model:
+      meteologica:
+        +enabled: true
+        +schema: pjm_da_model_meteologica
+        +materialized: ephemeral
+      pjm:
+        +enabled: true
+        +schema: pjm_da_model_pjm
+        +materialized: ephemeral
+      meteo_baseline_price:
+        +enabled: true
+        +schema: pjm_da_model_meteo_baseline_price
+        +materialized: ephemeral
+        marts:
+          +enabled: true
+          +schema: pjm_da_model_meteo_baseline_price
+          +materialized: ephemeral
+        utils:
+          +enabled: true
+          +schema: pjm_da_model_meteo_baseline_price
+          +materialized: ephemeral

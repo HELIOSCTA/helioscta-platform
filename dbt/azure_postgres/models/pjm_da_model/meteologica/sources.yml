@@ -1,0 +1,17 @@
+version: 2
+
+sources:
+  - name: meteologica
+    schema: meteologica
+    description: >
+      Meteologica forecast feed tables loaded into Azure Postgres. dbt reads
+      these tables with helios_readonly and does not mutate rows.
+    tables:
+      - name: usa_pjm_western_hub_da_power_price_forecast_hourly
+        description: >
+          Western Hub deterministic day-ahead power price forecast. Grain:
+          content_id x update_id x forecast_period_start.
+      - name: usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly
+        description: >
+          Western Hub ECMWF ensemble day-ahead power price forecast. Grain:
+          content_id x update_id x forecast_period_start.

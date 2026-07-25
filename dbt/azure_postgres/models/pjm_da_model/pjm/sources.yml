@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: pjm
+    schema: pjm
+    description: >
+      PJM market source tables loaded into Azure Postgres.
+    tables:
+      - name: da_hrl_lmps
+        description: >
+          PJM day-ahead hourly LMPs. Current-row grain for this model:
+          datetime_beginning_ept x pnode_name where row_is_current is true.

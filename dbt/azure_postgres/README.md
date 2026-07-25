@@ -241,7 +241,7 @@ also changes.
 
 ## PJM Meteo Baseline Price Prototype
 
-`models/power/pjm/meteo_baseline_price/` is a read-only dbt compile boundary
+`models/pjm_da_model/meteo_baseline_price/` is a read-only dbt compile boundary
 for the temporary PJM Meteologica baseline price model. It compiles runtime SQL
 artifacts that are promoted to:
 
@@ -252,9 +252,36 @@ tmp/data/pjm_like_day_modelling/meteo_baseline_price/sql/
 Runtime Python reads those promoted SQL files and binds parameters. It should
 not read dbt `target/compiled` directly.
 
+Source-schema wrappers live under:
+
+```text
+models/pjm_da_model/meteologica/
+models/pjm_da_model/pjm/
+```
+
+Outward runtime artifacts live under:
+
+```text
+models/pjm_da_model/meteo_baseline_price/marts/
+```
+
+Runtime helper SQL, such as available forecast date discovery for horizon
+workflows, lives under:
+
+```text
+models/pjm_da_model/meteo_baseline_price/utils/
+```
+
+Operator reference index SQL for the exact Meteologica DA price source tables
+lives under:
+
+```text
+reference_sql/ddl/power/meteologica/pjm_western_hub_da_price_forecast/
+```
+
 From `dbt/azure_postgres`:
 
 ```powershell
-dbt compile --profiles-dir . --select path:models/power/pjm/meteo_baseline_price
+dbt compile --profiles-dir . --select +path:models/pjm_da_model/meteo_baseline_price
 python scripts/promote_pjm_meteo_baseline_price_sql.py
 ```
