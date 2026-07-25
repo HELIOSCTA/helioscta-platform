@@ -1,6 +1,6 @@
 param(
-    [string]$WorkbookPath = "$PSScriptRoot\nav_position_file_2026_july_21.xlsm",
-    [string]$OutputPath = "$PSScriptRoot\nav_position_file_2026_july_21_ref_tables_local.xlsm",
+    [string]$WorkbookPath = "$PSScriptRoot\marex_and_nav_position_file_2026_may_11.xlsm",
+    [string]$OutputPath = "$PSScriptRoot\marex_and_nav_position_file_2026_may_11_ref_tables.xlsm",
     [string]$DbtProjectRoot = "$PSScriptRoot\..\..\..\..\dbt\azure_postgres",
     [string]$DatabaseName = $(if ($env:DBT_POSTGRES_DBNAME) { $env:DBT_POSTGRES_DBNAME } else { "helios_prod" }),
     [string]$OdbcConnectionString = $(if ($env:EXCEL_NAV_ODBC_CONNECTION_STRING) { $env:EXCEL_NAV_ODBC_CONNECTION_STRING } else { "dsn=Azure PostgreSQL;Database=$DatabaseName;SSLmode=require" })

@@ -1,17 +1,17 @@
-# NAV Excel Workbook Rebuild Gap Analysis
+# Old Backend NAV Excel Workbook Rebuild Gap Analysis
 
 ## Goal
 
-Re-create `nav_position_file_2026_july_21.xlsm` using the active
+Re-create `marex_and_nav_position_file_2026_may_11.xlsm` using the active
 `2026_07_22_ref_tables` dbt model instead of the legacy `positions_cleaned_v2`
 objects referenced by the workbook's Power Query SQL.
 
 ## Current Inputs
 
 - Workbook source:
-  `excel/nav/positions/2026_07_21_nav_position_file/nav_position_file_2026_july_21.xlsm`
+  `excel/nav/positions/2026_07_21_nav_position_file_old_backend/marex_and_nav_position_file_2026_may_11.xlsm`
 - Extracted workbook SQL:
-  `excel/nav/positions/2026_07_21_nav_position_file/sql/`
+  `excel/nav/positions/2026_07_21_nav_position_file_old_backend/sql/`
 - Legacy dbt snapshot used by that workbook:
   `dbt/azure_postgres/archived_models/positions_and_trades/2026_01_01_old_dbt_model/positions_cleaned_v0/`
 - Active promoted dbt model:

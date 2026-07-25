@@ -1,8 +1,3 @@
--- Source workbook: nav_position_file_2026_july_21.xlsm
--- Source Power Query: GAS_OPTIONS_PIVOT
--- Extracted from: customXml/item1.xml -> DataMashup -> Formulas/Section1.m
--- Source connection: dsn=Azure PostgreSQL
-
 ---------------------------------------------------
 ---------------------------------------------------
 

@@ -1,56 +1,49 @@
--- Source workbook: nav_position_file_2026_july_21.xlsm
--- Source Power Query: GAS_OPTIONS
--- Extracted from: customXml/item1.xml -> DataMashup -> Formulas/Section1.m
--- Source connection: dsn=Azure PostgreSQL
-
 ---------------------------------------------------
 ---------------------------------------------------
 
 WITH COMBINED AS (
     select
 
-     -- DATES
+        -- DATES
         sftp_date as "SFTP Date"
         ,previous_sftp_date as "Previous SFTP Date"
 
         -- TRADE DATES
         ,last_trade_date as "Expiration"
-        -- ,days_to_expiry as "DTE"
-        ,999 as "DTE"
+        ,days_to_expiry as "DTE"
 
         -- EXCHANGE
         -- ,exchange_name
         ,exchange_code as "Exchange Code"
-        -- ,exchange_code_grouping
-        -- ,exchange_code_region
+        ,exchange_code_grouping as "Grouping"
+        ,exchange_code_region as "Region"
 
-        -- OPTIONS
+        -- -- OPTIONS
         -- ,is_option
-        ,put_call as "P/C"
-        ,strike_price as "Strike"
-        -- OPTIONS
-        ,marex_delta as "MAREX Delta"
-        ,previous_marex_delta as "Previous Marex Delta"
+        -- ,put_call
+        -- ,strike_price
+        -- -- OPTIONS
+        -- ,marex_delta
+        -- ,previous_marex_delta
 
         -- CONTRACT DATES
         -- ,contract_yyyymm
         ,LEFT(contract_yyyymm, 4) || '-' || RIGHT(contract_yyyymm, 2) AS "YYYYMM"
-        -- ,contract_yyyymmdd
+        ,contract_yyyymmdd AS "YYYYMMDD"
         -- ,contract_year
         -- ,contract_month
         -- ,contract_day
-        ,futures_contract_month_y as "Futures Contract Code"
 
         -- DESCRIPTION
-        ,marex_description as "Marex Description"
+        ,marex_description as "MAREX Description"
         -- ,marex_product
-        -- ,ice_xl_symbol
-        -- ,option_description
-        ,cme_excel_symbol as "CME Symbol"
+        ,ice_xl_symbol as "ICE XL"
+        -- ,cme_excel_symbol
         -- ,bloomberg_symbol
+        -- ,option_description
 
         -- LOTS
-        ,lots as "CME Gas Lots"
+        ,lots as "ICE Lots"
 
         -- _total
         ,qty_total as "QTY"
@@ -77,18 +70,25 @@ WITH COMBINED AS (
     from positions_cleaned_v2.nav_positions_grouped_latest
 
     WHERE
-        exchange_code_grouping in ('GAS_OPTIONS')
-        AND exchange_code in ('LN', 'PHE')
-        AND (days_to_expiry >= 0 OR days_to_expiry IS NULL)
+        -- exchange_code_grouping in ('SHORT_TERM_POWER', 'SHORT_TERM_POWER_RT')
+        exchange_code in ('PWA', 'PDP', 'PDA')
+        AND (days_to_expiry >= -1 or days_to_expiry is NULL)
 
     ORDER BY
         sftp_date DESC
-        ,contract_yyyymm
+        ,contract_yyyymmdd
         ,exchange_code
+        ,CASE exchange_code_grouping
+            WHEN 'SHORT_TERM_POWER_RT' THEN 1
+            WHEN 'SHORT_TERM_POWER' THEN 2
+            ELSE 999
+        END
+        ,CASE exchange_code_region
+            WHEN 'PJM' THEN 1
+            ELSE 999
+        END
         ,days_to_expiry
-        ,put_call
-        ,strike_price
 )
 
+-- SELECT distinct "Exchange Code" FROM COMBINED
 SELECT * FROM COMBINED
-WHERE "YYYYMM" > '202602'

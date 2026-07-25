@@ -1,7 +1,7 @@
 param(
-    [string]$LegacyWorkbookPath = "$PSScriptRoot\nav_position_file_2026_july_21.xlsm",
-    [string]$RefTablesWorkbookPath = "$PSScriptRoot\nav_position_file_2026_july_21_ref_tables_local.xlsm",
-    [string]$OutputRoot = "$PSScriptRoot\..\..\..\..\.local\excel_compare\nav_position_file_2026_july_21",
+    [string]$LegacyWorkbookPath = "$PSScriptRoot\marex_and_nav_position_file_2026_may_11.xlsm",
+    [string]$RefTablesWorkbookPath = "$PSScriptRoot\marex_and_nav_position_file_2026_may_11_ref_tables_local.xlsm",
+    [string]$OutputRoot = "$PSScriptRoot\..\..\..\..\.local\excel_compare\marex_and_nav_position_file_2026_may_11",
     [int]$TimeoutSeconds = 600,
     [switch]$SkipQueryUpdate
 )

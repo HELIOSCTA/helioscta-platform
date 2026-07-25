@@ -29,7 +29,7 @@ FINAL as (
     from grouped_latest
     where route_family = 'ice'
       and not is_option
-      and exchange_code_grouping in ('SHORT_TERM_POWER_RT', 'SHORT_TERM_POWER')
+      and exchange_code_grouping = 'SHORT_TERM_POWER'
       and contract_yyyymmdd is not null
       and (
         daily_contract_business_offset_days >= -1
@@ -43,11 +43,6 @@ order by
     "SFTP Date" desc,
     "YYYYMMDD",
     "Exchange Code",
-    case "Grouping"
-        when 'SHORT_TERM_POWER_RT' then 1
-        when 'SHORT_TERM_POWER' then 2
-        else 999
-    end,
     case "Region"
         when 'PJM' then 1
         else 999

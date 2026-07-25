@@ -12,7 +12,14 @@ month_codes as (
 ),
 
 latest_upload_positions as (
-    select *
+    select
+        positions.*,
+        (
+            positions.put_call_code is not null
+            or positions.strike_price_normalized is not null
+            or upper(coalesce(positions.type, '')) like '%OPTION%'
+            or positions.product_code_grouping in ('gas_option', 'power_option')
+        ) as is_option
     from positions
 ),
 
@@ -69,10 +76,6 @@ normalized as (
         latest_upload_positions.product_code::varchar as exchange_code,
         case
             when latest_upload_positions.is_option and latest_upload_positions.product_code = 'PMI' then 'POWER_OPTIONS'
-            when
-                not latest_upload_positions.is_option
-                and latest_upload_positions.product_code in ('PDP', 'PWA', 'DDP', 'ODP')
-            then 'SHORT_TERM_POWER_RT'
             when latest_upload_positions.product_code = 'HHD' then 'BALMO'
             when latest_upload_positions.product_family = 'Basis' then 'BASIS'
             when latest_upload_positions.product_family = 'Gas'
@@ -87,8 +90,11 @@ normalized as (
             then 'POWER_OPTIONS'
             when
                 not latest_upload_positions.is_option
+                and latest_upload_positions.product_family = 'Power'
+                and latest_upload_positions.contract_day is not null
                 and latest_upload_positions.product_code in (
-                    'PDA', 'PJL', 'PDO', 'ERA', 'END', 'NED', 'NDA', 'NEZ', 'SDP'
+                    'PDP', 'PWA', 'DDP', 'ODP', 'ERA', 'END', 'NED', 'NDA',
+                    'PDA', 'PJL', 'PDO', 'NEZ', 'SDP'
                 )
             then 'SHORT_TERM_POWER'
             when latest_upload_positions.product_family = 'Power' then 'POWER_FUTURES'
@@ -117,7 +123,9 @@ normalized as (
         latest_upload_positions.contract_day::integer as contract_day,
         product_aliases.marex_product::varchar as marex_product,
         latest_upload_positions.quantity_1::double precision as qty,
+        latest_upload_positions.gas_qty::double precision as gas_qty,
         latest_upload_positions.multiplier_and_tick_value::double precision as lots,
+        latest_upload_positions.gas_lots::double precision as gas_lots,
         latest_upload_positions.market_settlement_price::double precision as settlement_price,
         latest_upload_positions.trade_price::double precision as trade_price,
         month_codes.month_code::varchar as month_code,
@@ -158,19 +166,9 @@ FINAL as (
         contract_day,
         marex_product,
         qty,
-        case
-            when lots = 2500
-                and exchange_code in ('HHD', 'H', 'PHH', 'PHE')
-            then qty / 4
-            else qty
-        end as gas_qty,
+        gas_qty,
         lots,
-        case
-            when lots = 2500
-                and exchange_code in ('HHD', 'H', 'PHH', 'PHE')
-            then lots * 4
-            else lots
-        end as gas_lots,
+        gas_lots,
         settlement_price,
         trade_price,
         case

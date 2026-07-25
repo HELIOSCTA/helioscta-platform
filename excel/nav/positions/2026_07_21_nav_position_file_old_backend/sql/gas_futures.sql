@@ -1,8 +1,3 @@
--- Source workbook: nav_position_file_2026_july_21.xlsm
--- Source Power Query: ICE_FUTURES
--- Extracted from: customXml/item1.xml -> DataMashup -> Formulas/Section1.m
--- Source connection: dsn=Azure PostgreSQL
-
 ---------------------------------------------------
 ---------------------------------------------------
 
@@ -20,16 +15,16 @@ WITH COMBINED AS (
         -- EXCHANGE
         -- ,exchange_name
         ,exchange_code as "Exchange Code"
-        ,exchange_code_grouping as "Grouping"
-        ,exchange_code_region as "Region"
+        -- ,exchange_code_grouping
+        -- ,exchange_code_region
 
-        -- OPTIONS
+        -- -- OPTIONS
         -- ,is_option
-        ,put_call as "P/C"
-        ,strike_price as "Strike"
-        -- OPTIONS
-        ,marex_delta as "Marex Delta"
-        ,previous_marex_delta as "Previous Marex Delta"
+        -- ,put_call
+        -- ,strike_price
+        -- -- OPTIONS
+        -- ,marex_delta
+        -- ,previous_marex_delta
 
         -- CONTRACT DATES
         -- ,contract_yyyymm
@@ -38,18 +33,18 @@ WITH COMBINED AS (
         -- ,contract_year
         -- ,contract_month
         -- ,contract_day
-        ,futures_contract_month_yy as "Futures Contract Code"
+        ,futures_contract_month_y as "Futures Contract Code"
 
         -- DESCRIPTION
-        ,marex_description as "MAREX Description"
+        ,marex_description as "Marex Description"
         -- ,marex_product
-        ,ice_xl_symbol as "ICE XL"
-        -- ,cme_excel_symbol
-        -- ,bloomberg_symbol
+        -- ,ice_xl_symbol
         -- ,option_description
+        ,cme_excel_symbol as "CME Symbol"
+        -- ,bloomberg_symbol
 
         -- LOTS
-        ,lots as "ICE Lots"
+        ,lots as "CME Gas Lots"
 
         -- _total
         ,qty_total as "QTY"
@@ -76,17 +71,13 @@ WITH COMBINED AS (
     from positions_cleaned_v2.nav_positions_grouped_latest
 
     WHERE
-        exchange_code_grouping in ('POWER_FUTURES')
-        AND exchange_code in ('PMI')
+        exchange_code_grouping in ('GAS_FUTURES')
         AND (days_to_expiry >= 0 OR days_to_expiry IS NULL)
 
     ORDER BY
         sftp_date DESC
-        ,CASE exchange_code_region
-            WHEN 'PJM' THEN 1
-            ELSE 999
-        END
         ,contract_yyyymm
+        ,exchange_code
         ,days_to_expiry
         ,put_call
         ,strike_price

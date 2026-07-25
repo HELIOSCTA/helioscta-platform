@@ -96,15 +96,22 @@ The legacy Clear Street v1 model family is no longer kept in this repo.
 ## Excel Workbook Models
 
 Versioned Excel workbook artifacts live under the repo-level `excel/` folder,
-not under database DDL reference SQL. The first NAV position workbook reference
-is:
+not under database DDL reference SQL. The old-backend NAV position workbook
+reference is archived as:
 
 ```text
-excel/nav/positions/2026_07_21_nav_position_file/
+excel/nav/positions/2026_07_21_nav_position_file_old_backend/
 ```
 
-That folder contains the extracted legacy workbook SQL and rebuild notes. Active
-read-only dbt models that compile SQL for Excel consumers remain under:
+The promoted ref-table workbook reference is:
+
+```text
+excel/nav/positions/2026_07_22_nav_position_file/
+```
+
+Those folders contain workbook contracts, extracted or compiled SQL snapshots,
+and rebuild notes. Active read-only dbt models that compile SQL for Excel
+consumers remain under:
 
 ```text
 dbt/azure_postgres/models/positions_and_trades/2026_07_22_ref_tables/nav_positions/excel/

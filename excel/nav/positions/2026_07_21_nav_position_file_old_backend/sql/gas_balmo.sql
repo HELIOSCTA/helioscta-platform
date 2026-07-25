@@ -1,8 +1,3 @@
--- Source workbook: nav_position_file_2026_july_21.xlsm
--- Source Power Query: GAS_FUTURES
--- Extracted from: customXml/item1.xml -> DataMashup -> Formulas/Section1.m
--- Source connection: dsn=Azure PostgreSQL
-
 ---------------------------------------------------
 ---------------------------------------------------
 
@@ -33,19 +28,20 @@ WITH COMBINED AS (
 
         -- CONTRACT DATES
         -- ,contract_yyyymm
-        ,LEFT(contract_yyyymm, 4) || '-' || RIGHT(contract_yyyymm, 2) AS "YYYYMM"
+        -- ,LEFT(contract_yyyymm, 4) || '-' || RIGHT(contract_yyyymm, 2) AS "YYYYMM"
+        ,LEFT(contract_yyyymm, 4) || '-' || RIGHT(contract_yyyymm, 2) || '-' || contract_day AS "YYYYMM"
         -- ,contract_yyyymmdd
         -- ,contract_year
         -- ,contract_month
         -- ,contract_day
-        ,futures_contract_month_y as "Futures Contract Code"
+        -- ,futures_contract_month_y as "Futures Contract Code"
 
         -- DESCRIPTION
         ,marex_description as "Marex Description"
         -- ,marex_product
-        -- ,ice_xl_symbol
+        ,ice_xl_symbol as "ICE XL"
         -- ,option_description
-        ,cme_excel_symbol as "CME Symbol"
+        -- ,cme_excel_symbol
         -- ,bloomberg_symbol
 
         -- LOTS
@@ -76,12 +72,14 @@ WITH COMBINED AS (
     from positions_cleaned_v2.nav_positions_grouped_latest
 
     WHERE
-        exchange_code_grouping in ('GAS_FUTURES')
-        AND (days_to_expiry >= 0 OR days_to_expiry IS NULL)
+        exchange_code_grouping in ('BALMO')
+        AND exchange_code in ('HHD')
+        -- AND days_to_expiry >= 0
+        AND contract_yyyymmdd >= current_date
 
     ORDER BY
         sftp_date DESC
-        ,contract_yyyymm
+        ,contract_yyyymmdd
         ,exchange_code
         ,days_to_expiry
         ,put_call

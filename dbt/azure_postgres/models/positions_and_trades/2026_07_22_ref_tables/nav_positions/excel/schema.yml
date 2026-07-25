@@ -3,15 +3,14 @@ version: 2
 models:
   - name: nav_ref_excel_05_recent_positions_all_history
     description: >
-      Excel-scoped recent NAV positions helper. Source contract: raw NAV SFTP
-      Position Valuation Detail rows from nav_ref_00_src_positions, restricted
-      to the latest two distinct nav_date values and the latest upload per
-      fund_code and nav_date before account/product enrichment runs. Grain: one
-      NAV source row per fund_code, nav_date, sftp_upload_timestamp,
-      source_file_name, and source_file_row_number. Workbook consumer notes:
-      this preserves the active ref-table all-history column contract required
-      by Excel helpers while avoiding all-history enrichment for workbook tabs
-      that only need current and previous NAV date measures.
+      Excel-scoped recent NAV positions helper. Source contract: the canonical
+      nav_ref_40_positions_all_history row contract, restricted to the latest
+      two distinct nav_date values and the latest upload per fund_code and
+      nav_date. Grain: one NAV source row per fund_code, nav_date,
+      sftp_upload_timestamp, source_file_name, and source_file_row_number.
+      Workbook consumer notes: product, account, contract, quantity, and lot
+      normalization stay upstream in dbt intermediate models; Excel helpers
+      only filter and reshape those validated fields.
 
   - name: nav_ref_excel_10_position_rows
     description: >
@@ -22,7 +21,9 @@ models:
       and source_file_row_number. Workbook consumer notes: this is an internal
       helper, not a v0 nav_position clone; it keeps only the row-level product,
       account, contract, quantity, lot, settle, and trade-price facts needed by
-      the workbook tabs.
+      the workbook tabs. The Excel-specific SHORT_TERM_POWER bucket is applied
+      only to dated, non-option Power rows; undated Power rows stay in
+      POWER_FUTURES for the monthly ICE tabs.
 
   - name: nav_ref_excel_20_positions_grouped
     description: >
@@ -64,9 +65,9 @@ models:
       Ref-table-native ICE_BALDAY workbook tab source. Source contract:
       nav_ref_excel_30_positions_grouped_latest. Grain: one latest grouped row per
       selected short-term power contract. Workbook consumer notes: selects
-      dated non-option ICE rows from the SHORT_TERM_POWER_RT and SHORT_TERM_POWER
-      groupings, displays contract-date expiration and business-day DTE, and
-      keeps prior-business-day expired rows visible for trader review.
+      dated non-option ICE rows from the SHORT_TERM_POWER grouping, displays
+      contract-date expiration and business-day DTE, and keeps
+      prior-business-day expired rows visible for trader review.
 
   - name: nav_ref_excel_ice_options
     description: >
@@ -128,3 +129,14 @@ models:
       per month, option code, exchange code, put/call, strike, and Bloomberg
       option description before Excel pivoting. Workbook consumer notes:
       preserves the legacy pivot-ready aliases and aggregations.
+
+  - name: nav_ref_excel_base_all_tabs
+    description: >
+      Ref-table-native single-query NAV Excel base source. Source contract:
+      the active NAV Excel tab models in this directory. Grain: one workbook
+      output row per excel_output_table and excel_output_sort_ordinal, with a
+      wide nullable column contract that covers the visible query-loaded tabs
+      and the connection-only GAS_FUTURES_PIVOT query. Workbook consumer notes:
+      this model exists so a test workbook can load one visible NAV_EXCEL_BASE
+      table and derive individual tabs locally in Power Query without creating
+      any database view or table.
