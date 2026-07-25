@@ -703,7 +703,7 @@ export default function GasDailyPrices() {
     setDetailError(null);
 
     fetchJsonWithCache<GasContractHistoryPayload>({
-      key: `api:gas-daily-prices:contract:v2:${symbols.join("|")}:${data?.tradeDate ?? "latest"}`,
+      key: `api:gas-daily-prices:contract:${symbols.join("|")}:${data?.tradeDate ?? "latest"}`,
       url: `/api/gas-daily-prices/contract?${params.toString()}`,
       ttlMs: API_TTL_MS,
       signal: controller.signal,
