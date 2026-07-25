@@ -149,7 +149,9 @@ interface RawPositionDbRow {
   is_product_record: boolean | null;
   long_short: string | null;
   quantity_1: number | string | null;
+  gas_qty: number | string | null;
   multiplier_and_tick_value: number | string | null;
+  gas_lots: number | string | null;
   trade_price: number | string | null;
   market_settlement_price: number | string | null;
   product_norm: string | null;
@@ -481,7 +483,9 @@ function mapDebugRow(row: RawPositionDbRow) {
     isProductRecord: row.is_product_record,
     longShort: row.long_short,
     quantity1: round(row.quantity_1, 6),
+    gasQty: round(row.gas_qty, 6),
     multiplierAndTickValue: round(row.multiplier_and_tick_value, 6),
+    gasLots: round(row.gas_lots, 6),
     tradePrice: round(row.trade_price, 6),
     marketSettlementPrice: round(row.market_settlement_price, 6),
     productNorm: row.product_norm,
@@ -569,7 +573,9 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
                 is_product_record,
                 long_short,
                 quantity_1::double precision AS quantity_1,
+                gas_qty::double precision AS gas_qty,
                 multiplier_and_tick_value::double precision AS multiplier_and_tick_value,
+                gas_lots::double precision AS gas_lots,
                 trade_price::double precision AS trade_price,
                 market_settlement_price::double precision AS market_settlement_price,
                 product_norm,

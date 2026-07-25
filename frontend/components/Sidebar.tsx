@@ -8,6 +8,11 @@ export type ActiveSection =
   | "pjm-da-model"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
+  | "backoffice-home"
+  | "backoffice-positions-trades"
+  | "backoffice-monitor"
+  | "backoffice-trade-pipeline"
+  | "backoffice-nav-daily-position-sheet"
   | "positions-home"
   | "nav-positions"
   | "clear-street-trades"
@@ -36,11 +41,11 @@ interface SidebarProps {
 }
 
 interface NavItem {
-  id: ActiveSection;
+  id?: ActiveSection;
+  key?: string;
   label: string;
-  group?: string;
+  description?: string;
   disabled?: boolean;
-  comingSoon?: boolean;
 }
 
 interface TopSection {
@@ -49,12 +54,21 @@ interface TopSection {
   navItems: NavItem[];
 }
 
+function isItemActive(item: NavItem, activeSection: ActiveSection): boolean {
+  if (!item.id) return false;
+  if (item.id === activeSection) return true;
+  if (item.id === "pjm-historical-settlements" && activeSection === "pjm-term-bible") {
+    return true;
+  }
+  return false;
+}
+
 function getSections(showLocalDevFeatures: boolean): TopSection[] {
   const sections: TopSection[] = [];
 
   sections.push({
-    key: "prices",
-    label: "PRICING",
+    key: "pricing",
+    label: "Pricing",
     navItems: [
       { id: "ice-settlements", label: "Power ICE Settles" },
       { id: "spark-spreads", label: "Power Sparks" },
@@ -63,7 +77,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
 
   sections.push({
     key: "power",
-    label: "POWER",
+    label: "Power",
     navItems: [
       { id: "pjm-da-lmps", label: "LMPs" },
       { id: "power-lmp-adders", label: "LMP Adders" },
@@ -76,13 +90,17 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
   });
 
   sections.push({
-    key: "positions",
-    label: "POSITIONS",
+    key: "back-office",
+    label: "Back Office",
     navItems: [
-      { id: "positions-home", label: "Positions Home" },
-      { id: "nav-positions", label: "NAV Positions" },
-      { id: "clear-street-trades", label: "Clear Street Trades" },
-      { id: "ice-trade-blotter", label: "ICE Trade Blotter" },
+      {
+        id: "backoffice-home",
+        label: "Positions & Trades",
+        description: "Home + NAV + MAREX monitor",
+      },
+      { id: "backoffice-monitor", label: "Monitor", description: "Access + feed status" },
+      { id: "backoffice-trade-pipeline", label: "Trade Pipeline", description: "Clear Street -> MUFG worker spine" },
+      { id: "backoffice-nav-daily-position-sheet", label: "NAV Daily Position Sheet", description: "Gas + power NAV matrix" },
     ],
   });
 
@@ -98,10 +116,18 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
         { id: "pjm-generation", label: "Generation" },
+        { id: "pjm-da-lmps", label: "PJM LMPs" },
+        { id: "power-lmp-adders", label: "Power LMP Adders" },
+        { id: "pjm-ops-summary", label: "PJM Ops Summary" },
+        { id: "pjm-outages", label: "PJM Outages" },
         { id: "pjm-tightness-lookback", label: "Tightness Lookback" },
         { id: "pjm-price-distributions", label: "Price Distributions" },
         { id: "pjm-price-duration-curves", label: "Duration Curves" },
         { id: "pjm-weather", label: "Weather" },
+        { id: "positions-home", label: "Old Positions Home" },
+        { id: "nav-positions", label: "Old NAV Positions" },
+        { id: "clear-street-trades", label: "Old Clear Street Trades" },
+        { id: "ice-trade-blotter", label: "Old ICE Trade Blotter" },
       ],
     });
   }
@@ -116,42 +142,37 @@ export default function Sidebar({
 }: SidebarProps) {
   const topSections = getSections(showLocalDevFeatures);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
-    () => Object.fromEntries(topSections.map((s) => [s.key, true]))
+    () => Object.fromEntries(topSections.map((s) => [s.key, s.key !== "dev"]))
   );
 
   const toggleSection = (key: string) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const handleSectionChange = (section: ActiveSection) => {
+  const handleSectionChange = (section: ActiveSection | undefined) => {
+    if (!section) return;
     onSectionChange(section);
   };
 
   return (
-    <aside className="flex w-full shrink-0 flex-col border-b border-gray-800 bg-[#0b0d14] md:w-[280px] md:border-b-0 md:border-r">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-5 pb-4">
-        <div>
-          <p className="text-sm font-bold tracking-[0.18em] text-gray-100">
-            HELIOSCTA
-          </p>
-        </div>
+    <aside className="flex w-full shrink-0 flex-col border-b border-gray-800 bg-[#0b0d14] md:w-[208px] md:border-b-0 md:border-r">
+      <div className="border-b border-gray-800 px-4 py-5">
+        <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500">
+          HELIOS CTA
+        </p>
+        <p className="mt-0.5 text-sm font-semibold text-gray-200">Energy Markets</p>
       </div>
 
-      <div className="mx-3 h-px bg-gray-800" />
-
-      {/* Collapsible Sections */}
-      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+      <nav className="flex-1 overflow-y-auto px-2 py-2">
         {topSections.map((section) => {
           const isExpanded = expandedSections[section.key] ?? true;
           return (
-            <div key={section.key}>
-              {/* Section header toggle */}
+            <div key={section.key} className="mb-1">
               <button
                 onClick={() => toggleSection(section.key)}
-                className="flex w-full items-center justify-between rounded-md px-3 py-2 transition-colors hover:bg-gray-800/30"
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-800/50"
               >
-                <span className="text-xs font-bold text-white">
+                <span className="flex-1 text-[10px] font-bold uppercase tracking-[0.12em] text-gray-500">
                   {section.label}
                 </span>
                 <svg
@@ -166,35 +187,42 @@ export default function Sidebar({
                 </svg>
               </button>
 
-              {/* Nav items */}
               {isExpanded && (
-                <div className="mt-0.5 space-y-0.5 pb-1">
-                  {section.navItems.map((item, itemIndex) => {
-                    const isActive = activeSection === item.id;
-                    const previousGroup = section.navItems[itemIndex - 1]?.group;
-                    const showGroupLabel = item.group && item.group !== previousGroup;
+                <div className="ml-1 mt-0.5 space-y-0.5 pb-1">
+                  {section.navItems.map((item) => {
+                    const isActive = isItemActive(item, activeSection);
+                    const itemKey = item.id ?? item.key ?? item.label;
                     return (
-                      <div key={item.id}>
-                        {showGroupLabel && (
-                          <div className="px-3 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wider text-gray-600">
-                            {item.group}
-                          </div>
-                        )}
-                        <button
-                          onClick={() => !item.disabled && handleSectionChange(item.id)}
-                          disabled={item.disabled}
-                          title={item.disabled ? `${item.label} is not available yet` : undefined}
-                          className={`flex w-full items-center rounded-md py-1.5 text-[13px] font-medium transition-colors ${
+                      <button
+                        key={itemKey}
+                        onClick={() => !item.disabled && handleSectionChange(item.id)}
+                        disabled={item.disabled}
+                        title={item.disabled ? `${item.label} is not available yet` : undefined}
+                        className={`w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-100 ${
+                          item.disabled
+                            ? "cursor-not-allowed border-transparent"
+                            : isActive
+                              ? "border-gray-600/50 bg-gray-700/50"
+                              : "border-transparent hover:bg-gray-800/50"
+                        }`}
+                      >
+                        <span
+                          className={`block text-[13px] font-semibold leading-tight ${
                             item.disabled
-                              ? "cursor-not-allowed bg-transparent text-gray-600 opacity-55"
+                              ? "text-gray-400"
                               : isActive
-                                ? "bg-gray-800/60 text-white"
-                                : "text-gray-400 hover:bg-gray-800/40 hover:text-gray-200"
-                          } ${item.group ? "px-5" : "px-3"}`}
+                                ? "text-gray-100"
+                                : "text-gray-400"
+                          }`}
                         >
-                          <span className="whitespace-nowrap">{item.label}</span>
-                        </button>
-                      </div>
+                          {item.label}
+                        </span>
+                        {item.description && (
+                          <span className="mt-0.5 block text-[11px] leading-tight text-gray-600">
+                            {item.description}
+                          </span>
+                        )}
+                      </button>
                     );
                   })}
                 </div>
@@ -204,9 +232,8 @@ export default function Sidebar({
         })}
       </nav>
 
-      {/* Footer */}
       <div className="border-t border-gray-800 px-4 py-3">
-        <p className="text-[10px] text-gray-600">Source: Azure PostgreSQL</p>
+        <p className="text-[10px] text-gray-700">Source: Azure PostgreSQL</p>
       </div>
     </aside>
   );

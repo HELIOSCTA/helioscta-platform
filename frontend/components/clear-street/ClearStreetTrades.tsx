@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/ColumnFilterMenu";
@@ -28,6 +27,14 @@ export interface ClearStreetTradesFreshnessSummary {
   latestUpdateLabel: string;
 }
 
+interface ClearStreetTradesProps {
+  refreshToken?: number;
+  onFreshnessChange?: (freshness: ClearStreetTradesFreshnessSummary) => void;
+  initialAccounts?: string[];
+  title?: string;
+  tableTitle?: string;
+}
+
 interface ClearStreetApiFilters {
   selectedDate: string;
   accounts: string[];
@@ -52,6 +59,9 @@ interface BlotterCell {
   signatureCount: number;
   totalQuantity: number;
   netQuantity: number;
+  iceProductCode: string | null;
+  cmeProductCode: string | null;
+  bbgProductCode: string | null;
   matchedRowCount: number;
   vendorWarningRowCount: number;
   needsReviewRowCount: number;
@@ -69,6 +79,9 @@ interface BlotterRow {
   productFamily: string | null;
   marketName: string | null;
   underlyingProductCode: string | null;
+  iceProductCode: string | null;
+  cmeProductCode: string | null;
+  bbgProductCode: string | null;
   sourceProduct: string | null;
   exchangeCodeInput: string | null;
   putCall: string | null;
@@ -86,6 +99,11 @@ interface BlotterRow {
 interface BlotterLadderModel {
   columns: ContractColumn[];
   rows: BlotterRow[];
+}
+
+interface VendorCodeSegment {
+  source: "ICE" | "BBG" | "CME";
+  code: string;
 }
 
 type SortState<Key extends string> = {
@@ -115,8 +133,8 @@ const PILL_DROPDOWN_CLASS =
 const SEARCH_INPUT_CLASS =
   "h-8 min-w-[220px] rounded-full border border-sky-900/70 bg-[#101521] px-3 text-xs font-semibold text-gray-100 shadow-inner shadow-black/20 outline-none placeholder:text-gray-600 focus:border-sky-500/70 focus:ring-1 focus:ring-sky-500/30";
 const BLOTTER_PRODUCT_WIDTH_PX = 280;
-const BLOTTER_CONTRACT_MIN_WIDTH_PX = 116;
-const BLOTTER_CONTRACT_MAX_WIDTH_PX = 188;
+const BLOTTER_CONTRACT_MIN_WIDTH_PX = 132;
+const BLOTTER_CONTRACT_MAX_WIDTH_PX = 212;
 const RAW_ROW_DEFAULT_COLUMN_WIDTH_PX = 118;
 
 const DEFAULT_FRESHNESS: ClearStreetTradesFreshnessSummary = {
@@ -391,17 +409,6 @@ function retainAvailableStatuses(
   return retained.length === selected.length ? selected : retained;
 }
 
-function ControlCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
 function StatusBadge({
   label,
   tone,
@@ -610,6 +617,9 @@ function emptyCell(): BlotterCell {
     signatureCount: 0,
     totalQuantity: 0,
     netQuantity: 0,
+    iceProductCode: null,
+    cmeProductCode: null,
+    bbgProductCode: null,
     matchedRowCount: 0,
     vendorWarningRowCount: 0,
     needsReviewRowCount: 0,
@@ -620,12 +630,88 @@ function emptyCell(): BlotterCell {
   };
 }
 
+function mergeVendorCodeValues(left: string | null, right: string | null): string | null {
+  const values = new Set(
+    [left, right]
+      .flatMap((value) => (value ?? "").split(","))
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+  return values.size ? Array.from(values).sort().join(", ") : null;
+}
+
+function splitVendorCodes(value: string | null): string[] {
+  return (value ?? "")
+    .split(",")
+    .map((code) => code.trim())
+    .filter(Boolean);
+}
+
+function vendorCodeSegments({
+  iceProductCode,
+  bbgProductCode,
+  cmeProductCode,
+}: {
+  iceProductCode: string | null;
+  bbgProductCode: string | null;
+  cmeProductCode: string | null;
+}): VendorCodeSegment[] {
+  const iceCodes = splitVendorCodes(iceProductCode);
+  if (iceCodes.length) {
+    return iceCodes.map((code) => ({ source: "ICE", code }));
+  }
+
+  return [
+    ...splitVendorCodes(bbgProductCode).map((code) => ({ source: "BBG" as const, code })),
+    ...splitVendorCodes(cmeProductCode).map((code) => ({ source: "CME" as const, code })),
+  ];
+}
+
+function vendorCodeTitle(segments: VendorCodeSegment[]): string | null {
+  return segments.length
+    ? segments.map((segment) => `${segment.source} ${segment.code}`).join(" | ")
+    : null;
+}
+
+function VendorCodeStack({ segments }: { segments: VendorCodeSegment[] }) {
+  if (segments.length === 0) return null;
+
+  const visibleSegments = segments.slice(0, 2);
+  const hiddenCount = Math.max(0, segments.length - visibleSegments.length);
+
+  return (
+    <span className="mt-1 flex w-full flex-col items-end gap-0.5">
+      {visibleSegments.map((segment) => (
+        <span
+          key={`${segment.source}:${segment.code}`}
+          className="flex max-w-full items-center justify-end gap-1"
+        >
+          <span className="rounded-sm border border-cyan-500/30 bg-cyan-500/10 px-1 py-px text-[8px] font-bold leading-3 text-cyan-200">
+            {segment.source}
+          </span>
+          <span className="max-w-[92px] truncate font-mono text-[10px] font-semibold leading-3 text-cyan-100">
+            {segment.code}
+          </span>
+        </span>
+      ))}
+      {hiddenCount > 0 && (
+        <span className="text-[9px] font-semibold leading-3 text-cyan-300">
+          +{hiddenCount}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function addCellValues(target: BlotterCell, row: ClearStreetTradesProductSummaryRow): void {
   const totalQuantity = row.totalQuantity ?? 0;
   target.rowCount += row.rowCount;
   target.signatureCount += row.signatureCount;
   target.totalQuantity += totalQuantity;
   target.netQuantity += row.netQuantity ?? 0;
+  target.iceProductCode = mergeVendorCodeValues(target.iceProductCode, row.iceProductCode);
+  target.cmeProductCode = mergeVendorCodeValues(target.cmeProductCode, row.cmeProductCode);
+  target.bbgProductCode = mergeVendorCodeValues(target.bbgProductCode, row.bbgProductCode);
   target.matchedRowCount += row.matchedRowCount;
   target.vendorWarningRowCount += row.vendorWarningRowCount;
   target.needsReviewRowCount += row.needsReviewRowCount;
@@ -670,6 +756,9 @@ function buildBlotterLadder(rows: ClearStreetTradesProductSummaryRow[]): Blotter
         productFamily: row.productFamily,
         marketName: row.marketName,
         underlyingProductCode: row.underlyingProductCode,
+        iceProductCode: row.iceProductCode,
+        cmeProductCode: row.cmeProductCode,
+        bbgProductCode: row.bbgProductCode,
         sourceProduct: row.sourceProduct,
         exchangeCodeInput: row.exchangeCodeInput,
         putCall: row.putCall,
@@ -804,9 +893,11 @@ function DrilldownButton({
   onClick: () => void;
 }) {
   if (!cell || cell.rowCount === 0) {
-    return <span className="block h-9 min-w-[96px]" />;
+    return <span className="block h-11 min-w-[108px]" />;
   }
 
+  const vendorSegments = vendorCodeSegments(cell);
+  const vendorTitle = vendorCodeTitle(vendorSegments);
   const positive = cell.netQuantity > 0;
   const negative = cell.netQuantity < 0;
   const statusClass =
@@ -826,10 +917,16 @@ function DrilldownButton({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`flex h-9 w-full min-w-[96px] items-center justify-end rounded-md border px-2 text-right transition-colors ${statusClass}`}
-      title={`${fmtFlexibleNumber(cell.netQuantity, 2)} signed quantity | ${rowCountLabel} | ${statusLabel(cell.reviewStatus)}`}
+      className={`flex min-h-14 w-full min-w-[120px] flex-col items-end justify-center rounded-md border px-2 py-1 text-right transition-colors ${statusClass}`}
+      title={[
+        `${fmtFlexibleNumber(cell.netQuantity, 2)} signed quantity`,
+        vendorTitle,
+        rowCountLabel,
+        statusLabel(cell.reviewStatus),
+      ].filter(Boolean).join(" | ")}
     >
       <span className="text-sm font-semibold">{fmtFlexibleNumber(cell.netQuantity, 2)}</span>
+      <VendorCodeStack segments={vendorSegments} />
     </button>
   );
 }
@@ -1526,12 +1623,12 @@ function RawRowsModal({
 export default function ClearStreetTrades({
   refreshToken = 0,
   onFreshnessChange,
-}: {
-  refreshToken?: number;
-  onFreshnessChange?: (freshness: ClearStreetTradesFreshnessSummary) => void;
-}) {
+  initialAccounts = [],
+  title = "Clear Street Trades",
+  tableTitle = "Clear Street Trade Summary",
+}: ClearStreetTradesProps) {
   const [selectedDate, setSelectedDate] = useState("");
-  const [accounts, setAccounts] = useState<string[]>([]);
+  const [accounts, setAccounts] = useState<string[]>(() => [...initialAccounts]);
   const [productCodes, setProductCodes] = useState<string[]>([]);
   const [productFamilies, setProductFamilies] = useState<string[]>([]);
   const [marketNames, setMarketNames] = useState<string[]>([]);
@@ -1630,7 +1727,7 @@ export default function ClearStreetTrades({
     (search ? 1 : 0);
 
   const clearFilters = () => {
-    setAccounts([]);
+    setAccounts([...initialAccounts]);
     setProductCodes([]);
     setProductFamilies([]);
     setMarketNames([]);
@@ -1709,8 +1806,11 @@ export default function ClearStreetTrades({
 
   return (
     <div className="w-full space-y-4">
-      <div className="mx-auto w-full max-w-5xl">
-        <ControlCard title="Clear Street Trades">
+      <section className="w-full overflow-hidden rounded-lg border border-sky-950/70 bg-[#0d121b] shadow-xl shadow-black/20 ring-1 ring-white/[0.02]">
+        <div className="border-b border-gray-800 p-3 sm:p-4">
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+            {title}
+          </h2>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -1852,46 +1952,47 @@ export default function ClearStreetTrades({
               </div>
             )}
           </div>
-        </ControlCard>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
         </div>
-      )}
 
-      {loading && (
-        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-          Loading Clear Street trades...
-        </div>
-      )}
-
-      {data && !loading && (
-        <DataTableShell
-          title="Clear Street Trade Summary"
-          subtitle={`SFTP snapshot ${data.selectedDate ?? "--"} | Signed quantity by dbt product and contract from ${data.metadata.sourceTable}`}
-          className="w-full"
-          bodyClassName="w-full max-h-[calc(100vh-300px)] overflow-y-auto"
-          action={
-            <button
-              type="button"
-              onClick={openRawRows}
-              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
-            >
-              Raw Rows
-            </button>
-          }
-        >
-          <div className="w-full bg-[#0d1119]">
-            <BlotterLadderTable
-              columns={ladder.columns}
-              rows={ladder.rows}
-              onCellSelect={(row, column) => openCellRows(row, column)}
-            />
+        {error && (
+          <div className="border-b border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {error}
           </div>
-        </DataTableShell>
-      )}
+        )}
+
+        {loading && (
+          <div className="px-4 py-6 text-sm text-gray-500">
+            Loading Clear Street trades...
+          </div>
+        )}
+
+        {data && !loading && (
+          <>
+            <div className="flex flex-col gap-2 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-gray-100">{tableTitle}</h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  SFTP snapshot {data.selectedDate ?? "--"} | Signed quantity by product and contract from {data.metadata.sourceTable}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openRawRows}
+                className="shrink-0 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+              >
+                Raw Rows
+              </button>
+            </div>
+            <div className="w-full max-h-[calc(100vh-300px)] overflow-auto bg-[#0d1119]">
+              <BlotterLadderTable
+                columns={ladder.columns}
+                rows={ladder.rows}
+                onCellSelect={(row, column) => openCellRows(row, column)}
+              />
+            </div>
+          </>
+        )}
+      </section>
 
       {data && !loading && visibleDiagnostics.length > 0 && (
         <DataTableShell

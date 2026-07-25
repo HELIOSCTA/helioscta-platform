@@ -61,7 +61,9 @@ export interface NavPositionDebugRow {
   isProductRecord: boolean | null;
   longShort: string | null;
   quantity1: number | null;
+  gasQty: number | null;
   multiplierAndTickValue: number | null;
+  gasLots: number | null;
   tradePrice: number | null;
   marketSettlementPrice: number | null;
   productNorm: string | null;

@@ -159,6 +159,9 @@ export interface ProductSummaryDbRow {
   product_family: string | null;
   market_name: string | null;
   underlying_product_code: string | null;
+  ice_product_code: string | null;
+  cme_product_code: string | null;
+  bbg_product_code: string | null;
   source_product: string | null;
   exchange_code_input: string | null;
   contract: string | null;
@@ -807,6 +810,18 @@ export function summaryBundleSql(promotedSql: string): string {
             NULLIF(BTRIM(product_family::text), '') AS product_family,
             NULLIF(BTRIM(market_name::text), '') AS market_name,
             NULLIF(BTRIM(underlying_product_code::text), '') AS underlying_product_code,
+            string_agg(
+              DISTINCT NULLIF(BTRIM(ice_product_code::text), ''),
+              ', ' ORDER BY NULLIF(BTRIM(ice_product_code::text), '')
+            ) AS ice_product_code,
+            string_agg(
+              DISTINCT NULLIF(BTRIM(cme_product_code::text), ''),
+              ', ' ORDER BY NULLIF(BTRIM(cme_product_code::text), '')
+            ) AS cme_product_code,
+            string_agg(
+              DISTINCT NULLIF(BTRIM(bbg_product_code::text), ''),
+              ', ' ORDER BY NULLIF(BTRIM(bbg_product_code::text), '')
+            ) AS bbg_product_code,
             source_product,
             exchange_code_input,
             contract_display AS contract,
@@ -1293,6 +1308,9 @@ export function mapProductSummaryRow(row: ProductSummaryDbRow): ClearStreetTrade
     productFamily: row.product_family,
     marketName: row.market_name,
     underlyingProductCode: row.underlying_product_code,
+    iceProductCode: row.ice_product_code,
+    cmeProductCode: row.cme_product_code,
+    bbgProductCode: row.bbg_product_code,
     sourceProduct: row.source_product,
     exchangeCodeInput: row.exchange_code_input,
     contract: row.contract,

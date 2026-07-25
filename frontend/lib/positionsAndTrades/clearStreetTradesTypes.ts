@@ -242,6 +242,9 @@ export interface ClearStreetTradesProductSummaryRow {
   productFamily: string | null;
   marketName: string | null;
   underlyingProductCode: string | null;
+  iceProductCode: string | null;
+  cmeProductCode: string | null;
+  bbgProductCode: string | null;
   sourceProduct: string | null;
   exchangeCodeInput: string | null;
   contract: string | null;

@@ -106,11 +106,11 @@ FINAL as (
 
 select *
 from FINAL
-),  __dbt__cte__nav_ref_50_positions_latest as (
--- Latest NAV positions with dbt-derived rule fields.
+),  __dbt__cte__nav_ref_35_int_rules_latest as (
+-- Latest NAV rows with the same dbt-derived rule fields as all-history.
 --
--- Keep this latest mart optimized for frontend review: choose each fund's
--- latest NAV date and upload before running product matching.
+-- This keeps frontend latest queries bounded to each fund's latest NAV upload
+-- while preserving the int-before-mart boundary for derived NAV fields.
 
 with source_positions as (
     select * from __dbt__cte__nav_ref_00_src_positions
@@ -151,7 +151,7 @@ latest_positions as (
        and latest_file_by_fund.sftp_upload_timestamp = source_positions.sftp_upload_timestamp
 ),
 
-    clean_positions as (
+clean_positions as (
     select
         latest_positions.*,
         latest_positions.account as source_account_key,
@@ -268,11 +268,23 @@ FINAL as (
         matched_positions.product_currency_1,
         matched_positions.long_short,
         matched_positions.quantity_1,
+        case
+            when matched_positions.multiplier_and_tick_value = 2500
+                and matched_positions.effective_product_code in ('HHD', 'H', 'PHH', 'PHE')
+            then matched_positions.quantity_1 / 4
+            else matched_positions.quantity_1
+        end as gas_qty,
         matched_positions.counter_currency_ccy2,
         matched_positions.ccy2_long_short,
         matched_positions.ccy2_quantity_2,
         matched_positions.trade_price,
         matched_positions.multiplier_and_tick_value,
+        case
+            when matched_positions.multiplier_and_tick_value = 2500
+                and matched_positions.effective_product_code in ('HHD', 'H', 'PHH', 'PHE')
+            then matched_positions.multiplier_and_tick_value * 4
+            else matched_positions.multiplier_and_tick_value
+        end as gas_lots,
         matched_positions.cost_in_native_currency,
         matched_positions.open_exchange_rate,
         matched_positions.cost_in_base_currency,
@@ -362,6 +374,18 @@ FINAL as (
         on product_catalog.product_code = matched_positions.matched_product_code
     left join product_catalog as effective_product_catalog
         on effective_product_catalog.product_code = matched_positions.effective_product_code
+)
+
+select *
+from FINAL
+),  __dbt__cte__nav_ref_50_positions_latest as (
+with positions as (
+    select * from __dbt__cte__nav_ref_35_int_rules_latest
+),
+
+FINAL as (
+    select *
+    from positions
 )
 
 select *

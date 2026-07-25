@@ -260,11 +260,23 @@ FINAL as (
     positions.product_currency_1,
     positions.long_short,
     positions.quantity_1,
+    case
+        when positions.multiplier_and_tick_value = 2500
+            and positions.effective_product_code in ('HHD', 'H', 'PHH', 'PHE')
+        then positions.quantity_1 / 4
+        else positions.quantity_1
+    end as gas_qty,
     positions.counter_currency_ccy2,
     positions.ccy2_long_short,
     positions.ccy2_quantity_2,
     positions.trade_price,
     positions.multiplier_and_tick_value,
+    case
+        when positions.multiplier_and_tick_value = 2500
+            and positions.effective_product_code in ('HHD', 'H', 'PHH', 'PHE')
+        then positions.multiplier_and_tick_value * 4
+        else positions.multiplier_and_tick_value
+    end as gas_lots,
     positions.cost_in_native_currency,
     positions.open_exchange_rate,
     positions.cost_in_base_currency,

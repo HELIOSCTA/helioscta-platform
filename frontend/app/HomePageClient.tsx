@@ -69,6 +69,11 @@ import WeatherDashboard, {
 } from "@/components/weather/WeatherDashboard";
 import Sidebar, { type ActiveSection } from "@/components/Sidebar";
 import SparkSpreadEvolution from "@/components/spark/SparkSpreadEvolution";
+import BackOfficeHome from "@/components/backoffice/BackOfficeHome";
+import BackOfficePositionsTrades from "@/components/backoffice/BackOfficePositionsTrades";
+import BackOfficeMonitor from "@/components/backoffice/BackOfficeMonitor";
+import BackOfficeTradePipeline from "@/components/backoffice/BackOfficeTradePipeline";
+import BackOfficeNavDailyPositionSheet from "@/components/backoffice/BackOfficeNavDailyPositionSheet";
 
 const DEFAULT_PJM_DA_LMPS_FRESHNESS: PjmDaLmpsFreshnessSummary = {
   status: "Unknown",
@@ -247,10 +252,40 @@ interface HomePageClientProps {
   showLocalDevFeatures: boolean;
 }
 
+const BACKOFFICE_SECTION_ALIASES: Record<string, ActiveSection> = {
+  "backoffice-home": "backoffice-home",
+  "backoffice-positions-trades": "backoffice-positions-trades",
+  "backoffice-monitor": "backoffice-monitor",
+  "backoffice-trade-pipeline": "backoffice-trade-pipeline",
+  "backoffice-nav-daily-position-sheet": "backoffice-nav-daily-position-sheet",
+};
+
+const BACKOFFICE_SECTIONS = new Set<ActiveSection>([
+  "backoffice-home",
+  "backoffice-positions-trades",
+  "backoffice-monitor",
+  "backoffice-trade-pipeline",
+  "backoffice-nav-daily-position-sheet",
+]);
+
+function parseBackOfficeSection(value: string | null): ActiveSection | null {
+  if (!value) return null;
+  return BACKOFFICE_SECTION_ALIASES[value] ?? null;
+}
+
+function isBackOfficeSection(section: ActiveSection): boolean {
+  return BACKOFFICE_SECTIONS.has(section);
+}
+
 function parseInitialSection(
   value: string | null,
+  viewValue: string | null,
   showLocalDevFeatures: boolean,
 ): ActiveSection {
+  const backOfficeSection = parseBackOfficeSection(value) ?? parseBackOfficeSection(viewValue);
+  if (backOfficeSection) {
+    return backOfficeSection;
+  }
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
   }
@@ -258,16 +293,16 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
-  if (value === "positions-home") {
+  if (showLocalDevFeatures && value === "positions-home") {
     return "positions-home";
   }
-  if (value === "nav-positions") {
+  if (showLocalDevFeatures && value === "nav-positions") {
     return "nav-positions";
   }
-  if (value === "ice-trade-blotter") {
+  if (showLocalDevFeatures && value === "ice-trade-blotter") {
     return "ice-trade-blotter";
   }
-  if (value === "clear-street-trades") {
+  if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
   }
   if (value === "ice-settlements") {
@@ -385,7 +420,11 @@ export default function HomePageClient({
   const searchParams = useSearchParams();
   const router = useRouter();
   const [activeSection, setActiveSection] = useState<ActiveSection>(
-    parseInitialSection(searchParams.get("section"), showLocalDevFeatures),
+    parseInitialSection(
+      searchParams.get("section"),
+      searchParams.get("view"),
+      showLocalDevFeatures,
+    ),
   );
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
@@ -524,7 +563,13 @@ export default function HomePageClient({
 
   const replaceRouteState = (section: ActiveSection) => {
     const params = new URLSearchParams(searchParams.toString());
-    params.set("section", section);
+    if (isBackOfficeSection(section)) {
+      params.set("view", section);
+      params.delete("section");
+    } else {
+      params.set("section", section);
+      params.delete("view");
+    }
     params.delete("forecastView");
     router.replace(`/?${params.toString()}`, { scroll: false });
   };
@@ -549,35 +594,76 @@ export default function HomePageClient({
         footer: "Historical Settlements | Source: PJM hourly LMPs / Azure PostgreSQL",
       };
     }
-    if (activeSection === "positions-home") {
+    if (showLocalDevFeatures && activeSection === "positions-home") {
       return {
-        title: "Positions Home",
+        title: "DEV / Old Positions Home",
         subtitle:
           "Expected source files, source stability, and reference repair status across positions and trades.",
         footer:
           "Positions Home | Sources: NAV SFTP, Clear Street SFTP, ICE Deal Report, and positions_and_trades_ref",
       };
     }
-    if (activeSection === "nav-positions") {
+    if (activeSection === "backoffice-home") {
       return {
-        title: "NAV Positions",
+        title: "Home",
+        subtitle:
+          "Foundation health check for NAV and Clear Street source files versus latest DB-ingested files.",
+        footer:
+          "Sources: nav.positions, clear_street.eod_transactions, and ops.api_fetch_log telemetry; processed-file tables are not promoted locally",
+      };
+    }
+    if (activeSection === "backoffice-positions-trades") {
+      return {
+        title: "Positions & Trades",
+        subtitle:
+          "Trader view of NAV position valuation with total-book and account-level exposure scanning.",
+        footer: "Sources: nav.positions; Spark nav.position_valuation/nav.processed_files contracts are not promoted locally",
+      };
+    }
+    if (activeSection === "backoffice-monitor") {
+      return {
+        title: "Monitor",
+        subtitle: "Access allowlists and effective Back Office permissions by section.",
+        footer: "Source: Vercel environment allowlists resolved by app middleware",
+      };
+    }
+    if (activeSection === "backoffice-trade-pipeline") {
+      return {
+        title: "Trade Pipeline",
+        subtitle:
+          "Clean-slate control plane for the new Clear Street to MUFG queue, worker, and audit spine.",
+        footer:
+          "Sources: clear_street.eod_transactions and ops.api_fetch_log MUFG telemetry; download route is date-scoped to the selected Titan file",
+      };
+    }
+    if (activeSection === "backoffice-nav-daily-position-sheet") {
+      return {
+        title: "NAV Daily Position Sheet",
+        subtitle:
+          "NAV-only daily gas and power position matrix with historical date selection and Excel export.",
+        footer: "Sources: nav.positions; nav.riskmatrix/nav.processed_files are not promoted locally",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "nav-positions") {
+      return {
+        title: "DEV / Old NAV Positions",
         subtitle:
           "Position valuation snapshots aggregated by product, with drilldown rows and product-code rules.",
         footer: "NAV Positions | Source: nav.positions / Azure PostgreSQL",
       };
     }
-    if (activeSection === "ice-trade-blotter") {
+    if (showLocalDevFeatures && activeSection === "ice-trade-blotter") {
       return {
-        title: "ICE Trade Blotter",
+        title: "DEV / Old ICE Trade Blotter",
         subtitle:
           "Raw ICE Deal Report rows aggregated for visual trade inspection, with bounded row-level drilldowns.",
         footer:
           "ICE Trade Blotter | Source: ice_trade_blotter.ice_trade_blotter / Azure PostgreSQL",
       };
     }
-    if (activeSection === "clear-street-trades") {
+    if (showLocalDevFeatures && activeSection === "clear-street-trades") {
       return {
-        title: "Clear Street Trades",
+        title: "DEV / Old Clear Street Trades",
         subtitle:
           "Clear Street MUFG trade review with product matching, aggregate signatures, and bounded raw-row drilldowns.",
         footer:
@@ -746,6 +832,7 @@ export default function HomePageClient({
     activeSection === "spark-spreads" ||
     activeSection === "gas-prices";
   const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
+  const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
@@ -760,7 +847,11 @@ export default function HomePageClient({
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
             <div className="min-w-0 max-w-full">
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
-                {usesPowerMarketEyebrow ? "Helios CTA | Power Markets" : "HeliosCTA"}
+                {usesBackOfficeEyebrow
+                  ? "Helios CTA | Back Office"
+                  : usesPowerMarketEyebrow
+                    ? "Helios CTA | Power Markets"
+                    : "HeliosCTA"}
               </p>
               <h1 className="text-xl font-bold text-gray-100 sm:text-3xl">{meta.title}</h1>
               <p
@@ -910,7 +1001,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "positions-home" && (
+            {showLocalDevFeatures && activeSection === "positions-home" && (
               <FreshnessCard
                 statusLabel={positionsHomeFreshness.status}
                 statusClass={positionsHomeFreshness.statusClass}
@@ -937,7 +1028,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "nav-positions" && (
+            {showLocalDevFeatures && activeSection === "nav-positions" && (
               <FreshnessCard
                 statusLabel={navPositionsFreshness.status}
                 statusClass={navPositionsFreshness.statusClass}
@@ -959,7 +1050,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "ice-trade-blotter" && (
+            {showLocalDevFeatures && activeSection === "ice-trade-blotter" && (
               <FreshnessCard
                 statusLabel={rawIceBlotterFreshness.status}
                 statusClass={rawIceBlotterFreshness.statusClass}
@@ -982,7 +1073,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "clear-street-trades" && (
+            {showLocalDevFeatures && activeSection === "clear-street-trades" && (
               <FreshnessCard
                 statusLabel={clearStreetTradesFreshness.status}
                 statusClass={clearStreetTradesFreshness.statusClass}
@@ -1243,25 +1334,40 @@ export default function HomePageClient({
               initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
             />
           )}
-          {activeSection === "positions-home" && (
+          {showLocalDevFeatures && activeSection === "positions-home" && (
             <PositionsHome
               refreshToken={positionsHomeRefreshToken}
               onFreshnessChange={setPositionsHomeFreshness}
             />
           )}
-          {activeSection === "nav-positions" && (
+          {activeSection === "backoffice-home" && (
+            <BackOfficeHome />
+          )}
+          {activeSection === "backoffice-positions-trades" && (
+            <BackOfficePositionsTrades />
+          )}
+          {activeSection === "backoffice-monitor" && (
+            <BackOfficeMonitor />
+          )}
+          {activeSection === "backoffice-trade-pipeline" && (
+            <BackOfficeTradePipeline />
+          )}
+          {activeSection === "backoffice-nav-daily-position-sheet" && (
+            <BackOfficeNavDailyPositionSheet />
+          )}
+          {showLocalDevFeatures && activeSection === "nav-positions" && (
             <NavPositions
               refreshToken={navPositionsRefreshToken}
               onFreshnessChange={setNavPositionsFreshness}
             />
           )}
-          {activeSection === "ice-trade-blotter" && (
+          {showLocalDevFeatures && activeSection === "ice-trade-blotter" && (
             <RawIceTradeBlotter
               refreshToken={rawIceBlotterRefreshToken}
               onFreshnessChange={setRawIceBlotterFreshness}
             />
           )}
-          {activeSection === "clear-street-trades" && (
+          {showLocalDevFeatures && activeSection === "clear-street-trades" && (
             <ClearStreetTrades
               refreshToken={clearStreetTradesRefreshToken}
               onFreshnessChange={setClearStreetTradesFreshness}

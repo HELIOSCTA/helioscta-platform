@@ -64,6 +64,8 @@ async function loadPromotedSql({
   if (
     !sql.toLowerCase().includes("normalization_status") ||
     !sql.toLowerCase().includes("product_norm") ||
+    !sql.toLowerCase().includes("gas_qty") ||
+    !sql.toLowerCase().includes("gas_lots") ||
     !sql.includes("__dbt__cte__")
   ) {
     throw new Error(`${artifact.promotedSql} is not a compiled dbt NAV positions frontend contract.`);
@@ -82,35 +84,40 @@ export async function loadPromotedNavPositionsSql({
 }: {
   requestedDate: string | null;
 }): Promise<PromotedNavPositionsSql> {
-  const artifactId = requestedDate
-    ? NAV_POSITIONS_ALL_HISTORY_ARTIFACT_ID
-    : NAV_POSITIONS_LATEST_ARTIFACT_ID;
-  const { manifest, artifact } = await getPositionsAndTradesArtifact(artifactId);
-
   if (requestedDate) {
-    cachedAllHistorySql ??= await loadPromotedSql({
-      artifact,
-    });
-    return {
-      sql: cachedAllHistorySql,
-      promotedSqlPath: artifact.promotedSql,
-      dbtModelPath: artifact.dbtModel,
-      dbtCompiledPath: artifact.dbtCompiledSql,
-      artifactId,
-      artifactDisplayName: artifact.displayName,
-      contractId: manifest.contractId,
-      contractDisplayName: manifest.displayName,
-      dbtModelFamily: manifest.dbtModelFamily,
-      referenceSchema: manifest.referenceSchema,
-      referenceTables: manifest.referenceTables,
-    };
+    return loadPromotedNavPositionsAllHistorySql();
   }
+
+  const artifactId = NAV_POSITIONS_LATEST_ARTIFACT_ID;
+  const { manifest, artifact } = await getPositionsAndTradesArtifact(artifactId);
 
   cachedLatestSql ??= await loadPromotedSql({
     artifact,
   });
   return {
     sql: cachedLatestSql,
+    promotedSqlPath: artifact.promotedSql,
+    dbtModelPath: artifact.dbtModel,
+    dbtCompiledPath: artifact.dbtCompiledSql,
+    artifactId,
+    artifactDisplayName: artifact.displayName,
+    contractId: manifest.contractId,
+    contractDisplayName: manifest.displayName,
+    dbtModelFamily: manifest.dbtModelFamily,
+    referenceSchema: manifest.referenceSchema,
+    referenceTables: manifest.referenceTables,
+  };
+}
+
+export async function loadPromotedNavPositionsAllHistorySql(): Promise<PromotedNavPositionsSql> {
+  const artifactId = NAV_POSITIONS_ALL_HISTORY_ARTIFACT_ID;
+  const { manifest, artifact } = await getPositionsAndTradesArtifact(artifactId);
+
+  cachedAllHistorySql ??= await loadPromotedSql({
+    artifact,
+  });
+  return {
+    sql: cachedAllHistorySql,
     promotedSqlPath: artifact.promotedSql,
     dbtModelPath: artifact.dbtModel,
     dbtCompiledPath: artifact.dbtCompiledSql,
@@ -207,7 +214,9 @@ export function selectedNavPositionsCte(promotedSql: string): string {
       latest_positions.normalized_strike_price,
       latest_positions.instrument_type,
       latest_positions.quantity_1,
+      latest_positions.gas_qty,
       latest_positions.multiplier_and_tick_value,
+      latest_positions.gas_lots,
       latest_positions.trade_price,
       latest_positions.cost_in_base_currency,
       latest_positions.market_settlement_price,

@@ -1,133 +1,24 @@
-with  __dbt__cte__nav_ref_00_src_positions as (
-with source_rows as (
-    select * from "helios_prod"."nav"."positions"
-),
-
-FINAL as (
-    select
-    fund_code,
-    source_legal_entity,
-    source_file_name,
-    source_file_row_number,
-    nav_date,
-    sftp_upload_timestamp::timestamp as sftp_upload_timestamp,
-    broker_name,
-    account_group,
-    account,
-    trade_date,
-    product_id_internal,
-    product,
-    type,
-    month_year,
-    client_symbol,
-    strike_price,
-    call_put,
-    product_currency_1,
-    long_short,
-    quantity_1,
-    counter_currency_ccy2,
-    ccy2_long_short,
-    ccy2_quantity_2,
-    trade_price,
-    multiplier_and_tick_value,
-    cost_in_native_currency,
-    open_exchange_rate,
-    cost_in_base_currency,
-    market_settlement_price,
-    market_value_in_native_currency,
-    close_exchange_rate,
-    market_value_in_base_currency,
-    sector,
-    sub_sector,
-    country,
-    exchange_name,
-    source_1_symbol,
-    source_3_symbol,
-    one_chicago_symbol,
-    fas_level,
-    option_style,
-    created_at::timestamp as created_at,
-    updated_at::timestamp as updated_at
-from source_rows
-)
-
-select *
-from FINAL
-),  __dbt__cte__utils_ref_positions_and_trades_account_lookup as (
-with source_rows as (
-    select * from "helios_prod"."positions_and_trades_ref"."account_lookup"
-),
-
-FINAL as (
-    select
-        account_name,
-        account,
-        source,
-        source_label
-    from source_rows
-)
-
-select *
-from FINAL
-),  __dbt__cte__utils_ref_positions_and_trades_product_aliases as (
-with source_rows as (
-    select * from "helios_prod"."positions_and_trades_ref"."product_alias_rules"
-),
-
-FINAL as (
-    select
-        source_priority,
-        source,
-        match_type,
-        pattern,
-        product_code,
-        option_type,
-        marex_product
-    from source_rows
-)
-
-select *
-from FINAL
-),  __dbt__cte__utils_ref_positions_and_trades_product_catalog as (
-with source_rows as (
-    select * from "helios_prod"."positions_and_trades_ref"."product_catalog"
-),
-
-FINAL as (
-    select
-        product_code,
-        product_family,
-        market_name,
-        underlying_product_code,
-        bbg_exchange_code,
-        default_exchange_name
-    from source_rows
-)
-
-select *
-from FINAL
-),  __dbt__cte__nav_ref_35_int_rules_latest as (
 -- Latest NAV rows with the same dbt-derived rule fields as all-history.
 --
 -- This keeps frontend latest queries bounded to each fund's latest NAV upload
 -- while preserving the int-before-mart boundary for derived NAV fields.
 
 with source_positions as (
-    select * from __dbt__cte__nav_ref_00_src_positions
+    select * from {{ ref('nav_ref_00_src_positions') }}
 ),
 
 accounts as (
-    select * from __dbt__cte__utils_ref_positions_and_trades_account_lookup
+    select * from {{ ref('utils_ref_positions_and_trades_account_lookup') }}
     where source = 'nav'
 ),
 
 product_aliases as (
-    select * from __dbt__cte__utils_ref_positions_and_trades_product_aliases
+    select * from {{ ref('utils_ref_positions_and_trades_product_aliases') }}
     where source = 'nav'
 ),
 
 product_catalog as (
-    select * from __dbt__cte__utils_ref_positions_and_trades_product_catalog
+    select * from {{ ref('utils_ref_positions_and_trades_product_catalog') }}
 ),
 
 latest_file_by_fund as (
@@ -135,7 +26,7 @@ latest_file_by_fund as (
         positions.fund_code,
         positions.nav_date,
         positions.sftp_upload_timestamp::timestamp as sftp_upload_timestamp
-    from "helios_prod"."nav"."positions" as positions
+    from {{ source('nav', 'positions') }} as positions
     order by
         positions.fund_code,
         positions.nav_date desc,
@@ -374,17 +265,6 @@ FINAL as (
         on product_catalog.product_code = matched_positions.matched_product_code
     left join product_catalog as effective_product_catalog
         on effective_product_catalog.product_code = matched_positions.effective_product_code
-)
-
-select *
-from FINAL
-), positions as (
-    select * from __dbt__cte__nav_ref_35_int_rules_latest
-),
-
-FINAL as (
-    select *
-    from positions
 )
 
 select *
