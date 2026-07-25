@@ -23,6 +23,7 @@ infrastructure/azure-postgres/bootstrap/
 .idea/
 *.code-workspace
 .tmp/
+/tmp/
 
 # Local-only context workspace
 .local/*

@@ -515,10 +515,12 @@ blank/unsupported Clear Street exchange routes, ICE exchange rows (`IFED`,
 body includes the affected source products and their Clear Street identifiers. These
 internal alert emails use `ops.email_notification_outbox`;
 attachment paths are stored in the outbox payload and require cached CSVs to
-remain available until sent. The same source CSV is also emailed to NAV through
-Microsoft Graph with separate `ops.api_fetch_log` telemetry using
-`provider = 'microsoft_graph'`. The Clear Street target source file is the
-scheduler's freshness gate;
+remain available until sent. The same source CSV is also emailed directly
+through Microsoft Graph to the NAV mailbox configured by
+`CLEAR_STREET_NAV_EMAIL_RECIPIENTS`, which must contain only
+`HeliosCTA@navfundservices.com`. This direct send writes separate
+`ops.api_fetch_log` telemetry using `provider = 'microsoft_graph'`. The Clear
+Street target source file is the scheduler's freshness gate;
 MUFG-side empty-extract and SQL `sftp_date` mismatch conditions are metadata
 only. MUFG and NAV are attempted independently after source success. If either
 downstream handoff fails, the scheduled task exits nonzero after attempting the
@@ -549,7 +551,8 @@ before the task is registered. NAV email delivery requires
 `AZURE_OUTLOOK_CLIENT_SECRET`. Email sends default to
 `aidan.keaveny@helioscta.com` through `AZURE_OUTLOOK_SENDER` or
 `CLEAR_STREET_NAV_EMAIL_SENDER`, and `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`
-defaults to the legacy NAV recipient list.
+defaults to `HeliosCTA@navfundservices.com` only. Internal Clear Street source
+and MUFG confirmation emails use `HELIOS_EMAIL_RECIPIENTS`.
 
 Manual smoke:
 
