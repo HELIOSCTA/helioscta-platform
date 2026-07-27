@@ -139,13 +139,23 @@ const endpoints = [
   },
   {
     name: "Back Office NAV daily sheet",
-    path: "/api/backoffice-nav-daily-position-sheet",
+    path: "/api/backoffice-nav-daily-position-sheet?schema=power-options-accounts-v1&positionView=gas&optionDetail=0",
     targetMs: 1_000,
     minRows: 1,
     rowCount: (body) =>
       body?.monthlyFutures?.rowCount ??
       body?.gasFutures?.rowCount ??
       body?.optionSummary?.activeRows ??
+      body?.rowCount,
+  },
+  {
+    name: "Back Office NAV daily sheet power",
+    path: "/api/backoffice-nav-daily-position-sheet?schema=power-options-accounts-v1&positionView=power&optionDetail=0",
+    targetMs: 1_000,
+    minRows: 1,
+    rowCount: (body) =>
+      body?.powerFutures?.rowCount ??
+      body?.powerOptionSummary?.activeRows ??
       body?.rowCount,
   },
   {
@@ -234,7 +244,7 @@ Options:
 Environment:
   HELIOS_API_HEALTH_BASE_URL      Same as --base-url.
   HELIOS_API_HEALTH_FILTER        Same as --filter.
-  HELIOS_API_HEALTH_BYPASS_TOKEN  Vercel protection bypass token. Appended as a query param.
+  HELIOS_API_HEALTH_BYPASS_TOKEN  Vercel protection bypass token sent as a request header.
 `.trim();
 }
 

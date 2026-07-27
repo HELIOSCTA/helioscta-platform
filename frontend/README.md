@@ -995,7 +995,10 @@ npm run check:api -- --base-url=http://localhost:3000 --cache-bust
 npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bust
 npm run check:api -- --filter=NAV --base-url=https://frontend-helioscta.vercel.app
 npm run check:api -- --filter="Back Office" --base-url=https://frontend-helioscta.vercel.app --allow-slow
+npm run warm:backoffice -- --base-url=https://frontend-helioscta.vercel.app
 npm run check:perf:backoffice -- --url="https://frontend-helioscta.vercel.app/?view=backoffice-nav-daily-position-sheet" --allow-slow
+npm run check:perf:backoffice -- --base-url=https://frontend-helioscta.vercel.app --all --allow-slow
+npm run check:perf:backoffice -- --base-url=https://frontend-helioscta.vercel.app --view=backoffice-nav-daily-position-sheet --api-cache-bust --allow-slow
 ```
 
 The checker calls each production API route, parses `Server-Timing`, and fails
@@ -1010,7 +1013,18 @@ Use `check:perf:backoffice` for the user-facing loop. It opens a fresh
 Playwright browser context for desktop and mobile samples, waits until the Back
 Office view is actually ready, and reports ready p95 plus the slowest Back
 Office API calls and cache headers. Use `--target-ms=<n>` to tighten the page
-budget and remove `--allow-slow` in CI when the route is expected to pass.
+budget and remove `--allow-slow` in CI when the route is expected to pass. Use
+`--all` to walk the production Back Office views, and `--api-cache-bust` when
+you want the browser page to stay stable but force its Back Office API requests
+through uncached route work.
+
+Use `warm:backoffice` before reviewing a production deployment when the target
+is repeat navigation responsiveness rather than cold database latency. Back
+Office APIs still keep Vercel CDN caching disabled, but routes that are safe to
+reuse expose a five-minute private browser cache and server-side route cache.
+The NAV Daily Position Sheet initial payload intentionally omits option ladder
+detail rows; the selected option month is loaded through
+`detail=option&optionDetail=1` after the futures matrix is ready.
 
 ## Vercel
 

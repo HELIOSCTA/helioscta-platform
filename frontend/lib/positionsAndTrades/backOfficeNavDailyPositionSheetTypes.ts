@@ -95,6 +95,7 @@ export interface BackOfficeNavDailyPositionSheetOptionSummary {
   putQuantity: number;
   callQuantity: number;
   settlePnl: number;
+  detailLoaded: boolean;
 }
 
 export interface BackOfficeNavDailyPositionSheetMetric {
@@ -147,4 +148,15 @@ export interface BackOfficeNavDailyPositionSheetPayload {
   optionSummary: BackOfficeNavDailyPositionSheetOptionSummary;
   optionRows: BackOfficeNavDailyPositionSheetOptionRow[];
   sourceChecks: string;
+}
+
+export interface BackOfficeNavDailyPositionSheetOptionDetailPayload {
+  source: "backoffice-nav-daily-position-sheet-option-detail";
+  generatedAt: string;
+  selectedDate: string | null;
+  positionView: "gas" | "power";
+  selectedMonth: string | null;
+  selectedMonthLabel: string;
+  summary: BackOfficeNavDailyPositionSheetOptionSummary;
+  rows: BackOfficeNavDailyPositionSheetOptionRow[];
 }

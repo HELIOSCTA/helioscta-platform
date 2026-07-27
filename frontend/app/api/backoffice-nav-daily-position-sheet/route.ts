@@ -21,7 +21,9 @@ import type {
   BackOfficeNavDailyPositionSheetGasRow,
   BackOfficeNavDailyPositionSheetMetric,
   BackOfficeNavDailyPositionSheetOptionMonth,
+  BackOfficeNavDailyPositionSheetOptionDetailPayload,
   BackOfficeNavDailyPositionSheetOptionRow,
+  BackOfficeNavDailyPositionSheetOptionSummary,
   BackOfficeNavDailyPositionSheetPayload,
   BackOfficeNavDailyPositionSheetPowerCell,
   BackOfficeNavDailyPositionSheetPowerFuturesSection,
@@ -31,7 +33,7 @@ import type {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const LATEST_CACHE_TTL_SECONDS = 60;
+const LATEST_CACHE_TTL_SECONDS = 5 * 60;
 const HISTORICAL_CACHE_TTL_SECONDS = 60 * 60;
 const STALE_IF_ERROR_MS = 30 * 60 * 1000;
 const CACHE_HEADER = `private, max-age=${LATEST_CACHE_TTL_SECONDS}, stale-while-revalidate=${LATEST_CACHE_TTL_SECONDS}`;
@@ -197,6 +199,14 @@ function parseYyyymmParam(value: string | null): string | null {
 
 function parsePositionViewParam(value: string | null): PositionView {
   return value === "power" ? "power" : "gas";
+}
+
+function parseBooleanParam(value: string | null, fallback = false): boolean {
+  if (value == null) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "y"].includes(normalized)) return true;
+  if (["0", "false", "no", "n"].includes(normalized)) return false;
+  return fallback;
 }
 
 function parseFilterText(value: string | null, maxLength: number): string | null {
@@ -683,6 +693,7 @@ async function loadMatrixBundle(
   requestedOptionMonth: string | null,
   optionDetailKind: PositionView,
   productRegionFilter: ParsedTextListFilter,
+  includeOptionDetail: boolean,
 ): Promise<MatrixBundleDbRow> {
   const promotedArtifact = await loadPromotedNavPositionsSql({ requestedDate });
   const selectedPositionsSql = selectedNavPositionsCte(promotedArtifact.sql);
@@ -905,7 +916,7 @@ async function loadMatrixBundle(
     requestedOptionMonth && powerMonths.some((month) => month.yyyymm === requestedOptionMonth)
       ? requestedOptionMonth
       : powerMonths[0]?.yyyymm ?? null;
-  const optionPositions = optionDetailKind === "gas"
+  const optionPositions = includeOptionDetail && optionDetailKind === "gas"
     ? await measureRoutePhase("option-daily-change", () =>
         loadOptionPositionsForDailyChange(summary.selected_date ?? requestedDate, selectedOptionMonth, "gas", {
           displayValues: [],
@@ -913,7 +924,7 @@ async function loadMatrixBundle(
         }),
       )
     : [];
-  const powerOptionPositions = optionDetailKind === "power"
+  const powerOptionPositions = includeOptionDetail && optionDetailKind === "power"
     ? await measureRoutePhase("power-option-daily-change", () =>
         loadOptionPositionsForDailyChange(
           summary.selected_date ?? requestedDate,
@@ -1178,6 +1189,78 @@ function optionRows(rows: OptionPositionRow[], selectedMonth: string | null): Ba
     }));
 }
 
+function summarizeOptionDetail(
+  rows: BackOfficeNavDailyPositionSheetOptionRow[],
+  selectedMonth: string | null,
+  activeRows: number,
+): BackOfficeNavDailyPositionSheetOptionSummary {
+  return {
+    activeRows,
+    expiredHidden: 0,
+    selectedMonth,
+    selectedMonthLabel: selectedMonth ? formatMonth(selectedMonth) : "--",
+    selectedMonthRowCount: rows.length,
+    putQuantity: round(
+      rows.reduce((total, row) => total + row.putQuantity, 0),
+      6,
+    ),
+    callQuantity: round(
+      rows.reduce((total, row) => total + row.callQuantity, 0),
+      6,
+    ),
+    settlePnl: round(
+      rows.reduce((total, row) => total + row.settlePnl, 0),
+      0,
+    ),
+    detailLoaded: true,
+  };
+}
+
+async function loadOptionDetailPayload({
+  requestedDate,
+  requestedOptionMonth,
+  optionDetailKind,
+  productRegionFilter,
+}: {
+  requestedDate: string | null;
+  requestedOptionMonth: string | null;
+  optionDetailKind: PositionView;
+  productRegionFilter: ParsedTextListFilter;
+}): Promise<{
+  payload: BackOfficeNavDailyPositionSheetOptionDetailPayload;
+  rowCount: number;
+  dataAsOf: string | null;
+}> {
+  const optionPositions = requestedOptionMonth
+    ? await measureRoutePhase(`${optionDetailKind}-option-detail`, () =>
+        loadOptionPositionsForDailyChange(
+          requestedDate,
+          requestedOptionMonth,
+          optionDetailKind,
+          productRegionFilter,
+        ),
+      )
+    : [];
+  const rows = optionRows(optionPositions, requestedOptionMonth);
+  const generatedAt = new Date().toISOString();
+  const payload: BackOfficeNavDailyPositionSheetOptionDetailPayload = {
+    source: "backoffice-nav-daily-position-sheet-option-detail",
+    generatedAt,
+    selectedDate: requestedDate,
+    positionView: optionDetailKind,
+    selectedMonth: requestedOptionMonth,
+    selectedMonthLabel: requestedOptionMonth ? formatMonth(requestedOptionMonth) : "--",
+    summary: summarizeOptionDetail(rows, requestedOptionMonth, rows.length),
+    rows,
+  };
+
+  return {
+    payload,
+    rowCount: rows.length,
+    dataAsOf: generatedAt,
+  };
+}
+
 function metrics(summary: SummaryRow): BackOfficeNavDailyPositionSheetMetric[] {
   return [
     { label: "Gas active futures", value: formatCount(round(summary.gas_active_future_quantity, 6)), status: "ok" },
@@ -1195,7 +1278,7 @@ export const GET = observedJsonRoute(
   {
     route: "/api/backoffice-nav-daily-position-sheet",
     cacheHeader: CACHE_HEADER,
-    cachePolicy: "browser-cache=60, vercel-cdn no-store",
+    cachePolicy: "browser-cache=300, vercel-cdn no-store",
     owner: "frontend",
     purpose: "Back Office NAV Daily Position Sheet gas and power position matrix.",
     p95TargetMs: 3_000,
@@ -1206,9 +1289,38 @@ export const GET = observedJsonRoute(
     const requestedDate = parseDateParam(url.searchParams.get("date"));
     const requestedOptionMonth = parseYyyymmParam(url.searchParams.get("optionMonth"));
     const requestedPositionView = parsePositionViewParam(url.searchParams.get("positionView"));
+    const includeOptionDetail = parseBooleanParam(url.searchParams.get("optionDetail"), false);
     const productRegionFilter = parseTextListFilter(url.searchParams, "productRegion", 80);
     const forceRefresh = url.searchParams.has("refresh");
     const cacheTtlSeconds = requestedDate ? HISTORICAL_CACHE_TTL_SECONDS : LATEST_CACHE_TTL_SECONDS;
+
+    if (url.searchParams.get("detail") === "option") {
+      const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
+        namespace: "/api/backoffice-nav-daily-position-sheet/option-detail",
+        key: normalizedSearchCacheKey(url.searchParams),
+        ttlMs: cacheTtlSeconds * 1000,
+        staleIfErrorMs: STALE_IF_ERROR_MS,
+        forceRefresh,
+        dataCache: true,
+        dataCacheTtlSeconds: cacheTtlSeconds,
+        load: () =>
+          loadOptionDetailPayload({
+            requestedDate,
+            requestedOptionMonth,
+            optionDetailKind: requestedPositionView,
+            productRegionFilter,
+          }),
+      });
+
+      return {
+        ...value,
+        headers: {
+          ...responseHeaders(forceRefresh, cacheTtlSeconds),
+          ...routeCacheHeaders(cacheStatus),
+        },
+      };
+    }
+
     const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
       namespace: "/api/backoffice-nav-daily-position-sheet",
       key: normalizedSearchCacheKey(url.searchParams),
@@ -1226,6 +1338,7 @@ export const GET = observedJsonRoute(
               requestedOptionMonth,
               requestedPositionView,
               productRegionFilter,
+              includeOptionDetail,
             ),
           ),
         ]);
@@ -1251,6 +1364,11 @@ export const GET = observedJsonRoute(
             : powerMonths[0]?.yyyymm ?? null;
         const selectedOptionRows = optionRows(optionPositionRows, selectedOptionMonth);
         const selectedPowerOptionRows = optionRows(powerOptionPositionRows, selectedPowerOptionMonth);
+        const selectedOptionMonthRowCount =
+          months.find((month) => month.yyyymm === selectedOptionMonth)?.rowCount ?? selectedOptionRows.length;
+        const selectedPowerOptionMonthRowCount =
+          powerMonths.find((month) => month.yyyymm === selectedPowerOptionMonth)?.rowCount ??
+          selectedPowerOptionRows.length;
         const generatedAt = new Date().toISOString();
         const reportDate = localIsoDate(new Date());
         const payload: BackOfficeNavDailyPositionSheetPayload = {
@@ -1294,7 +1412,7 @@ export const GET = observedJsonRoute(
             expiredHidden: 0,
             selectedMonth: selectedOptionMonth,
             selectedMonthLabel: selectedOptionMonth ? formatMonth(selectedOptionMonth) : "--",
-            selectedMonthRowCount: selectedOptionRows.length,
+            selectedMonthRowCount: includeOptionDetail ? selectedOptionRows.length : selectedOptionMonthRowCount,
             putQuantity: round(
               selectedOptionRows.reduce((total, row) => total + row.putQuantity, 0),
               6,
@@ -1307,6 +1425,7 @@ export const GET = observedJsonRoute(
               selectedOptionRows.reduce((total, row) => total + row.settlePnl, 0),
               0,
             ),
+            detailLoaded: includeOptionDetail,
           },
           optionRows: selectedOptionRows,
           powerOptionMonths: powerMonths,
@@ -1315,7 +1434,9 @@ export const GET = observedJsonRoute(
             expiredHidden: 0,
             selectedMonth: selectedPowerOptionMonth,
             selectedMonthLabel: selectedPowerOptionMonth ? formatMonth(selectedPowerOptionMonth) : "--",
-            selectedMonthRowCount: selectedPowerOptionRows.length,
+            selectedMonthRowCount: includeOptionDetail
+              ? selectedPowerOptionRows.length
+              : selectedPowerOptionMonthRowCount,
             putQuantity: round(
               selectedPowerOptionRows.reduce((total, row) => total + row.putQuantity, 0),
               6,
@@ -1328,6 +1449,7 @@ export const GET = observedJsonRoute(
               selectedPowerOptionRows.reduce((total, row) => total + row.settlePnl, 0),
               0,
             ),
+            detailLoaded: includeOptionDetail,
           },
           powerOptionRows: selectedPowerOptionRows,
           sourceChecks: SOURCE_CHECKS,

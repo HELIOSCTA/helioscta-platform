@@ -443,7 +443,7 @@ export default function BackOfficeHome() {
   const visibleGroups = payload.groups.filter((group) => group.id !== "marex");
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-perf-ready="backoffice-home">
       <ReadinessBanner
         payload={payload}
         showHealthyRows={showHealthyRows}

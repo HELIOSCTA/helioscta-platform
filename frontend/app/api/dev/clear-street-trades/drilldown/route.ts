@@ -1,6 +1,11 @@
-import { observedJsonRoute } from "@/lib/server/apiObservability";
+import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
+import {
+  getCachedRouteValue,
+  normalizedSearchCacheKey,
+  routeCacheHeaders,
+} from "@/lib/server/routeCache";
 import {
   CLEAR_STREET_TRADES_BASE_PARAM_COUNT,
   type AvailableDateDbRow,
@@ -24,68 +29,92 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-const CACHE_HEADER = "no-store";
+const CACHE_TTL_SECONDS = 5 * 60;
+const STALE_IF_ERROR_MS = 30 * 60 * 1000;
+const CACHE_HEADER = `private, max-age=${CACHE_TTL_SECONDS}, stale-while-revalidate=${CACHE_TTL_SECONDS}`;
+const NO_STORE_HEADER = "no-store";
 const ROUTE_CONFIG = {
   route: "/api/clear-street-trades/drilldown",
   cacheHeader: CACHE_HEADER,
-  cachePolicy: "no-store",
+  cachePolicy: "browser-cache=300, vercel-cdn no-store",
   owner: "frontend",
   purpose: "Bounded Clear Street raw trade rows",
   p95TargetMs: 3_000,
   freshnessSource: "dbt Clear Street Trades Review Contract sftp_upload_timestamp",
 } as const;
 
-function responseCacheHeaders(): HeadersInit {
+function responseCacheHeaders(forceRefresh = false): HeadersInit {
   return {
-    "Cache-Control": CACHE_HEADER,
-    "Vercel-CDN-Cache-Control": CACHE_HEADER,
-    "X-Helios-Cache-Policy": "no-store",
+    "Cache-Control": forceRefresh ? NO_STORE_HEADER : CACHE_HEADER,
+    "Vercel-CDN-Cache-Control": NO_STORE_HEADER,
+    "X-Helios-Cache-Policy": forceRefresh ? "no-store" : "browser-cache=300, vercel-cdn no-store",
   };
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
+  const forceRefresh = searchParams.has("refresh");
   const filters = parseClearStreetTradesFilters(searchParams);
   const limit = parseLimit(searchParams.get("limit"));
   const drilldown = parseDrilldownFilter(searchParams.get("drilldown"));
-  const availableRows = await query<AvailableDateDbRow>(availableDatesSql());
-  const availableDates = availableRows.map(mapAvailableDate);
-  const selectedFilters = {
-    ...filters,
-    requestedDate: filters.requestedDate ?? availableDates[0]?.sftpDate ?? null,
-  };
-  const promotedArtifact = await loadPromotedAllHistorySql();
-  const drilldownWhere = buildClearStreetTradesDrilldownWhere({
-    filter: drilldown,
-    firstParameterIndex: CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 2,
-  });
-  const rows = await query<BundleDbRow>(drilldownBundleSql(promotedArtifact.sql, drilldownWhere.sql), [
-    ...baseArgs(selectedFilters),
-    limit,
-    ...drilldownWhere.args,
-  ]);
-  const bundle = rows[0] ?? { snapshot: {}, summary: {}, raw_rows: [] };
-  const snapshot = {
-    ...(objectRecord(bundle.snapshot) as SnapshotDbRow),
-    latest_sftp_date: availableDates[0]?.sftpDate ?? null,
-  };
-  const summary = objectRecord(bundle.summary) as SummaryDbRow;
-  const rawRows = rowArray<Record<string, unknown>>(bundle.raw_rows);
-  const payload = buildDebugPayload({
-    filters: selectedFilters,
-    drilldown,
-    limit,
-    rawRows,
-    snapshot,
-    summary,
-    promotedArtifact,
+
+  const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
+    namespace: "/api/clear-street-trades/drilldown",
+    key: normalizedSearchCacheKey(searchParams),
+    ttlMs: CACHE_TTL_SECONDS * 1000,
+    staleIfErrorMs: STALE_IF_ERROR_MS,
+    forceRefresh,
+    dataCache: true,
+    dataCacheTtlSeconds: CACHE_TTL_SECONDS,
+    load: async () => {
+      const availableRows = await query<AvailableDateDbRow>(availableDatesSql());
+      const availableDates = availableRows.map(mapAvailableDate);
+      const selectedFilters = {
+        ...filters,
+        requestedDate: filters.requestedDate ?? availableDates[0]?.sftpDate ?? null,
+      };
+      const promotedArtifact = await loadPromotedAllHistorySql();
+      const drilldownWhere = buildClearStreetTradesDrilldownWhere({
+        filter: drilldown,
+        firstParameterIndex: CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 2,
+      });
+      const rows = await query<BundleDbRow>(drilldownBundleSql(promotedArtifact.sql, drilldownWhere.sql), [
+        ...baseArgs(selectedFilters),
+        limit,
+        ...drilldownWhere.args,
+      ]);
+      const bundle = rows[0] ?? { snapshot: {}, summary: {}, raw_rows: [] };
+      const snapshot = {
+        ...(objectRecord(bundle.snapshot) as SnapshotDbRow),
+        latest_sftp_date: availableDates[0]?.sftpDate ?? null,
+      };
+      const summary = objectRecord(bundle.summary) as SummaryDbRow;
+      const rawRows = rowArray<Record<string, unknown>>(bundle.raw_rows);
+      const payload = buildDebugPayload({
+        filters: selectedFilters,
+        drilldown,
+        limit,
+        rawRows,
+        snapshot,
+        summary,
+        promotedArtifact,
+      });
+
+      return {
+        payload,
+        headers: responseCacheHeaders(forceRefresh),
+        rowCount: payload.summary.rowCount,
+        dataAsOf: payload.asOf,
+      };
+    },
   });
 
   return {
-    payload,
-    headers: responseCacheHeaders(),
-    rowCount: payload.summary.rowCount,
-    dataAsOf: payload.asOf,
+    ...value,
+    headers: {
+      ...responseCacheHeaders(forceRefresh),
+      ...routeCacheHeaders(cacheStatus),
+    },
   };
 });
 
@@ -96,7 +125,7 @@ export function GET(request: Request): Promise<Response> {
     return Promise.resolve(
       new Response(null, {
         status: 404,
-        headers: responseCacheHeaders(),
+        headers: responseCacheHeaders(true),
       }),
     );
   }

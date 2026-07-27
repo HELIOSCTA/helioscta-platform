@@ -9,10 +9,33 @@ const DEFAULT_WARMUP = 1;
 const DEFAULT_TARGET_MS = 1_500;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-const READY_MARKERS = {
-  "backoffice-nav-daily-position-sheet": "backoffice-nav-daily-position-sheet",
-  "ice-trade-blotter": "ice-trade-blotter",
+const VIEW_CONFIGS = {
+  "backoffice-home": {
+    marker: "backoffice-home",
+    readyText: [/Trade Readiness/i, /Source Health/i],
+  },
+  "backoffice-positions-trades": {
+    marker: "backoffice-positions-trades",
+    readyText: [/Term \/ Monthly Positions/i, /Positions & Trades/i],
+  },
+  "backoffice-monitor": {
+    marker: "backoffice-monitor",
+    readyText: [/Email Routing/i, /Feed Status/i],
+  },
+  "backoffice-trade-pipeline": {
+    marker: "backoffice-trade-pipeline",
+    readyText: [/Trade Pipeline/i],
+  },
+  "backoffice-nav-daily-position-sheet": {
+    marker: "backoffice-nav-daily-position-sheet",
+    readyText: [/NAV Daily Position Sheet/i, /Gas Futures Position Matrix/i, /Power active futures/i],
+  },
+  "ice-trade-blotter": {
+    marker: "ice-trade-blotter",
+    readyText: [/Trade Blotter/i, /ICE Trade Blotter/i],
+  },
 };
+const BACKOFFICE_VIEWS = Object.keys(VIEW_CONFIGS);
 
 const BACKOFFICE_API_PREFIXES = [
   "/api/backoffice-home",
@@ -43,6 +66,7 @@ Options:
   --base-url=<url>       App base URL. Default: ${DEFAULT_BASE_URL}
   --url=<url>            Full URL to test. Overrides --base-url/--view.
   --view=<name>          Back Office view query value. Default: ${DEFAULT_VIEW}
+  --all                  Test all production Back Office views.
   --samples=<n>          Measured browser samples per viewport. Default: ${DEFAULT_SAMPLES}
   --warmup=<n>           Unmeasured warmup navigations per viewport. Default: ${DEFAULT_WARMUP}
   --target-ms=<n>        Ready p95 budget per viewport. Default: ${DEFAULT_TARGET_MS}
@@ -50,6 +74,7 @@ Options:
   --desktop              Test desktop viewport only.
   --mobile               Test mobile viewport only.
   --cache-bust           Add a unique query param to page requests.
+  --api-cache-bust       Add a unique query param to Back Office API requests.
   --headed               Run a headed browser.
   --allow-slow           Exit 0 when ready p95 exceeds target.
   --json                 Print machine-readable JSON instead of a table.
@@ -75,12 +100,15 @@ function parseArgs(argv) {
     baseUrl: process.env.HELIOS_BACKOFFICE_PERF_BASE_URL || DEFAULT_BASE_URL,
     url: process.env.HELIOS_BACKOFFICE_PERF_URL || null,
     view: DEFAULT_VIEW,
+    all: false,
+    views: [DEFAULT_VIEW],
     samples: DEFAULT_SAMPLES,
     warmup: DEFAULT_WARMUP,
     targetMs: DEFAULT_TARGET_MS,
     timeoutMs: DEFAULT_TIMEOUT_MS,
     viewports: ["desktop", "mobile"],
     cacheBust: false,
+    apiCacheBust: false,
     headed: false,
     allowSlow: false,
     json: false,
@@ -101,6 +129,10 @@ function parseArgs(argv) {
     }
     if (arg.startsWith("--view=")) {
       options.view = arg.slice("--view=".length);
+      continue;
+    }
+    if (arg === "--all") {
+      options.all = true;
       continue;
     }
     if (arg.startsWith("--samples=")) {
@@ -131,6 +163,10 @@ function parseArgs(argv) {
       options.cacheBust = true;
       continue;
     }
+    if (arg === "--api-cache-bust") {
+      options.apiCacheBust = true;
+      continue;
+    }
     if (arg === "--headed") {
       options.headed = true;
       continue;
@@ -146,6 +182,11 @@ function parseArgs(argv) {
     throw new Error(`Unknown option: ${arg}\n\n${usage()}`);
   }
 
+  if (options.all && options.url) {
+    throw new Error("--all cannot be combined with --url because a full URL already selects one page.");
+  }
+
+  options.views = options.all ? BACKOFFICE_VIEWS : [options.view];
   return options;
 }
 
@@ -153,13 +194,13 @@ function normalizeBaseUrl(value) {
   return value.endsWith("/") ? value : `${value}/`;
 }
 
-function buildPageUrl(options, requestId) {
+function buildPageUrl(options, view, requestId) {
   const url = options.url
     ? new URL(options.url, normalizeBaseUrl(options.baseUrl))
     : new URL("/", normalizeBaseUrl(options.baseUrl));
 
   if (!options.url) {
-    url.searchParams.set("view", options.view);
+    url.searchParams.set("view", view);
   }
   if (options.cacheBust) {
     url.searchParams.set("_perf", requestId);
@@ -209,6 +250,10 @@ function browserHeaders() {
   return bypassToken ? { "x-vercel-protection-bypass": bypassToken } : {};
 }
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function launchBrowser(headed) {
   const launchOptions = { headless: !headed };
   const errors = [];
@@ -235,29 +280,37 @@ async function launchBrowser(headed) {
 }
 
 async function waitForBackOfficeReady(page, view, timeoutMs) {
-  const marker = READY_MARKERS[view] ?? view;
+  const config = VIEW_CONFIGS[view] ?? {
+    marker: view,
+    readyText: [new RegExp(escapeRegExp(view), "i")],
+  };
+  const readyConfig = {
+    marker: config.marker,
+    readyText: config.readyText.map((pattern) => ({
+      source: pattern.source,
+      flags: pattern.flags,
+    })),
+  };
   const handle = await page.waitForFunction(
-    (readyMarker) => {
+    ({ marker, readyText }) => {
+      const readyMarker = marker;
       if (document.querySelector(`[data-perf-ready="${readyMarker}"]`)) {
         return `marker:${readyMarker}`;
       }
 
       const bodyText = document.body?.innerText ?? "";
-      if (/Loading NAV Daily Position Sheet/i.test(bodyText)) {
+      if (/Loading/i.test(bodyText) && !/failed to load|failed; showing cached data/i.test(bodyText)) {
         return "";
       }
-      if (/NAV Daily Position Sheet/i.test(bodyText)) {
-        return "text:nav-daily-position-sheet";
-      }
-      if (/Gas Futures Position Matrix/i.test(bodyText)) {
-        return "text:gas-futures-position-matrix";
-      }
-      if (/Power active futures/i.test(bodyText)) {
-        return "text:power-active-futures";
+      for (const pattern of readyText) {
+        const regex = new RegExp(pattern.source, pattern.flags);
+        if (regex.test(bodyText)) {
+          return `text:${pattern.source}`;
+        }
       }
       return "";
     },
-    marker,
+    readyConfig,
     { timeout: timeoutMs },
   );
   return String(await handle.jsonValue());
@@ -286,7 +339,7 @@ async function collectNavigationMetrics(page) {
   });
 }
 
-async function runSample(browser, viewportName, options, index, measured) {
+async function runSample(browser, view, viewportName, options, index, measured) {
   const requestStarts = new Map();
   const apiResponses = [];
   const consoleErrors = [];
@@ -297,6 +350,19 @@ async function runSample(browser, viewportName, options, index, measured) {
     extraHTTPHeaders: browserHeaders(),
   });
   const page = await context.newPage();
+
+  if (options.apiCacheBust) {
+    await page.route("**/*", async (route) => {
+      const request = route.request();
+      if (!isBackOfficeApi(request.url())) {
+        await route.continue();
+        return;
+      }
+      const nextUrl = new URL(request.url());
+      nextUrl.searchParams.set("_perf_api", requestId);
+      await route.continue({ url: nextUrl.toString() });
+    });
+  }
 
   page.on("console", (message) => {
     if (message.type() === "error") {
@@ -348,7 +414,7 @@ async function runSample(browser, viewportName, options, index, measured) {
     });
   });
 
-  const pageUrl = buildPageUrl(options, requestId);
+  const pageUrl = buildPageUrl(options, view, requestId);
   const startedAt = performance.now();
 
   try {
@@ -357,13 +423,14 @@ async function runSample(browser, viewportName, options, index, measured) {
       timeout: options.timeoutMs,
     });
     const domReadyMs = performance.now() - startedAt;
-    const readySignal = await waitForBackOfficeReady(page, options.view, options.timeoutMs);
+    const readySignal = await waitForBackOfficeReady(page, view, options.timeoutMs);
     const readyMs = performance.now() - startedAt;
     await page.waitForTimeout(100);
     const navigationMetrics = await collectNavigationMetrics(page);
 
     return {
       measured,
+      view,
       viewport: viewportName,
       pageUrl,
       status: response?.status() ?? 0,
@@ -378,6 +445,7 @@ async function runSample(browser, viewportName, options, index, measured) {
   } catch (error) {
     return {
       measured,
+      view,
       viewport: viewportName,
       pageUrl,
       status: 0,
@@ -395,7 +463,7 @@ async function runSample(browser, viewportName, options, index, measured) {
   }
 }
 
-function summarizeViewport(viewportName, samples, targetMs) {
+function summarizeViewport(view, viewportName, samples, targetMs) {
   const measured = samples.filter((sample) => sample.measured);
   const readyValues = measured
     .map((sample) => sample.readyMs)
@@ -422,6 +490,7 @@ function summarizeViewport(viewportName, samples, targetMs) {
   const status = errors.length ? "FAIL" : readyP95 !== null && readyP95 > targetMs ? "SLOW" : "PASS";
 
   return {
+    view,
     viewport: viewportName,
     status,
     targetMs,
@@ -436,13 +505,16 @@ function summarizeViewport(viewportName, samples, targetMs) {
 }
 
 function printTable(results, options) {
-  console.log(`URL: ${options.url ?? `${normalizeBaseUrl(options.baseUrl)}?view=${options.view}`}`);
+  console.log(`URL: ${options.url ?? normalizeBaseUrl(options.baseUrl)}`);
+  console.log(`Views: ${options.views.join(", ")}`);
   console.log(`Samples: ${options.samples} measured, ${options.warmup} warmup`);
   console.log(`Fresh browser context per sample: yes`);
+  console.log(`API cache bust: ${options.apiCacheBust ? "yes" : "no"}`);
   console.log("");
   console.log(
     [
       pad("Status", 7),
+      pad("View", 39),
       pad("Viewport", 10),
       pad("Ready p95", 11),
       pad("DCL p95", 9),
@@ -452,7 +524,7 @@ function printTable(results, options) {
       "Slowest Back Office API",
     ].join(""),
   );
-  console.log("-".repeat(118));
+  console.log("-".repeat(157));
   for (const result of results) {
     const slowest = result.slowestApi
       ? `${result.slowestApi.path} ${fmtMs(result.slowestApi.totalMs)} app=${fmtMs(
@@ -464,6 +536,7 @@ function printTable(results, options) {
     console.log(
       [
         pad(result.status, 7),
+        pad(result.view, 39),
         pad(result.viewport, 10),
         pad(fmtMs(result.readyP95), 11),
         pad(fmtMs(result.domP95), 9),
@@ -485,13 +558,15 @@ async function main() {
   const results = [];
 
   try {
-    for (const viewport of options.viewports) {
-      const samples = [];
-      const totalRuns = options.warmup + options.samples;
-      for (let index = 0; index < totalRuns; index += 1) {
-        samples.push(await runSample(browser, viewport, options, index, index >= options.warmup));
+    for (const view of options.views) {
+      for (const viewport of options.viewports) {
+        const samples = [];
+        const totalRuns = options.warmup + options.samples;
+        for (let index = 0; index < totalRuns; index += 1) {
+          samples.push(await runSample(browser, view, viewport, options, index, index >= options.warmup));
+        }
+        results.push(summarizeViewport(view, viewport, samples, options.targetMs));
       }
-      results.push(summarizeViewport(viewport, samples, options.targetMs));
     }
   } finally {
     await browser.close();

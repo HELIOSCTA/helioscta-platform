@@ -294,7 +294,7 @@ export default function BackOfficePositionsTrades() {
   if (!payload) return null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-perf-ready="backoffice-positions-trades">
       {error && (
         <div className="rounded-md border border-orange-500/30 bg-orange-500/10 p-3 text-sm text-orange-200">
           Refresh failed; showing cached data. {error}

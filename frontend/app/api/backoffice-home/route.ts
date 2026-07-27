@@ -483,8 +483,10 @@ async function navPositionsSnapshot(today: string): Promise<BackOfficeHomeSnapsh
     const rows = await query<SourceSnapshotRow>(
       `
       WITH latest_date AS (
-        SELECT max(nav_date)::date AS nav_date
+        SELECT nav_date::date AS nav_date
         FROM nav.positions
+        ORDER BY nav_date DESC
+        LIMIT 1
       )
       SELECT
         latest_date.nav_date::text AS latest_date,
@@ -522,25 +524,21 @@ async function clearStreetTransactionsSnapshot(today: string): Promise<BackOffic
   try {
     const rows = await query<SourceSnapshotRow>(
       `
-      WITH normalized AS (
-        SELECT
-          to_date(trade_date_from_sftp, 'YYYYMMDD')::date AS sftp_date,
-          updated_at
+      WITH latest_date AS (
+        SELECT trade_date_from_sftp
         FROM clear_street.eod_transactions
         WHERE trade_date_from_sftp ~ '^[0-9]{8}$'
-      ),
-      latest_date AS (
-        SELECT max(sftp_date)::date AS sftp_date
-        FROM normalized
+        ORDER BY trade_date_from_sftp DESC
+        LIMIT 1
       )
       SELECT
-        latest_date.sftp_date::text AS latest_date,
-        max(normalized.updated_at)::text AS latest_update_at,
+        to_date(latest_date.trade_date_from_sftp, 'YYYYMMDD')::text AS latest_date,
+        max(transactions.updated_at)::text AS latest_update_at,
         count(*)::integer AS row_count
       FROM latest_date
-      LEFT JOIN normalized
-        ON normalized.sftp_date = latest_date.sftp_date
-      GROUP BY latest_date.sftp_date
+      LEFT JOIN clear_street.eod_transactions AS transactions
+        ON transactions.trade_date_from_sftp = latest_date.trade_date_from_sftp
+      GROUP BY latest_date.trade_date_from_sftp
       `,
     );
     return snapshotFromRow({

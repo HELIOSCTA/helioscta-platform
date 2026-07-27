@@ -992,7 +992,7 @@ export default function BackOfficeTradePipeline() {
   if (!payload) return null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-perf-ready="backoffice-trade-pipeline">
       <TradePipelineTopPanel payload={payload} />
 
       {error && (

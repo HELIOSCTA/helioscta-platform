@@ -6,6 +6,7 @@ import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import type {
   BackOfficeNavDailyPositionSheetAccountColumn,
   BackOfficeNavDailyPositionSheetGasCell,
+  BackOfficeNavDailyPositionSheetOptionDetailPayload,
   BackOfficeNavDailyPositionSheetOptionRow,
   BackOfficeNavDailyPositionSheetPayload,
   BackOfficeNavDailyPositionSheetPowerCell,
@@ -13,7 +14,7 @@ import type {
 } from "@/lib/positionsAndTrades/backOfficeNavDailyPositionSheetTypes";
 
 const API_PATH = "/api/backoffice-nav-daily-position-sheet";
-const API_CACHE_TTL_MS = 60 * 1000;
+const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const API_SCHEMA_VERSION = "power-options-accounts-v1";
 const DEFAULT_POWER_PRODUCT_REGION_FILTERS: string[] = [];
 type ActivePositionView = "gas" | "power";
@@ -28,6 +29,7 @@ function apiUrl(
   const params = new URLSearchParams();
   params.set("schema", API_SCHEMA_VERSION);
   params.set("positionView", activePositionView);
+  params.set("optionDetail", "0");
   if (activePositionView === "power") {
     [...powerProductRegions]
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
@@ -38,6 +40,29 @@ function apiUrl(
   if (refreshNonce > 0) params.set("refresh", String(refreshNonce));
   const query = params.toString();
   return query ? `${API_PATH}?${query}` : API_PATH;
+}
+
+function optionDetailUrl(
+  selectedDate: string,
+  optionMonth: string,
+  activePositionView: ActivePositionView,
+  powerProductRegions: string[],
+  refreshNonce: number,
+): string {
+  const params = new URLSearchParams();
+  params.set("schema", API_SCHEMA_VERSION);
+  params.set("detail", "option");
+  params.set("optionDetail", "1");
+  params.set("positionView", activePositionView);
+  if (activePositionView === "power") {
+    [...powerProductRegions]
+      .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+      .forEach((region) => params.append("productRegion", region));
+  }
+  if (selectedDate) params.set("date", selectedDate);
+  if (optionMonth) params.set("optionMonth", optionMonth);
+  if (refreshNonce > 0) params.set("refresh", String(refreshNonce));
+  return `${API_PATH}?${params}`;
 }
 
 function fmtNumber(value: number, emptyZero = true): string {
@@ -98,6 +123,27 @@ function worksheetStatus(metrics: BackOfficeNavDailyPositionSheetPayload["metric
   return {
     label: "ok",
     className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
+  };
+}
+
+function mergeOptionDetailPayload(
+  current: BackOfficeNavDailyPositionSheetPayload,
+  detail: BackOfficeNavDailyPositionSheetOptionDetailPayload,
+): BackOfficeNavDailyPositionSheetPayload {
+  if (current.selectedDate !== detail.selectedDate) return current;
+  if (detail.positionView === "power") {
+    if (current.powerOptionSummary.selectedMonth !== detail.selectedMonth) return current;
+    return {
+      ...current,
+      powerOptionSummary: detail.summary,
+      powerOptionRows: detail.rows,
+    };
+  }
+  if (current.optionSummary.selectedMonth !== detail.selectedMonth) return current;
+  return {
+    ...current,
+    optionSummary: detail.summary,
+    optionRows: detail.rows,
   };
 }
 
@@ -555,9 +601,16 @@ function PowerFuturesTable({
   );
 }
 
-function PowerPositionsMatrix({ payload, setOptionMonth }: {
+function PowerPositionsMatrix({
+  payload,
+  setOptionMonth,
+  detailLoading,
+  detailError,
+}: {
   payload: BackOfficeNavDailyPositionSheetPayload;
   setOptionMonth: (value: string) => void;
+  detailLoading?: boolean;
+  detailError?: string | null;
 }) {
   return (
     <div className="space-y-4">
@@ -573,6 +626,8 @@ function PowerPositionsMatrix({ payload, setOptionMonth }: {
         summary={payload.powerOptionSummary}
         rows={payload.powerOptionRows}
         setOptionMonth={setOptionMonth}
+        detailLoading={detailLoading}
+        detailError={detailError}
       />
     </div>
   );
@@ -704,6 +759,8 @@ function OptionsLadder({
   summary,
   rows,
   setOptionMonth,
+  detailLoading = false,
+  detailError = null,
 }: {
   title?: string;
   description?: string;
@@ -714,8 +771,19 @@ function OptionsLadder({
   summary: BackOfficeNavDailyPositionSheetPayload["optionSummary"];
   rows: BackOfficeNavDailyPositionSheetOptionRow[];
   setOptionMonth: (value: string) => void;
+  detailLoading?: boolean;
+  detailError?: string | null;
 }) {
   const [expandedOptionRowKey, setExpandedOptionRowKey] = useState<string | null>(null);
+  const detailPending = detailLoading && !summary.detailLoaded;
+  const detailUnavailable = Boolean(detailError) && !summary.detailLoaded;
+  const detailRowText = detailPending
+    ? "Loading detail"
+    : detailUnavailable
+      ? "Summary only"
+      : `${fmtNumber(summary.selectedMonthRowCount, false)} option rows`;
+  const detailValue = (value: number, emptyZero = true) =>
+    summary.detailLoaded ? fmtNumber(value, emptyZero) : detailPending ? "Loading" : "-";
 
   useEffect(() => {
     setExpandedOptionRowKey(null);
@@ -762,22 +830,22 @@ function OptionsLadder({
         <OptionStat
           label="Selected Month"
           value={optionMonthLongLabel(summary.selectedMonth)}
-          detail={`${fmtNumber(summary.selectedMonthRowCount, false)} option rows`}
+          detail={detailRowText}
           className="text-gray-100"
         />
         <OptionStat
           label="Put Qty"
-          value={fmtNumber(summary.putQuantity)}
+          value={detailValue(summary.putQuantity)}
           className={valueClass(summary.putQuantity)}
         />
         <OptionStat
           label="Call Qty"
-          value={fmtNumber(summary.callQuantity, false)}
+          value={detailValue(summary.callQuantity, false)}
           className={valueClass(summary.callQuantity)}
         />
         <OptionStat
           label="Net P&L"
-          value={fmtNumber(summary.settlePnl, false)}
+          value={detailValue(summary.settlePnl, false)}
           className={valueClass(summary.settlePnl)}
         />
       </div>
@@ -804,7 +872,11 @@ function OptionsLadder({
             {rows.length === 0 ? (
               <tr className="border-t border-gray-900 odd:bg-gray-900/35 even:bg-gray-950">
                 <td colSpan={12} className="px-2 py-3 text-gray-500">
-                  No active rows for this month.
+                  {detailPending
+                    ? "Loading option detail..."
+                    : detailUnavailable
+                      ? "Option detail failed; showing summary only."
+                      : "No active rows for this month."}
                 </td>
               </tr>
             ) : (
@@ -896,6 +968,8 @@ export default function BackOfficeNavDailyPositionSheet() {
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [optionDetailLoading, setOptionDetailLoading] = useState(false);
+  const [optionDetailError, setOptionDetailError] = useState<string | null>(null);
 
   const url = useMemo(
     () => apiUrl(selectedDate, optionMonth, activePositionView, powerProductRegions, refreshNonce),
@@ -908,6 +982,7 @@ export default function BackOfficeNavDailyPositionSheet() {
 
     setLoading(true);
     setError(null);
+    setOptionDetailError(null);
 
     fetchJsonWithCache<BackOfficeNavDailyPositionSheetPayload>({
       key: `backoffice-nav-daily-position-sheet:${url}`,
@@ -934,6 +1009,60 @@ export default function BackOfficeNavDailyPositionSheet() {
     };
   }, [optionMonth, refreshNonce, selectedDate, url]);
 
+  useEffect(() => {
+    if (!payload) return;
+    const summary = activePositionView === "gas" ? payload.optionSummary : payload.powerOptionSummary;
+    const selectedOptionMonth = summary.selectedMonth;
+    if (!selectedOptionMonth || summary.detailLoaded) {
+      setOptionDetailLoading(false);
+      setOptionDetailError(null);
+      return;
+    }
+
+    let active = true;
+    const forceRefresh = refreshNonce > 0;
+    const detailUrl = optionDetailUrl(
+      selectedDate || payload.selectedDate || "",
+      selectedOptionMonth,
+      activePositionView,
+      powerProductRegions,
+      refreshNonce,
+    );
+
+    setOptionDetailLoading(true);
+    setOptionDetailError(null);
+
+    fetchJsonWithCache<BackOfficeNavDailyPositionSheetOptionDetailPayload>({
+      key: `backoffice-nav-daily-position-sheet-option-detail:${detailUrl}`,
+      url: detailUrl,
+      ttlMs: API_CACHE_TTL_MS,
+      cacheMode: forceRefresh ? "no-store" : "default",
+      forceRefresh,
+      persist: "session",
+    })
+      .then((detail) => {
+        if (!active) return;
+        setPayload((current) => (current ? mergeOptionDetailPayload(current, detail) : current));
+      })
+      .catch((err: Error) => {
+        if (!active) return;
+        setOptionDetailError(err.message || "Failed to load option detail");
+      })
+      .finally(() => {
+        if (active) setOptionDetailLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [
+    activePositionView,
+    payload,
+    powerProductRegions,
+    refreshNonce,
+    selectedDate,
+  ]);
+
   if (loading && !payload) return <LoadingState />;
   if (error && !payload) {
     return <ErrorState error={error} onRetry={() => setRefreshNonce((value) => value + 1)} />;
@@ -951,7 +1080,10 @@ export default function BackOfficeNavDailyPositionSheet() {
       <HeaderPanel
         payload={payload}
         activePositionView={activePositionView}
-        setActivePositionView={setActivePositionView}
+        setActivePositionView={(value) => {
+          setActivePositionView(value);
+          setOptionMonth("");
+        }}
         powerProductRegions={powerProductRegions}
         setPowerProductRegions={(value) => {
           setPowerProductRegions(value);
@@ -972,10 +1104,17 @@ export default function BackOfficeNavDailyPositionSheet() {
             summary={payload.optionSummary}
             rows={payload.optionRows}
             setOptionMonth={setOptionMonth}
+            detailLoading={activePositionView === "gas" && optionDetailLoading}
+            detailError={activePositionView === "gas" ? optionDetailError : null}
           />
         </>
       ) : (
-        <PowerPositionsMatrix payload={payload} setOptionMonth={setOptionMonth} />
+        <PowerPositionsMatrix
+          payload={payload}
+          setOptionMonth={setOptionMonth}
+          detailLoading={activePositionView === "power" && optionDetailLoading}
+          detailError={activePositionView === "power" ? optionDetailError : null}
+        />
       )}
     </div>
   );
