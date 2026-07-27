@@ -735,7 +735,31 @@ function rawRowsSelectSql(source = "source_trades"): string {
   return CLEAR_STREET_MODEL_COLUMNS.map((column) => `${source}.${column}`).join(",\n            ");
 }
 
-export function summaryBundleSql(promotedSql: string): string {
+function summaryRawRowsSql(includeRawRows: boolean): string {
+  if (!includeRawRows) {
+    return `
+      (
+        SELECT '[]'::jsonb
+        FROM (SELECT $${CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 1}::integer AS requested_limit) raw_row_request
+      ) AS raw_rows
+    `;
+  }
+
+  return `
+      (
+        SELECT coalesce(jsonb_agg(to_jsonb(raw_row)), '[]'::jsonb)
+        FROM (
+          SELECT
+            ${rawRowsSelectSql()}
+          FROM source_trades
+          ORDER BY row_number_for_trades NULLS LAST
+          LIMIT $${CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 1}::integer
+        ) raw_row
+      ) AS raw_rows
+    `;
+}
+
+export function summaryBundleSql(promotedSql: string, { includeRawRows = true } = {}): string {
   return `
     ${selectedClearStreetTradesCte(promotedSql)}
     SELECT
@@ -893,16 +917,7 @@ export function summaryBundleSql(promotedSql: string): string {
           LIMIT ${CLEAR_STREET_TRADES_AGGREGATE_LIMIT}
         ) product_row
       ) AS product_summary,
-      (
-        SELECT coalesce(jsonb_agg(to_jsonb(raw_row)), '[]'::jsonb)
-        FROM (
-          SELECT
-            ${rawRowsSelectSql()}
-          FROM source_trades
-          ORDER BY row_number_for_trades NULLS LAST
-          LIMIT $${CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 1}::integer
-        ) raw_row
-      ) AS raw_rows
+      ${summaryRawRowsSql(includeRawRows)}
   `;
 }
 

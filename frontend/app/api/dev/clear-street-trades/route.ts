@@ -77,11 +77,18 @@ function statusArray(value: unknown): ClearStreetReviewStatus[] {
   );
 }
 
+function shouldIncludeRawRows(searchParams: URLSearchParams): boolean {
+  const value = searchParams.get("rawRows") ?? searchParams.get("includeRawRows");
+  if (value === null) return true;
+  return !["0", "false", "no"].includes(value.trim().toLowerCase());
+}
+
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const forceRefresh = searchParams.has("refresh");
   const limit = parseLimit(searchParams.get("limit"), DEFAULT_LIMIT);
   const filters = parseClearStreetTradesFilters(searchParams);
+  const includeRawRows = shouldIncludeRawRows(searchParams);
 
   const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
     namespace: "/api/clear-street-trades",
@@ -102,7 +109,10 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       const promotedSql = dateScopedPromotedSql(promotedArtifact.sql);
       const sqlArgs = baseArgs(selectedFilters);
 
-      const bundleRows = await query<BundleDbRow>(summaryBundleSql(promotedSql), [...sqlArgs, limit]);
+      const bundleRows = await query<BundleDbRow>(
+        summaryBundleSql(promotedSql, { includeRawRows }),
+        [...sqlArgs, limit],
+      );
       const bundle = bundleRows[0] ?? {
         snapshot: {},
         filters: {},

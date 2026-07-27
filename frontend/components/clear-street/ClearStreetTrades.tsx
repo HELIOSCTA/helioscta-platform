@@ -196,7 +196,8 @@ function buildApiUrl({
   search,
   refresh,
   limit,
-}: ClearStreetApiFilters & { refresh: boolean; limit: number }): string {
+  includeRawRows = true,
+}: ClearStreetApiFilters & { refresh: boolean; limit: number; includeRawRows?: boolean }): string {
   const params = new URLSearchParams({ limit: String(limit) });
   if (selectedDate) params.set("date", selectedDate);
   appendRepeatedParams(params, "account", accounts);
@@ -206,6 +207,7 @@ function buildApiUrl({
   appendRepeatedParams(params, "status", statuses);
   if (search.trim()) params.set("search", search.trim());
   if (refresh) params.set("refresh", "1");
+  if (!includeRawRows) params.set("rawRows", "0");
   return `${SUMMARY_API_PATH}?${params.toString()}`;
 }
 
@@ -1947,7 +1949,12 @@ export default function ClearStreetTrades({
 
     fetchJsonWithCache<ClearStreetTradesPayload>({
       key: cacheKey(currentFilters, RAW_ROW_LIMIT),
-      url: buildApiUrl({ ...currentFilters, limit: RAW_ROW_LIMIT, refresh: forceRefresh }),
+      url: buildApiUrl({
+        ...currentFilters,
+        limit: RAW_ROW_LIMIT,
+        refresh: forceRefresh,
+        includeRawRows: false,
+      }),
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
       cacheMode: forceRefresh ? "no-store" : "default",
