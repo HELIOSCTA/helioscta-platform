@@ -4,13 +4,16 @@ param(
     [string]$CompiledBaseSqlPath = "$PSScriptRoot\sql\nav_ref_excel_base_all_tabs.sql",
     [string]$DatabaseName = $(if ($env:DBT_POSTGRES_DBNAME) { $env:DBT_POSTGRES_DBNAME } else { "helios_prod" }),
     [string]$OdbcConnectionString = $(if ($env:EXCEL_NAV_ODBC_CONNECTION_STRING) { $env:EXCEL_NAV_ODBC_CONNECTION_STRING } else { "dsn=Azure PostgreSQL;Database=$DatabaseName;SSLmode=require" }),
-    [switch]$RefreshDerivedPowerQueries
+    [switch]$RefreshDerivedPowerQueries,
+    [switch]$UpdateBaseQueryFormula,
+    [switch]$RestorePromotedMacroProject
 )
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $baseQueryName = "NAV_EXCEL_BASE"
+$baseTableName = "NAV_EXCEL_BASE_TABLE"
 $baseSheetName = "_NAV_EXCEL_BASE"
 $baseConnectionName = "Query - NAV_EXCEL_BASE"
 
@@ -61,7 +64,7 @@ function New-ColumnSpec([string]$Source, [string]$Output, [string]$TypeName) {
     }
 }
 
-function New-LocalPowerQueryFormula([string]$OutputTable, [object[]]$Columns) {
+function New-LocalPowerQueryFormula([string]$OutputTable, [object[]]$Columns, [string]$SourceExpression = $baseQueryName) {
     $sourceColumns = $Columns | ForEach-Object { ConvertTo-MStringLiteral $_.Source }
     $renamePairs = $Columns | Where-Object { $_.Source -cne $_.Output } | ForEach-Object {
         "{" + (ConvertTo-MStringLiteral $_.Source) + ", " + (ConvertTo-MStringLiteral $_.Output) + "}"
@@ -77,7 +80,7 @@ function New-LocalPowerQueryFormula([string]$OutputTable, [object[]]$Columns) {
 
     return @"
 let
-    Source = Excel.CurrentWorkbook(){[Name="$baseQueryName"]}[Content],
+    Source = $SourceExpression,
     FilteredRows = Table.SelectRows(Source, each [excel_output_table] = "$escapedOutputTable"),
     SortedRows = Table.Sort(FilteredRows, {{"excel_output_sort_ordinal", Order.Ascending}}),
     SelectedColumns = Table.SelectColumns(SortedRows, $selectedColumns, MissingField.UseNull),
@@ -448,7 +451,7 @@ function Update-WorkbookIndexSheet($Workbook) {
 
     $rows = @(
         @("Sheet", "Status", "Evidence", "Recommended action"),
-        @("_NAV_EXCEL_BASE", "Active base", "Visible single ODBC load; feeds local workbook outputs", "Keep"),
+        @("_NAV_EXCEL_BASE", "Active base", "Visible single ODBC load; table NAV_EXCEL_BASE_TABLE feeds local workbook outputs", "Keep"),
         @("Publish", "Active output", "Contains SFTP_METADATA, GAS_OPTIONS_PIVOT, and publish formulas", "Keep"),
         @("ICE_OPTIONS", "Active output", "Contains ICE_OPTIONS and ICE_FUTURES query tables", "Keep"),
         @("ICE_SETTLES", "Active output", "Contains ICE_SETTLES, ICE_BALDAY, pivot, and formulas that reference Lookback", "Keep"),
@@ -560,7 +563,7 @@ function Get-BaseRowsByOutputTable($BaseTable) {
     }
 
     if (-not $headers.ContainsKey("excel_output_table")) {
-        throw "NAV_EXCEL_BASE is missing required column: excel_output_table"
+        throw "$baseTableName is missing required column: excel_output_table"
     }
 
     $rowsByOutputTable = @{}
@@ -919,12 +922,17 @@ $loadedOutputTables = @(
 )
 
 $WorkbookPath = Resolve-RequiredPath $WorkbookPath "single-query test workbook"
-$MacroSourceWorkbookPath = Resolve-RequiredPath $MacroSourceWorkbookPath "macro source workbook"
-$CompiledBaseSqlPath = Resolve-RequiredPath $CompiledBaseSqlPath "compiled base SQL"
+if ($RestorePromotedMacroProject) {
+    $MacroSourceWorkbookPath = Resolve-RequiredPath $MacroSourceWorkbookPath "macro source workbook"
+}
 
-$baseSql = Get-Content -LiteralPath $CompiledBaseSqlPath -Raw
-$baseSql = Convert-DbtSqlToExcelOdbcSql $baseSql $DatabaseName
-$baseFormula = Convert-SqlToPowerQueryFormula $baseSql $OdbcConnectionString
+$baseFormula = $null
+if ($UpdateBaseQueryFormula) {
+    $CompiledBaseSqlPath = Resolve-RequiredPath $CompiledBaseSqlPath "compiled base SQL"
+    $baseSql = Get-Content -LiteralPath $CompiledBaseSqlPath -Raw
+    $baseSql = Convert-DbtSqlToExcelOdbcSql $baseSql $DatabaseName
+    $baseFormula = Convert-SqlToPowerQueryFormula $baseSql $OdbcConnectionString
+}
 
 $excel = $null
 $workbook = $null
@@ -937,12 +945,6 @@ try {
     $excel.AutomationSecurity = 3
 
     $workbook = $excel.Workbooks.Open($WorkbookPath, 0, $false)
-
-    Set-WorkbookQueryFormula $workbook $baseQueryName $baseFormula
-    foreach ($queryName in $queryColumns.Keys) {
-        $localFormula = New-LocalPowerQueryFormula $queryName $queryColumns[$queryName]
-        Set-WorkbookQueryFormula $workbook $queryName $localFormula
-    }
 
     $baseSheet = Get-WorksheetByName $workbook $baseSheetName
     if (-not $baseSheet) {
@@ -976,11 +978,28 @@ try {
         }
     }
 
-    $baseTable = Get-ListObjectByName $workbook $baseQueryName
+    $baseTable = Get-ListObjectByName $workbook $baseTableName
+    if (-not $baseTable) {
+        $legacyBaseTable = Get-ListObjectByName $workbook $baseQueryName
+        if ($legacyBaseTable) {
+            $legacyBaseTable.Name = $baseTableName
+            $baseTable = $legacyBaseTable
+        }
+    }
     if (-not $baseTable) {
         $baseSheet.Cells.Clear()
         $baseTable = $baseSheet.ListObjects.Add(0, $baseConnection, $true, 1, $baseSheet.Range("A1"))
-        $baseTable.Name = $baseQueryName
+        $baseTable.Name = $baseTableName
+    }
+
+    $stagingSourceExpression = 'Excel.CurrentWorkbook(){[Name="' + $baseTableName + '"]}[Content]'
+    foreach ($queryName in $queryColumns.Keys) {
+        $localFormula = New-LocalPowerQueryFormula $queryName $queryColumns[$queryName] $stagingSourceExpression
+        Set-WorkbookQueryFormula $workbook $queryName $localFormula
+    }
+
+    if ($UpdateBaseQueryFormula) {
+        Set-WorkbookQueryFormula $workbook $baseQueryName $baseFormula
     }
 
     foreach ($worksheet in $workbook.Worksheets) {
@@ -1039,9 +1058,14 @@ try {
         Write-Output ("Populated {0} from {1}: rows={2}" -f $queryName, $baseQueryName, $rowCount)
     }
 
+    foreach ($queryName in $queryColumns.Keys) {
+        $localFormula = New-LocalPowerQueryFormula $queryName $queryColumns[$queryName]
+        Set-WorkbookQueryFormula $workbook $queryName $localFormula
+    }
+
     foreach ($worksheet in $workbook.Worksheets) {
         foreach ($listObject in $worksheet.ListObjects) {
-            Format-ListObject $listObject ($listObject.Name -eq $baseQueryName)
+            Format-ListObject $listObject ($listObject.Name -eq $baseTableName)
         }
     }
 
@@ -1061,7 +1085,13 @@ finally {
     [GC]::WaitForPendingFinalizers()
 }
 
-Restore-MacroProject $MacroSourceWorkbookPath $WorkbookPath
+if ($RestorePromotedMacroProject) {
+    Restore-MacroProject $MacroSourceWorkbookPath $WorkbookPath
+    Write-Output ("Restored macro project from: {0}" -f $MacroSourceWorkbookPath)
+}
+else {
+    Write-Output "Workbook macro project preserved."
+}
 
 $stopwatch.Stop()
 Write-Output ("Single-query workbook updated: {0}" -f $WorkbookPath)

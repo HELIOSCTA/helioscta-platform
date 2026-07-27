@@ -22,14 +22,39 @@ contract.
 ## Single-Query Rule
 
 Only the `NAV_EXCEL_BASE` Power Query should use `Odbc.Query`. All other
-workbook queries should read from:
+workbook queries should depend on the `NAV_EXCEL_BASE` query directly:
 
 ```text
-Excel.CurrentWorkbook(){[Name="NAV_EXCEL_BASE"]}[Content]
+NAV_EXCEL_BASE
 ```
 
 The `_NAV_EXCEL_BASE` sheet is intentionally visible so the base data can be
-audited directly.
+audited directly. The loaded worksheet table is named `NAV_EXCEL_BASE_TABLE`,
+while the upstream Power Query remains `NAV_EXCEL_BASE`. Derived queries should
+not read the loaded worksheet table. Direct query references let Power Query
+understand the refresh dependency graph, so `Refresh All` and the workbook
+macro cannot refresh an output query against a stale loaded base-table cache.
+
+## Refresh Contract
+
+The `UpdateModule` source for this test workbook is tracked at
+`vba/UpdateModule.bas`.
+
+The preferred refresh order is:
+
+1. Refresh `NAV_EXCEL_BASE`.
+2. Refresh dependent workbook queries/tables.
+3. Refresh PivotTables.
+4. Calculate the workbook.
+
+The workbook macro now performs that contract by refreshing the loaded
+`NAV_EXCEL_BASE_TABLE` synchronously first, waiting for Power Query, running a
+defensive `RefreshAll`, waiting again, refreshing the connection-only
+`GAS_FUTURES_PIVOT` query, then refreshing PivotTables, calculating, and saving.
+The strict named-output-table pass remains available in the module as
+`RUN_STRICT_OUTPUT_TABLE_PASS`, but is off by default because direct Power Query
+dependencies plus `RefreshAll` provide the ordering guarantee without repeatedly
+re-running each output query.
 
 ## Visual Contract
 
@@ -72,5 +97,11 @@ Copy-Item `
 .\excel\nav\positions\2026_07_22_nav_position_file_single_query_test\update_single_query_workbook.ps1
 ```
 
-The script restores `xl/vbaProject.bin` from the promoted workbook after save
-so the macro project remains byte-for-byte identical.
+The script preserves the workbook's current macro project by default. Use
+`-RestorePromotedMacroProject` only when intentionally reverting the macro
+project back to the promoted workbook's macro binary.
+
+By default, the rebuild script preserves the workbook's saved `NAV_EXCEL_BASE`
+ODBC Power Query formula and only rewrites the derived local queries. Use
+`-UpdateBaseQueryFormula` only when intentionally replacing the base SQL from
+the compiled dbt snapshot and then validate the base refresh in Excel.
