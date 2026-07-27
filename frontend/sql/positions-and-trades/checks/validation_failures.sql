@@ -1779,7 +1779,14 @@ month_codes as (
 ),
 
 latest_upload_positions as (
-    select *
+    select
+        positions.*,
+        (
+            positions.put_call_code is not null
+            or positions.strike_price_normalized is not null
+            or upper(coalesce(positions.type, '')) like '%OPTION%'
+            or positions.product_code_grouping in ('gas_option', 'power_option')
+        ) as is_option
     from positions
 ),
 

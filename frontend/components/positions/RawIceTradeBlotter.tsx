@@ -1,8 +1,8 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
+import ClearStreetTrades from "@/components/clear-street/ClearStreetTrades";
 import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/ColumnFilterMenu";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import MultiSelect from "@/components/ui/MultiSelect";
@@ -126,13 +126,14 @@ const API_CACHE_TTL_MS = 2 * 60 * 1000;
 const RAW_ICE_BLOTTER_API_PATH = "/api/ice-trade-blotter/raw";
 const RAW_ICE_BLOTTER_DRILLDOWN_API_PATH = "/api/ice-trade-blotter/raw/drilldown";
 const RAW_ROW_LIMIT = 100;
+const CLEAR_STREET_TRADING_ACCOUNT_FILTER = ["ACIM", "DICKSON", "PNT", "TITAN"];
 const FILTER_LABEL_CLASS = "text-[10px] font-bold uppercase tracking-wider text-gray-500";
 const PILL_DROPDOWN_CLASS =
   "h-8 rounded-full border border-sky-900/70 bg-[#101521] px-3 text-xs font-semibold text-gray-100 shadow-inner shadow-black/20 outline-none transition-colors hover:border-sky-700/80 focus:border-sky-500/70 focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-900 disabled:text-gray-500";
 const DEFAULT_FRESHNESS: RawIceTradeBlotterFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "ICE Trade Blotter --",
+  summary: "Trade Blotter --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -671,17 +672,6 @@ function retainAvailableSelections(selected: string[], options: string[]): strin
   const available = new Set(options);
   const retained = selected.filter((value) => available.has(value));
   return retained.length === selected.length ? selected : retained;
-}
-
-function ControlCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
 }
 
 function StatusBadge({ label, tone }: { label: string; tone: "good" | "warn" | "neutral" }) {
@@ -1812,6 +1802,8 @@ export default function RawIceTradeBlotter({
   const [debugLoading, setDebugLoading] = useState(false);
   const [debugError, setDebugError] = useState<string | null>(null);
   const [debugDrilldown, setDebugDrilldown] = useState<IceTradeBlotterDrilldownFilter | null>(null);
+  const [clearStreetTradesReady, setClearStreetTradesReady] = useState(false);
+  const [iceSectionOpen, setIceSectionOpen] = useState(true);
 
   const currentFilters = useMemo(
     () => ({
@@ -1914,6 +1906,10 @@ export default function RawIceTradeBlotter({
     () => buildBlotterLadder(data?.productSummary ?? [], data?.selectedDate),
     [data?.productSummary, data?.selectedDate],
   );
+  const isRefreshing = loading && data !== null;
+  const handleClearStreetFreshnessChange = useCallback(() => {
+    setClearStreetTradesReady(true);
+  }, []);
 
   const loadDebugRows = async (
     drilldown: IceTradeBlotterDrilldownFilter | null,
@@ -1975,9 +1971,36 @@ export default function RawIceTradeBlotter({
   };
 
   return (
-    <div className="w-full space-y-4">
-      <div className="mx-auto w-full max-w-4xl">
-        <ControlCard title="Positions">
+    <div
+      className="w-full space-y-4"
+      data-perf-ready={
+        data && !loading && clearStreetTradesReady ? "ice-trade-blotter" : undefined
+      }
+    >
+      <ClearStreetTrades
+        initialAccounts={CLEAR_STREET_TRADING_ACCOUNT_FILTER}
+        title="Clear Street Trades"
+        tableTitle="Clear Street Trade Summary"
+        onFreshnessChange={handleClearStreetFreshnessChange}
+        collapsible
+      />
+
+      <section className="w-full overflow-hidden rounded-lg border border-sky-950/70 bg-[#0d121b] shadow-xl shadow-black/20 ring-1 ring-white/[0.02]">
+        <div className="border-b border-gray-800 p-3 sm:p-4">
+          <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+            <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+              ICE Trade Blotter
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIceSectionOpen((open) => !open)}
+              className="shrink-0 rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-100"
+              aria-expanded={iceSectionOpen}
+            >
+              {iceSectionOpen ? "Hide v" : "Show >"}
+            </button>
+          </div>
+          {iceSectionOpen && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -2065,46 +2088,53 @@ export default function RawIceTradeBlotter({
               )}
             </div>
           </div>
-        </ControlCard>
-      </div>
-
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
-          {error}
+          )}
         </div>
-      )}
 
-      {loading && (
-        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
-          Loading ICE trade blotter...
-        </div>
-      )}
-
-      {data && !loading && (
-        <DataTableShell
-          title="ICE Trade Blotter Summary"
-          subtitle={`Trade snapshot ${data.selectedDate ?? "--"} | Signed lots by raw product and contract from ${data.metadata.sourceTable}`}
-          className="w-full"
-          bodyClassName="w-full max-h-[calc(100vh-270px)] overflow-y-auto"
-          action={
-            <button
-              type="button"
-              onClick={openRawRows}
-              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
-            >
-              Raw Rows
-            </button>
-          }
-        >
-          <div className="w-full bg-[#0d1119]">
-            <BlotterLadderTable
-              columns={ladder.columns}
-              rows={ladder.rows}
-              onCellSelect={openCellRows}
-            />
+        {iceSectionOpen && error && (
+          <div className="border-b border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+            {error}
           </div>
-        </DataTableShell>
-      )}
+        )}
+
+        {iceSectionOpen && loading && !data && (
+          <div className="px-4 py-6 text-sm text-gray-500">
+            Loading ICE trade blotter...
+          </div>
+        )}
+
+        {iceSectionOpen && data && (
+          <>
+            <div className="flex flex-col gap-2 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-gray-100">
+                  ICE Trade Blotter Summary
+                </h2>
+                <p className="mt-1 text-xs text-gray-500">
+                  Trade snapshot {data.selectedDate ?? "--"} | Signed lots by raw product and contract from {data.metadata.sourceTable}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {isRefreshing && <StatusBadge label="Updating" tone="neutral" />}
+                <button
+                  type="button"
+                  onClick={openRawRows}
+                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+                >
+                  Raw Rows
+                </button>
+              </div>
+            </div>
+            <div className="w-full max-h-[calc(100vh-300px)] overflow-auto bg-[#0d1119]">
+              <BlotterLadderTable
+                columns={ladder.columns}
+                rows={ladder.rows}
+                onCellSelect={openCellRows}
+              />
+            </div>
+          </>
+        )}
+      </section>
 
       {debugOpen && (
         <RawRowsModal

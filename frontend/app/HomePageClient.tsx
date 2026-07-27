@@ -215,7 +215,7 @@ const DEFAULT_POSITIONS_HOME_FRESHNESS: PositionsHomeFreshnessSummary = {
 const DEFAULT_RAW_ICE_BLOTTER_FRESHNESS: RawIceTradeBlotterFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "ICE Trade Blotter --",
+  summary: "Trade Blotter --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -258,6 +258,7 @@ const BACKOFFICE_SECTION_ALIASES: Record<string, ActiveSection> = {
   "backoffice-monitor": "backoffice-monitor",
   "backoffice-trade-pipeline": "backoffice-trade-pipeline",
   "backoffice-nav-daily-position-sheet": "backoffice-nav-daily-position-sheet",
+  "ice-trade-blotter": "ice-trade-blotter",
 };
 
 const BACKOFFICE_SECTIONS = new Set<ActiveSection>([
@@ -266,6 +267,7 @@ const BACKOFFICE_SECTIONS = new Set<ActiveSection>([
   "backoffice-monitor",
   "backoffice-trade-pipeline",
   "backoffice-nav-daily-position-sheet",
+  "ice-trade-blotter",
 ]);
 
 function parseBackOfficeSection(value: string | null): ActiveSection | null {
@@ -298,9 +300,6 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "nav-positions") {
     return "nav-positions";
-  }
-  if (showLocalDevFeatures && value === "ice-trade-blotter") {
-    return "ice-trade-blotter";
   }
   if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
@@ -419,13 +418,12 @@ export default function HomePageClient({
 }: HomePageClientProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const [activeSection, setActiveSection] = useState<ActiveSection>(
-    parseInitialSection(
-      searchParams.get("section"),
-      searchParams.get("view"),
-      showLocalDevFeatures,
-    ),
+  const routeSection = parseInitialSection(
+    searchParams.get("section"),
+    searchParams.get("view"),
+    showLocalDevFeatures,
   );
+  const [activeSection, setActiveSection] = useState<ActiveSection>(routeSection);
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
   const [pjmDaModelRefreshToken, setPjmDaModelRefreshToken] = useState(0);
@@ -553,6 +551,10 @@ export default function HomePageClient({
   );
 
   useEffect(() => {
+    setActiveSection((current) => (current === routeSection ? current : routeSection));
+  }, [routeSection]);
+
+  useEffect(() => {
     if (!showLocalDevFeatures || searchParams.get("section") !== "pjm-net-load-forecast") return;
 
     const params = new URLSearchParams(searchParams.toString());
@@ -644,21 +646,21 @@ export default function HomePageClient({
         footer: "Sources: nav.positions; nav.riskmatrix/nav.processed_files are not promoted locally",
       };
     }
+    if (activeSection === "ice-trade-blotter") {
+      return {
+        title: "Trade Blotter",
+        subtitle:
+          "Clear Street and ICE trade rows aggregated for visual trade inspection, with bounded row-level drilldowns.",
+        footer:
+          "Trade Blotter | Sources: clear_street.eod_transactions and ice_trade_blotter.ice_trade_blotter / Azure PostgreSQL",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "nav-positions") {
       return {
         title: "DEV / Old NAV Positions",
         subtitle:
           "Position valuation snapshots aggregated by product, with drilldown rows and product-code rules.",
         footer: "NAV Positions | Source: nav.positions / Azure PostgreSQL",
-      };
-    }
-    if (showLocalDevFeatures && activeSection === "ice-trade-blotter") {
-      return {
-        title: "DEV / Old ICE Trade Blotter",
-        subtitle:
-          "Raw ICE Deal Report rows aggregated for visual trade inspection, with bounded row-level drilldowns.",
-        footer:
-          "ICE Trade Blotter | Source: ice_trade_blotter.ice_trade_blotter / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "clear-street-trades") {
@@ -1050,7 +1052,7 @@ export default function HomePageClient({
               />
             )}
 
-            {showLocalDevFeatures && activeSection === "ice-trade-blotter" && (
+            {activeSection === "ice-trade-blotter" && (
               <FreshnessCard
                 statusLabel={rawIceBlotterFreshness.status}
                 statusClass={rawIceBlotterFreshness.statusClass}
@@ -1361,7 +1363,7 @@ export default function HomePageClient({
               onFreshnessChange={setNavPositionsFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "ice-trade-blotter" && (
+          {activeSection === "ice-trade-blotter" && (
             <RawIceTradeBlotter
               refreshToken={rawIceBlotterRefreshToken}
               onFreshnessChange={setRawIceBlotterFreshness}

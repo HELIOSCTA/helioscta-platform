@@ -312,8 +312,9 @@ not create them.
 
 The ICE Trade Blotter view reads manually loaded raw ICE Deal Report rows with
 `helios_readonly` from `ice_trade_blotter.ice_trade_blotter` and file lineage
-from `ice_trade_blotter.file_manifest`. The page is production-visible at
-`/?section=ice-trade-blotter`. The production endpoints are
+from `ice_trade_blotter.file_manifest`. The page is production-visible in the
+Back Office sidebar at `/?view=ice-trade-blotter`; the legacy direct link
+`/?section=ice-trade-blotter` remains accepted. The production endpoints are
 `GET /api/ice-trade-blotter/raw` for the NAV-style aggregate grid and
 `GET /api/ice-trade-blotter/raw/drilldown` for bounded raw row inspection.
 
@@ -338,6 +339,12 @@ counts, and aggregate rows grouped by raw ICE display identity: `product`,
 `end_date`, `option`, `strike`, `strike_2`, `cc`, `strip`, and `deal_section`.
 Signed display quantity treats clear sell-side `b_s` values as negative, but
 the drilldown returns the original raw row fields.
+
+The Back Office ICE Trade Blotter page also embeds the same Titan-filtered
+Clear Street Trades review card used by Trade Pipeline beneath the raw ICE
+grid. That embedded comparison continues to read `GET /api/clear-street-trades`
+and `GET /api/clear-street-trades/drilldown`; it does not join or mutate ICE
+and Clear Street data in the browser.
 
 This page is visual inspection only. It does not add dbt models, product
 standardization, product matching, frontend cache tables, backend writes,

@@ -33,6 +33,8 @@ interface ClearStreetTradesProps {
   initialAccounts?: string[];
   title?: string;
   tableTitle?: string;
+  collapsible?: boolean;
+  defaultOpen?: boolean;
 }
 
 interface ClearStreetApiFilters {
@@ -102,8 +104,13 @@ interface BlotterLadderModel {
 }
 
 interface VendorCodeSegment {
-  source: "ICE" | "BBG" | "CME";
+  source: "ICE" | "BBG" | "CME" | "EXCH";
   code: string;
+}
+
+interface VendorCodeBuildInfo {
+  source: VendorCodeSegment["source"];
+  fields: Array<{ label: string; value: string }>;
 }
 
 type SortState<Key extends string> = {
@@ -112,6 +119,7 @@ type SortState<Key extends string> = {
 };
 type ColumnFilters<Key extends string> = Partial<Record<Key, string[]>>;
 type BlotterSortKey = "product" | `contract:${string}`;
+type ClearStreetExchange = "ICE" | "NYMX";
 
 type RawRowColumn = {
   key: ClearStreetModelColumn;
@@ -132,10 +140,13 @@ const PILL_DROPDOWN_CLASS =
   "h-8 rounded-full border border-sky-900/70 bg-[#101521] px-3 text-xs font-semibold text-gray-100 shadow-inner shadow-black/20 outline-none transition-colors hover:border-sky-700/80 focus:border-sky-500/70 focus:ring-1 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:border-gray-800 disabled:bg-gray-900 disabled:text-gray-500";
 const SEARCH_INPUT_CLASS =
   "h-8 min-w-[220px] rounded-full border border-sky-900/70 bg-[#101521] px-3 text-xs font-semibold text-gray-100 shadow-inner shadow-black/20 outline-none placeholder:text-gray-600 focus:border-sky-500/70 focus:ring-1 focus:ring-sky-500/30";
+const BLOTTER_INFO_WIDTH_PX = 34;
 const BLOTTER_PRODUCT_WIDTH_PX = 280;
-const BLOTTER_CONTRACT_MIN_WIDTH_PX = 132;
-const BLOTTER_CONTRACT_MAX_WIDTH_PX = 212;
+const BLOTTER_CONTRACT_MIN_WIDTH_PX = 104;
+const BLOTTER_CONTRACT_MAX_WIDTH_PX = 152;
 const RAW_ROW_DEFAULT_COLUMN_WIDTH_PX = 118;
+const DEFAULT_CLEAR_STREET_TRADING_ACCOUNTS = ["ACIM", "DICKSON", "PNT", "TITAN"];
+const CLEAR_STREET_EXCHANGE_OPTIONS: ClearStreetExchange[] = ["ICE", "NYMX"];
 
 const DEFAULT_FRESHNESS: ClearStreetTradesFreshnessSummary = {
   status: "Unknown",
@@ -409,6 +420,16 @@ function retainAvailableStatuses(
   return retained.length === selected.length ? selected : retained;
 }
 
+function sameStringSet<T extends string>(left: T[], right: T[]): boolean {
+  if (left.length !== right.length) return false;
+  const rightValues = new Set(right);
+  return left.every((value) => rightValues.has(value));
+}
+
+function isClearStreetParentAccount(account: string): boolean {
+  return /\bparent\b/i.test(account);
+}
+
 function StatusBadge({
   label,
   tone,
@@ -437,14 +458,30 @@ function SelectableFilterGroup<T extends string>({
   selected,
   onChange,
   labelForValue,
+  allValues,
 }: {
   label: string;
   options: T[];
   selected: T[];
   onChange: (values: T[]) => void;
   labelForValue?: (value: T) => string;
+  allValues?: T[];
 }) {
+  const allSelected = allValues
+    ? sameStringSet(selected, allValues)
+    : selected.length === 0;
+  const selectAll = () => onChange(allValues ? [...allValues] : []);
+
   const toggle = (option: T) => {
+    if (allValues && allSelected) {
+      onChange([option]);
+      return;
+    }
+    if (allValues && selected.length === 1 && selected.includes(option)) {
+      selectAll();
+      return;
+    }
+
     onChange(
       selected.includes(option)
         ? selected.filter((value) => value !== option)
@@ -457,10 +494,10 @@ function SelectableFilterGroup<T extends string>({
       <span className={FILTER_LABEL_CLASS}>{label}</span>
       <button
         type="button"
-        aria-pressed={selected.length === 0}
-        onClick={() => onChange([])}
+        aria-pressed={allSelected}
+        onClick={selectAll}
         className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
-          selected.length === 0
+          allSelected
             ? "border-sky-500/50 bg-sky-500/15 text-sky-100"
             : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
         }`}
@@ -468,7 +505,7 @@ function SelectableFilterGroup<T extends string>({
         All
       </button>
       {options.map((option) => {
-        const active = selected.includes(option);
+        const active = allValues && allSelected ? false : selected.includes(option);
         const labelText = labelForValue?.(option) ?? option;
         return (
           <button
@@ -647,6 +684,55 @@ function splitVendorCodes(value: string | null): string[] {
     .filter(Boolean);
 }
 
+function hasVendorCode(value: string | null | undefined): boolean {
+  return splitVendorCodes(value ?? null).length > 0;
+}
+
+function clearStreetRowExchangeText(row: ClearStreetTradesProductSummaryRow): string {
+  return [
+    row.cmeProductCode,
+    row.iceProductCode,
+    row.bbgProductCode,
+    row.exchangeCodeInput,
+    row.sourceProduct,
+    row.contract,
+    row.marketName,
+  ].filter(Boolean).join(" | ");
+}
+
+function clearStreetRowHasExchange(
+  row: ClearStreetTradesProductSummaryRow,
+  exchange: ClearStreetExchange,
+): boolean {
+  const text = clearStreetRowExchangeText(row);
+  if (exchange === "ICE") {
+    return hasVendorCode(row.iceProductCode);
+  }
+  return /(^|[|:\s])(?:XNYM|NYMEX|NYMX)(?=[:|\s]|$)/i.test(text);
+}
+
+function clearStreetRowMatchesTableFilters(
+  row: ClearStreetTradesProductSummaryRow,
+  exchanges: ClearStreetExchange[],
+): boolean {
+  return exchanges.length === 0 || exchanges.some((exchange) => clearStreetRowHasExchange(row, exchange));
+}
+
+function canonicalVendorCodePattern(code: string): string {
+  const monthCodes = "FGHJKMNQUVXZ";
+  return code
+    .trim()
+    .replace(
+      new RegExp(`\\b([A-Z]{1,8})\\s+[${monthCodes}]\\d{1,2}(-[A-Z0-9]+)\\b`, "g"),
+      "$1 MYY$2",
+    )
+    .replace(
+      new RegExp(`\\b([A-Z]{1,8})[${monthCodes}]\\d{1,2}([CP])?\\b`, "g"),
+      "$1MYY$2",
+    )
+    .replace(/:20\d{4}\b/g, ":MYY");
+}
+
 function vendorCodeSegments({
   iceProductCode,
   bbgProductCode,
@@ -667,36 +753,171 @@ function vendorCodeSegments({
   ];
 }
 
+function addVendorPatterns(
+  patterns: Map<VendorCodeSegment["source"], Set<string>>,
+  source: VendorCodeSegment["source"],
+  value: string | null,
+): void {
+  const sourcePatterns = patterns.get(source) ?? new Set<string>();
+  for (const code of splitVendorCodes(value)) {
+    const pattern = canonicalVendorCodePattern(code);
+    if (pattern) sourcePatterns.add(pattern);
+  }
+  if (sourcePatterns.size > 0) patterns.set(source, sourcePatterns);
+}
+
+function rowVendorPatternSegments(row: BlotterRow): VendorCodeSegment[] {
+  const patterns = new Map<VendorCodeSegment["source"], Set<string>>();
+  addVendorPatterns(patterns, "ICE", row.iceProductCode);
+  addVendorPatterns(patterns, "BBG", row.bbgProductCode);
+  addVendorPatterns(patterns, "CME", row.cmeProductCode);
+
+  for (const cell of Object.values(row.cells)) {
+    addVendorPatterns(patterns, "ICE", cell.iceProductCode);
+    addVendorPatterns(patterns, "BBG", cell.bbgProductCode);
+    addVendorPatterns(patterns, "CME", cell.cmeProductCode);
+  }
+
+  if (patterns.has("ICE")) {
+    return [...(patterns.get("ICE") ?? [])].map((code) => ({ source: "ICE", code }));
+  }
+  if (patterns.has("BBG")) {
+    return [...(patterns.get("BBG") ?? [])].map((code) => ({ source: "BBG", code }));
+  }
+  if (patterns.has("CME")) {
+    return [...(patterns.get("CME") ?? [])].map((code) => ({ source: "CME", code }));
+  }
+
+  return splitVendorCodes(row.exchangeCodeInput).map((code) => ({
+    source: "EXCH",
+    code: canonicalVendorCodePattern(code),
+  }));
+}
+
 function vendorCodeTitle(segments: VendorCodeSegment[]): string | null {
   return segments.length
     ? segments.map((segment) => `${segment.source} ${segment.code}`).join(" | ")
     : null;
 }
 
-function VendorCodeStack({ segments }: { segments: VendorCodeSegment[] }) {
+function vendorCodeBuildInfo(segment: VendorCodeSegment | undefined): VendorCodeBuildInfo | null {
+  if (!segment) return null;
+  const code = segment.code.trim();
+
+  const spacedStrip = /^([A-Z0-9]+)\s+MYY(-[A-Z0-9]+)?$/i.exec(code);
+  if (spacedStrip) {
+    return {
+      source: segment.source,
+      fields: [
+        { label: "Root", value: spacedStrip[1] },
+        { label: "Strip", value: "month code + YY" },
+        ...(spacedStrip[2] ? [{ label: "Suffix", value: spacedStrip[2].slice(1) }] : []),
+      ],
+    };
+  }
+
+  const bbgStrip = /^([A-Z0-9]+)MYY([CP])?\s+(.+)$/i.exec(code);
+  if (bbgStrip) {
+    return {
+      source: segment.source,
+      fields: [
+        { label: "Root", value: bbgStrip[1] },
+        { label: "Strip", value: `month code + YY${bbgStrip[2] ? ` + ${bbgStrip[2]}` : ""}` },
+        { label: "Suffix", value: bbgStrip[3] },
+      ],
+    };
+  }
+
+  const cmeParts = code.split(":").map((part) => part.trim()).filter(Boolean);
+  const expiryIndex = cmeParts.findIndex((part) => part === "MYY");
+  if (expiryIndex > 1) {
+    const root = cmeParts[expiryIndex - 1];
+    const type = cmeParts[expiryIndex - 2];
+    const venue = cmeParts[expiryIndex - 3];
+    return {
+      source: segment.source,
+      fields: [
+        ...(venue ? [{ label: "Venue", value: venue }] : []),
+        ...(type ? [{ label: "Type", value: type }] : []),
+        { label: "Root", value: root },
+        { label: "Strip", value: "month code + YY" },
+      ],
+    };
+  }
+
+  return {
+    source: segment.source,
+    fields: [{ label: "Pattern", value: code }],
+  };
+}
+
+function VendorCodeInfoPanel({ info }: { info: VendorCodeBuildInfo }) {
+  return (
+    <>
+      <div className="mb-1 inline-flex rounded-sm border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-0.5 text-[9px] font-bold leading-3 text-cyan-200">
+        {info.source} code build
+      </div>
+      <dl className="space-y-0.5">
+        {info.fields.map((field) => (
+          <div key={`${field.label}:${field.value}`} className="flex min-w-0 items-baseline gap-1.5">
+            <dt className="shrink-0 text-[9px] font-semibold uppercase tracking-wide text-gray-600">
+              {field.label}
+            </dt>
+            <dd className="min-w-0 truncate font-mono text-[10px] font-semibold text-gray-300">
+              {field.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </>
+  );
+}
+
+function VendorCodeInfoPopover({ segments }: { segments: VendorCodeSegment[] }) {
+  const info = vendorCodeBuildInfo(segments[0]);
+  if (!info) return null;
+
+  return (
+    <span className="relative inline-flex shrink-0">
+      <button
+        type="button"
+        aria-label={`${info.source} code build metadata`}
+        className="peer inline-flex h-4 w-4 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-500/10 font-mono text-[10px] font-bold leading-none text-cyan-200 outline-none transition-colors hover:border-cyan-300/70 hover:bg-cyan-500/20 focus:border-cyan-200 focus:ring-1 focus:ring-cyan-300/40"
+      >
+        i
+      </button>
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute left-5 top-0 z-50 hidden w-60 rounded-md border border-cyan-500/40 bg-[#070b12] p-2 text-left shadow-xl shadow-black/50 peer-hover:block peer-focus:block"
+        title={vendorCodeTitle(segments) ?? undefined}
+      >
+        <VendorCodeInfoPanel info={info} />
+      </span>
+    </span>
+  );
+}
+
+function VendorPatternStack({ segments }: { segments: VendorCodeSegment[] }) {
   if (segments.length === 0) return null;
 
-  const visibleSegments = segments.slice(0, 2);
+  const visibleSegments = segments.slice(0, 3);
   const hiddenCount = Math.max(0, segments.length - visibleSegments.length);
 
   return (
-    <span className="mt-1 flex w-full flex-col items-end gap-0.5">
+    <span className="flex min-w-0 max-w-full flex-col items-start gap-1">
       {visibleSegments.map((segment) => (
         <span
           key={`${segment.source}:${segment.code}`}
-          className="flex max-w-full items-center justify-end gap-1"
+          className="flex max-w-full items-center rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-1 shadow-inner shadow-black/20"
         >
-          <span className="rounded-sm border border-cyan-500/30 bg-cyan-500/10 px-1 py-px text-[8px] font-bold leading-3 text-cyan-200">
-            {segment.source}
-          </span>
-          <span className="max-w-[92px] truncate font-mono text-[10px] font-semibold leading-3 text-cyan-100">
+          <span className="min-w-0 truncate font-mono text-[10px] font-semibold leading-3 text-cyan-50">
             {segment.code}
           </span>
         </span>
       ))}
       {hiddenCount > 0 && (
         <span className="text-[9px] font-semibold leading-3 text-cyan-300">
-          +{hiddenCount}
+          +{hiddenCount} more code pattern{hiddenCount === 1 ? "" : "s"}
         </span>
       )}
     </span>
@@ -809,7 +1030,11 @@ function blotterColumnWidth(column: ContractColumn): number {
 }
 
 function blotterTableWidth(columns: ContractColumn[]): number {
-  return BLOTTER_PRODUCT_WIDTH_PX + columns.reduce((total, column) => total + blotterColumnWidth(column), 0);
+  return (
+    BLOTTER_INFO_WIDTH_PX +
+    BLOTTER_PRODUCT_WIDTH_PX +
+    columns.reduce((total, column) => total + blotterColumnWidth(column), 0)
+  );
 }
 
 function blotterStripSortKey(column: ContractColumn): BlotterSortKey {
@@ -893,7 +1118,7 @@ function DrilldownButton({
   onClick: () => void;
 }) {
   if (!cell || cell.rowCount === 0) {
-    return <span className="block h-11 min-w-[108px]" />;
+    return <span className="block h-11 min-w-[96px]" />;
   }
 
   const vendorSegments = vendorCodeSegments(cell);
@@ -917,7 +1142,7 @@ function DrilldownButton({
       type="button"
       onClick={onClick}
       aria-label={ariaLabel}
-      className={`flex min-h-14 w-full min-w-[120px] flex-col items-end justify-center rounded-md border px-2 py-1 text-right transition-colors ${statusClass}`}
+      className={`flex min-h-11 w-full min-w-[96px] items-center justify-end rounded-md border px-2 py-1.5 text-right transition-colors ${statusClass}`}
       title={[
         `${fmtFlexibleNumber(cell.netQuantity, 2)} signed quantity`,
         vendorTitle,
@@ -926,7 +1151,6 @@ function DrilldownButton({
       ].filter(Boolean).join(" | ")}
     >
       <span className="text-sm font-semibold">{fmtFlexibleNumber(cell.netQuantity, 2)}</span>
-      <VendorCodeStack segments={vendorSegments} />
     </button>
   );
 }
@@ -993,6 +1217,7 @@ function BlotterLadderTable({
       style={{ width: blotterTableWidth(columns) }}
     >
       <colgroup>
+        <col style={{ width: BLOTTER_INFO_WIDTH_PX }} />
         <col style={{ width: BLOTTER_PRODUCT_WIDTH_PX }} />
         {columns.map((column) => (
           <col key={column.key} style={{ width: blotterColumnWidth(column) }} />
@@ -1000,7 +1225,13 @@ function BlotterLadderTable({
       </colgroup>
       <thead className="sticky top-0 z-20 bg-gray-950 text-gray-500">
         <tr className="border-b border-gray-800/80">
-          <th className="sticky left-0 top-0 z-30 border-b border-r border-gray-800 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[1px_0_0_rgba(31,41,55,0.8)]">
+          <th className="sticky left-0 top-0 z-40 border-b border-r border-gray-800 bg-gray-950 px-1 py-1.5 text-center font-semibold uppercase tracking-wide shadow-[1px_0_0_rgba(31,41,55,0.8)]">
+            <span className="sr-only">Code build info</span>
+          </th>
+          <th
+            className="sticky top-0 z-30 border-b border-r border-gray-800 bg-gray-950 px-2 py-1.5 text-left font-semibold uppercase tracking-wide shadow-[1px_0_0_rgba(31,41,55,0.8)]"
+            style={{ left: BLOTTER_INFO_WIDTH_PX }}
+          >
             <div className="flex w-full min-w-0 items-center gap-1">
               <button
                 type="button"
@@ -1008,9 +1239,9 @@ function BlotterLadderTable({
                 className={`flex min-w-0 items-center gap-1 rounded-md px-1 py-0.5 text-left transition-colors hover:bg-gray-900 ${
                   sortState?.key === "product" ? "text-sky-200" : "text-gray-400"
                 }`}
-                aria-label="Sort Product"
+                aria-label="Sort Product / Exchange Code"
               >
-                <span className="truncate whitespace-nowrap text-[10px]">Product</span>
+                <span className="truncate whitespace-nowrap text-[10px]">Product / Code</span>
                 <span className="w-3 shrink-0 text-right text-[10px] text-sky-300">
                   {sortIndicator(sortState?.key === "product" ? sortState.direction : null)}
                 </span>
@@ -1057,50 +1288,61 @@ function BlotterLadderTable({
       <tbody>
         {displayedRows.length === 0 ? (
           <tr>
-            <td className="px-3 py-5 text-sm text-gray-500" colSpan={columns.length + 1}>
+            <td className="px-3 py-5 text-sm text-gray-500" colSpan={columns.length + 2}>
               No products match the table filters.
             </td>
           </tr>
         ) : (
-          displayedRows.map((row) => (
-            <tr key={row.key} className="group">
-              <th
-                className="sticky left-0 z-10 border-b border-r border-gray-800 bg-[#0d1119] px-3 py-1.5 text-left align-middle group-hover:bg-[#151b28]"
-                title={`${row.productLabel} | ${row.subtitle}`}
-              >
-                <span className="block truncate text-xs font-semibold text-gray-100">
-                  {row.productLabel}
-                </span>
-                <span className="mt-0.5 block truncate text-[10px] font-medium text-gray-500">
-                  {row.subtitle}
-                </span>
-                {(row.needsReviewRowCount > 0 || row.vendorWarningRowCount > 0) && (
-                  <span className="mt-1 block truncate text-[10px] font-semibold text-yellow-300">
-                    {row.needsReviewRowCount > 0
-                      ? `${row.needsReviewRowCount.toLocaleString()} review`
-                      : `${row.vendorWarningRowCount.toLocaleString()} warning`}
+          displayedRows.map((row) => {
+            const rowVendorPatterns = rowVendorPatternSegments(row);
+            const rowVendorTitle = vendorCodeTitle(rowVendorPatterns);
+            return (
+              <tr key={row.key} className="group">
+                <td className="sticky left-0 z-20 overflow-visible border-b border-r border-gray-800 bg-[#0d1119] px-1 py-2 text-center align-top group-hover:bg-[#151b28]">
+                  <VendorCodeInfoPopover segments={rowVendorPatterns} />
+                </td>
+                <th
+                  className="sticky z-10 border-b border-r border-gray-800 bg-[#0d1119] px-3 py-2 text-left align-middle group-hover:bg-[#151b28]"
+                  style={{ left: BLOTTER_INFO_WIDTH_PX }}
+                  title={[row.productLabel, rowVendorTitle, row.subtitle].filter(Boolean).join(" | ")}
+                >
+                  <span className="block truncate text-xs font-semibold text-gray-100">
+                    {row.productLabel}
                   </span>
-                )}
-              </th>
-              {columns.map((column) => {
-                const cell = row.cells[column.key];
-                return (
-                  <td
-                    key={column.key}
-                    className="border-b border-r border-gray-800 bg-[#0d1119] p-1 align-middle group-hover:bg-[#151b28]"
-                  >
-                    <DrilldownButton
-                      cell={cell}
-                      ariaLabel={`Open Clear Street rows for ${blotterRowLabel(row)} ${column.label}`}
-                      onClick={() => {
-                        if (cell) onCellSelect(row, column, cell);
-                      }}
-                    />
-                  </td>
-                );
-              })}
-            </tr>
-          ))
+                  <span className="mt-1.5 block min-w-0">
+                    <VendorPatternStack segments={rowVendorPatterns} />
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10px] font-medium text-gray-500">
+                    {row.subtitle}
+                  </span>
+                  {(row.needsReviewRowCount > 0 || row.vendorWarningRowCount > 0) && (
+                    <span className="mt-1 block truncate text-[10px] font-semibold text-yellow-300">
+                      {row.needsReviewRowCount > 0
+                        ? `${row.needsReviewRowCount.toLocaleString()} review`
+                        : `${row.vendorWarningRowCount.toLocaleString()} warning`}
+                    </span>
+                  )}
+                </th>
+                {columns.map((column) => {
+                  const cell = row.cells[column.key];
+                  return (
+                    <td
+                      key={column.key}
+                      className="border-b border-r border-gray-800 bg-[#0d1119] p-1 align-middle group-hover:bg-[#151b28]"
+                    >
+                      <DrilldownButton
+                        cell={cell}
+                        ariaLabel={`Open Clear Street rows for ${blotterRowLabel(row)} ${column.label}`}
+                        onClick={() => {
+                          if (cell) onCellSelect(row, column, cell);
+                        }}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })
         )}
       </tbody>
     </table>
@@ -1623,9 +1865,11 @@ function RawRowsModal({
 export default function ClearStreetTrades({
   refreshToken = 0,
   onFreshnessChange,
-  initialAccounts = [],
+  initialAccounts = DEFAULT_CLEAR_STREET_TRADING_ACCOUNTS,
   title = "Clear Street Trades",
   tableTitle = "Clear Street Trade Summary",
+  collapsible = false,
+  defaultOpen = true,
 }: ClearStreetTradesProps) {
   const [selectedDate, setSelectedDate] = useState("");
   const [accounts, setAccounts] = useState<string[]>(() => [...initialAccounts]);
@@ -1633,6 +1877,7 @@ export default function ClearStreetTrades({
   const [productFamilies, setProductFamilies] = useState<string[]>([]);
   const [marketNames, setMarketNames] = useState<string[]>([]);
   const [statuses, setStatuses] = useState<ClearStreetReviewStatus[]>([]);
+  const [exchanges, setExchanges] = useState<ClearStreetExchange[]>([]);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [data, setData] = useState<ClearStreetTradesPayload | null>(null);
@@ -1644,6 +1889,12 @@ export default function ClearStreetTrades({
   const [debugError, setDebugError] = useState<string | null>(null);
   const [debugDrilldown, setDebugDrilldown] = useState<ClearStreetTradesDrilldownFilter | null>(null);
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [sectionOpen, setSectionOpen] = useState(defaultOpen);
+  const accountOptions = useMemo(
+    () => (data?.metadata.accounts ?? []).filter((account) => !isClearStreetParentAccount(account)),
+    [data?.metadata.accounts],
+  );
+  const accountAllValues = useMemo(() => [...accountOptions], [accountOptions]);
 
   const currentFilters = useMemo(
     () => ({
@@ -1672,6 +1923,7 @@ export default function ClearStreetTrades({
       signal: controller.signal,
       cacheMode: forceRefresh ? "no-store" : "default",
       forceRefresh,
+      persist: "session",
     })
       .then((payload) => {
         if (!active) return;
@@ -1682,7 +1934,6 @@ export default function ClearStreetTrades({
         if (!active || controller.signal.aborted) return;
         if (caught instanceof DOMException && caught.name === "AbortError") return;
         const message = caught instanceof Error ? caught.message : "Failed to load Clear Street trades";
-        setData(null);
         setError(message);
         onFreshnessChange?.({
           status: "Error",
@@ -1705,33 +1956,52 @@ export default function ClearStreetTrades({
 
   useEffect(() => {
     if (!data) return;
-    setAccounts((selected) => retainAvailableSelections(selected, data.metadata.accounts));
+    setAccounts((selected) => {
+      const retained = retainAvailableSelections(selected, accountOptions);
+      if (retained.length > 0) return retained;
+      return accountAllValues.length > 0 ? [...accountAllValues] : retained;
+    });
     setProductCodes((selected) => retainAvailableSelections(selected, data.metadata.productCodes));
     setProductFamilies((selected) => retainAvailableSelections(selected, data.metadata.productFamilies));
     setMarketNames((selected) => retainAvailableSelections(selected, data.metadata.marketNames));
     setStatuses((selected) => retainAvailableStatuses(selected, data.metadata.statuses));
-  }, [data]);
+  }, [accountAllValues, accountOptions, data]);
 
-  const ladder = useMemo(() => buildBlotterLadder(data?.productSummary ?? []), [data?.productSummary]);
+  const tableProductSummary = useMemo(
+    () =>
+      (data?.productSummary ?? []).filter((row) =>
+        clearStreetRowMatchesTableFilters(row, exchanges),
+      ),
+    [data?.productSummary, exchanges],
+  );
+  const tableRowCount = useMemo(
+    () => tableProductSummary.reduce((total, row) => total + row.rowCount, 0),
+    [tableProductSummary],
+  );
+  const ladder = useMemo(() => buildBlotterLadder(tableProductSummary), [tableProductSummary]);
   const reviewSignatures = useMemo(
     () => (data?.reviewSignatures ?? []).filter((signature) => signatureMatchesSearch(signature, search)),
     [data, search],
   );
   const visibleDiagnostics = reviewSignatures.length > 0 ? reviewSignatures : data?.latestSignatures ?? [];
+  const accountFilterCount =
+    accounts.length === 0 || sameStringSet(accounts, accountAllValues) ? 0 : accounts.length;
   const activeFilterCount =
-    accounts.length +
+    accountFilterCount +
     productCodes.length +
     productFamilies.length +
     marketNames.length +
     statuses.length +
+    exchanges.length +
     (search ? 1 : 0);
 
   const clearFilters = () => {
-    setAccounts([...initialAccounts]);
+    setAccounts(accountAllValues.length > 0 ? [...accountAllValues] : [...initialAccounts]);
     setProductCodes([]);
     setProductFamilies([]);
     setMarketNames([]);
     setStatuses([]);
+    setExchanges([]);
     setSearch("");
     setSearchInput("");
   };
@@ -1762,6 +2032,7 @@ export default function ClearStreetTrades({
         ttlMs: API_CACHE_TTL_MS,
         cacheMode: forceRefresh || refreshToken > 0 ? "no-store" : "default",
         forceRefresh: forceRefresh || refreshToken > 0,
+        persist: "session",
       });
       setDebugData(payload);
     } catch (caught) {
@@ -1803,14 +2074,29 @@ export default function ClearStreetTrades({
   const statusOptions = data?.metadata.statuses.length
     ? data.metadata.statuses
     : (["needs_review", "vendor_warning", "matched"] as ClearStreetReviewStatus[]);
+  const isRefreshing = loading && data !== null;
+  const contentOpen = !collapsible || sectionOpen;
 
   return (
     <div className="w-full space-y-4">
       <section className="w-full overflow-hidden rounded-lg border border-sky-950/70 bg-[#0d121b] shadow-xl shadow-black/20 ring-1 ring-white/[0.02]">
         <div className="border-b border-gray-800 p-3 sm:p-4">
-          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-            {title}
-          </h2>
+          <div className="mb-3 flex min-w-0 items-center justify-between gap-3">
+            <h2 className="min-w-0 truncate text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+              {title}
+            </h2>
+            {collapsible && (
+              <button
+                type="button"
+                onClick={() => setSectionOpen((open) => !open)}
+                className="shrink-0 rounded-md border border-gray-700 bg-gray-900 px-2.5 py-1 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-100"
+                aria-expanded={sectionOpen}
+              >
+                {sectionOpen ? "Hide v" : "Show >"}
+              </button>
+            )}
+          </div>
+          {contentOpen && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -1819,7 +2105,7 @@ export default function ClearStreetTrades({
               <span className="h-px flex-1 bg-gray-800" />
               <span className="text-xs text-gray-500">
                 {ladder.rows.length.toLocaleString()} products |{" "}
-                {(data?.summary.rowCount ?? 0).toLocaleString()} rows
+                {tableRowCount.toLocaleString()} rows
               </span>
             </div>
 
@@ -1857,8 +2143,8 @@ export default function ClearStreetTrades({
                 Apply
               </button>
               <StatusBadge
-                label={`${(data?.summary.rowCount ?? 0).toLocaleString()} rows`}
-                tone={data?.summary.rowCount ? "good" : "warn"}
+                label={`${tableRowCount.toLocaleString()} rows`}
+                tone={tableRowCount ? "good" : "warn"}
               />
               <StatusBadge
                 label={`As of ${fmtDateTime(data?.latestUploadAt ?? data?.asOf)}`}
@@ -1869,9 +2155,19 @@ export default function ClearStreetTrades({
             <div>
               <SelectableFilterGroup
                 label="Account"
-                options={data?.metadata.accounts ?? []}
+                options={accountOptions}
                 selected={accounts}
                 onChange={setAccounts}
+                allValues={accountAllValues}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <SelectableFilterGroup<ClearStreetExchange>
+                label="Exchange"
+                options={CLEAR_STREET_EXCHANGE_OPTIONS}
+                selected={exchanges}
+                onChange={setExchanges}
               />
             </div>
 
@@ -1952,21 +2248,22 @@ export default function ClearStreetTrades({
               </div>
             )}
           </div>
+          )}
         </div>
 
-        {error && (
+        {contentOpen && error && (
           <div className="border-b border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-200">
             {error}
           </div>
         )}
 
-        {loading && (
+        {contentOpen && loading && !data && (
           <div className="px-4 py-6 text-sm text-gray-500">
             Loading Clear Street trades...
           </div>
         )}
 
-        {data && !loading && (
+        {contentOpen && data && (
           <>
             <div className="flex flex-col gap-2 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
@@ -1975,13 +2272,16 @@ export default function ClearStreetTrades({
                   SFTP snapshot {data.selectedDate ?? "--"} | Signed quantity by product and contract from {data.metadata.sourceTable}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={openRawRows}
-                className="shrink-0 rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
-              >
-                Raw Rows
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {isRefreshing && <StatusBadge label="Updating" tone="neutral" />}
+                <button
+                  type="button"
+                  onClick={openRawRows}
+                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+                >
+                  Raw Rows
+                </button>
+              </div>
             </div>
             <div className="w-full max-h-[calc(100vh-300px)] overflow-auto bg-[#0d1119]">
               <BlotterLadderTable
@@ -1994,7 +2294,7 @@ export default function ClearStreetTrades({
         )}
       </section>
 
-      {data && !loading && visibleDiagnostics.length > 0 && (
+      {contentOpen && data && visibleDiagnostics.length > 0 && (
         <DataTableShell
           title="Review Diagnostics"
           subtitle={`${visibleDiagnostics.length.toLocaleString()} signatures shown | ${data.nullCheckCriteria}`}

@@ -100,6 +100,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       },
       { id: "backoffice-monitor", label: "Monitor", description: "Access + feed status" },
       { id: "backoffice-trade-pipeline", label: "Trade Pipeline", description: "Clear Street -> MUFG worker spine" },
+      { id: "ice-trade-blotter", label: "Trade Blotter", description: "Clear Street + raw ICE rows" },
       { id: "backoffice-nav-daily-position-sheet", label: "NAV Daily Position Sheet", description: "Gas + power NAV matrix" },
     ],
   });
@@ -127,7 +128,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "positions-home", label: "Old Positions Home" },
         { id: "nav-positions", label: "Old NAV Positions" },
         { id: "clear-street-trades", label: "Old Clear Street Trades" },
-        { id: "ice-trade-blotter", label: "Old ICE Trade Blotter" },
       ],
     });
   }

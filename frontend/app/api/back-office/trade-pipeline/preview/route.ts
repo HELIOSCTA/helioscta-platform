@@ -207,6 +207,8 @@ export async function GET(request: Request): Promise<Response> {
     ttlMs: CACHE_TTL_MS,
     staleIfErrorMs: STALE_IF_ERROR_MS,
     forceRefresh,
+    dataCache: true,
+    dataCacheTtlSeconds: CACHE_TTL_SECONDS,
     load: async () => {
       const rows = await loadRows(businessDate);
       const headers = [...RAW_EXPORT_COLUMNS.map((column) => column.label), ...TITAN_COLUMNS];
