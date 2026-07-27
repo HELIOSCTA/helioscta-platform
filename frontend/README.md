@@ -129,7 +129,6 @@ OASIS intervals.
 Local development also exposes a clearly separated `DEV` sidebar section:
 
 ```text
-GET /api/pjm-da-model?date=YYYY-MM-DD&cutoff=YYYY-MM-DDTHH:MM
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
 GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
@@ -669,40 +668,6 @@ area/date explorer shape as PJM Data Miner load forecasts. The route
 `GET /api/pjm-meteologica-forecast-differences` accepts `area`, `date`, and
 `lookbackHours` and returns the same snapshot/delta vintage shape used by the
 PJM Data Miner forecast explorer popup.
-
-## Local DEV PJM DA Model Source Contract
-
-The DA Model page reads Meteologica Western Hub DA price forecasts and matching
-PJM actual DA LMPs directly from source tables with `helios_readonly`:
-`meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly` and
-`meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly`,
-plus `pjm.da_hrl_lmps`.
-
-Source system:
-Meteologica xTraders Western Hub DA price deterministic and ECMWF ENS feeds.
-
-Source table grain:
-`content_id x update_id x forecast_period_start`. For a selected delivery
-date, the API selects the latest `issue_date` available in each source table
-for that date at or before the optional cutoff.
-Actual DA values are pulled from `pjm.da_hrl_lmps` where
-`row_is_current = true`, `pnode_name = 'WESTERN HUB'`, and
-`datetime_beginning_ept::date` equals the selected target date.
-
-The DA Model page appears in the local `DEV` sidebar section at
-`/?section=pjm-da-model`; Vercel builds hide the page and return `404` from
-`GET /api/pjm-da-model`.
-
-The route `GET /api/pjm-da-model` accepts optional `date=YYYY-MM-DD` and
-`cutoff=YYYY-MM-DDTHH:MM`. The cutoff is interpreted as a UTC issue timestamp
-and restricts each source to `issue_date <= cutoff`. Without a date it selects
-the first available future delivery date under the cutoff, or the first
-available future delivery date when no cutoff is supplied. The response returns
-available delivery dates, the applied cutoff, deterministic and ensemble issue
-timestamps, PJM actual update timestamp, HE1-HE24 series (`Actual DA`, `Det`,
-`ENS Avg`, `ENS Bottom`, `ENS Top`), derived width/IQR rows, and
-OnPeak/OffPeak/Flat block values. `OnPeak` is HE8-23, and `OffPeak` is HE1-7
-plus HE24.
 
 ## PJM Forecasts Source Contract
 

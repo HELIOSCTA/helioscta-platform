@@ -40,9 +40,6 @@ import PjmDaLmps, {
 import PowerLmpAdders, {
   type PowerLmpAddersFreshnessSummary,
 } from "@/components/pjm/PowerLmpAdders";
-import PjmDaModel, {
-  type PjmDaModelFreshnessSummary,
-} from "@/components/pjm/PjmDaModel";
 import PjmForecasts, {
   type ForecastType,
   type PjmForecastsFreshnessSummary,
@@ -92,16 +89,6 @@ const DEFAULT_POWER_LMP_ADDERS_FRESHNESS: PowerLmpAddersFreshnessSummary = {
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
-};
-
-const DEFAULT_PJM_DA_MODEL_FRESHNESS: PjmDaModelFreshnessSummary = {
-  status: "Unknown",
-  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
-  summary: "DA model --",
-  targetDateLabel: "--",
-  latestDateLabel: "--",
-  latestUpdateLabel: "--",
-  cutoffLabel: "--",
 };
 
 const DEFAULT_PJM_OUTAGES_FRESHNESS: PjmOutagesFreshnessSummary = {
@@ -336,7 +323,6 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
-  if (showLocalDevFeatures && value === "pjm-da-model") return "pjm-da-model";
   if (showLocalDevFeatures && value === "pjm-price-view") return "pjm-price-view";
   if (
     showLocalDevFeatures &&
@@ -430,7 +416,6 @@ export default function HomePageClient({
   const [activeSection, setActiveSection] = useState<ActiveSection>(routeSection);
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
-  const [pjmDaModelRefreshToken, setPjmDaModelRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
   const [pjmPriceDistributionsRefreshToken, setPjmPriceDistributionsRefreshToken] =
     useState(0);
@@ -451,7 +436,6 @@ export default function HomePageClient({
   const [genscapeNomsRefreshToken, setGenscapeNomsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [powerLmpAddersFreshnessOpen, setPowerLmpAddersFreshnessOpen] = useState(false);
-  const [pjmDaModelFreshnessOpen, setPjmDaModelFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
   const [pjmPriceDistributionsFreshnessOpen, setPjmPriceDistributionsFreshnessOpen] =
     useState(false);
@@ -477,8 +461,6 @@ export default function HomePageClient({
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
   const [powerLmpAddersFreshness, setPowerLmpAddersFreshness] =
     useState<PowerLmpAddersFreshnessSummary>(DEFAULT_POWER_LMP_ADDERS_FRESHNESS);
-  const [pjmDaModelFreshness, setPjmDaModelFreshness] =
-    useState<PjmDaModelFreshnessSummary>(DEFAULT_PJM_DA_MODEL_FRESHNESS);
   const [pjmPriceDurationFreshness, setPjmPriceDurationFreshness] =
     useState<PjmPriceDurationCurvesFreshnessSummary>(
       DEFAULT_PJM_PRICE_DURATION_FRESHNESS,
@@ -791,15 +773,6 @@ export default function HomePageClient({
           "Forecasts | Sources: PJM Data Miner + Meteologica hourly forecasts / Azure PostgreSQL",
       };
     }
-    if (showLocalDevFeatures && activeSection === "pjm-da-model") {
-      return {
-        title: "DA Model",
-        subtitle:
-          "Meteologica Western Hub day-ahead price forecast by selected delivery date.",
-        footer:
-          "DA Model | Source: Meteologica Western Hub DA price forecast source tables / Azure PostgreSQL",
-      };
-    }
     if (activeSection === "pjm-outages") {
       return {
         title: "Outages",
@@ -937,29 +910,6 @@ export default function HomePageClient({
                 onToggle={() => setPowerLmpAddersFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
                 onAction={() => setPowerLmpAddersRefreshToken((value) => value + 1)}
-              />
-            )}
-
-            {showLocalDevFeatures && activeSection === "pjm-da-model" && (
-              <FreshnessCard
-                statusLabel={pjmDaModelFreshness.status}
-                statusClass={pjmDaModelFreshness.statusClass}
-                summary={pjmDaModelFreshness.summary}
-                items={[
-                  {
-                    label: "Freshness Status",
-                    value: pjmDaModelFreshness.status,
-                    className: pjmDaModelFreshness.statusClass,
-                  },
-                  { label: "Target Date", value: pjmDaModelFreshness.targetDateLabel },
-                  { label: "Default Date", value: pjmDaModelFreshness.latestDateLabel },
-                  { label: "Cutoff UTC", value: pjmDaModelFreshness.cutoffLabel },
-                  { label: "Source Update", value: pjmDaModelFreshness.latestUpdateLabel },
-                ]}
-                open={pjmDaModelFreshnessOpen}
-                onToggle={() => setPjmDaModelFreshnessOpen((open) => !open)}
-                actionLabel="Refresh"
-                onAction={() => setPjmDaModelRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -1341,12 +1291,6 @@ export default function HomePageClient({
             <PowerLmpAdders
               refreshToken={powerLmpAddersRefreshToken}
               onFreshnessChange={setPowerLmpAddersFreshness}
-            />
-          )}
-          {showLocalDevFeatures && activeSection === "pjm-da-model" && (
-            <PjmDaModel
-              refreshToken={pjmDaModelRefreshToken}
-              onFreshnessChange={setPjmDaModelFreshness}
             />
           )}
           {activeSection === "pjm-price-duration-curves" && (
