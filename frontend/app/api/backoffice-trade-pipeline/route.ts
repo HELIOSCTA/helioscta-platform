@@ -1,4 +1,8 @@
-import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
+import {
+  measureRoutePhase,
+  observedJsonRoute,
+  type ObservedRouteResult,
+} from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
   loadPromotedAllHistorySql,
@@ -33,6 +37,16 @@ const LOCAL_DISPLAY_TIME_ZONE = "America/Denver";
 const TITAN_EXPORT_WHERE = "give_in_out_firm_num in ('ADU', '905')";
 const SOURCE_CHECKS =
   "Sources: promoted Clear Street all-history model, clear_street.eod_transactions, and ops.api_fetch_log MUFG telemetry";
+const DATE_SUMMARY_LOOKBACK_DAYS = 370;
+const TELEMETRY_MATCH_VALUES = [
+  "clear_street_eod_transactions",
+  "clear_street_eod_transactions_poll",
+  "clear_street.eod_transactions",
+  "clear_street_sftp",
+  "clear_street_trades_mufg_upload",
+  "mufg_sftp",
+  "mufg_sftp.clear_street_trades",
+];
 
 interface DateSummaryRow {
   sftp_date: string;
@@ -241,13 +255,15 @@ function mapTelemetry(rows: TelemetryRow[]): Map<string, TelemetryByDate> {
 }
 
 async function loadDateSummaries(): Promise<BackOfficeTradePipelineAvailableDate[]> {
-  const rows = await query<DateSummaryRow>(`
+  const rows = await query<DateSummaryRow>(
+    `
     WITH latest_upload_by_date AS (
       SELECT
         trade_date_from_sftp,
         max(sftp_upload_timestamp) AS sftp_upload_timestamp
       FROM clear_street.eod_transactions
       WHERE trade_date_from_sftp ~ '^[0-9]{8}$'
+        AND trade_date_from_sftp >= to_char(current_date - ($1::integer * INTERVAL '1 day'), 'YYYYMMDD')
       GROUP BY trade_date_from_sftp
     ),
     model AS (
@@ -272,7 +288,9 @@ async function loadDateSummaries(): Promise<BackOfficeTradePipelineAvailableDate
     GROUP BY sftp_date
     ORDER BY sftp_date DESC
     LIMIT 160
-  `);
+    `,
+    [DATE_SUMMARY_LOOKBACK_DAYS],
+  );
   return rows.map((row) => ({
     sftpDate: row.sftp_date,
     rawRowCount: toNumber(row.raw_row_count),
@@ -377,7 +395,8 @@ async function loadPreviewRows(
 }
 
 async function loadTelemetry(): Promise<TelemetryRow[]> {
-  return query<TelemetryRow>(`
+  return query<TelemetryRow>(
+    `
     SELECT
       created_at::text AS created_at,
       provider,
@@ -391,18 +410,16 @@ async function loadTelemetry(): Promise<TelemetryRow[]> {
     FROM ops.api_fetch_log
     WHERE created_at >= now() - INTERVAL '180 days'
       AND (
-        lower(coalesce(provider, '')) LIKE '%clear_street%'
-        OR lower(coalesce(pipeline_name, '')) LIKE '%clear_street%'
-        OR lower(coalesce(operation_name, '')) LIKE '%clear_street%'
-        OR lower(coalesce(target_table, '')) LIKE '%clear_street%'
-        OR lower(coalesce(provider, '')) LIKE '%mufg%'
-        OR lower(coalesce(pipeline_name, '')) LIKE '%mufg%'
-        OR lower(coalesce(operation_name, '')) LIKE '%mufg%'
-        OR lower(coalesce(target_table, '')) LIKE '%mufg%'
+        lower(coalesce(provider, '')) = ANY($1::text[])
+        OR lower(coalesce(pipeline_name, '')) = ANY($1::text[])
+        OR lower(coalesce(operation_name, '')) = ANY($1::text[])
+        OR lower(coalesce(target_table, '')) = ANY($1::text[])
       )
     ORDER BY created_at DESC
-    LIMIT 500
-  `);
+    LIMIT 240
+    `,
+    [TELEMETRY_MATCH_VALUES],
+  );
 }
 
 function warningCount(mufg: TelemetryRow | undefined): number {
@@ -586,59 +603,65 @@ export const GET = observedJsonRoute(
       ttlMs: cacheTtlSeconds * 1000,
       staleIfErrorMs: STALE_IF_ERROR_MS,
       forceRefresh,
+      dataCache: true,
+      dataCacheTtlSeconds: cacheTtlSeconds,
       load: async () => {
-    const [availableDates, telemetryRows] = await Promise.all([
-      loadDateSummaries(),
-      loadTelemetry(),
-    ]);
-    const latestDate = availableDates[0]?.sftpDate ?? null;
-    const selectedDate =
-      requestedDate && availableDates.some((date) => date.sftpDate === requestedDate)
-        ? requestedDate
-        : latestDate;
-    const shouldLoadPreview = Boolean(requestedDate);
-    const promotedArtifact =
-      shouldLoadPreview && selectedDate ? await loadPromotedAllHistorySql() : null;
-    const previewRows =
-      selectedDate && promotedArtifact
-        ? await loadPreviewRows(selectedDate, promotedArtifact.sql)
-        : [];
-    const telemetryByDate = mapTelemetry(telemetryRows);
-    const selectedDateMeta = availableDates.find((date) => date.sftpDate === selectedDate);
-    const selectedTelemetry = selectedDate ? telemetryByDate.get(selectedDate) : undefined;
-    const generatedAt = new Date().toISOString();
-    const today = localIsoDate(new Date());
-    const summary = buildSummary({
-      selectedDate,
-      dateMeta: selectedDateMeta,
-      mufg: selectedTelemetry?.mufg,
-    });
-    const payload: BackOfficeTradePipelinePayload = {
-      source: "backoffice-trade-pipeline",
-      generatedAt,
-      selectedDate,
-      latestDate,
-      availableDates,
-      watch: buildWatch({ today, latestDate, generatedAt }),
-      recentMonitoring: buildRecentMonitoring({ latestDate, dates: availableDates, telemetryByDate }),
-      artifacts: buildArtifacts({ dates: availableDates, telemetryByDate }),
-      summary,
-      delivery: buildDelivery({
-        selectedDate,
-        summary,
-        mufg: selectedTelemetry?.mufg,
-      }),
-      previewRows,
-      previewRowCount: summary.titanRows,
-      previewReturnedCount: previewRows.length,
-      sourceChecks: SOURCE_CHECKS,
-    };
+        const [availableDates, telemetryRows] = await Promise.all([
+          measureRoutePhase("date-summaries", loadDateSummaries),
+          measureRoutePhase("telemetry", loadTelemetry),
+        ]);
+        const latestDate = availableDates[0]?.sftpDate ?? null;
+        const selectedDate =
+          requestedDate && availableDates.some((date) => date.sftpDate === requestedDate)
+            ? requestedDate
+            : latestDate;
+        const shouldLoadPreview = Boolean(requestedDate);
+        const promotedArtifact =
+          shouldLoadPreview && selectedDate
+            ? await measureRoutePhase("promoted-sql", loadPromotedAllHistorySql)
+            : null;
+        const previewRows =
+          selectedDate && promotedArtifact
+            ? await measureRoutePhase("preview-rows", () =>
+                loadPreviewRows(selectedDate, promotedArtifact.sql),
+              )
+            : [];
+        const telemetryByDate = mapTelemetry(telemetryRows);
+        const selectedDateMeta = availableDates.find((date) => date.sftpDate === selectedDate);
+        const selectedTelemetry = selectedDate ? telemetryByDate.get(selectedDate) : undefined;
+        const generatedAt = new Date().toISOString();
+        const today = localIsoDate(new Date());
+        const summary = buildSummary({
+          selectedDate,
+          dateMeta: selectedDateMeta,
+          mufg: selectedTelemetry?.mufg,
+        });
+        const payload: BackOfficeTradePipelinePayload = {
+          source: "backoffice-trade-pipeline",
+          generatedAt,
+          selectedDate,
+          latestDate,
+          availableDates,
+          watch: buildWatch({ today, latestDate, generatedAt }),
+          recentMonitoring: buildRecentMonitoring({ latestDate, dates: availableDates, telemetryByDate }),
+          artifacts: buildArtifacts({ dates: availableDates, telemetryByDate }),
+          summary,
+          delivery: buildDelivery({
+            selectedDate,
+            summary,
+            mufg: selectedTelemetry?.mufg,
+          }),
+          previewRows,
+          previewRowCount: summary.titanRows,
+          previewReturnedCount: previewRows.length,
+          sourceChecks: SOURCE_CHECKS,
+        };
 
-    return {
-      payload,
-      rowCount: summary.titanRows,
-      dataAsOf: summary.updatedAt ?? generatedAt,
-    };
+        return {
+          payload,
+          rowCount: summary.titanRows,
+          dataAsOf: summary.updatedAt ?? generatedAt,
+        };
       },
     });
 

@@ -396,6 +396,19 @@ those selected-file signatures back to all matching history. It does not pull
 all history into TypeScript, does not mutate data, and does not create a cache
 table.
 
+## Back Office Monitor Source Contract
+
+The Monitor tab reads email delivery telemetry with `helios_readonly` from
+`ops.email_notification_outbox` and `ops.api_fetch_log`. It does not create a
+monitor table, mutate delivery state, or resend mail. `GET
+/api/backoffice-monitor` returns the latest workflow routing rows plus a
+bounded previous-delivery history. Internal emails are grouped by
+`source_event_key`/`notification_key`; the Clear Street to NAV direct email is
+grouped from Microsoft Graph telemetry. Business dates are derived from emitted
+payload metadata such as `nav_date`, `trade_date`, and `trade_date_from_sftp`,
+with telemetry creation date as the fallback. The UI opens each history row in
+a modal with recipient-level delivery details.
+
 ## Power Sparks Source Contract
 
 The Power Sparks view reads non-option ICE settlement marks with
@@ -918,6 +931,8 @@ Run the endpoint health check after a local build or production deploy:
 npm run check:api -- --base-url=http://localhost:3000 --cache-bust
 npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bust
 npm run check:api -- --filter=NAV --base-url=https://frontend-helioscta.vercel.app
+npm run check:api -- --filter="Back Office" --base-url=https://frontend-helioscta.vercel.app --allow-slow
+npm run check:perf:backoffice -- --url="https://frontend-helioscta.vercel.app/?view=backoffice-nav-daily-position-sheet" --allow-slow
 ```
 
 The checker calls each production API route, parses `Server-Timing`, and fails
@@ -927,6 +942,12 @@ deployments, set `HELIOS_API_HEALTH_BYPASS_TOKEN`; the checker sends it as the
 subset of endpoints. Use `--require-timing` for local checks where
 `Server-Timing` should be present; production Vercel responses may omit that
 header, in which case the checker falls back to total request time.
+
+Use `check:perf:backoffice` for the user-facing loop. It opens a fresh
+Playwright browser context for desktop and mobile samples, waits until the Back
+Office view is actually ready, and reports ready p95 plus the slowest Back
+Office API calls and cache headers. Use `--target-ms=<n>` to tighten the page
+budget and remove `--allow-slow` in CI when the route is expected to pass.
 
 ## Vercel
 

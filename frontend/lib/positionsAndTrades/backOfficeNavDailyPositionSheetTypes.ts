@@ -27,11 +27,48 @@ export interface BackOfficeNavDailyPositionSheetGasRow {
   total: number;
 }
 
+export interface BackOfficeNavDailyPositionSheetPowerCell {
+  quantity: number;
+  rawQuantity: number;
+  multiplier: number | null;
+}
+
+export interface BackOfficeNavDailyPositionSheetPowerColumn {
+  key: string;
+  label: string;
+  subLabel: string;
+}
+
+export interface BackOfficeNavDailyPositionSheetPowerFutureRow {
+  productCode: string;
+  productLabel: string;
+  productRegion: string;
+  regionLabel: string;
+  unitLabel: string;
+  values: Record<string, BackOfficeNavDailyPositionSheetPowerCell>;
+  total: number;
+}
+
+export interface BackOfficeNavDailyPositionSheetPowerFuturesSection {
+  columns: BackOfficeNavDailyPositionSheetPowerColumn[];
+  rows: BackOfficeNavDailyPositionSheetPowerFutureRow[];
+  totals: Record<string, number>;
+  total: number;
+  productCount: number;
+  dateCount: number;
+  unitLabel: string;
+}
+
 export interface BackOfficeNavDailyPositionSheetOptionMonth {
   yyyymm: string;
   label: string;
   netQuantity: number;
   rowCount: number;
+}
+
+export interface BackOfficeNavDailyPositionSheetOptionAccount {
+  account: string;
+  quantity: number;
 }
 
 export interface BackOfficeNavDailyPositionSheetOptionRow {
@@ -46,6 +83,7 @@ export interface BackOfficeNavDailyPositionSheetOptionRow {
   callChange: number | null;
   settlePnl: number;
   topAccount: string | null;
+  accounts: BackOfficeNavDailyPositionSheetOptionAccount[];
 }
 
 export interface BackOfficeNavDailyPositionSheetOptionSummary {
@@ -65,6 +103,10 @@ export interface BackOfficeNavDailyPositionSheetMetric {
   status: "ok" | "watch" | "unavailable";
 }
 
+export interface BackOfficeNavDailyPositionSheetFilters {
+  productRegions: string[];
+}
+
 export interface BackOfficeNavDailyPositionSheetPayload {
   source: "backoffice-nav-daily-position-sheet";
   generatedAt: string;
@@ -77,6 +119,10 @@ export interface BackOfficeNavDailyPositionSheetPayload {
   navUpdatedAt: string | null;
   navUpdatedLabel: string;
   availableDates: BackOfficeNavDailyPositionSheetAvailableDate[];
+  filters: BackOfficeNavDailyPositionSheetFilters;
+  metadata: {
+    productRegions: string[];
+  };
   metrics: BackOfficeNavDailyPositionSheetMetric[];
   gasFutures: {
     productCodes: string[];
@@ -89,6 +135,14 @@ export interface BackOfficeNavDailyPositionSheetPayload {
     rowCount: number;
     excludedFutureRows: number;
   };
+  powerFutures: {
+    monthly: BackOfficeNavDailyPositionSheetPowerFuturesSection;
+    daily: BackOfficeNavDailyPositionSheetPowerFuturesSection;
+    rowCount: number;
+  };
+  powerOptionMonths: BackOfficeNavDailyPositionSheetOptionMonth[];
+  powerOptionSummary: BackOfficeNavDailyPositionSheetOptionSummary;
+  powerOptionRows: BackOfficeNavDailyPositionSheetOptionRow[];
   optionMonths: BackOfficeNavDailyPositionSheetOptionMonth[];
   optionSummary: BackOfficeNavDailyPositionSheetOptionSummary;
   optionRows: BackOfficeNavDailyPositionSheetOptionRow[];

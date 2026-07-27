@@ -1,4 +1,8 @@
-import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
+import {
+  measureRoutePhase,
+  observedJsonRoute,
+  type ObservedRouteResult,
+} from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
   getCachedRouteValue,
@@ -314,96 +318,100 @@ export const GET = observedJsonRoute(
       ttlMs: cacheTtlSeconds * 1000,
       staleIfErrorMs: STALE_IF_ERROR_MS,
       forceRefresh,
+      dataCache: true,
+      dataCacheTtlSeconds: cacheTtlSeconds,
       load: async () => {
-    const availableDates = await loadAvailableDates();
-    const latestDate = availableDates[0]?.navDate ?? null;
-    const selectedDate =
-      requestedDate && availableDates.some((date) => date.navDate === requestedDate)
-        ? requestedDate
-        : latestDate;
-    if (!selectedDate) {
-      return {
-        payload: {
+        const availableDates = await measureRoutePhase("available-dates", loadAvailableDates);
+        const latestDate = availableDates[0]?.navDate ?? null;
+        const selectedDate =
+          requestedDate && availableDates.some((date) => date.navDate === requestedDate)
+            ? requestedDate
+            : latestDate;
+        if (!selectedDate) {
+          return {
+            payload: {
+              source: "backoffice-positions-trades",
+              generatedAt: new Date().toISOString(),
+              selectedDate: null,
+              latestDate: null,
+              asOfLabel: "NAV --",
+              availableDates,
+              accounts: [],
+              filters: {
+                account: "All Accounts",
+                commodity: "both",
+                instrument: "both",
+                mark: "live",
+              },
+              columns: [],
+              rows: [],
+              rowCount: 0,
+              sourceRowCount: 0,
+              liveLabel: "Live (0) | --",
+              sourceChecks:
+                "Sources: nav.positions; Spark nav.position_valuation/nav.processed_files contracts are not promoted locally",
+            } satisfies BackOfficePositionsTradesPayload,
+            rowCount: 0,
+            dataAsOf: null,
+          };
+        }
+
+        const account = url.searchParams.get("account") || "All Accounts";
+        const [accounts, rows] = await Promise.all([
+          measureRoutePhase("accounts", () => loadAccounts(selectedDate)),
+          measureRoutePhase("positions", () =>
+            query<PositionRow>(
+              `
+              SELECT
+                product,
+                product_id_internal,
+                type,
+                month_year,
+                quantity_1,
+                market_value_in_base_currency,
+                exchange_name
+              FROM nav.positions
+              WHERE nav_date = $1::date
+                AND ($2::text = 'All Accounts' OR account = $2::text)
+              `,
+              [selectedDate, account],
+            ),
+          ),
+        ]);
+        const commodity = parseCommodity(url.searchParams.get("commodity"));
+        const instrument = parseInstrument(url.searchParams.get("instrument"));
+        const mark = parseMark(url.searchParams.get("mark"));
+        const matrix = buildMatrix(rows, commodity, instrument, mark);
+        const selectedDateMeta = availableDates.find((date) => date.navDate === selectedDate);
+        const generatedAt = new Date();
+        const payload: BackOfficePositionsTradesPayload = {
           source: "backoffice-positions-trades",
-          generatedAt: new Date().toISOString(),
-          selectedDate: null,
-          latestDate: null,
-          asOfLabel: "NAV --",
+          generatedAt: generatedAt.toISOString(),
+          selectedDate,
+          latestDate,
+          asOfLabel: `NAV ${formatTimestamp(selectedDateMeta?.latestUploadAt ?? null)}`,
           availableDates,
-          accounts: [],
+          accounts,
           filters: {
-            account: "All Accounts",
-            commodity: "both",
-            instrument: "both",
-            mark: "live",
+            account,
+            commodity,
+            instrument,
+            mark,
           },
-          columns: [],
-          rows: [],
-          rowCount: 0,
-          sourceRowCount: 0,
-          liveLabel: "Live (0) | --",
+          columns: matrix.columns,
+          rows: matrix.rows,
+          rowCount: matrix.rows.length,
+          sourceRowCount: rows.length,
+          liveLabel: liveLabel(generatedAt, matrix.rows.length),
           sourceChecks:
             "Sources: nav.positions; Spark nav.position_valuation/nav.processed_files contracts are not promoted locally",
-        } satisfies BackOfficePositionsTradesPayload,
-        rowCount: 0,
-        dataAsOf: null,
-      };
-    }
+        };
 
-    const [accounts, rows] = await Promise.all([
-      loadAccounts(selectedDate),
-      query<PositionRow>(
-        `
-        SELECT
-          product,
-          product_id_internal,
-          type,
-          month_year,
-          quantity_1,
-          market_value_in_base_currency,
-          exchange_name
-        FROM nav.positions
-        WHERE nav_date = $1::date
-          AND ($2::text = 'All Accounts' OR account = $2::text)
-        `,
-        [selectedDate, url.searchParams.get("account") || "All Accounts"],
-      ),
-    ]);
-    const account = url.searchParams.get("account") || "All Accounts";
-    const commodity = parseCommodity(url.searchParams.get("commodity"));
-    const instrument = parseInstrument(url.searchParams.get("instrument"));
-    const mark = parseMark(url.searchParams.get("mark"));
-    const matrix = buildMatrix(rows, commodity, instrument, mark);
-    const selectedDateMeta = availableDates.find((date) => date.navDate === selectedDate);
-    const generatedAt = new Date();
-    const payload: BackOfficePositionsTradesPayload = {
-      source: "backoffice-positions-trades",
-      generatedAt: generatedAt.toISOString(),
-      selectedDate,
-      latestDate,
-      asOfLabel: `NAV ${formatTimestamp(selectedDateMeta?.latestUploadAt ?? null)}`,
-      availableDates,
-      accounts,
-      filters: {
-        account,
-        commodity,
-        instrument,
-        mark,
-      },
-      columns: matrix.columns,
-      rows: matrix.rows,
-      rowCount: matrix.rows.length,
-      sourceRowCount: rows.length,
-      liveLabel: liveLabel(generatedAt, matrix.rows.length),
-      sourceChecks:
-        "Sources: nav.positions; Spark nav.position_valuation/nav.processed_files contracts are not promoted locally",
-    };
-
-    return {
-      payload,
-      rowCount: rows.length,
-      dataAsOf: selectedDateMeta?.latestUploadAt ?? selectedDate,
-    };
+        return {
+          payload,
+          rowCount: rows.length,
+          dataAsOf: selectedDateMeta?.latestUploadAt ?? selectedDate,
+        };
       },
     });
 

@@ -314,7 +314,7 @@ export default function BackOfficePositionsTrades() {
               Position Sheet
             </span>
             <Link
-              href="/?section=nav-positions"
+              href="/?view=backoffice-nav-daily-position-sheet"
               className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-200 transition-colors hover:bg-gray-700 hover:text-white"
             >
               NAV Daily Position Sheet

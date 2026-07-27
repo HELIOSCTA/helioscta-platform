@@ -1,4 +1,8 @@
-import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
+import {
+  measureRoutePhase,
+  observedJsonRoute,
+  type ObservedRouteResult,
+} from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
   getCachedRouteValue,
@@ -37,6 +41,75 @@ interface TelemetrySnapshotRow {
   status: string | null;
   error_message: string | null;
 }
+
+interface TelemetryMatchRow extends TelemetrySnapshotRow {
+  provider: string | null;
+  pipeline_name: string | null;
+  operation_name: string | null;
+  target_table: string | null;
+}
+
+interface OpsSnapshotDefinition {
+  id: string;
+  label: string;
+  scheduleLabel: string;
+  expectedArtifact: string;
+  matchValues: string[];
+}
+
+const OPS_TELEMETRY_LOOKBACK_DAYS = 45;
+const OPS_SNAPSHOT_DEFINITIONS: OpsSnapshotDefinition[] = [
+  {
+    id: "nav_margin_eq",
+    label: "Margin Eq",
+    scheduleLabel: "Daily AM",
+    expectedArtifact: "NAV margin/equity source file",
+    matchValues: ["nav_margin_eq", "nav_margin_equity", "nav_email.nav_margin_eq"],
+  },
+  {
+    id: "nav_risk_matrix",
+    label: "Risk Matrix",
+    scheduleLabel: "Daily AM",
+    expectedArtifact: "NAV risk matrix source file",
+    matchValues: ["nav_risk_matrix", "nav_riskmatrix", "nav_email.nav_risk_matrix"],
+  },
+  {
+    id: "nav_trade_breaks",
+    label: "Trade Breaks",
+    scheduleLabel: "Daily AM",
+    expectedArtifact: "NAV trade break workbook",
+    matchValues: [
+      "nav_trade_breaks_email",
+      "nav_trade_breaks_email_scheduled",
+      "nav_email.nav_trade_breaks",
+    ],
+  },
+  {
+    id: "clear_street_intraday_txns",
+    label: "Intraday Txns",
+    scheduleLabel: "Intraday",
+    expectedArtifact: "Clear Street intraday transactions file",
+    matchValues: [
+      "clear_street_intraday_transactions",
+      "clear_street_intraday_txns",
+      "clear_street.intraday_transactions",
+    ],
+  },
+  {
+    id: "clear_street_economics",
+    label: "Economics",
+    scheduleLabel: "Daily AM",
+    expectedArtifact: "Clear Street economics file",
+    matchValues: ["clear_street_economics", "clear_street.economics"],
+  },
+  {
+    id: "clear_street_positions",
+    label: "Positions",
+    scheduleLabel: "Daily EOD",
+    expectedArtifact: "Clear Street positions file",
+    matchValues: ["clear_street_positions", "clear_street.positions"],
+  },
+];
 
 function responseHeaders(forceRefresh: boolean): HeadersInit {
   return {
@@ -307,10 +380,33 @@ function errorSnapshot({
   };
 }
 
-async function latestOpsSnapshot(
-  patterns: string[],
-): Promise<TelemetrySnapshotRow | null> {
-  const rows = await query<TelemetrySnapshotRow>(
+function normalizedMatchValues(definitions: OpsSnapshotDefinition[]): string[] {
+  return [
+    ...new Set(
+      definitions.flatMap((definition) =>
+        definition.matchValues.map((value) => value.trim().toLowerCase()).filter(Boolean),
+      ),
+    ),
+  ];
+}
+
+function rowMatchesDefinition(row: TelemetryMatchRow, definition: OpsSnapshotDefinition): boolean {
+  const fields = [
+    row.provider,
+    row.pipeline_name,
+    row.operation_name,
+    row.target_table,
+  ].map((value) => value?.trim().toLowerCase() ?? "");
+  return definition.matchValues.some((value) => fields.includes(value.trim().toLowerCase()));
+}
+
+async function loadOpsSnapshotMap(
+  definitions: OpsSnapshotDefinition[] = OPS_SNAPSHOT_DEFINITIONS,
+): Promise<Map<string, TelemetryMatchRow>> {
+  const matchValues = normalizedMatchValues(definitions);
+  if (matchValues.length === 0) return new Map();
+
+  const rows = await query<TelemetryMatchRow>(
     `
     SELECT
       COALESCE(
@@ -323,53 +419,63 @@ async function latestOpsSnapshot(
       created_at::text AS latest_update_at,
       rows_written AS row_count,
       status,
-      error_message
+      error_message,
+      provider,
+      pipeline_name,
+      operation_name,
+      target_table
     FROM ops.api_fetch_log
-    WHERE created_at >= now() - INTERVAL '45 days'
+    WHERE created_at >= now() - ($2::integer * INTERVAL '1 day')
       AND (
-        lower(coalesce(pipeline_name, '')) LIKE ANY($1::text[])
-        OR lower(coalesce(operation_name, '')) LIKE ANY($1::text[])
-        OR lower(coalesce(target_table, '')) LIKE ANY($1::text[])
-        OR lower(coalesce(provider, '')) LIKE ANY($1::text[])
+        lower(coalesce(pipeline_name, '')) = ANY($1::text[])
+        OR lower(coalesce(operation_name, '')) = ANY($1::text[])
+        OR lower(coalesce(target_table, '')) = ANY($1::text[])
+        OR lower(coalesce(provider, '')) = ANY($1::text[])
       )
     ORDER BY created_at DESC
-    LIMIT 1
+    LIMIT 250
     `,
-    [patterns],
+    [matchValues, OPS_TELEMETRY_LOOKBACK_DAYS],
   );
-  return rows[0] ?? null;
+
+  const byDefinition = new Map<string, TelemetryMatchRow>();
+  for (const row of rows) {
+    for (const definition of definitions) {
+      if (!byDefinition.has(definition.id) && rowMatchesDefinition(row, definition)) {
+        byDefinition.set(definition.id, row);
+      }
+    }
+  }
+  return byDefinition;
 }
 
-async function opsSnapshot(
-  id: string,
-  label: string,
-  scheduleLabel: string,
-  patterns: string[],
+function opsSnapshot(
+  definition: OpsSnapshotDefinition,
   today: string,
-  expectedArtifact: string,
-): Promise<BackOfficeHomeSnapshot> {
-  try {
-    const row = await latestOpsSnapshot(patterns);
-    return snapshotFromRow({
-      id,
-      label,
-      scheduleLabel,
-      sourceTable: "ops.api_fetch_log",
-      expectedArtifact,
-      row,
-      today,
-      unavailableDetail: `${label} telemetry was not found in ops.api_fetch_log.`,
-    });
-  } catch (error) {
+  rowsByDefinition: ReadonlyMap<string, TelemetrySnapshotRow>,
+  opsError: unknown,
+): BackOfficeHomeSnapshot {
+  if (opsError) {
     return errorSnapshot({
-      id,
-      label,
-      scheduleLabel,
+      id: definition.id,
+      label: definition.label,
+      scheduleLabel: definition.scheduleLabel,
       sourceTable: "ops.api_fetch_log",
-      expectedArtifact,
-      error,
+      expectedArtifact: definition.expectedArtifact,
+      error: opsError,
     });
   }
+
+  return snapshotFromRow({
+    id: definition.id,
+    label: definition.label,
+    scheduleLabel: definition.scheduleLabel,
+    sourceTable: "ops.api_fetch_log",
+    expectedArtifact: definition.expectedArtifact,
+    row: rowsByDefinition.get(definition.id) ?? null,
+    today,
+    unavailableDetail: `${definition.label} telemetry was not found in ops.api_fetch_log.`,
+  });
 }
 
 async function navPositionsSnapshot(today: string): Promise<BackOfficeHomeSnapshot> {
@@ -525,65 +631,58 @@ function groupFromSnapshots(
   };
 }
 
-async function loadNavGroup(today: string): Promise<BackOfficeHomeGroup> {
-  const [marginEq, posVal, riskMatrix, tradeBreaks] = await Promise.all([
-    opsSnapshot(
-      "nav_margin_eq",
-      "Margin Eq",
-      "Daily AM",
-      ["%nav%margin%", "%margin%equ%", "%margin_eq%"],
-      today,
-      "NAV margin/equity source file",
-    ),
-    navPositionsSnapshot(today),
-    opsSnapshot(
-      "nav_risk_matrix",
-      "Risk Matrix",
-      "Daily AM",
-      ["%nav%risk%", "%risk%matrix%"],
-      today,
-      "NAV risk matrix source file",
-    ),
-    opsSnapshot(
-      "nav_trade_breaks",
-      "Trade Breaks",
-      "Daily AM",
-      ["%nav%trade%break%", "%trade_break%"],
-      today,
-      "NAV trade break workbook",
-    ),
-  ]);
+function opsDefinition(id: string): OpsSnapshotDefinition {
+  const definition = OPS_SNAPSHOT_DEFINITIONS.find((candidate) => candidate.id === id);
+  if (!definition) throw new Error(`Missing Back Office Home ops definition: ${id}`);
+  return definition;
+}
+
+function loadNavGroup({
+  today,
+  opsSnapshots,
+  opsError,
+  posVal,
+}: {
+  today: string;
+  opsSnapshots: ReadonlyMap<string, TelemetrySnapshotRow>;
+  opsError: unknown;
+  posVal: BackOfficeHomeSnapshot;
+}): BackOfficeHomeGroup {
+  const marginEq = opsSnapshot(opsDefinition("nav_margin_eq"), today, opsSnapshots, opsError);
+  const riskMatrix = opsSnapshot(opsDefinition("nav_risk_matrix"), today, opsSnapshots, opsError);
+  const tradeBreaks = opsSnapshot(opsDefinition("nav_trade_breaks"), today, opsSnapshots, opsError);
   return groupFromSnapshots("nav", "NAV", [marginEq, posVal, riskMatrix, tradeBreaks]);
 }
 
-async function loadClearStreetGroup(today: string): Promise<BackOfficeHomeGroup> {
-  const [transactions, intradayTxns, economics, positions] = await Promise.all([
-    clearStreetTransactionsSnapshot(today),
-    opsSnapshot(
-      "clear_street_intraday_txns",
-      "Intraday Txns",
-      "Intraday",
-      ["%clear_street%intraday%", "%clear street%intraday%", "%intraday%txn%"],
-      today,
-      "Clear Street intraday transactions file",
-    ),
-    opsSnapshot(
-      "clear_street_economics",
-      "Economics",
-      "Daily AM",
-      ["%clear_street%economic%", "%clear street%economic%"],
-      today,
-      "Clear Street economics file",
-    ),
-    opsSnapshot(
-      "clear_street_positions",
-      "Positions",
-      "Daily EOD",
-      ["%clear_street%position%", "%clear street%position%"],
-      today,
-      "Clear Street positions file",
-    ),
-  ]);
+function loadClearStreetGroup({
+  today,
+  opsSnapshots,
+  opsError,
+  transactions,
+}: {
+  today: string;
+  opsSnapshots: ReadonlyMap<string, TelemetrySnapshotRow>;
+  opsError: unknown;
+  transactions: BackOfficeHomeSnapshot;
+}): BackOfficeHomeGroup {
+  const intradayTxns = opsSnapshot(
+    opsDefinition("clear_street_intraday_txns"),
+    today,
+    opsSnapshots,
+    opsError,
+  );
+  const economics = opsSnapshot(
+    opsDefinition("clear_street_economics"),
+    today,
+    opsSnapshots,
+    opsError,
+  );
+  const positions = opsSnapshot(
+    opsDefinition("clear_street_positions"),
+    today,
+    opsSnapshots,
+    opsError,
+  );
   return groupFromSnapshots("clear_street", "CLEAR_STREET", [
     transactions,
     intradayTxns,
@@ -617,44 +716,82 @@ export const GET = observedJsonRoute(
       ttlMs: CACHE_TTL_MS,
       staleIfErrorMs: STALE_IF_ERROR_MS,
       forceRefresh,
+      dataCache: true,
+      dataCacheTtlSeconds: CACHE_TTL_SECONDS,
       load: async () => {
-    const now = new Date();
-    const generatedAt = now.toISOString();
-    const today = localIsoDate(now);
-    const groups = await Promise.all([loadNavGroup(today), loadClearStreetGroup(today)]);
-    const readiness = overallReadiness(groups);
-    const exceptionCount = groups.reduce((total, group) => total + group.exceptionCount, 0);
-    const payload: BackOfficeHomePayload = {
-      source: "backoffice-home",
-      generatedAt,
-      localTimeZone: DISPLAY_TIME_ZONE,
-      readiness,
-      readinessLabel: readinessLabel(readiness),
-      summary:
-        readiness === "ready"
-          ? "All tracked NAV and Clear Street files are aligned and ready for trading checks."
-          : `${exceptionCount} source-file check(s) need attention before this can match the Spark back-office readiness page.`,
-      changedSinceLastCheck: "No new source filenames since last refresh.",
-      groups,
-      sourceChecks:
-        "Sources: nav.positions, clear_street.eod_transactions, and ops.api_fetch_log telemetry; processed-file tables are not promoted locally",
-    };
+        const now = new Date();
+        const generatedAt = now.toISOString();
+        const today = localIsoDate(now);
+        const [opsResult, posVal, transactions] = await Promise.all([
+          measureRoutePhase("ops-telemetry", async () => {
+            try {
+              return {
+                snapshots: await loadOpsSnapshotMap(),
+                error: null,
+              };
+            } catch (error) {
+              return {
+                snapshots: new Map<string, TelemetrySnapshotRow>(),
+                error,
+              };
+            }
+          }),
+          measureRoutePhase("nav-positions", () => navPositionsSnapshot(today)),
+          measureRoutePhase("clear-street-transactions", () =>
+            clearStreetTransactionsSnapshot(today),
+          ),
+        ]);
+        const groups = [
+          loadNavGroup({
+            today,
+            opsSnapshots: opsResult.snapshots,
+            opsError: opsResult.error,
+            posVal,
+          }),
+          loadClearStreetGroup({
+            today,
+            opsSnapshots: opsResult.snapshots,
+            opsError: opsResult.error,
+            transactions,
+          }),
+        ];
+        const readiness = overallReadiness(groups);
+        const exceptionCount = groups.reduce((total, group) => total + group.exceptionCount, 0);
+        const payload: BackOfficeHomePayload = {
+          source: "backoffice-home",
+          generatedAt,
+          localTimeZone: DISPLAY_TIME_ZONE,
+          readiness,
+          readinessLabel: readinessLabel(readiness),
+          summary:
+            readiness === "ready"
+              ? "All tracked NAV and Clear Street files are aligned and ready for trading checks."
+              : `${exceptionCount} source-file check(s) need attention before this can match the Spark back-office readiness page.`,
+          changedSinceLastCheck: "No new source filenames since last refresh.",
+          groups,
+          sourceChecks:
+            "Sources: nav.positions, clear_street.eod_transactions, and ops.api_fetch_log telemetry; processed-file tables are not promoted locally",
+        };
 
-    return {
-      payload,
-      headers: responseHeaders(forceRefresh),
-      rowCount: groups.reduce(
-        (total, group) =>
-          total + group.snapshots.reduce((groupTotal, snapshot) => groupTotal + snapshot.rowCount, 0),
-        0,
-      ),
-      dataAsOf:
-        groups
-          .flatMap((group) => group.snapshots.map((snapshot) => snapshot.latestUpdateAt))
-          .filter((value): value is string => Boolean(value))
-          .sort()
-          .at(-1) ?? generatedAt,
-    };
+        return {
+          payload,
+          headers: responseHeaders(forceRefresh),
+          rowCount: groups.reduce(
+            (total, group) =>
+              total +
+              group.snapshots.reduce(
+                (groupTotal, snapshot) => groupTotal + snapshot.rowCount,
+                0,
+              ),
+            0,
+          ),
+          dataAsOf:
+            groups
+              .flatMap((group) => group.snapshots.map((snapshot) => snapshot.latestUpdateAt))
+              .filter((value): value is string => Boolean(value))
+              .sort()
+              .at(-1) ?? generatedAt,
+        };
       },
     });
 

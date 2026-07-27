@@ -23,6 +23,20 @@ const AUTO_REFRESH_MS = 60 * 1000;
 const LOCAL_DISPLAY_TIME_ZONE = "America/Denver";
 const PANEL_CLASS = "rounded-xl border border-gray-800 bg-gray-900/60";
 const TITAN_ACCOUNT_FILTER = ["TITAN"];
+type ValidationVendorCodeSource = "ICE" | "CME" | "BBG";
+type ValidationVendorCodeField =
+  | "vendorIceCode"
+  | "vendorCmeCode"
+  | "vendorBbgCode";
+
+const VALIDATION_VENDOR_CODE_COLUMNS: Array<{
+  source: ValidationVendorCodeSource;
+  field: ValidationVendorCodeField;
+}> = [
+  { source: "ICE", field: "vendorIceCode" },
+  { source: "CME", field: "vendorCmeCode" },
+  { source: "BBG", field: "vendorBbgCode" },
+];
 const VALIDATION_STATUS_CLASS: Record<PositionsHomeStatus, string> = {
   stable: "border-emerald-500/40 bg-emerald-500/10 text-emerald-200",
   not_applicable: "border-gray-700 bg-gray-900 text-gray-400",
@@ -147,16 +161,6 @@ function contractLabel(row: PositionsHomeValidationFailureRow): string {
     .join(" ");
 }
 
-function vendorCodesLabel(row: PositionsHomeValidationFailureRow): string {
-  return [
-    row.vendorIceCode ? `ICE ${row.vendorIceCode}` : null,
-    row.vendorBbgCode ? `BBG ${row.vendorBbgCode}` : null,
-    row.vendorCmeCode ? `CME ${row.vendorCmeCode}` : null,
-  ]
-    .filter(Boolean)
-    .join(" | ");
-}
-
 function sourceLabel(row: PositionsHomeValidationFailureRow): string {
   return [
     row.sourceAccount,
@@ -167,6 +171,40 @@ function sourceLabel(row: PositionsHomeValidationFailureRow): string {
   ]
     .filter(Boolean)
     .join(" | ");
+}
+
+function ValidationVendorCodeCell({
+  source,
+  value,
+}: {
+  source: ValidationVendorCodeSource;
+  value: string | null;
+}) {
+  const cleanValue = value?.trim() || "";
+
+  return (
+    <div
+      title={cleanValue ? `${source} ${cleanValue}` : `${source} code missing`}
+      className={[
+        "inline-flex w-full min-w-[136px] items-center justify-between gap-2 rounded border px-2 py-1.5",
+        cleanValue
+          ? "border-cyan-500/35 bg-cyan-500/10 text-cyan-50 shadow-inner shadow-black/20"
+          : "border-gray-800 bg-gray-950/70 text-gray-600",
+      ].join(" ")}
+    >
+      <span
+        className={[
+          "shrink-0 text-[10px] font-bold uppercase tracking-wide",
+          cleanValue ? "text-cyan-200" : "text-gray-600",
+        ].join(" ")}
+      >
+        {source}
+      </span>
+      <span className="min-w-0 truncate text-right font-mono text-[12px] font-semibold">
+        {cleanValue || "-"}
+      </span>
+    </div>
+  );
 }
 
 interface TradePipelineValidationSummary {
@@ -561,6 +599,7 @@ function ValidationChecksTable({
                   <button
                     type="button"
                     disabled={!selectable}
+                    aria-haspopup="dialog"
                     onClick={(event) => {
                       event.stopPropagation();
                       if (selectable) onCheckSelect(check);
@@ -568,7 +607,7 @@ function ValidationChecksTable({
                     className={[
                       "h-7 rounded border px-2 text-[11px] font-semibold transition-colors",
                       selectable
-                        ? "border-gray-700 bg-gray-800 text-gray-200 hover:bg-gray-700"
+                        ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-100 hover:border-cyan-400/60 hover:bg-cyan-500/15"
                         : "cursor-not-allowed border-gray-800 bg-gray-900 text-gray-600",
                     ].join(" ")}
                   >
@@ -584,113 +623,151 @@ function ValidationChecksTable({
   );
 }
 
-function ValidationFailureRowsPanel({
+function ValidationFailureRowsModal({
   selectedCheck,
   detailsPayload,
   loading,
   error,
   onClose,
 }: {
-  selectedCheck: PositionsHomeValidationCheck | null;
+  selectedCheck: PositionsHomeValidationCheck;
   detailsPayload: PositionsHomeValidationDetailsPayload | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
 }) {
-  if (!selectedCheck) return null;
-
   const rows = detailsPayload?.rows ?? [];
   const totalRows = detailsPayload?.totalRows ?? selectedCheck.failingCount ?? 0;
 
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
   return (
-    <div className="mt-4 border-t border-gray-800 pt-4">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold text-gray-100">
-            {cleanValidationLabel(selectedCheck.label)}
-          </h3>
-          <p className="mt-1 text-xs leading-5 text-gray-500">
-            {selectedCheck.scopeLabel} | showing {rows.length.toLocaleString()} of{" "}
-            {totalRows.toLocaleString()} row(s)
-          </p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="clear-street-quality-rows-title"
+    >
+      <div className="flex h-full max-h-[92vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#0d121b] shadow-2xl shadow-black/50">
+        <div className="flex flex-col gap-3 border-b border-gray-800 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h3
+              id="clear-street-quality-rows-title"
+              className="text-base font-semibold text-gray-100"
+            >
+              {cleanValidationLabel(selectedCheck.label)}
+            </h3>
+            <p className="mt-1 text-xs leading-5 text-gray-400">
+              {selectedCheck.scopeLabel} | showing {rows.length.toLocaleString()} of{" "}
+              {totalRows.toLocaleString()} row(s)
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-8 shrink-0 rounded border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+          >
+            Close
+          </button>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="h-7 rounded border border-gray-700 bg-gray-800 px-2 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-        >
-          Close
-        </button>
-      </div>
 
-      {loading && (
-        <div className="rounded border border-gray-800 bg-[#11141d] p-4 text-sm text-gray-400">
-          Loading validation rows...
-        </div>
-      )}
+        {loading && (
+          <div className="m-4 rounded border border-gray-800 bg-[#11141d] p-4 text-sm text-gray-400">
+            Loading validation rows...
+          </div>
+        )}
 
-      {error && !loading && (
-        <div className="rounded border border-orange-500/30 bg-orange-500/10 p-4 text-sm text-orange-200">
-          Validation row query failed: {error}
-        </div>
-      )}
+        {error && !loading && (
+          <div className="m-4 rounded border border-orange-500/30 bg-orange-500/10 p-4 text-sm text-orange-200">
+            Validation row query failed: {error}
+          </div>
+        )}
 
-      {!loading && !error && rows.length === 0 && (
-        <div className="rounded border border-gray-800 bg-[#11141d] p-4 text-sm text-gray-400">
-          No validation rows returned.
-        </div>
-      )}
+        {!loading && !error && rows.length === 0 && (
+          <div className="m-4 rounded border border-gray-800 bg-[#11141d] p-4 text-sm text-gray-400">
+            No validation rows returned.
+          </div>
+        )}
 
-      {!loading && !error && rows.length > 0 && (
-        <div className="overflow-x-auto rounded border border-gray-800">
-          <table className="min-w-[1120px] w-full border-collapse text-left text-xs">
-            <thead className="bg-gray-950/60 text-[10px] uppercase tracking-wider text-gray-500">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Date</th>
-                <th className="px-3 py-2 font-semibold">Product</th>
-                <th className="px-3 py-2 font-semibold">Contract</th>
-                <th className="px-3 py-2 font-semibold">Route</th>
-                <th className="px-3 py-2 font-semibold">Vendor Codes</th>
-                <th className="px-3 py-2 font-semibold">Reason</th>
-                <th className="px-3 py-2 font-semibold">Source</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {rows.map((row, index) => (
-                <tr key={`${row.sourceRecordKey ?? "row"}:${index}`} className="bg-[#11141d]">
-                  <td className="px-3 py-3 text-gray-300">{compactValue(row.sourceDate)}</td>
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-100">
-                      {compactValue(row.productCode)}
-                    </div>
-                    <div className="mt-1 max-w-[260px] break-words text-gray-500">
-                      {compactValue(row.sourceProduct)}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-gray-300">
-                    {contractLabel(row) || "--"}
-                  </td>
-                  <td className="px-3 py-3">
-                    <div className="font-semibold text-gray-300">
-                      {compactValue(row.routeFamily)}
-                    </div>
-                    <div className="mt-1 text-gray-500">{compactValue(row.routeExchange)}</div>
-                  </td>
-                  <td className="max-w-[260px] break-words px-3 py-3 text-gray-300">
-                    {vendorCodesLabel(row) || "--"}
-                  </td>
-                  <td className="px-3 py-3 font-semibold text-gray-200">
-                    {compactValue(row.failureReason)}
-                  </td>
-                  <td className="max-w-[280px] break-words px-3 py-3 text-gray-500">
-                    {sourceLabel(row) || compactValue(row.sourceContext)}
-                  </td>
+        {!loading && !error && rows.length > 0 && (
+          <div className="min-h-0 flex-1 overflow-auto bg-[#0d1119]">
+            <table className="min-w-[1420px] w-full border-collapse text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-gray-950 text-[10px] uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 font-semibold">Date</th>
+                  <th className="px-3 py-2 font-semibold">Product</th>
+                  <th className="px-3 py-2 font-semibold">Contract</th>
+                  <th className="px-3 py-2 font-semibold">Route</th>
+                  <th className="px-3 py-2 font-semibold">Reason</th>
+                  <th className="px-3 py-2 font-semibold">Source</th>
+                  {VALIDATION_VENDOR_CODE_COLUMNS.map((column) => (
+                    <th
+                      key={column.source}
+                      className="border-l border-cyan-900/50 bg-cyan-950/40 px-3 py-2 font-semibold text-cyan-200"
+                    >
+                      {column.source} Product Code
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+              </thead>
+              <tbody className="divide-y divide-gray-800">
+                {rows.map((row, index) => (
+                  <tr
+                    key={`${row.sourceRecordKey ?? "row"}:${index}`}
+                    className="bg-[#11141d] hover:bg-[#151b28]"
+                  >
+                    <td className="px-3 py-3 text-gray-300">{compactValue(row.sourceDate)}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-gray-100">
+                        {compactValue(row.productCode)}
+                      </div>
+                      <div className="mt-1 max-w-[260px] break-words text-gray-500">
+                        {compactValue(row.sourceProduct)}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 text-gray-300">
+                      {contractLabel(row) || "--"}
+                    </td>
+                    <td className="px-3 py-3">
+                      <div className="font-semibold text-gray-300">
+                        {compactValue(row.routeFamily)}
+                      </div>
+                      <div className="mt-1 text-gray-500">
+                        {[row.routeExchange, row.sourceExchangeName]
+                          .filter(Boolean)
+                          .join(" | ") || "--"}
+                      </div>
+                    </td>
+                    <td className="px-3 py-3 font-semibold text-gray-200">
+                      {compactValue(row.failureReason)}
+                    </td>
+                    <td className="max-w-[280px] break-words px-3 py-3 text-gray-500">
+                      {sourceLabel(row) || compactValue(row.sourceContext)}
+                    </td>
+                    {VALIDATION_VENDOR_CODE_COLUMNS.map((column) => (
+                      <td
+                        key={column.source}
+                        className="border-l border-cyan-900/40 bg-cyan-950/20 px-3 py-3"
+                      >
+                        <ValidationVendorCodeCell
+                          source={column.source}
+                          value={row[column.field]}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -699,12 +776,10 @@ function TradeQualityPanel({
   validationPayload,
   validationLoading,
   validationError,
-  refreshNonce,
 }: {
   validationPayload: PositionsHomeValidationPayload | null;
   validationLoading: boolean;
   validationError: string | null;
-  refreshNonce: number;
 }) {
   const [open, setOpen] = useState(true);
   const [selectedValidationKey, setSelectedValidationKey] = useState<string | null>(null);
@@ -750,7 +825,6 @@ function TradeQualityPanel({
     }
 
     let active = true;
-    const forceRefresh = refreshNonce > 0;
 
     setDetailsLoading(true);
     setDetailsError(null);
@@ -758,10 +832,8 @@ function TradeQualityPanel({
 
     fetchJsonWithCache<PositionsHomeValidationDetailsPayload>({
       key: `backoffice-trade-pipeline:validation-details:${selectedCheck.scope}:${selectedCheck.checkId}`,
-      url: validationDetailsApiUrl(selectedCheck, refreshNonce),
+      url: validationDetailsApiUrl(selectedCheck, 0),
       ttlMs: VALIDATION_API_CACHE_TTL_MS,
-      cacheMode: forceRefresh ? "no-store" : "default",
-      forceRefresh,
       persist: "session",
     })
       .then((nextPayload) => {
@@ -779,7 +851,7 @@ function TradeQualityPanel({
     return () => {
       active = false;
     };
-  }, [refreshNonce, selectedCheck]);
+  }, [selectedCheck]);
 
   return (
     <section className={PANEL_CLASS}>
@@ -813,19 +885,21 @@ function TradeQualityPanel({
             selectedKey={selectedValidationKey}
             onCheckSelect={(check) => setSelectedValidationKey(validationCheckKey(check))}
           />
-          <ValidationFailureRowsPanel
-            selectedCheck={selectedCheck}
-            detailsPayload={detailsPayload}
-            loading={detailsLoading}
-            error={detailsError}
-            onClose={() => setSelectedValidationKey(null)}
-          />
           {validationError && (
             <p className="mt-2 text-xs leading-5 text-orange-200">
               Validation query failed: {validationError}
             </p>
           )}
         </div>
+      )}
+      {selectedCheck && (
+        <ValidationFailureRowsModal
+          selectedCheck={selectedCheck}
+          detailsPayload={detailsPayload}
+          loading={detailsLoading}
+          error={detailsError}
+          onClose={() => setSelectedValidationKey(null)}
+        />
       )}
     </section>
   );
@@ -934,10 +1008,8 @@ export default function BackOfficeTradePipeline() {
         validationPayload={validationPayload}
         validationLoading={validationLoading}
         validationError={validationError}
-        refreshNonce={refreshNonce}
       />
       <ClearStreetTrades
-        refreshToken={refreshNonce}
         initialAccounts={TITAN_ACCOUNT_FILTER}
         title="Clear Street Trades"
         tableTitle="Clear Street Trade Summary"

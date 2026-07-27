@@ -1,4 +1,8 @@
-import { observedJsonRoute, type ObservedRouteResult } from "@/lib/server/apiObservability";
+import {
+  measureRoutePhase,
+  observedJsonRoute,
+  type ObservedRouteResult,
+} from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
   getCachedRouteValue,
@@ -6,6 +10,8 @@ import {
   routeCacheHeaders,
 } from "@/lib/server/routeCache";
 import type {
+  BackOfficeMonitorEmailHistoryDetail,
+  BackOfficeMonitorEmailHistoryRow,
   BackOfficeMonitorEmailStatus,
   BackOfficeMonitorEmailWorkflow,
   BackOfficeMonitorPayload,
@@ -28,6 +34,7 @@ const INTERNAL_EMAIL_DATASETS = [
   "clear_street_eod_transactions",
   "clear_street_trades_mufg_upload",
 ];
+const EMAIL_HISTORY_LIMIT = 40;
 const SOURCE_CHECKS =
   "Sources: ops.email_notification_outbox and ops.api_fetch_log Microsoft Graph telemetry";
 
@@ -167,6 +174,59 @@ function stringArray(value: unknown): string[] {
   return value.map((item) => String(item).trim().toLowerCase()).filter(Boolean);
 }
 
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function numberLabel(value: number): string {
+  return value.toLocaleString();
+}
+
+function cleanText(value: unknown): string | null {
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+function normalizeMonitorDate(value: unknown): string | null {
+  const text = cleanText(value);
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  if (/^\d{8}$/.test(text)) {
+    return `${text.slice(0, 4)}-${text.slice(4, 6)}-${text.slice(6, 8)}`;
+  }
+  const parsed = new Date(text);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null;
+}
+
+function monitorDateFromPayload(payload: Record<string, unknown>, fallback: unknown): string | null {
+  for (const key of [
+    "nav_date",
+    "trade_date",
+    "trade_date_from_sftp",
+    "expected_trade_date",
+    "expected_trade_date_from_sftp",
+    "sftp_date",
+  ]) {
+    const date = normalizeMonitorDate(payload[key]);
+    if (date) return date;
+  }
+  return normalizeMonitorDate(fallback);
+}
+
+function formatDateOnly(value: string | null): string {
+  if (!value) return "--";
+  const [year, month, day] = value.split("-").map((part) => Number.parseInt(part, 10));
+  if (!year || !month || !day) return value;
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function statusFromOutbox(rows: OutboxRow[]): BackOfficeMonitorEmailStatus {
   if (rows.length === 0) return "unknown";
   const statuses = rows.map((row) => row.status.toLowerCase());
@@ -238,19 +298,6 @@ function buildEmailWorkflowConfigs(): EmailWorkflowConfig[] {
       datasets: ["clear_street_eod_transactions"],
     },
     {
-      id: "clear_street_nav",
-      label: "Clear Street to NAV",
-      audience: "External",
-      trigger: "Clear Street source file succeeds",
-      deliveryPath: "Direct Microsoft Graph send",
-      senderEmail: navSender.value,
-      senderSource: navSender.source,
-      recipientSource: "CLEAR_STREET_NAV_EMAIL_RECIPIENTS",
-      recipientEmails: navRecipients,
-      artifact: "Raw Clear Street CSV",
-      directNavEmail: true,
-    },
-    {
       id: "clear_street_mufg",
       label: "Clear Street MUFG Confirmation",
       audience: "Internal",
@@ -262,6 +309,19 @@ function buildEmailWorkflowConfigs(): EmailWorkflowConfig[] {
       recipientEmails: internalRecipients,
       artifact: "Filtered MUFG CSV",
       datasets: ["clear_street_trades_mufg_upload"],
+    },
+    {
+      id: "clear_street_nav",
+      label: "Clear Street to NAV",
+      audience: "External",
+      trigger: "Clear Street source file succeeds",
+      deliveryPath: "Direct Microsoft Graph send",
+      senderEmail: navSender.value,
+      senderSource: navSender.source,
+      recipientSource: "CLEAR_STREET_NAV_EMAIL_RECIPIENTS",
+      recipientEmails: navRecipients,
+      artifact: "Raw Clear Street CSV",
+      directNavEmail: true,
     },
   ];
 }
@@ -299,9 +359,9 @@ async function loadOutboxRows(): Promise<OutboxRow[]> {
   }
 }
 
-async function loadDirectNavEmailRow(): Promise<DirectEmailTelemetryRow | null> {
+async function loadDirectNavEmailRows(): Promise<DirectEmailTelemetryRow[]> {
   try {
-    const rows = await query<DirectEmailTelemetryRow>(
+    return await query<DirectEmailTelemetryRow>(
       `
       SELECT
         created_at,
@@ -318,12 +378,11 @@ async function loadDirectNavEmailRow(): Promise<DirectEmailTelemetryRow | null> 
           OR lower(coalesce(target_table, '')) = 'nav_email.clear_street_trades'
         )
       ORDER BY created_at DESC
-      LIMIT 1
+      LIMIT 120
       `,
     );
-    return rows[0] ?? null;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -418,16 +477,274 @@ function directNavWorkflow(
   };
 }
 
-async function loadEmailWorkflows(): Promise<BackOfficeMonitorEmailWorkflow[]> {
-  const [outboxRows, directNavRow] = await Promise.all([
-    loadOutboxRows(),
-    loadDirectNavEmailRow(),
+function statusFromOutboxRow(row: OutboxRow): BackOfficeMonitorEmailStatus {
+  const status = row.status.toLowerCase();
+  if (status === "dead" || status === "failed") return "failed";
+  if (status === "pending" || status === "sending") return "queued";
+  if (status === "sent") return "sent";
+  return "unknown";
+}
+
+function statusFromDirectTelemetry(row: DirectEmailTelemetryRow): BackOfficeMonitorEmailStatus {
+  const status = row.status?.toLowerCase();
+  if (status === "success") return "sent";
+  if (status === "failure" || status === "failed" || row.error_message || row.error_type) {
+    return "failed";
+  }
+  return "unknown";
+}
+
+function latestIso(values: Array<string | Date | null>): string | null {
+  const latestTime = values.reduce<number | null>((latest, value) => {
+    if (!value) return latest;
+    const parsed = value instanceof Date ? value : new Date(value);
+    const time = parsed.getTime();
+    if (!Number.isFinite(time)) return latest;
+    return latest === null || time > latest ? time : latest;
+  }, null);
+  return latestTime === null ? null : new Date(latestTime).toISOString();
+}
+
+function basename(value: string): string {
+  return value.split(/[\\/]/).pop() || value;
+}
+
+function payloadNumber(
+  payload: Record<string, unknown>,
+  keys: string[],
+): number | null {
+  for (const key of keys) {
+    const value = payload[key];
+    if (value == null || value === "") continue;
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function attachmentCount(payload: Record<string, unknown>): number {
+  return stringList(payload.attachment_paths).length || stringList(payload.attachments).length;
+}
+
+function artifactLabel(config: EmailWorkflowConfig, payload: Record<string, unknown>): string {
+  const filenames = [
+    ...stringList(payload.source_filenames),
+    cleanText(payload.source_filename),
+    cleanText(payload.downloaded_filename),
+    cleanText(payload.filename),
+    cleanText(payload.remote_filename),
+  ].filter((value): value is string => Boolean(value));
+  if (filenames.length > 0) {
+    const unique = [...new Set(filenames.map((value) => basename(value)))];
+    const first = unique.slice(0, 2).join(", ");
+    return unique.length > 2 ? `${first} +${unique.length - 2}` : first;
+  }
+
+  const attachments = stringList(payload.attachment_paths).map(basename);
+  if (attachments.length > 0) {
+    const first = attachments.slice(0, 2).join(", ");
+    return attachments.length > 2 ? `${first} +${attachments.length - 2}` : first;
+  }
+
+  return config.artifact;
+}
+
+function rowCountLabel(payload: Record<string, unknown>, fallback: number | null = null): string {
+  const rows = payloadNumber(payload, [
+    "rows_processed",
+    "rows_uploaded",
+    "rows_exported",
+    "rows_loaded",
+    "emails_sent",
   ]);
-  return buildEmailWorkflowConfigs().map((config) =>
+  if (rows !== null) return numberLabel(rows);
+  return fallback !== null ? numberLabel(fallback) : "--";
+}
+
+function attemptsLabel(row: OutboxRow): string {
+  const attempts = Number(row.attempts ?? 0);
+  const maxAttempts = Number(row.max_attempts ?? 0);
+  if (maxAttempts > 0) return `${numberLabel(attempts)}/${numberLabel(maxAttempts)}`;
+  return numberLabel(attempts);
+}
+
+function buildOutboxHistoryDetail(
+  row: OutboxRow,
+  index: number,
+): BackOfficeMonitorEmailHistoryDetail {
+  const payload = toRecord(row.payload);
+  const activity = activityAt(row);
+  const status = statusFromOutboxRow(row);
+  return {
+    id: `${row.notification_key}:${row.recipient_email}:${index}`,
+    channel: "outbox",
+    recipientEmail: normalizeEmail(row.recipient_email),
+    senderEmail: null,
+    status,
+    statusLabel: statusLabel(status),
+    activityAt: isoTimestamp(activity),
+    activityLabel: formatTimestamp(activity),
+    subject: row.subject,
+    notificationKey: row.notification_key,
+    attemptsLabel: attemptsLabel(row),
+    artifactLabel: artifactLabel(
+      {
+        id: row.dataset ?? "outbox",
+        label: row.dataset ?? "Outbox",
+        audience: "Internal",
+        trigger: "",
+        deliveryPath: "",
+        senderEmail: "",
+        senderSource: "",
+        recipientSource: "",
+        recipientEmails: [],
+        artifact: "Email artifact",
+      },
+      payload,
+    ),
+    error: row.last_error_message ?? row.last_error_type ?? null,
+  };
+}
+
+function outboxHistoryRows(
+  config: EmailWorkflowConfig,
+  rows: OutboxRow[],
+): BackOfficeMonitorEmailHistoryRow[] {
+  const workflowRows = rows.filter((row) => config.datasets?.includes(row.dataset ?? ""));
+  const byEvent = new Map<string, OutboxRow[]>();
+  for (const row of workflowRows) {
+    const key = row.source_event_key ?? row.notification_key;
+    byEvent.set(key, [...(byEvent.get(key) ?? []), row]);
+  }
+
+  return [...byEvent.entries()].map(([eventKey, eventRows]) => {
+    const latest = eventRows[0];
+    const payload = toRecord(latest.payload);
+    const activityAtIso = latestIso(eventRows.map(activityAt));
+    const status = statusFromOutbox(eventRows);
+    const details = eventRows.map(buildOutboxHistoryDetail);
+    const recipients = mergeEmails(
+      eventRows.map((row) => row.recipient_email.trim().toLowerCase()).filter(Boolean),
+    );
+    const attachmentTotal = attachmentCount(payload);
+    const rowCount = rowCountLabel(payload);
+    const artifact = artifactLabel(config, payload);
+    const businessDate = monitorDateFromPayload(payload, activityAtIso ?? latest.created_at);
+
+    return {
+      id: `${config.id}:${eventKey}`,
+      workflowId: config.id,
+      workflowLabel: config.label,
+      audience: config.audience,
+      businessDate,
+      businessDateLabel: formatDateOnly(businessDate),
+      latestActivityAt: activityAtIso,
+      latestActivityLabel: formatTimestamp(activityAtIso),
+      status,
+      statusLabel: statusLabel(status),
+      subject: latest.subject,
+      recipientsLabel: `${numberLabel(recipients.length)} recipient row(s)`,
+      rowCountLabel: rowCount,
+      artifactLabel: artifact,
+      detail: `${numberLabel(eventRows.length)} outbox row(s), ${numberLabel(
+        eventRows.reduce((total, row) => total + Number(row.attempts ?? 0), 0),
+      )} total attempt(s)${attachmentTotal ? `, ${numberLabel(attachmentTotal)} attachment(s)` : ""}.`,
+      details,
+    };
+  });
+}
+
+function directNavHistoryRows(
+  config: EmailWorkflowConfig,
+  rows: DirectEmailTelemetryRow[],
+): BackOfficeMonitorEmailHistoryRow[] {
+  return rows.map((row, index) => {
+    const metadata = toRecord(row.metadata);
+    const status = statusFromDirectTelemetry(row);
+    const recipients = stringArray(metadata.recipient_emails);
+    const sender = normalizeEmail(String(metadata.sender_email ?? "")) ?? config.senderEmail;
+    const subject = typeof metadata.email_subject === "string" ? metadata.email_subject : null;
+    const sourceFilename = cleanText(metadata.source_filename);
+    const businessDate = monitorDateFromPayload(metadata, row.created_at);
+    const activityAtIso = isoTimestamp(row.created_at);
+    const fallbackRows = Number(row.rows_written ?? recipients.length);
+    const details: BackOfficeMonitorEmailHistoryDetail[] =
+      (recipients.length > 0 ? recipients : [null]).map((recipient, recipientIndex) => ({
+        id: `${config.id}:${activityAtIso ?? index}:${recipient ?? "recipient"}:${recipientIndex}`,
+        channel: "direct",
+        recipientEmail: recipient,
+        senderEmail: sender,
+        status,
+        statusLabel: statusLabel(status),
+        activityAt: activityAtIso,
+        activityLabel: formatTimestamp(row.created_at),
+        subject,
+        notificationKey: null,
+        attemptsLabel: status === "sent" ? "1" : "--",
+        artifactLabel: sourceFilename ? basename(sourceFilename) : config.artifact,
+        error: row.error_message ?? row.error_type ?? null,
+      }));
+
+    return {
+      id: `${config.id}:${activityAtIso ?? index}`,
+      workflowId: config.id,
+      workflowLabel: config.label,
+      audience: config.audience,
+      businessDate,
+      businessDateLabel: formatDateOnly(businessDate),
+      latestActivityAt: activityAtIso,
+      latestActivityLabel: formatTimestamp(row.created_at),
+      status,
+      statusLabel: statusLabel(status),
+      subject,
+      recipientsLabel: `${numberLabel(recipients.length || Number(row.rows_written ?? 0))} recipient row(s)`,
+      rowCountLabel: rowCountLabel(metadata, Number.isFinite(fallbackRows) ? fallbackRows : null),
+      artifactLabel: sourceFilename ? basename(sourceFilename) : artifactLabel(config, metadata),
+      detail: `${numberLabel(Number(row.rows_written ?? recipients.length ?? 0))} direct email send(s)${
+        sourceFilename ? `, source file ${basename(sourceFilename)}` : ""
+      }.`,
+      details,
+    };
+  });
+}
+
+function buildEmailHistory(
+  configs: EmailWorkflowConfig[],
+  outboxRows: OutboxRow[],
+  directNavRows: DirectEmailTelemetryRow[],
+): BackOfficeMonitorEmailHistoryRow[] {
+  const rows = configs.flatMap((config) =>
     config.directNavEmail
-      ? directNavWorkflow(config, directNavRow)
-      : outboxWorkflow(config, outboxRows),
+      ? directNavHistoryRows(config, directNavRows)
+      : outboxHistoryRows(config, outboxRows),
   );
+
+  return rows
+    .sort((left, right) => {
+      const leftTime = left.latestActivityAt ? Date.parse(left.latestActivityAt) : 0;
+      const rightTime = right.latestActivityAt ? Date.parse(right.latestActivityAt) : 0;
+      return rightTime - leftTime;
+    })
+    .slice(0, EMAIL_HISTORY_LIMIT);
+}
+
+async function loadEmailMonitorData(): Promise<{
+  emailWorkflows: BackOfficeMonitorEmailWorkflow[];
+  emailHistory: BackOfficeMonitorEmailHistoryRow[];
+}> {
+  const configs = buildEmailWorkflowConfigs();
+  const [outboxRows, directNavRows] = await Promise.all([
+    loadOutboxRows(),
+    loadDirectNavEmailRows(),
+  ]);
+  return {
+    emailWorkflows: configs.map((config) =>
+      config.directNavEmail
+        ? directNavWorkflow(config, directNavRows[0] ?? null)
+        : outboxWorkflow(config, outboxRows),
+    ),
+    emailHistory: buildEmailHistory(configs, outboxRows, directNavRows),
+  };
 }
 
 function latestWorkflowActivity(workflows: BackOfficeMonitorEmailWorkflow[]): string | null {
@@ -459,27 +776,33 @@ export const GET = observedJsonRoute(
       ttlMs: CACHE_TTL_MS,
       staleIfErrorMs: STALE_IF_ERROR_MS,
       forceRefresh,
+      dataCache: true,
+      dataCacheTtlSeconds: CACHE_TTL_SECONDS,
       load: async () => {
-    const generatedAt = new Date().toISOString();
-    const emailWorkflows = await loadEmailWorkflows();
-    const dataAsOf = latestWorkflowActivity(emailWorkflows) ?? generatedAt;
+        const generatedAt = new Date().toISOString();
+        const { emailWorkflows, emailHistory } = await measureRoutePhase(
+          "email-monitor-data",
+          loadEmailMonitorData,
+        );
+        const dataAsOf = latestWorkflowActivity(emailWorkflows) ?? generatedAt;
 
-    const payload: BackOfficeMonitorPayload = {
-      source: "backoffice-monitor",
-      generatedAt,
-      emailWorkflows,
-      sourceChecks: SOURCE_CHECKS,
-    };
+        const payload: BackOfficeMonitorPayload = {
+          source: "backoffice-monitor",
+          generatedAt,
+          emailWorkflows,
+          emailHistory,
+          sourceChecks: SOURCE_CHECKS,
+        };
 
-    return {
-      payload,
-      headers: responseHeaders(forceRefresh),
-      rowCount: emailWorkflows.reduce(
-        (total, workflow) => total + workflow.recipientEmails.length,
-        0,
-      ),
-      dataAsOf,
-    };
+        return {
+          payload,
+          headers: responseHeaders(forceRefresh),
+          rowCount: emailWorkflows.reduce(
+            (total, workflow) => total + workflow.recipientEmails.length,
+            0,
+          ),
+          dataAsOf,
+        };
       },
     });
 
