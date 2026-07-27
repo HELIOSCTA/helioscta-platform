@@ -696,7 +696,9 @@ async function loadMatrixBundle(
   includeOptionDetail: boolean,
 ): Promise<MatrixBundleDbRow> {
   const promotedArtifact = await loadPromotedNavPositionsSql({ requestedDate });
-  const selectedPositionsSql = selectedNavPositionsCte(promotedArtifact.sql);
+  const selectedPositionsSql = selectedNavPositionsCte(promotedArtifact.sql, {
+    latestAlreadySelected: requestedDate === null,
+  });
   const productGroupFilters = optionDetailKind === "power" ? ["power"] : ["gas", "basis"];
   const productRegionFilters = optionDetailKind === "power" ? productRegionFilter.sqlValues : [];
   const args = [

@@ -131,23 +131,34 @@ export async function loadPromotedNavPositionsAllHistorySql(): Promise<PromotedN
   };
 }
 
-export function selectedNavPositionsCte(promotedSql: string): string {
-  return `
-  WITH params AS (
-    SELECT
-      $1::date AS requested_nav_date,
-      $2::text AS fund_filter,
-      NULLIF($3::text, '') AS account_group_filter,
-      NULLIF($4::text, '') AS search_text,
-      $5::text[] AS product_group_filters,
-      $6::text[] AS product_region_filters,
-      $7::text[] AS product_code_filters,
-      NULLIF($8::text, '') AS instrument_type_filter,
-      NULLIF($9::text, '') AS put_call_filter
+export function selectedNavPositionsCte(
+  promotedSql: string,
+  {
+    latestAlreadySelected = false,
+  }: {
+    latestAlreadySelected?: boolean;
+  } = {},
+): string {
+  const latestSelectionSql = latestAlreadySelected
+    ? `
+  filtered_history AS (
+    SELECT modelled_nav_positions.*
+    FROM modelled_nav_positions
+    CROSS JOIN params
+    WHERE (
+        params.fund_filter IS NULL
+        OR modelled_nav_positions.fund_code = params.fund_filter
+      )
+      AND (
+        params.requested_nav_date IS NULL
+        OR modelled_nav_positions.nav_date = params.requested_nav_date
+    )
   ),
-  modelled_nav_positions AS (
-    ${promotedSql}
-  ),
+  latest_positions AS (
+    SELECT filtered_history.*
+    FROM filtered_history
+  ),`
+    : `
   filtered_history AS (
     SELECT modelled_nav_positions.*
     FROM modelled_nav_positions
@@ -180,7 +191,25 @@ export function selectedNavPositionsCte(promotedSql: string): string {
       ON latest.fund_code = filtered_history.fund_code
      AND latest.nav_date = filtered_history.nav_date
      AND latest.sftp_upload_timestamp = filtered_history.sftp_upload_timestamp
+  ),`;
+
+  return `
+  WITH params AS (
+    SELECT
+      $1::date AS requested_nav_date,
+      $2::text AS fund_filter,
+      NULLIF($3::text, '') AS account_group_filter,
+      NULLIF($4::text, '') AS search_text,
+      $5::text[] AS product_group_filters,
+      $6::text[] AS product_region_filters,
+      $7::text[] AS product_code_filters,
+      NULLIF($8::text, '') AS instrument_type_filter,
+      NULLIF($9::text, '') AS put_call_filter
   ),
+  modelled_nav_positions AS (
+    ${promotedSql}
+  ),
+  ${latestSelectionSql}
   filter_source_positions AS MATERIALIZED (
     SELECT
       latest_positions.fund_code,
