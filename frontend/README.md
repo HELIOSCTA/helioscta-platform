@@ -41,6 +41,23 @@ AZURE_SQL_REQUEST_TIMEOUT_MS=28000
 The frontend validates `AZURE_SQL_DB_NAME=GenscapeDataFeed` before connecting.
 Do not expose Azure SQL credentials through `NEXT_PUBLIC_*` variables.
 
+The local DEV-only GTN Balance page reads directly from Criterion Snowflake.
+Set these server-only variables for local development:
+
+```text
+CRITERION_SNOWFLAKE_ACCOUNT=
+CRITERION_SNOWFLAKE_USER=
+CRITERION_SNOWFLAKE_PASSWORD=
+CRITERION_SNOWFLAKE_WAREHOUSE=
+CRITERION_SNOWFLAKE_DATABASE=PRODUCTION
+CRITERION_SNOWFLAKE_ROLE=
+CRITERION_SNOWFLAKE_SCHEMA=
+CRITERION_SNOWFLAKE_QUERY_TIMEOUT_MS=30000
+```
+
+Do not expose Criterion Snowflake credentials through `NEXT_PUBLIC_*`
+variables.
+
 ## Local Development
 
 ```bash
@@ -83,6 +100,7 @@ GET /api/map/locations?pipeline=TRANSCO&limit=25
 GET /api/genscape-noms/filters?pipelines=TRANSCO
 GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=50&includeCount=false
 GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=200
+GET /api/criterion/gtn-pipeline-balance?date=YYYY-MM-DD&refresh=1
 GET /api/nav-positions?productGroup=Power&productRegion=PJM
 GET /api/nav-positions/drilldown?productGroup=Power&productRegion=PJM&limit=100&drilldown=<json>
 GET /api/clear-street-trades?limit=500
@@ -916,6 +934,43 @@ fallback. The writer user must be `helios_admin` and the database must be
 RT selections can still be handed to Noms through session storage or direct
 `locationRoleId` URL params for ad hoc work.
 
+## Criterion GTN Balance Source Contract
+
+The GTN Balance page (`/?section=gtn-balance`) is local-dev only while the
+Criterion workflow is staged. It is hidden from Vercel navigation, direct
+section routing is disabled on Vercel, and
+`GET /api/criterion/gtn-pipeline-balance` returns 404 outside local Next.js
+runs.
+
+Source system: Criterion Snowflake `PRODUCTION.PIPELINES`.
+
+Primary source tables:
+
+- `PIPELINES.METADATA`
+- `PIPELINES.NOMINATION_POINTS`
+- `PIPELINES.NOMINATION_SEGMENTS`
+- `PIPELINES.MAX_POINT_FLOW` for verification context
+
+Required pipeline key: `TSP_SHORT = '079'`.
+
+The API accepts bounded params `date=YYYY-MM-DD` and `refresh=1`. Without a
+date, it selects the latest complete GTN gas day with Intraday 3
+(`CYCLE_ID = 5`) coverage for the checked-in required plant and segment
+mappings. With an explicit date, it selects the latest available nomination
+cycle for that date so current-day Evening-cycle data can be inspected.
+
+The response returns `reportDate`, `latestAvailableDate`, `dataAsOf`,
+`sourceContract`, `flowSummary`, `componentBalance`, `plantNoms`, `capacity`,
+and `diagnostics`. Runtime SQL and auditable point/category mappings live under
+`frontend/sql/criterion-gtn-pipeline-balance/runtime`. Verification SQL lives
+under `frontend/sql/criterion-gtn-pipeline-balance/verification` and covers
+point inventory, required mapping uniqueness, plant mapping checks, date
+completeness, and corridor reconciliation.
+
+Plant MW values are nomination-derived estimates using the exposed heat-rate
+assumption in the plant SQL mapping. They are not metered generation values or
+Research Viewer modeled demand splits.
+
 The bounded API routes are:
 
 ```text
@@ -926,6 +981,7 @@ GET /api/map/locations?locationRoleId=1,2&limit=1..5000
 GET /api/genscape-noms/filters?pipelines=<short_name>
 GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..5000&includeCount=false
 GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..3000
+GET /api/criterion/gtn-pipeline-balance?date=YYYY-MM-DD&refresh=1
 ```
 
 Because `natgas.nominations` is a large fact table, Genscape fact routes require

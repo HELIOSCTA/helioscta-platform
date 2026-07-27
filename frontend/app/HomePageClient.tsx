@@ -11,6 +11,7 @@ import GasDailyPrices from "@/components/gas/GasDailyPrices";
 import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
+import GtnPipelineBalance from "@/components/gas/GtnPipelineBalance";
 import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
@@ -316,6 +317,9 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "noms") {
     return "noms";
   }
+  if (showLocalDevFeatures && value === "gtn-balance") {
+    return "gtn-balance";
+  }
   if (showLocalDevFeatures && value === "ice-pmi-curve") {
     return "ice-pmi-curve";
   }
@@ -519,8 +523,8 @@ export default function HomePageClient({
     );
   const [genscapeNomsFreshness, setGenscapeNomsFreshness] =
     useState<GenscapeNomsFreshnessSummary>(DEFAULT_GENSCAPE_NOMS_FRESHNESS);
-
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
+  const initialGtnBalanceDate = parseDateParam(searchParams.get("date"));
   const initialPjmDaLmpIso = parsePjmLmpIsoParam(searchParams.get("iso"));
   const initialPjmDaLmpView = parsePjmLmpViewParam(searchParams.get("view"));
   const initialPjmDaLmpProduct = parsePjmLmpProductParam(searchParams.get("product"));
@@ -703,6 +707,14 @@ export default function HomePageClient({
         footer: "Noms | Source: GenscapeDataFeed.natgas nominations / Azure SQL",
       };
     }
+    if (showLocalDevFeatures && activeSection === "gtn-balance") {
+      return {
+        title: "GTN Balance",
+        subtitle:
+          "Date-addressable GTN pipeline balance from Criterion nominations with auditable point mappings.",
+        footer: "GTN Balance | Source: Criterion Snowflake PRODUCTION.PIPELINES",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {
       return {
         title: "ICE PMI",
@@ -829,12 +841,15 @@ export default function HomePageClient({
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIceSettlements = activeSection === "ice-settlements";
+  const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
     activeSection === "gas-prices";
   const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
+  const isGtnResearchViewerReplica =
+    showLocalDevFeatures && activeSection === "gtn-balance";
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
@@ -845,7 +860,18 @@ export default function HomePageClient({
       />
 
       <div className="min-w-0 flex-1 overflow-auto">
-        <main className={`w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""}`}>
+        <main
+          className={
+            isGtnResearchViewerReplica
+              ? "h-screen w-full overflow-hidden bg-white p-0"
+              : isNavDailyPositionSheet
+              ? "w-full max-w-none px-5 py-8 sm:px-12"
+              : `w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${
+                  isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""
+                }`
+          }
+        >
+          {!isGtnResearchViewerReplica && (
           <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-start md:justify-between md:gap-6">
             <div className="min-w-0 max-w-full">
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
@@ -1296,6 +1322,7 @@ export default function HomePageClient({
               />
             )}
           </div>
+          )}
 
           {activeSection === "pjm-da-lmps" && (
             <PjmDaLmps
@@ -1399,6 +1426,9 @@ export default function HomePageClient({
               onFreshnessChange={setGenscapeNomsFreshness}
             />
           )}
+          {showLocalDevFeatures && activeSection === "gtn-balance" && (
+            <GtnPipelineBalance initialDate={initialGtnBalanceDate} />
+          )}
           {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (
             <IcePmiCurveTable />
           )}
@@ -1460,7 +1490,9 @@ export default function HomePageClient({
               onFreshnessChange={setPjmWeatherFreshness}
             />
           )}
-          <p className="mt-6 text-center text-xs text-gray-600">{meta.footer}</p>
+          {!isGtnResearchViewerReplica && (
+            <p className="mt-6 text-center text-xs text-gray-600">{meta.footer}</p>
+          )}
         </main>
       </div>
     </div>

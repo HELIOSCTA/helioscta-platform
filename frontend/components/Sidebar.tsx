@@ -21,6 +21,7 @@ export type ActiveSection =
   | "spark-spreads"
   | "map"
   | "noms"
+  | "gtn-balance"
   | "ice-pmi-curve"
   | "gas-prices"
   | "pjm-price-duration-curves"
@@ -114,6 +115,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "pjm-price-view", label: "Price View" },
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
+        { id: "gtn-balance", label: "GTN Balance" },
         { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
         { id: "pjm-generation", label: "Generation" },
