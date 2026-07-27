@@ -24,7 +24,6 @@ export type ActiveSection =
   | "ice-pmi-curve"
   | "gas-prices"
   | "pjm-price-duration-curves"
-  | "pjm-price-view"
   | "pjm-price-distributions"
   | "pjm-generation"
   | "pjm-tightness-lookback"
@@ -110,7 +109,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       key: "dev",
       label: "DEV",
       navItems: [
-        { id: "pjm-price-view", label: "Price View" },
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },

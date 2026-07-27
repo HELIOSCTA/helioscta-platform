@@ -136,7 +136,6 @@ GET /api/gas-daily-prices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
 GET /api/pjm-tightness-lookback?date=YYYY-MM-DD
-GET /api/pjm-price-view?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/weather/wsi-forecast-map?region=PJM&date=YYYY-MM-DD&forecastRun=primary
@@ -551,60 +550,6 @@ Hub RT price. Missing secondary sources are exposed as nulls and coverage
 counts rather than treated as route failures. The page appears in the local
 `DEV` sidebar section at `/?section=pjm-tightness-lookback`; Vercel builds hide
 the page and return `404` from the API route.
-
-## Local DEV PJM Price View Source Contract
-
-The Price View DEV page is a source-by-hour matrix for inspecting one PJM
-operating date before building a fuller dispatch-curve workflow. It reads with
-`helios_readonly` from `pjm.hrl_load_metered`, `pjm.hrl_load_prelim`,
-`pjm.gen_by_fuel`, `pjm.rt_hrl_lmps`, and `ice_python.settlements`; it does not
-create a database model, frontend cache table, migration, or new credential
-requirement.
-
-The default route `GET /api/pjm-price-view` accepts optional
-`date=YYYY-MM-DD` and defaults to the latest complete date in the recent source
-window. It returns one matrix row each for selected RTO load, `gen_by_fuel`
-wind, `gen_by_fuel` solar, derived net load, verified Western Hub RT LMP, Tetco
-M3 gas, and derived heat rate. Tetco M3 gas uses ICE physical next-day
-`XZR D1-IPG` WVAP Close from `ice_python.settlements`, aligned to hourly PJM
-timestamps by UTC so the 09:00 CT gas day rolls at 10:00 Eastern. Heat rate is
-`Western Hub RT LMP / Tetco M3 WVAP Close`. The UI shows `Metric`, optional
-`Data Source`, then `HE1` through `HE24`; verification status and a short
-source note are embedded in the toggleable `Data Source` cell.
-
-The same payload returns selected-day chart points for hourly net load versus
-hourly heat rate and Western Hub RT price. The chart defaults to heat rate and
-can toggle back to RT price. Historical binned dispatch curves are a follow-on
-slice once the single-date data shape is validated.
-
-The same endpoint also supports
-`GET /api/pjm-price-view?view=da-net-load-scatter&lookbackDays=30&hub=WESTERN%20HUB`
-for the `30D DA Scatter` tab. `lookbackDays` is bounded from 7 to 90 and means
-the latest complete source dates to return. The scatter reads current
-`pjm.da_hrl_lmps` DA total LMP rows for the selected hub, selected RTO load with
-the same metered/prelim fallback, `pjm.gen_by_fuel` wind and solar, and ICE
-physical Tetco M3 `XZR D1-IPG` gas from `ice_python.settlements`. It returns
-one point per complete hourly EPT interval with date, HE, DA LMP, load GW, wind
-GW, solar GW, derived net load GW, Tetco M3 gas, and derived DA heat rate. The
-UI colors points by hour group: overnight HE1-7 and HE24, morning HE8-11,
-afternoon HE12-17, and evening HE18-23.
-
-The DA scatter also accepts
-`dateMode=month-years&months=6,7&years=2024,2025,2026` to inspect one month or
-a selected collection of months across selected calendar years. In
-`month-years` mode, `lookbackDays` is retained in the payload for control
-state, but the SQL window is driven by the selected years and filtered to the
-selected months. Additional scatter filters are applied client-side for day
-type, hour group, individual HE, X-axis metric, Y-axis metric, and numeric X/Y
-ranges.
-
-Load uses latest `pjm.hrl_load_metered` direct `RTO` rows when all 24 hourly
-rows exist for the operating date. When metered RTO is unavailable, the route
-falls back to summed promoted preliminary load component areas `AEP`, `AP`,
-`ATSI`, `DAY`, `DEOK`, `DOM`, `DUQ`, `EKPC`, `MIDATL`, and `NI`. Net load is
-derived as `load - wind - solar`. The page appears in the local `DEV` sidebar
-section at `/?section=pjm-price-view`; Vercel builds hide the page and return
-`404` from the API route.
 
 ## PJM Daily Load Growth Source Contract
 

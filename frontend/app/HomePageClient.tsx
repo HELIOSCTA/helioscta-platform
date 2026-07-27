@@ -28,7 +28,6 @@ import NavPositions, {
 import PjmPriceDistributions, {
   type PjmPriceDistributionsFreshnessSummary,
 } from "@/components/pjm/PjmPriceDistributions";
-import PjmPriceView from "@/components/pjm/PjmPriceView";
 import PjmDaLmps, {
   type ComponentSelection as PjmLmpComponentSelection,
   type LmpProduct as PjmLmpProduct,
@@ -323,7 +322,6 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
-  if (showLocalDevFeatures && value === "pjm-price-view") return "pjm-price-view";
   if (
     showLocalDevFeatures &&
     (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter")
@@ -719,15 +717,6 @@ export default function HomePageClient({
           "PJM fuel mix, daily generation capacity, and scheduled generation economic max by operating hour.",
         footer:
           "Generation | Source: PJM Data Miner gen_by_fuel, day_gen_capacity, and rt_and_self_ecomax / Azure PostgreSQL",
-      };
-    }
-    if (showLocalDevFeatures && activeSection === "pjm-price-view") {
-      return {
-        title: "Price View",
-        subtitle:
-          "Hourly PJM load, wind, solar, net load, Western Hub RT prices, Tetco M3 gas, and heat rate.",
-        footer:
-          "Price View | Source: PJM load/generation/RT LMPs + ICE Tetco M3 WVAP / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "pjm-tightness-lookback") {
@@ -1298,9 +1287,6 @@ export default function HomePageClient({
               refreshToken={pjmPriceDurationRefreshToken}
               onFreshnessChange={setPjmPriceDurationFreshness}
             />
-          )}
-          {showLocalDevFeatures && activeSection === "pjm-price-view" && (
-            <PjmPriceView />
           )}
           {activeSection === "pjm-historical-settlements" && (
             <PjmHistoricalSettlements
