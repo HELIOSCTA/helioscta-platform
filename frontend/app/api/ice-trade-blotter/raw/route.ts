@@ -1,5 +1,13 @@
-import { observedJsonRoute } from "@/lib/server/apiObservability";
+import {
+  observedJsonRoute,
+  type ObservedRouteResult,
+} from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import {
+  getCachedRouteValue,
+  normalizedSearchCacheKey,
+  routeCacheHeaders,
+} from "@/lib/server/routeCache";
 import type {
   IceTradeBlotterAggregateRow,
   IceTradeBlotterAvailableDate,
@@ -19,6 +27,8 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+const CACHE_TTL_SECONDS = 5 * 60;
+const STALE_IF_ERROR_MS = 30 * 60 * 1000;
 const CACHE_HEADER = "private, no-store";
 const NO_STORE_HEADER = "no-store";
 const ROUTE_CONFIG = {
@@ -478,83 +488,100 @@ function bundleSql(): string {
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const filters = parseRawIceTradeBlotterFilters(searchParams);
-  const cacheHeaders = responseCacheHeaders();
+  const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
+    namespace: "/api/ice-trade-blotter/raw",
+    key: normalizedSearchCacheKey(searchParams),
+    ttlMs: CACHE_TTL_SECONDS * 1000,
+    staleIfErrorMs: STALE_IF_ERROR_MS,
+    forceRefresh: filters.forceRefresh,
+    dataCache: true,
+    dataCacheTtlSeconds: CACHE_TTL_SECONDS,
+    load: async () => {
+      const [availableRows, bundleRows] = await Promise.all([
+        query<AvailableDateDbRow>(availableDatesSql()),
+        query<BundleDbRow>(bundleSql(), baseArgs(filters)),
+      ]);
 
-  const [availableRows, bundleRows] = await Promise.all([
-    query<AvailableDateDbRow>(availableDatesSql()),
-    query<BundleDbRow>(bundleSql(), baseArgs(filters)),
-  ]);
+      const availableDates = availableRows.map(mapAvailableDate);
+      const bundle = bundleRows[0] ?? {
+        snapshot: {},
+        filters: {},
+        summary: {},
+        product_summary: [],
+      };
+      const snapshot = objectRecord(bundle.snapshot) as unknown as SnapshotDbRow;
+      const filterRow = objectRecord(bundle.filters) as unknown as FilterDbRow;
+      const summary = mapSummary(objectRecord(bundle.summary) as unknown as SummaryDbRow);
+      const productRows = rowArray<AggregateDbRow>(bundle.product_summary);
+      const selectedDate =
+        snapshot.selected_trade_date ?? filters.requestedDate ?? availableDates[0]?.tradeDate ?? null;
+      const latestDate = snapshot.latest_trade_date ?? availableDates[0]?.tradeDate ?? null;
+      const asOf = summary.latestLoadedAt ?? summary.latestUpdatedAt ?? null;
 
-  const availableDates = availableRows.map(mapAvailableDate);
-  const bundle = bundleRows[0] ?? {
-    snapshot: {},
-    filters: {},
-    summary: {},
-    product_summary: [],
-  };
-  const snapshot = objectRecord(bundle.snapshot) as unknown as SnapshotDbRow;
-  const filterRow = objectRecord(bundle.filters) as unknown as FilterDbRow;
-  const summary = mapSummary(objectRecord(bundle.summary) as unknown as SummaryDbRow);
-  const productRows = rowArray<AggregateDbRow>(bundle.product_summary);
-  const selectedDate =
-    snapshot.selected_trade_date ?? filters.requestedDate ?? availableDates[0]?.tradeDate ?? null;
-  const latestDate = snapshot.latest_trade_date ?? availableDates[0]?.tradeDate ?? null;
-  const asOf = summary.latestLoadedAt ?? summary.latestUpdatedAt ?? null;
+      const payload: IceTradeBlotterPayload = {
+        source: `postgres:${RAW_ICE_TRADE_BLOTTER_SOURCE_TABLE}`,
+        selectedDate,
+        latestDate,
+        requestedDate: filters.requestedDate,
+        asOf,
+        latestLoadedAt: summary.latestLoadedAt,
+        latestReportDate: summary.latestReportDate,
+        availableDates,
+        filters: appliedFilters(filters),
+        summary,
+        productSummary: productRows.map(mapAggregateRow),
+        metadata: {
+          sides: stringArray(filterRow.sides),
+          traders: stringArray(filterRow.traders),
+          clearingAccounts: stringArray(filterRow.clearing_accounts),
+          customerAccounts: stringArray(filterRow.customer_accounts),
+          clearingFirms: stringArray(filterRow.clearing_firms),
+          products: stringArray(filterRow.products),
+          hubs: stringArray(filterRow.hubs),
+          ccs: stringArray(filterRow.ccs),
+          contracts: stringArray(filterRow.contracts),
+          options: stringArray(filterRow.options),
+          dealSections: stringArray(filterRow.deal_sections),
+          sources: stringArray(filterRow.sources),
+          userIds: stringArray(filterRow.user_ids),
+          aggregationGrain: [
+            "product",
+            "hub",
+            "contract",
+            "begin_date",
+            "end_date",
+            "option",
+            "strike",
+            "strike_2",
+            "cc",
+            "strip",
+            "deal_section",
+          ],
+          productSummaryLimit: RAW_ICE_TRADE_BLOTTER_AGGREGATE_LIMIT,
+          sourceTable: RAW_ICE_TRADE_BLOTTER_SOURCE_TABLE,
+          fileManifestTable: RAW_ICE_TRADE_BLOTTER_FILE_MANIFEST_TABLE,
+          units: {
+            quantity: "ICE Deal Report total_quantity",
+            price: "ICE Deal Report price",
+          },
+        },
+      };
 
-  const payload: IceTradeBlotterPayload = {
-    source: `postgres:${RAW_ICE_TRADE_BLOTTER_SOURCE_TABLE}`,
-    selectedDate,
-    latestDate,
-    requestedDate: filters.requestedDate,
-    asOf,
-    latestLoadedAt: summary.latestLoadedAt,
-    latestReportDate: summary.latestReportDate,
-    availableDates,
-    filters: appliedFilters(filters),
-    summary,
-    productSummary: productRows.map(mapAggregateRow),
-    metadata: {
-      sides: stringArray(filterRow.sides),
-      traders: stringArray(filterRow.traders),
-      clearingAccounts: stringArray(filterRow.clearing_accounts),
-      customerAccounts: stringArray(filterRow.customer_accounts),
-      clearingFirms: stringArray(filterRow.clearing_firms),
-      products: stringArray(filterRow.products),
-      hubs: stringArray(filterRow.hubs),
-      ccs: stringArray(filterRow.ccs),
-      contracts: stringArray(filterRow.contracts),
-      options: stringArray(filterRow.options),
-      dealSections: stringArray(filterRow.deal_sections),
-      sources: stringArray(filterRow.sources),
-      userIds: stringArray(filterRow.user_ids),
-      aggregationGrain: [
-        "product",
-        "hub",
-        "contract",
-        "begin_date",
-        "end_date",
-        "option",
-        "strike",
-        "strike_2",
-        "cc",
-        "strip",
-        "deal_section",
-      ],
-      productSummaryLimit: RAW_ICE_TRADE_BLOTTER_AGGREGATE_LIMIT,
-      sourceTable: RAW_ICE_TRADE_BLOTTER_SOURCE_TABLE,
-      fileManifestTable: RAW_ICE_TRADE_BLOTTER_FILE_MANIFEST_TABLE,
-      units: {
-        quantity: "ICE Deal Report total_quantity",
-        price: "ICE Deal Report price",
-      },
+      return {
+        payload,
+        headers: responseCacheHeaders(),
+        rowCount: summary.rowCount,
+        dataAsOf: asOf,
+      };
     },
-  };
+  });
 
   return {
-    payload,
-    headers: cacheHeaders,
-    rowCount: summary.rowCount,
-    dataAsOf: asOf,
+    ...value,
+    headers: {
+      ...responseCacheHeaders(),
+      ...routeCacheHeaders(cacheStatus),
+    },
   };
 });
 
