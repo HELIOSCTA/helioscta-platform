@@ -1,5 +1,6 @@
 import { query } from "@/lib/server/db";
 import {
+  dateScopedPromotedSql,
   loadPromotedAllHistorySql,
   selectedClearStreetTradesCte,
 } from "@/lib/server/clearStreetTradesSql";
@@ -162,7 +163,7 @@ async function loadRows(businessDate: string): Promise<CsvRow[]> {
   const promotedArtifact = await loadPromotedAllHistorySql();
   return query<CsvRow>(
     `
-    ${selectedClearStreetTradesCte(promotedArtifact.sql)}
+    ${selectedClearStreetTradesCte(dateScopedPromotedSql(promotedArtifact.sql))}
     SELECT
       ${sourceSelectList()},
       'New'::text AS trade_status,

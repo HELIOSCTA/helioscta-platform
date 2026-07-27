@@ -34,6 +34,7 @@ export const CLEAR_STREET_TRADES_DEFAULT_RAW_LIMIT = 100;
 export const CLEAR_STREET_TRADES_MAX_RAW_LIMIT = 2_000;
 export const CLEAR_STREET_TRADES_BASE_PARAM_COUNT = 7;
 
+const CLEAR_STREET_SOURCE_TABLE_SELECT = `select * from "helios_prod"."clear_street"."eod_transactions"`;
 const TEXT_FILTER_PATTERN = /^[\w .:/()+,&'#\[\]@%~-]{1,160}$/;
 const REVIEW_STATUSES: ClearStreetReviewStatus[] = [
   "matched",
@@ -276,6 +277,19 @@ export async function loadPromotedAllHistorySql(): Promise<PromotedClearStreetTr
     referenceSchema: manifest.referenceSchema,
     referenceTables: manifest.referenceTables,
   });
+}
+
+export function dateScopedPromotedSql(promotedSql: string): string {
+  const occurrences = promotedSql.split(CLEAR_STREET_SOURCE_TABLE_SELECT).length - 1;
+  if (occurrences !== 1) {
+    throw new Error("Clear Street promoted SQL source table projection was not recognized.");
+  }
+
+  return promotedSql.replace(
+    CLEAR_STREET_SOURCE_TABLE_SELECT,
+    `${CLEAR_STREET_SOURCE_TABLE_SELECT}
+    where trade_date_from_sftp = to_char($1::date, 'YYYYMMDD')`,
+  );
 }
 
 export function parseLimit(value: string | null, defaultLimit = CLEAR_STREET_TRADES_DEFAULT_RAW_LIMIT): number {
@@ -685,13 +699,21 @@ export function selectedClearStreetTradesCte(promotedSql: string): string {
 
 export function availableDatesSql(): string {
   return `
-    WITH latest_upload_by_date AS (
-      SELECT
-        trade_date_from_sftp,
-        max(sftp_upload_timestamp) AS sftp_upload_timestamp
+    WITH recent_dates AS (
+      SELECT DISTINCT trade_date_from_sftp
       FROM ${CLEAR_STREET_TRADES_SOURCE_TABLE}
       WHERE trade_date_from_sftp ~ '^[0-9]{8}$'
-      GROUP BY trade_date_from_sftp
+      ORDER BY trade_date_from_sftp DESC
+      LIMIT 90
+    ),
+    latest_upload_by_date AS (
+      SELECT DISTINCT ON (source_rows.trade_date_from_sftp)
+        source_rows.trade_date_from_sftp,
+        source_rows.sftp_upload_timestamp
+      FROM ${CLEAR_STREET_TRADES_SOURCE_TABLE} AS source_rows
+      INNER JOIN recent_dates
+        ON recent_dates.trade_date_from_sftp = source_rows.trade_date_from_sftp
+      ORDER BY source_rows.trade_date_from_sftp DESC, source_rows.sftp_upload_timestamp DESC
     )
     SELECT
       to_char(to_date(source_rows.trade_date_from_sftp, 'YYYYMMDD'), 'YYYY-MM-DD') AS sftp_date,
@@ -703,7 +725,6 @@ export function availableDatesSql(): string {
     INNER JOIN latest_upload_by_date
       ON latest_upload_by_date.trade_date_from_sftp = source_rows.trade_date_from_sftp
      AND latest_upload_by_date.sftp_upload_timestamp = source_rows.sftp_upload_timestamp
-    WHERE source_rows.trade_date_from_sftp ~ '^[0-9]{8}$'
     GROUP BY source_rows.trade_date_from_sftp
     ORDER BY source_rows.trade_date_from_sftp DESC
     LIMIT 90

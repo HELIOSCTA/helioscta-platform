@@ -27,6 +27,7 @@ import {
   appliedFilters,
   availableDatesSql,
   baseArgs,
+  dateScopedPromotedSql,
   dateOnly,
   emptyPayloadMetadata,
   isoOrText,
@@ -98,9 +99,10 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         requestedDate: filters.requestedDate ?? availableDates[0]?.sftpDate ?? null,
       };
       const promotedArtifact = await loadPromotedAllHistorySql();
+      const promotedSql = dateScopedPromotedSql(promotedArtifact.sql);
       const sqlArgs = baseArgs(selectedFilters);
 
-      const bundleRows = await query<BundleDbRow>(summaryBundleSql(promotedArtifact.sql), [...sqlArgs, limit]);
+      const bundleRows = await query<BundleDbRow>(summaryBundleSql(promotedSql), [...sqlArgs, limit]);
       const bundle = bundleRows[0] ?? {
         snapshot: {},
         filters: {},

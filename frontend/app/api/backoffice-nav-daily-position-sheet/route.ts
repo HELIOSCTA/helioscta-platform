@@ -401,13 +401,21 @@ function emptyProductTotals(): Record<string, number> {
 
 async function loadAvailableDates(): Promise<BackOfficeNavDailyPositionSheetAvailableDate[]> {
   const rows = await query<AvailableDateDbRow>(`
+    WITH recent_dates AS (
+      SELECT DISTINCT nav_date
+      FROM nav.positions
+      ORDER BY nav_date DESC
+      LIMIT 90
+    )
     SELECT
-      to_char(nav_date, 'YYYY-MM-DD') AS nav_date,
+      to_char(positions.nav_date, 'YYYY-MM-DD') AS nav_date,
       count(*)::integer AS row_count,
-      max(sftp_upload_timestamp)::text AS latest_upload_at
-    FROM nav.positions
-    GROUP BY nav_date
-    ORDER BY nav_date DESC
+      max(positions.sftp_upload_timestamp)::text AS latest_upload_at
+    FROM nav.positions AS positions
+    INNER JOIN recent_dates
+      ON recent_dates.nav_date = positions.nav_date
+    GROUP BY positions.nav_date
+    ORDER BY positions.nav_date DESC
     LIMIT 90
   `);
   return rows.map((row) => {

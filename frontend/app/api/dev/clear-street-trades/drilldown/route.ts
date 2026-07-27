@@ -16,6 +16,7 @@ import {
   baseArgs,
   buildClearStreetTradesDrilldownWhere,
   buildDebugPayload,
+  dateScopedPromotedSql,
   drilldownBundleSql,
   loadPromotedAllHistorySql,
   mapAvailableDate,
@@ -74,11 +75,12 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         requestedDate: filters.requestedDate ?? availableDates[0]?.sftpDate ?? null,
       };
       const promotedArtifact = await loadPromotedAllHistorySql();
+      const promotedSql = dateScopedPromotedSql(promotedArtifact.sql);
       const drilldownWhere = buildClearStreetTradesDrilldownWhere({
         filter: drilldown,
         firstParameterIndex: CLEAR_STREET_TRADES_BASE_PARAM_COUNT + 2,
       });
-      const rows = await query<BundleDbRow>(drilldownBundleSql(promotedArtifact.sql, drilldownWhere.sql), [
+      const rows = await query<BundleDbRow>(drilldownBundleSql(promotedSql, drilldownWhere.sql), [
         ...baseArgs(selectedFilters),
         limit,
         ...drilldownWhere.args,

@@ -5,6 +5,7 @@ import {
 } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
+  dateScopedPromotedSql,
   loadPromotedAllHistorySql,
   selectedClearStreetTradesCte,
 } from "@/lib/server/clearStreetTradesSql";
@@ -37,7 +38,9 @@ const LOCAL_DISPLAY_TIME_ZONE = "America/Denver";
 const TITAN_EXPORT_WHERE = "give_in_out_firm_num in ('ADU', '905')";
 const SOURCE_CHECKS =
   "Sources: promoted Clear Street all-history model, clear_street.eod_transactions, and ops.api_fetch_log MUFG telemetry";
-const DATE_SUMMARY_LOOKBACK_DAYS = 370;
+const DATE_SUMMARY_LOOKBACK_DAYS = 45;
+const DATE_SUMMARY_LIMIT = 45;
+const TELEMETRY_LOOKBACK_DAYS = 21;
 const TELEMETRY_MATCH_VALUES = [
   "clear_street_eod_transactions",
   "clear_street_eod_transactions_poll",
@@ -257,18 +260,26 @@ function mapTelemetry(rows: TelemetryRow[]): Map<string, TelemetryByDate> {
 async function loadDateSummaries(): Promise<BackOfficeTradePipelineAvailableDate[]> {
   const rows = await query<DateSummaryRow>(
     `
-    WITH latest_upload_by_date AS (
-      SELECT
-        trade_date_from_sftp,
-        max(sftp_upload_timestamp) AS sftp_upload_timestamp
+    WITH recent_dates AS (
+      SELECT DISTINCT trade_date_from_sftp
       FROM clear_street.eod_transactions
       WHERE trade_date_from_sftp ~ '^[0-9]{8}$'
         AND trade_date_from_sftp >= to_char(current_date - ($1::integer * INTERVAL '1 day'), 'YYYYMMDD')
-      GROUP BY trade_date_from_sftp
+      ORDER BY trade_date_from_sftp DESC
+      LIMIT $2::integer
+    ),
+    latest_upload_by_date AS (
+      SELECT DISTINCT ON (source_rows.trade_date_from_sftp)
+        source_rows.trade_date_from_sftp,
+        source_rows.sftp_upload_timestamp
+      FROM clear_street.eod_transactions AS source_rows
+      INNER JOIN recent_dates
+        ON recent_dates.trade_date_from_sftp = source_rows.trade_date_from_sftp
+      ORDER BY source_rows.trade_date_from_sftp DESC, source_rows.sftp_upload_timestamp DESC
     ),
     model AS (
       SELECT
-        to_date(source_rows.trade_date_from_sftp, 'YYYYMMDD')::date AS sftp_date,
+        source_rows.trade_date_from_sftp,
         source_rows.give_in_out_firm_num,
         source_rows.sftp_upload_timestamp,
         source_rows.updated_at
@@ -279,17 +290,17 @@ async function loadDateSummaries(): Promise<BackOfficeTradePipelineAvailableDate
       WHERE source_rows.trade_date_from_sftp ~ '^[0-9]{8}$'
     )
     SELECT
-      sftp_date::text AS sftp_date,
+      to_date(trade_date_from_sftp, 'YYYYMMDD')::text AS sftp_date,
       count(*)::integer AS raw_row_count,
       count(*) FILTER (WHERE ${TITAN_EXPORT_WHERE})::integer AS titan_row_count,
       max(sftp_upload_timestamp)::text AS latest_upload_at,
       max(updated_at)::text AS latest_updated_at
     FROM model
-    GROUP BY sftp_date
-    ORDER BY sftp_date DESC
-    LIMIT 160
+    GROUP BY trade_date_from_sftp
+    ORDER BY trade_date_from_sftp DESC
+    LIMIT $2::integer
     `,
-    [DATE_SUMMARY_LOOKBACK_DAYS],
+    [DATE_SUMMARY_LOOKBACK_DAYS, DATE_SUMMARY_LIMIT],
   );
   return rows.map((row) => ({
     sftpDate: row.sftp_date,
@@ -305,7 +316,7 @@ async function loadPreviewRows(
 ): Promise<BackOfficeTradePipelinePreviewRow[]> {
   const rows = await query<PreviewDbRow>(
     `
-    ${selectedClearStreetTradesCte(promotedSql)}
+    ${selectedClearStreetTradesCte(dateScopedPromotedSql(promotedSql))}
     SELECT
       source_rows.sftp_date::text AS sftp_date,
       source_rows.clear_street_row_family,
@@ -408,7 +419,7 @@ async function loadTelemetry(): Promise<TelemetryRow[]> {
       metadata,
       error_message
     FROM ops.api_fetch_log
-    WHERE created_at >= now() - INTERVAL '180 days'
+    WHERE created_at >= now() - ($2::integer * INTERVAL '1 day')
       AND (
         lower(coalesce(provider, '')) = ANY($1::text[])
         OR lower(coalesce(pipeline_name, '')) = ANY($1::text[])
@@ -416,9 +427,9 @@ async function loadTelemetry(): Promise<TelemetryRow[]> {
         OR lower(coalesce(target_table, '')) = ANY($1::text[])
       )
     ORDER BY created_at DESC
-    LIMIT 240
+    LIMIT 160
     `,
-    [TELEMETRY_MATCH_VALUES],
+    [TELEMETRY_MATCH_VALUES, TELEMETRY_LOOKBACK_DAYS],
   );
 }
 
