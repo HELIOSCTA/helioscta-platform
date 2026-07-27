@@ -11,9 +11,30 @@ const endpoints = [
     targetMs: 500,
   },
   {
+    name: "PJM DA LMPs",
+    path: "/api/pjm-da-lmps",
+    targetMs: 750,
+  },
+  {
+    name: "PJM RT LMPs",
+    path: "/api/pjm-rt-lmps?source=unverified",
+    targetMs: 1_000,
+  },
+  {
+    name: "PJM settles",
+    path: "/api/pjm-lmp-settles?hub=WESTERN%20HUB&component=total&rtSource=unverified",
+    targetMs: 1_500,
+  },
+  {
     name: "PJM term bible",
     path: "/api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpeak&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7",
     targetMs: 2_500,
+  },
+  {
+    name: "PJM duration curves",
+    path: "/api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak",
+    targetMs: 1_500,
+    devOnly: true,
   },
   {
     name: "PJM forecasts",
@@ -44,6 +65,16 @@ const endpoints = [
     name: "PJM Meteologica forecast diffs",
     path: "/api/pjm-meteologica-forecast-differences?area=RTO&lookbackHours=72",
     targetMs: 1_000,
+  },
+  {
+    name: "PJM outage forecast",
+    path: "/api/pjm-outages?view=forecast&region=RTO&executionLimit=8",
+    targetMs: 1_500,
+  },
+  {
+    name: "PJM outage seasonal",
+    path: "/api/pjm-outages?view=seasonal&region=RTO&seasonalYearLimit=8",
+    targetMs: 1_500,
   },
   {
     name: "NAV positions summary",

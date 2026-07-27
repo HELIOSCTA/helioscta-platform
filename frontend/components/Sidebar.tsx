@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 export type ActiveSection =
+  | "pjm-da-lmps"
+  | "power-lmp-adders"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
   | "backoffice-home"
@@ -19,10 +21,16 @@ export type ActiveSection =
   | "map"
   | "noms"
   | "gtn-balance"
+  | "ice-pmi-curve"
   | "gas-prices"
+  | "pjm-price-duration-curves"
+  | "pjm-price-distributions"
   | "pjm-generation"
+  | "pjm-tightness-lookback"
+  | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
+  | "pjm-outages"
   | "pjm-weather";
 
 interface SidebarProps {
@@ -70,7 +78,11 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "power",
     label: "Power",
     navItems: [
+      { id: "pjm-da-lmps", label: "LMPs" },
+      { id: "power-lmp-adders", label: "LMP Adders" },
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
+      { id: "pjm-ops-summary", label: "Ops Sum" },
+      { id: "pjm-outages", label: "Outages" },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
     ],

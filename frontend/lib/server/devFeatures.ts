@@ -12,11 +12,31 @@ export function isLocalOnlyFeatureEnabled(): boolean {
   return !isVercelDeployment();
 }
 
+export function isDurationCurvesDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
 export function isWeatherDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
 
+export function isActualsRegimeScatterDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
+export function isPriceDistributionsDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
 export function isGenerationDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
+export function isTightnessLookbackDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}
+
+export function isOpsSummaryDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
 

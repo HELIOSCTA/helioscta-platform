@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ColumnVisibilityPopover from "@/components/dashboard/ColumnVisibilityPopover";
 import DataTableShell from "@/components/dashboard/DataTableShell";
+import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
   formatIceTradeProductDisplay,
@@ -464,6 +465,24 @@ const EMPTY_POSITION_ROWS: PositionRow[] = [];
 const EMPTY_POSITION_LEG_ROWS: PositionLegRow[] = [];
 const EMPTY_PNL_SUMMARY_ROWS: PnlSummaryRow[] = [];
 const DEFAULT_SETTLE_REGION_FILTERS = ["PJM"] as const;
+const PJM_MONTHLY_SETTLE_MATRICES = [
+  {
+    key: "pmi",
+    productId: "PJM_WH_RT_TETCO_M3_7X",
+    title: "PMI Monthly Matrix",
+    subtitle: "PJM Western Hub RT on-peak monthly settles.",
+  },
+  {
+    key: "opj",
+    productId: "PJM_WH_RT_OFFPEAK_TETCO_M3_7X",
+    title: "OPJ Monthly Matrix",
+    subtitle: "PJM Western Hub RT off-peak monthly settles.",
+  },
+] as const;
+
+function defaultPjmMonthlyMatrixYears(referenceYear = new Date().getFullYear()): number[] {
+  return Array.from({ length: 7 }, (_, index) => referenceYear - 4 + index);
+}
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "--";
@@ -7131,6 +7150,10 @@ export default function IceTradeBlotter({
   );
   const settlementSummaryColumns = settlementSummary.columns;
   const settlementSummaryRows = settlementSummary.rows;
+  const pjmMonthlyMatrixYears = useMemo(() => defaultPjmMonthlyMatrixYears(), []);
+  const showPjmMonthlyMatrices = displayedDailySettlementRows.some(
+    (row) => String(row.region ?? "").trim().toUpperCase() === "PJM"
+  );
   const settlementSummaryColumnDeliveryRanges = useMemo(
     () =>
       Object.fromEntries(
@@ -9151,6 +9174,24 @@ export default function IceTradeBlotter({
               </table>
             </div>
           </DataTableShell>
+
+          {showPjmMonthlyMatrices ? (
+            <div className="grid w-full grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
+              {PJM_MONTHLY_SETTLE_MATRICES.map((matrix) => (
+                <IcePmiCurveTable
+                  key={matrix.key}
+                  className="min-w-0"
+                  mode="power"
+                  sparkProduct={matrix.productId}
+                  selectedYears={pjmMonthlyMatrixYears}
+                  title={matrix.title}
+                  subtitle={matrix.subtitle}
+                  pairedLayout
+                  defaultShowMetrics={false}
+                />
+              ))}
+            </div>
+          ) : null}
 
           {settlementHistorySelection && (
             <div
