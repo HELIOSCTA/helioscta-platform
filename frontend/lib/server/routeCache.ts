@@ -1,5 +1,7 @@
 import "server-only";
 
+import { unstable_cache } from "next/cache";
+
 export type RouteCacheStatus = "hit" | "miss" | "stale";
 
 interface RouteCacheEntry<T> {
@@ -72,6 +74,8 @@ export async function getCachedRouteValue<T>({
   ttlMs,
   staleIfErrorMs = ttlMs,
   forceRefresh,
+  dataCache = false,
+  dataCacheTtlSeconds,
   load,
 }: {
   namespace: string;
@@ -79,6 +83,8 @@ export async function getCachedRouteValue<T>({
   ttlMs: number;
   staleIfErrorMs?: number;
   forceRefresh: boolean;
+  dataCache?: boolean;
+  dataCacheTtlSeconds?: number;
   load: () => Promise<T>;
 }): Promise<{ value: T; cacheStatus: RouteCacheStatus }> {
   const cacheKey = fullKey(namespace, key);
@@ -103,7 +109,12 @@ export async function getCachedRouteValue<T>({
     }
   }
 
-  const request = load();
+  const request =
+    dataCache && !forceRefresh
+      ? unstable_cache(load, ["helios-route-cache-v1", cacheKey], {
+          revalidate: dataCacheTtlSeconds ?? Math.max(1, Math.ceil(ttlMs / 1000)),
+        })()
+      : load();
   routeCache.inFlight.set(cacheKey, request);
 
   try {

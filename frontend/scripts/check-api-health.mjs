@@ -97,6 +97,86 @@ const endpoints = [
     rowCount: (body) => body?.summary?.rowCount,
   },
   {
+    name: "Back Office home",
+    path: "/api/backoffice-home",
+    targetMs: 1_000,
+    minRows: 1,
+    rowCount: (body) =>
+      Array.isArray(body?.groups)
+        ? body.groups.reduce(
+            (total, group) =>
+              total +
+              (Array.isArray(group?.snapshots)
+                ? group.snapshots.reduce(
+                    (sum, snapshot) => sum + Number(snapshot?.rowCount ?? 0),
+                    0,
+                  )
+                : 0),
+            0,
+          )
+        : null,
+  },
+  {
+    name: "Back Office monitor",
+    path: "/api/backoffice-monitor",
+    targetMs: 1_000,
+    minRows: 1,
+    rowCount: (body) => body?.emailWorkflows?.length,
+  },
+  {
+    name: "Back Office positions trades",
+    path: "/api/backoffice-positions-trades",
+    targetMs: 1_000,
+    minRows: 1,
+    rowCount: (body) => body?.sourceRowCount ?? body?.rowCount,
+  },
+  {
+    name: "Back Office trade pipeline",
+    path: "/api/backoffice-trade-pipeline",
+    targetMs: 1_500,
+    minRows: 1,
+    rowCount: (body) => body?.previewRowCount ?? body?.availableDates?.length,
+  },
+  {
+    name: "Back Office NAV daily sheet",
+    path: "/api/backoffice-nav-daily-position-sheet",
+    targetMs: 1_000,
+    minRows: 1,
+    rowCount: (body) =>
+      body?.monthlyFutures?.rowCount ??
+      body?.gasFutures?.rowCount ??
+      body?.optionSummary?.activeRows ??
+      body?.rowCount,
+  },
+  {
+    name: "Back Office ICE trade blotter",
+    path: "/api/ice-trade-blotter/raw",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.rowCount,
+  },
+  {
+    name: "Back Office ICE trade blotter drilldown",
+    path: "/api/ice-trade-blotter/raw/drilldown?limit=25",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.returnedRowCount ?? body?.summary?.rowCount,
+  },
+  {
+    name: "Back Office Clear Street trades",
+    path: "/api/clear-street-trades?account=TITAN&limit=100",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.rowCount,
+  },
+  {
+    name: "Back Office Clear Street trades drilldown",
+    path: "/api/clear-street-trades/drilldown?account=TITAN&limit=25",
+    targetMs: 2_000,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.returnedRowCount ?? body?.summary?.rowCount,
+  },
+  {
     name: "WSI hourly temps",
     path: "/api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary",
     targetMs: 1_500,
@@ -347,9 +427,14 @@ async function measureEndpoint(endpoint, options) {
           totalMs,
           appMs: serverTiming.app ?? null,
           dbMs: serverTiming.db ?? null,
+          phaseTimings: Object.fromEntries(
+            Object.entries(serverTiming).filter(([name]) => name !== "app" && name !== "db"),
+          ),
           payloadBytes,
           dataAsOf,
           cachePolicy: response.headers.get("x-helios-cache-policy"),
+          routeCache: response.headers.get("x-helios-route-cache"),
+          vercelCache: response.headers.get("x-vercel-cache"),
           rowCount,
         });
       }
@@ -361,9 +446,12 @@ async function measureEndpoint(endpoint, options) {
           totalMs: performance.now() - startedAt,
           appMs: null,
           dbMs: null,
+          phaseTimings: {},
           payloadBytes: null,
           dataAsOf: null,
           cachePolicy: null,
+          routeCache: null,
+          vercelCache: null,
           rowCount: null,
         });
       }
@@ -380,6 +468,20 @@ async function measureEndpoint(endpoint, options) {
   const appP95 = percentile(appValues.length ? appValues : totalValues, 95);
   const totalP95 = percentile(totalValues, 95);
   const dbP95 = percentile(dbValues, 95);
+  const phaseP95s = {};
+  for (const sample of samples) {
+    for (const [name, value] of Object.entries(sample.phaseTimings ?? {})) {
+      if (typeof value !== "number") continue;
+      phaseP95s[name] = [...(phaseP95s[name] ?? []), value];
+    }
+  }
+  const phaseP95 = Object.fromEntries(
+    Object.entries(phaseP95s).map(([name, values]) => [name, percentile(values, 95)]),
+  );
+  const slowestPhase =
+    Object.entries(phaseP95)
+      .filter(([, value]) => typeof value === "number")
+      .sort(([, left], [, right]) => right - left)[0] ?? null;
   const slow = appP95 !== null && appP95 > endpoint.targetMs;
   const latest = samples.at(-1) ?? {};
 
@@ -390,11 +492,17 @@ async function measureEndpoint(endpoint, options) {
     status: errors.length ? "FAIL" : slow ? "SLOW" : "PASS",
     appP95,
     dbP95,
+    phaseP95,
+    slowestPhase: slowestPhase
+      ? { name: slowestPhase[0], p95: slowestPhase[1] }
+      : null,
     totalP95,
     payloadBytes: latest.payloadBytes ?? null,
     rowCount: latest.rowCount ?? null,
     dataAsOf: latest.dataAsOf ?? null,
     cachePolicy: latest.cachePolicy ?? null,
+    routeCache: latest.routeCache ?? null,
+    vercelCache: latest.vercelCache ?? null,
     errors: [...new Set(errors)],
   };
 }
@@ -407,28 +515,37 @@ function printTable(results, options) {
   console.log(
     [
       pad("Status", 7),
-      pad("Endpoint", 22),
+      pad("Endpoint", 34),
       pad("App p95", 9),
       pad("DB p95", 8),
+      pad("Slow phase", 38),
       pad("Total p95", 10),
       pad("Target", 8),
       pad("Rows", 7),
       pad("Bytes", 8),
+      pad("Route", 8),
+      pad("Vercel", 8),
       "Data as of",
     ].join(""),
   );
-  console.log("-".repeat(104));
+  console.log("-".repeat(170));
   for (const result of results) {
+    const phaseLabel = result.slowestPhase
+      ? `${result.slowestPhase.name}=${fmtMs(result.slowestPhase.p95)}`
+      : "-";
     console.log(
       [
         pad(result.status, 7),
-        pad(result.name, 22),
+        pad(result.name, 34),
         pad(fmtMs(result.appP95), 9),
         pad(fmtMs(result.dbP95), 8),
+        pad(phaseLabel, 38),
         pad(fmtMs(result.totalP95), 10),
         pad(fmtMs(result.targetMs), 8),
         pad(result.rowCount ?? "-", 7),
         pad(fmtBytes(result.payloadBytes), 8),
+        pad(result.routeCache ?? "-", 8),
+        pad(result.vercelCache ?? "-", 8),
         result.dataAsOf ?? "-",
       ].join(""),
     );

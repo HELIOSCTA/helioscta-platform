@@ -104,6 +104,30 @@
       "maxDuration": 30,
       "regions": ["iad1"]
     },
+    "app/api/backoffice-home/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/backoffice-monitor/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/backoffice-positions-trades/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/backoffice-trade-pipeline/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/backoffice-nav-daily-position-sheet/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
+    "app/api/back-office/trade-pipeline/preview/route.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    },
     "app/api/ice-trade-blotter/raw/route.ts": {
       "maxDuration": 30,
       "regions": ["iad1"]

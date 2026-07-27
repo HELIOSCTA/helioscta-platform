@@ -26,6 +26,7 @@ interface ApiRequestMetrics {
   dbDurationMs: number;
   dbQueryCount: number;
   dbRowCount: number;
+  routeTimings: Map<string, number>;
 }
 
 const apiRequestMetrics = new AsyncLocalStorage<ApiRequestMetrics>();
@@ -57,6 +58,19 @@ function errorName(error: unknown): string {
 
 function safeErrorDetail(error: unknown): string {
   return errorMessage(error).replace(/\s+/g, " ").slice(0, 900);
+}
+
+function timingMetricName(value: string): string {
+  const normalized = value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  return normalized || "phase";
+}
+
+function serverTimingHeader(durationMs: number, metrics: ApiRequestMetrics): string {
+  const parts = [`app;dur=${durationMs}`, `db;dur=${roundMs(metrics.dbDurationMs)}`];
+  for (const [name, value] of metrics.routeTimings) {
+    parts.push(`${timingMetricName(name)};dur=${roundMs(value)}`);
+  }
+  return parts.join(", ");
 }
 
 function errorHttpStatus(error: unknown): number {
@@ -98,6 +112,22 @@ export function recordDbQuery(durationMs: number, rowCount: number): void {
   metrics.dbRowCount += rowCount;
 }
 
+export function recordRouteTiming(name: string, durationMs: number): void {
+  const metrics = apiRequestMetrics.getStore();
+  if (!metrics) return;
+  const key = timingMetricName(name);
+  metrics.routeTimings.set(key, (metrics.routeTimings.get(key) ?? 0) + durationMs);
+}
+
+export async function measureRoutePhase<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const startedAt = nowMs();
+  try {
+    return await run();
+  } finally {
+    recordRouteTiming(name, nowMs() - startedAt);
+  }
+}
+
 export function observedJsonRoute(
   config: ApiRouteConfig,
   handler: (request: Request) => Promise<ObservedRouteResult>,
@@ -109,6 +139,7 @@ export function observedJsonRoute(
       dbDurationMs: 0,
       dbQueryCount: 0,
       dbRowCount: 0,
+      routeTimings: new Map(),
     };
 
     return apiRequestMetrics.run(metrics, async () => {
@@ -125,7 +156,7 @@ export function observedJsonRoute(
           headers.set("Cache-Control", config.cacheHeader);
         }
         headers.set("Content-Type", "application/json");
-        headers.set("Server-Timing", `app;dur=${durationMs}, db;dur=${dbDurationMs}`);
+        headers.set("Server-Timing", serverTimingHeader(durationMs, metrics));
         headers.set("X-Helios-Route", config.route);
         headers.set("X-Helios-Request-Id", requestId);
         const cachePolicy = headers.get("X-Helios-Cache-Policy") ?? config.cachePolicy;
@@ -140,6 +171,9 @@ export function observedJsonRoute(
           duration_ms: durationMs,
           db_duration_ms: dbDurationMs,
           db_query_count: metrics.dbQueryCount,
+          phase_duration_ms: Object.fromEntries(
+            Array.from(metrics.routeTimings.entries()).map(([name, value]) => [name, roundMs(value)]),
+          ),
           row_count: rowCount,
           payload_bytes: bytes,
           cache_policy: cachePolicy,
@@ -165,7 +199,7 @@ export function observedJsonRoute(
         const headers = new Headers({
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
-          "Server-Timing": `app;dur=${durationMs}, db;dur=${dbDurationMs}`,
+          "Server-Timing": serverTimingHeader(durationMs, metrics),
           "X-Helios-Route": config.route,
           "X-Helios-Request-Id": requestId,
           "X-Helios-Cache-Policy": "no-store",
@@ -181,6 +215,9 @@ export function observedJsonRoute(
             duration_ms: durationMs,
             db_duration_ms: dbDurationMs,
             db_query_count: metrics.dbQueryCount,
+            phase_duration_ms: Object.fromEntries(
+              Array.from(metrics.routeTimings.entries()).map(([name, value]) => [name, roundMs(value)]),
+            ),
             row_count: metrics.dbRowCount,
             payload_bytes: bytes,
             cache_policy: "no-store",

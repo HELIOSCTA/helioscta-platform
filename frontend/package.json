@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "check:api": "node scripts/check-api-health.mjs",
+    "check:perf:backoffice": "node scripts/check-backoffice-perf.mjs",
     "verify:ice-gas-registry": "python scripts/verify-ice-gas-registry.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
@@ -21,10 +22,12 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "recharts": "^3.8.1",
+    "snowflake-sdk": "^1.15.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.3",
+    "@playwright/test": "^1.62.0",
     "@types/mssql": "^9.1.11",
     "@types/node": "^20",
     "@types/pg": "^8.20.0",
