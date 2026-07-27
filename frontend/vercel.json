@@ -4,18 +4,6 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
-    "app/api/pjm-da-lmps/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
-    "app/api/pjm-rt-lmps/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
-    "app/api/pjm-lmp-settles/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
     "app/api/pjm-term-bible/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
@@ -32,10 +20,6 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
-    "app/api/pjm-outages/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
     "app/api/pjm-load-growth-yoy/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
@@ -45,14 +29,6 @@
       "regions": ["sfo1"]
     },
     "app/api/ice-trade-blotter/settlements/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
-    "app/api/ice-pmi-curve/route.ts": {
-      "maxDuration": 30,
-      "regions": ["sfo1"]
-    },
-    "app/api/ice-pmi-curve/contract/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
     },

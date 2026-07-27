@@ -3,8 +3,6 @@
 import { useState } from "react";
 
 export type ActiveSection =
-  | "pjm-da-lmps"
-  | "power-lmp-adders"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
   | "backoffice-home"
@@ -21,16 +19,10 @@ export type ActiveSection =
   | "map"
   | "noms"
   | "gtn-balance"
-  | "ice-pmi-curve"
   | "gas-prices"
-  | "pjm-price-duration-curves"
-  | "pjm-price-distributions"
   | "pjm-generation"
-  | "pjm-tightness-lookback"
-  | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
-  | "pjm-outages"
   | "pjm-weather";
 
 interface SidebarProps {
@@ -78,11 +70,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "power",
     label: "Power",
     navItems: [
-      { id: "pjm-da-lmps", label: "LMPs" },
-      { id: "power-lmp-adders", label: "LMP Adders" },
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
-      { id: "pjm-ops-summary", label: "Ops Sum" },
-      { id: "pjm-outages", label: "Outages" },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
     ],
@@ -112,16 +100,8 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },
-        { id: "ice-pmi-curve", label: "ICE PMI" },
         { id: "gas-prices", label: "Gas Pricing" },
         { id: "pjm-generation", label: "Generation" },
-        { id: "pjm-da-lmps", label: "PJM LMPs" },
-        { id: "power-lmp-adders", label: "Power LMP Adders" },
-        { id: "pjm-ops-summary", label: "PJM Ops Summary" },
-        { id: "pjm-outages", label: "PJM Outages" },
-        { id: "pjm-tightness-lookback", label: "Tightness Lookback" },
-        { id: "pjm-price-distributions", label: "Price Distributions" },
-        { id: "pjm-price-duration-curves", label: "Duration Curves" },
         { id: "pjm-weather", label: "Weather" },
         { id: "positions-home", label: "Old Positions Home" },
         { id: "nav-positions", label: "Old NAV Positions" },
