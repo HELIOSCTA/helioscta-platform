@@ -38,7 +38,7 @@ const ROUTES = [
   },
   {
     name: "Clear Street trades",
-    path: "/api/clear-street-trades?account=TITAN&limit=100",
+    path: "/api/clear-street-trades?account=ACIM&account=DICKSON&account=PNT&account=TITAN&limit=100&rawRows=0",
     clearStreet: true,
   },
   {
