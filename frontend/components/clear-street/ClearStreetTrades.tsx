@@ -766,6 +766,15 @@ function addVendorPatterns(
   if (sourcePatterns.size > 0) patterns.set(source, sourcePatterns);
 }
 
+function vendorPatternSegmentsForSources(
+  patterns: Map<VendorCodeSegment["source"], Set<string>>,
+  sources: VendorCodeSegment["source"][],
+): VendorCodeSegment[] {
+  return sources.flatMap((source) =>
+    [...(patterns.get(source) ?? [])].map((code) => ({ source, code })),
+  );
+}
+
 function rowVendorPatternSegments(row: BlotterRow): VendorCodeSegment[] {
   const patterns = new Map<VendorCodeSegment["source"], Set<string>>();
   addVendorPatterns(patterns, "ICE", row.iceProductCode);
@@ -778,15 +787,11 @@ function rowVendorPatternSegments(row: BlotterRow): VendorCodeSegment[] {
     addVendorPatterns(patterns, "CME", cell.cmeProductCode);
   }
 
-  if (patterns.has("ICE")) {
-    return [...(patterns.get("ICE") ?? [])].map((code) => ({ source: "ICE", code }));
-  }
-  if (patterns.has("BBG")) {
-    return [...(patterns.get("BBG") ?? [])].map((code) => ({ source: "BBG", code }));
-  }
-  if (patterns.has("CME")) {
-    return [...(patterns.get("CME") ?? [])].map((code) => ({ source: "CME", code }));
-  }
+  const exchangeSegments = vendorPatternSegmentsForSources(patterns, ["BBG", "CME"]);
+  if (exchangeSegments.length) return exchangeSegments;
+
+  const iceSegments = vendorPatternSegmentsForSources(patterns, ["ICE"]);
+  if (iceSegments.length) return iceSegments;
 
   return splitVendorCodes(row.exchangeCodeInput).map((code) => ({
     source: "EXCH",
@@ -874,14 +879,20 @@ function VendorCodeInfoPanel({ info }: { info: VendorCodeBuildInfo }) {
 }
 
 function VendorCodeInfoPopover({ segments }: { segments: VendorCodeSegment[] }) {
-  const info = vendorCodeBuildInfo(segments[0]);
-  if (!info) return null;
+  const infos = segments
+    .map((segment) => vendorCodeBuildInfo(segment))
+    .filter((info): info is VendorCodeBuildInfo => Boolean(info));
+  if (infos.length === 0) return null;
+
+  const title = vendorCodeTitle(segments) ?? undefined;
+  const visibleInfos = infos.slice(0, 2);
+  const hiddenCount = Math.max(0, infos.length - visibleInfos.length);
 
   return (
     <span className="relative inline-flex shrink-0">
       <button
         type="button"
-        aria-label={`${info.source} code build metadata`}
+        aria-label={infos.length === 1 ? `${infos[0].source} code build metadata` : "Vendor code build metadata"}
         className="peer inline-flex h-4 w-4 items-center justify-center rounded-full border border-cyan-500/40 bg-cyan-500/10 font-mono text-[10px] font-bold leading-none text-cyan-200 outline-none transition-colors hover:border-cyan-300/70 hover:bg-cyan-500/20 focus:border-cyan-200 focus:ring-1 focus:ring-cyan-300/40"
       >
         i
@@ -889,9 +900,23 @@ function VendorCodeInfoPopover({ segments }: { segments: VendorCodeSegment[] }) 
       <span
         role="tooltip"
         className="pointer-events-none absolute left-5 top-0 z-50 hidden w-60 rounded-md border border-cyan-500/40 bg-[#070b12] p-2 text-left shadow-xl shadow-black/50 peer-hover:block peer-focus:block"
-        title={vendorCodeTitle(segments) ?? undefined}
+        title={title}
       >
-        <VendorCodeInfoPanel info={info} />
+        <span className="block space-y-2">
+          {visibleInfos.map((info) => (
+            <span
+              key={`${info.source}:${info.fields.map((field) => `${field.label}:${field.value}`).join("|")}`}
+              className="block"
+            >
+              <VendorCodeInfoPanel info={info} />
+            </span>
+          ))}
+          {hiddenCount > 0 && (
+            <span className="block text-[9px] font-semibold leading-3 text-cyan-300">
+              +{hiddenCount} more code build{hiddenCount === 1 ? "" : "s"}
+            </span>
+          )}
+        </span>
       </span>
     </span>
   );
@@ -908,8 +933,12 @@ function VendorPatternStack({ segments }: { segments: VendorCodeSegment[] }) {
       {visibleSegments.map((segment) => (
         <span
           key={`${segment.source}:${segment.code}`}
-          className="flex max-w-full items-center rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-1 shadow-inner shadow-black/20"
+          className="flex max-w-full items-center gap-1.5 rounded border border-cyan-500/30 bg-cyan-500/10 px-1.5 py-1 shadow-inner shadow-black/20"
         >
+          <span className="shrink-0 font-sans text-[8px] font-bold leading-3 text-cyan-300">
+            {segment.source}
+          </span>
+          <span className="h-3 w-px shrink-0 bg-cyan-500/30" />
           <span className="min-w-0 truncate font-mono text-[10px] font-semibold leading-3 text-cyan-50">
             {segment.code}
           </span>
