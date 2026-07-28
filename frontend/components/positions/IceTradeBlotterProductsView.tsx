@@ -208,7 +208,7 @@ function settleSourceNote(source: string): string {
     return "pjm.rt_settlements_verified_hourly_lmps, fallback pjm.rt_unverified_hourly_lmps";
   }
   if (source === "ERCOT_DA_LMP") return "ercot.dam_stlmnt_pnt_prices";
-  if (source === "ERCOT_RT_LMP") return "ercot.rt_spp_all_nodes";
+  if (source === "ERCOT_RT_LMP") return "ercot.settlement_point_prices";
   if (source === "ICE_SETTLEMENT") return "ice_python.settlements";
   return source || "--";
 }

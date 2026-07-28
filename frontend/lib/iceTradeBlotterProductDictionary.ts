@@ -545,6 +545,37 @@ const PRODUCT_DICTIONARY_ROWS: ProductDictionaryRegistryRow[] = [
   },
   {
     "cc": "ERA",
+    "ice_symbol_pattern": "ERA D0-IUS",
+    "product_name": "ERCOT North 345KV Hub Real-Time Peak Daily Mini Fixed Price Future",
+    "market": "RT",
+    "hub": "ERCOT North 345KV Hub RT",
+    "blotter_hub_aliases": [],
+    "pjm_pnode_name": null,
+    "contract_family": "Daily",
+    "contract_code": "D0",
+    "contract_label": "Same Day",
+    "hour_bucket": "ONPEAK",
+    "shape": "Peak",
+    "ice_contract_size": "16 MWh",
+    "ice_product_type": "ERCOT North 345KV Hub Real-Time Peak Daily Mini Fixed Price Future",
+    "settlement_source": "ICE_SETTLEMENT",
+    "settlement_source_key": "ice_settlement",
+    "settlement_priority": 2,
+    "active": true,
+    "notes": "ICE metadata reviewed 2026-07-23; source table ice_python.settlements; hours HE 0700-HE 2200 CPT.",
+    "ice_product_id": "71544051",
+    "ice_product_url": "https://www.ice.com/products/71544051",
+    "ice_contract_symbol": "ERA",
+    "ice_trading_screen_product_name": "Peak Futures",
+    "ice_trading_screen_hub_name": "ERCOT - North 345KV Hub Real-Time Daily (16 MWh)",
+    "ice_reference_price": "ELECTRICITY-ERCOT-NORTH 345KV HUB-REAL TIME",
+    "ice_specified_price": "Average LMP for on-peak hours defined by the ICE contract",
+    "ice_metadata_status": "ice_product_url_verified",
+    "registry_group": "ercot",
+    "source_registry": "ercot_short_term"
+  },
+  {
+    "cc": "ERA",
     "ice_symbol_pattern": "ERA D1-IUS",
     "product_name": "ERCOT North 345KV Hub Real-Time Peak Daily Mini Fixed Price Future",
     "market": "RT",
@@ -630,6 +661,37 @@ const PRODUCT_DICTIONARY_ROWS: ProductDictionaryRegistryRow[] = [
     "ice_contract_symbol": "ERA",
     "ice_trading_screen_product_name": "Peak Futures",
     "ice_trading_screen_hub_name": "ERCOT - North 345KV Hub Real-Time Daily (16 MWh)",
+    "ice_reference_price": "ELECTRICITY-ERCOT-NORTH 345KV HUB-REAL TIME",
+    "ice_specified_price": "Average LMP for on-peak hours defined by the ICE contract",
+    "ice_metadata_status": "ice_product_url_verified",
+    "registry_group": "ercot",
+    "source_registry": "ercot_short_term"
+  },
+  {
+    "cc": "END",
+    "ice_symbol_pattern": "END D0-IUS",
+    "product_name": "ERCOT North 345KV Real-Time Peak Daily Fixed Price Future",
+    "market": "RT",
+    "hub": "ERCOT North 345KV Hub RT",
+    "blotter_hub_aliases": [],
+    "pjm_pnode_name": null,
+    "contract_family": "Daily",
+    "contract_code": "D0",
+    "contract_label": "Same Day",
+    "hour_bucket": "ONPEAK",
+    "shape": "Peak",
+    "ice_contract_size": "800 MWh",
+    "ice_product_type": "ERCOT North 345KV Real-Time Peak Daily Fixed Price Future",
+    "settlement_source": "ICE_SETTLEMENT",
+    "settlement_source_key": "ice_settlement",
+    "settlement_priority": 2,
+    "active": true,
+    "notes": "ICE metadata reviewed 2026-07-23; source table ice_python.settlements; hours HE 0700-HE 2200 CPT.",
+    "ice_product_id": "6590453",
+    "ice_product_url": "https://www.ice.com/products/6590453",
+    "ice_contract_symbol": "END",
+    "ice_trading_screen_product_name": "Peak Futures",
+    "ice_trading_screen_hub_name": "ERCOT - North 345KV Hub Real-Time Daily",
     "ice_reference_price": "ELECTRICITY-ERCOT-NORTH 345KV HUB-REAL TIME",
     "ice_specified_price": "Average LMP for on-peak hours defined by the ICE contract",
     "ice_metadata_status": "ice_product_url_verified",
@@ -3539,6 +3601,12 @@ export function buildProductDictionaryCte(cteName = "product_dictionary"): strin
         END AS settlement_priority,
         active,
         CASE
+          WHEN registry_group = 'ercot' AND source_registry = 'ercot_short_term' AND market = 'DA'
+            THEN 'ICE metadata reviewed 2026-07-23; source table ercot.dam_stlmnt_pnt_prices; hours HE 0700-HE 2200 CPT. Active source uses ERCOT DA LMP after all eligible delivery days match; ICE settlement remains the fallback mark before completion.'
+          WHEN registry_group = 'ercot' AND source_registry = 'ercot_short_term' AND market = 'RT' AND hour_bucket = 'OFFPEAK'
+            THEN 'ICE metadata reviewed 2026-07-23; source table ercot.settlement_point_prices; hours HE 0100-HE 0600, HE 2300-HE 2400 CPT. Active source uses ERCOT RT LMP after all eligible delivery days match; ICE settlement remains the fallback mark before completion.'
+          WHEN registry_group = 'ercot' AND source_registry = 'ercot_short_term' AND market = 'RT'
+            THEN 'ICE metadata reviewed 2026-07-23; source table ercot.settlement_point_prices; hours HE 0700-HE 2200 CPT. Active source uses ERCOT RT LMP after all eligible delivery days match; ICE settlement remains the fallback mark before completion.'
           WHEN registry_group = 'pjm'
             AND source_registry = 'short_term'
             AND UPPER(BTRIM(cc)) = 'PDP'

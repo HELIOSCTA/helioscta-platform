@@ -646,21 +646,47 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
     ),
     ercot_rt_hourly AS MATERIALIZED (
       SELECT
-        NULL::text AS settlement_source_key,
-        NULL::date AS market_date,
-        NULL::double precision AS total_lmp,
-        NULL::timestamp AS source_updated_at,
-        NULL::text AS lmp_source_tier
-      WHERE FALSE
+        CASE
+          WHEN rt_hourly.hour_ending BETWEEN 7 AND 22 THEN 'ercot_rt_north_onpeak'
+          ELSE 'ercot_rt_north_offpeak'
+        END AS settlement_source_key,
+        rt_hourly.market_date,
+        rt_hourly.total_lmp,
+        rt_hourly.source_updated_at,
+        'rt_spp_15min_hourly_avg'::text AS lmp_source_tier
+      FROM (
+        SELECT
+          prices.deliverydate::date AS market_date,
+          prices.deliveryhour::int AS hour_ending,
+          AVG(prices.settlementpointprice) AS total_lmp,
+          MAX(prices.updated_at)::timestamp AS source_updated_at,
+          COUNT(*) AS interval_count
+        FROM ercot.settlement_point_prices AS prices
+        CROSS JOIN delivery_bounds
+        WHERE
+          prices.settlementpoint = 'HB_NORTH'
+          AND delivery_bounds.min_delivery_date IS NOT NULL
+          AND prices.deliverydate::date >= delivery_bounds.min_delivery_date
+          AND prices.deliverydate::date <= delivery_bounds.max_delivery_date
+        GROUP BY prices.deliverydate::date, prices.deliveryhour::int
+      ) AS rt_hourly
+      WHERE rt_hourly.interval_count >= 4
     ),
     ercot_da_hourly AS MATERIALIZED (
       SELECT
-        NULL::text AS settlement_source_key,
-        NULL::date AS market_date,
-        NULL::double precision AS total_lmp,
-        NULL::timestamp AS source_updated_at,
-        NULL::text AS lmp_source_tier
-      WHERE FALSE
+        'ercot_da_north_onpeak'::text AS settlement_source_key,
+        prices.deliverydate::date AS market_date,
+        prices.settlementpointprice AS total_lmp,
+        prices.updated_at::timestamp AS source_updated_at,
+        'da_spp'::text AS lmp_source_tier
+      FROM ercot.dam_stlmnt_pnt_prices AS prices
+      CROSS JOIN delivery_bounds
+      WHERE
+        prices.settlementpoint = 'HB_NORTH'
+        AND delivery_bounds.min_delivery_date IS NOT NULL
+        AND prices.deliverydate::date >= delivery_bounds.min_delivery_date
+        AND prices.deliverydate::date <= delivery_bounds.max_delivery_date
+        AND prices.hourending BETWEEN 7 AND 22
     ),
     ercot_hourly AS MATERIALIZED (
       SELECT * FROM ercot_rt_hourly

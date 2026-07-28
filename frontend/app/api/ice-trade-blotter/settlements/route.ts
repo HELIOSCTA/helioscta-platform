@@ -641,7 +641,7 @@ ${buildNercOffPeakDaysValuesSql(2020, 2035)}
           AVG(prices.settlementpointprice) AS total_lmp,
           MAX(prices.updated_at)::timestamp AS source_updated_at,
           COUNT(*) AS interval_count
-        FROM ercot.rt_spp_all_nodes AS prices
+        FROM ercot.settlement_point_prices AS prices
         CROSS JOIN params
         CROSS JOIN blotter_delivery_bounds AS bounds
         WHERE
