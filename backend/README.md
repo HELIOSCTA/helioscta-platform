@@ -63,6 +63,9 @@ MUFG_SFTP_USER=
 MUFG_SFTP_PASSWORD=
 MUFG_SFTP_PORT=22
 MUFG_SFTP_REMOTE_DIR=/
+
+BBG_HOST=localhost
+BBG_PORT=8194
 ```
 
 Legacy `AZURE_POSTGRESQL_DB_*` variables still work as fallbacks. The backend
@@ -332,6 +335,26 @@ ECMWF ENS DA price forecasts directly to
 using the same source grain. Incoming and existing DA price rows are limited to
 14 days forward from the source issue timestamp in the source timezone.
 
+Bloomberg Desktop API helpers are local Windows-only. They live under
+`backend.scrapes.bloomberg_dapi` and `backend.orchestration.bloomberg_dapi`,
+write the fixed Bloomberg security universe plus metadata to
+`bbg_dapi.bbg_tickers`, and write daily historical values to
+`bbg_dapi.bbg_historical`. `bbg_dapi.bbg_tickers` stores repo-owned business
+metadata such as category, subcategory, region, market, commodity, unit, and
+default data type. Scheduled Windows runs also enrich nullable Bloomberg
+reference fields such as `NAME`, `SECURITY_DES`, `CRNCY`, `COUNTRY`, and
+`MARKET_SECTOR_DES` through a BLPAPI `ReferenceDataRequest`. The historical
+source grain is `security x date x data_type`; safe reruns upsert by that key.
+Bloomberg DAPI requires Bloomberg Terminal to be running and logged in on the
+same Windows host, with `bbcomm` reachable at `BBG_HOST:BBG_PORT`, defaulting
+to `localhost:8194`. Do not install Bloomberg dependencies on the Linux VM,
+and do not add Bloomberg systemd units under `infrastructure/systemd`.
+Scheduled local runs first refresh `bbg_dapi.bbg_tickers`, then pull the
+configured historical lookback through Bloomberg `//blp/refdata` and log both
+steps to `ops.api_fetch_log` with `provider = 'bloomberg_dapi'`. Apply the
+operator SQL under `dbt/azure_postgres/reference_sql/ddl/bbg_dapi/` with
+`helios_admin` before enabling writes.
+
 ICE Python settlement helpers are local Windows-only. They live under
 `backend.scrapes.ice_python` and `backend.orchestration.ice_python`, write
 non-option settlement marks to `ice_python.settlements` and contract-date
@@ -494,6 +517,25 @@ pip install -r backend/requirements-dev.txt -e backend
 pytest backend/tests
 ```
 
+For local Windows Bloomberg DAPI runs only:
+
+```powershell
+python -m pip install -r backend\requirements-local-bloomberg.txt -e backend
+python -c "import blpapi; print('blpapi ok')"
+python -c "from datetime import date; from backend.orchestration.bloomberg_dapi import historical; historical.main(start_date=date(2026, 7, 1), end_date=date(2026, 7, 1), dry_run=True)"
+python -c "from backend.orchestration.bloomberg_dapi import tickers; tickers.main(enrich_reference_data=True)"
+.\infrastructure\windows-task-scheduler\bloomberg_dapi\install_bloomberg_dapi_historical_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-platform-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+The Bloomberg SDK is resolved from Bloomberg's official package repository
+through `backend\requirements-local-bloomberg.txt`. Official API references are
+published at `https://bloomberg.github.io/blpapi-docs/`.
+
 For local Windows ICE Python runs only:
 
 ```powershell
@@ -559,6 +601,7 @@ python -m backend.backfills.weather.wsi.daily_weighted_observations
 python -m backend.backfills.nav.positions_from_legacy_cache
 python -m backend.backfills.ice_trade_blotters.from_legacy_cache
 python -m backend.backfills.ice_python.futures
+python -m backend.backfills.bloomberg_dapi.historical
 ```
 
 For an ad hoc range, edit the `DEFAULT_START_DATE`, `DEFAULT_END_DATE`, or the
@@ -601,6 +644,21 @@ futures backfill requests `Settle`, `Open`, `High`, `Low`, `Close`,
 It emits `ops.api_fetch_log` telemetry through the shared ICE orchestration
 runtime and reports source-missing symbols without failing the whole family
 backfill.
+
+Bloomberg DAPI historical backfills run only on the licensed Windows Bloomberg
+Terminal host. Use `backend.backfills.bloomberg_dapi.historical` to refresh
+`bbg_dapi.bbg_tickers` once and then replay daily `bbg_dapi.bbg_historical`
+chunks with the same latest-row upsert key,
+`security x date x data_type`. The default module run backfills only the prior
+day. For a wider range, call `main()` with explicit dates:
+
+```powershell
+python -c "from backend.backfills.bloomberg_dapi import historical; print(historical.main(start_date='2020-01-01', end_date='2026-07-28', max_days=5000, chunk_days=31))"
+```
+
+Set `dry_run=True` to validate the requested date window without connecting to
+Bloomberg or writing Postgres. The backfill does not preserve revisions; reruns
+overwrite the same `security x date x data_type` rows.
 
 ## Scheduled LMP Price Repair
 

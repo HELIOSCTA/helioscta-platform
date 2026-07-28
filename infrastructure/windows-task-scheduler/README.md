@@ -308,7 +308,7 @@ process environment, including variables the scheduler wrapper just set.
 `HELIOS_LOG_DIR` is a key the repo's `.env` commonly carries with the Linux VM
 value `/var/log/helioscta`. On a Windows host that resolves to
 `C:\var\log\helioscta`, so per-pull logs silently land off-host while lock and
-state files land correctly — a split that makes a healthy host look
+state files land correctly ? a split that makes a healthy host look
 misconfigured when reading `ops.api_fetch_log`.
 
 On a Windows ICE host, set the key in `backend\.env` to the host log directory
@@ -396,6 +396,123 @@ Also check freshness on:
 - `ice_python.settlements`
 - `ice_python.settlement_contract_dates`
 
+## Bloomberg DAPI Historical
+
+Task Scheduler runs one local Windows Bloomberg Desktop API task:
+
+```text
+\HeliosCTA\Bloomberg DAPI\HeliosCTA Bloomberg DAPI Historical
+```
+
+The task starts hourly by default. Each launch calls:
+
+```powershell
+python -c "from backend.orchestration.bloomberg_dapi import historical; raise SystemExit(historical.scheduled_main(lookback_days=60))"
+```
+
+Routine Bloomberg launches are hidden under the interactive Windows user.
+Keep Bloomberg Terminal running and logged in on that profile; Desktop API
+access depends on the local `bbcomm` process, defaulting to
+`localhost:8194`.
+
+Each scheduled launch first upserts the fixed HeliosCTA ticker metadata
+registry, then enriches nullable Bloomberg reference metadata fields through
+`//blp/refdata` before pulling historical `PX_LAST` values. The repo-owned
+fields are the stable downstream grouping contract; Bloomberg reference fields
+are the vendor-authoritative security name/description overlay when DAPI access
+returns them.
+
+Apply the target-table SQL before enabling the task:
+
+```text
+dbt/azure_postgres/reference_sql/ddl/bbg_dapi/
+```
+
+Run from the production clone in PowerShell:
+
+```powershell
+.\infrastructure\windows-task-scheduler\bloomberg_dapi\install_bloomberg_dapi_historical_task.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-platform-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -InstallDependencies `
+  -RunImportSmoke
+```
+
+The installer verifies writer database config, optionally installs
+`backend\requirements-local-bloomberg.txt`, optionally imports the promoted
+Bloomberg modules, and registers or updates one hidden interactive task. The
+Bloomberg SDK is installed from Bloomberg's official Python package repository;
+do not install it on Linux VM runtime environments.
+
+Manual smoke:
+
+```powershell
+.\infrastructure\windows-task-scheduler\bloomberg_dapi\run_bloomberg_dapi_historical_once.ps1 `
+  -RepoRoot C:\Users\AidanKeaveny\helioscta-prod\helioscta-platform `
+  -PythonExe C:\Users\AidanKeaveny\miniconda3\envs\helioscta-platform-backend\python.exe `
+  -LogDir C:\Users\AidanKeaveny\helioscta-prod\logs `
+  -LookbackDays 1
+```
+
+This writes the fixed ticker universe and Bloomberg historical rows to
+production Postgres. For a Terminal connectivity check without writes, run a
+manual dry run:
+
+```powershell
+& C:\Users\AidanKeaveny\miniconda3\envs\helioscta-platform-backend\python.exe -c "from datetime import date; from backend.orchestration.bloomberg_dapi import historical; historical.main(start_date=date(2026, 7, 1), end_date=date(2026, 7, 1), dry_run=True)"
+```
+
+Inspect task status and logs:
+
+```powershell
+Get-ScheduledTask `
+  -TaskPath "\HeliosCTA\Bloomberg DAPI\" `
+  -TaskName "HeliosCTA Bloomberg DAPI Historical"
+
+Get-ScheduledTaskInfo `
+  -TaskPath "\HeliosCTA\Bloomberg DAPI\" `
+  -TaskName "HeliosCTA Bloomberg DAPI Historical"
+
+Get-Content C:\Users\AidanKeaveny\helioscta-prod\logs\bloomberg-dapi-task-scheduler.log -Tail 100
+```
+
+Verify data and telemetry with read-only SQL:
+
+```sql
+SELECT
+    created_at,
+    pipeline_name,
+    operation_name,
+    status,
+    rows_written,
+    error_type,
+    error_message,
+    metadata
+FROM ops.api_fetch_log
+WHERE provider = 'bloomberg_dapi'
+ORDER BY created_at DESC
+LIMIT 20;
+
+SELECT
+    category,
+    subcategory,
+    market,
+    COUNT(*) AS ticker_count,
+    COUNT(*) FILTER (WHERE bloomberg_reference_fetched_at_utc IS NOT NULL) AS reference_enriched_count
+FROM bbg_dapi.bbg_tickers
+GROUP BY category, subcategory, market
+ORDER BY category, subcategory, market;
+
+SELECT
+    security,
+    data_type,
+    MAX(date) AS latest_date,
+    COUNT(*) AS row_count
+FROM bbg_dapi.bbg_historical
+GROUP BY security, data_type
+ORDER BY security, data_type;
+```
 ## WoodMac NatGas Datafeed Import
 
 The legacy raw WoodMac/Genscape NatGas datafeed Task Scheduler package has

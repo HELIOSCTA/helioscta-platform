@@ -1,0 +1,11 @@
+# Optional local Bloomberg Desktop API workflow dependencies.
+#
+# Install these only on the licensed Windows host that runs Bloomberg Terminal
+# and exposes Desktop API / DAPI on localhost:8194. Do not install this file on
+# the Linux production VM.
+
+-r requirements.txt
+
+# Bloomberg publishes blpapi wheels on its own package index.
+--extra-index-url=https://blpapi.bloomberg.com/repository/releases/python/simple/
+blpapi
