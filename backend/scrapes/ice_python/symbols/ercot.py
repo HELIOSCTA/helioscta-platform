@@ -13,8 +13,8 @@ ICE product metadata reviewed on 2026-07-23:
 - ERCOT North RT/DA peak products use HE 0700-HE 2200 CPT.
 - ERCOT North RT off-peak products use HE 0100-HE 0600 and
   HE 2300-HE 2400 CPT.
-- ERCOT rows in this module are registry metadata only; no ERCOT
-  settlement orchestration is enabled here.
+- ERCOT rows in this module feed the active ICE settlement orchestration and
+  frontend power settle dictionary.
 """
 from __future__ import annotations
 
@@ -214,7 +214,7 @@ def _enrich_short_term_symbol(entry: dict[str, object]) -> dict[str, object]:
         "source_table": (
             "ercot.dam_stlmnt_pnt_prices"
             if settlement_source == "ERCOT_DA_LMP"
-            else "ercot.rt_spp_all_nodes"
+            else "ercot.settlement_point_prices"
         ),
     }
     return _common_ice_metadata(enriched)

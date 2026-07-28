@@ -52,6 +52,8 @@ def test_power_daily_product_dictionary_contains_positions_trades_symbols():
     for symbol, product_id in expected_product_ids.items():
         assert entries[symbol]["ice_product_id"] == product_id
         assert entries[symbol]["metadata_status"] == "ice_product_url_verified"
+    assert entries["ERA D0-IUS"]["source_table"] == "ercot.settlement_point_prices"
+    assert entries["NDA D1-IUS"]["source_table"] == "ercot.dam_stlmnt_pnt_prices"
 
 
 def test_registry_runner_uses_today_snapshot_and_lookback_window(monkeypatch):
