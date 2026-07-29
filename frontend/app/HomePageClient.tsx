@@ -309,7 +309,7 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "ice-pmi-curve") {
     return "ice-pmi-curve";
   }
-  if (showLocalDevFeatures && value === "gas-prices") {
+  if (value === "gas-prices") {
     return "gas-prices";
   }
   if (showLocalDevFeatures && value === "pjm-generation") {
@@ -703,11 +703,11 @@ export default function HomePageClient({
         footer: "ICE PMI | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
-    if (showLocalDevFeatures && activeSection === "gas-prices") {
+    if (activeSection === "gas-prices") {
       return {
-        title: "Gas Pricing Workstation",
-        subtitle: "ICE gas cash, BalMo, and active monthly curve snapshot by region and market.",
-        footer: "Gas Pricing | ICE physical next-day gas",
+        title: "Gas ICE Settles",
+        subtitle: "ICE gas cash, BalMo, and active monthly settlements by region and market.",
+        footer: "Gas ICE Settles | Source: ice_python.settlements / helios_prod",
       };
     }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
@@ -806,9 +806,9 @@ export default function HomePageClient({
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
-    activeSection === "spark-spreads" ||
-    activeSection === "gas-prices";
+    activeSection === "spark-spreads";
   const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
+  const usesGasMarketEyebrow = activeSection === "gas-prices";
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
     showLocalDevFeatures && activeSection === "gtn-balance";
@@ -841,7 +841,9 @@ export default function HomePageClient({
                   ? "Helios CTA | Back Office"
                   : usesPowerMarketEyebrow
                     ? "Helios CTA | Power Markets"
-                    : "HeliosCTA"}
+                    : usesGasMarketEyebrow
+                      ? "Helios CTA | Gas Markets"
+                      : "HeliosCTA"}
               </p>
               <h1 className="text-xl font-bold text-gray-100 sm:text-3xl">{meta.title}</h1>
               <p
@@ -1362,7 +1364,7 @@ export default function HomePageClient({
           {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (
             <IcePmiCurveTable />
           )}
-          {showLocalDevFeatures && activeSection === "gas-prices" && (
+          {activeSection === "gas-prices" && (
             <GasDailyPrices />
           )}
           {showLocalDevFeatures && activeSection === "pjm-generation" && (

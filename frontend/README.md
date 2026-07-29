@@ -132,7 +132,6 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
 GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
-GET /api/gas-daily-prices?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
 GET /api/pjm-tightness-lookback?date=YYYY-MM-DD
@@ -453,25 +452,42 @@ are present, and exposes latest trade date, latest `updated_at`, row count, and
 source table metadata in the payload. It does not create a database model, frontend
 cache table, backend job, or new credential requirement.
 
-## Local DEV Gas Prices Source Contract
+## Gas ICE Settles Source Contract
 
-The Gas Prices DEV view reads ICE physical next-day gas settlements with
-`helios_readonly` from `ice_python.settlements`. It appears in the local `DEV`
-sidebar section at `/?section=gas-prices`; Vercel builds hide the page and
-return `404` from `GET /api/gas-daily-prices`.
+The Gas ICE Settles view reads ICE physical gas cash, BalMo, and monthly
+settlement marks with `helios_readonly` from `helios_prod.ice_python.settlements`.
+It appears in the `Pricing` sidebar section at `/?section=gas-prices`; the page
+and supporting Gas ICE Settles API routes are production-visible on Vercel.
 
 Source system: ICE Python / ICE XL local Windows runtime.
 
 Promoted table grain: `trade_date x symbol`, with primary key
 `(trade_date, symbol)` and freshness field `updated_at`.
 
-The route `GET /api/gas-daily-prices` accepts bounded gas-day params
-`startDate=YYYY-MM-DD` and `endDate=YYYY-MM-DD`, with a maximum range of 120 gas
-days. The response returns a daily WVAP Close matrix over the promoted next-day
-physical gas hub registry. Gas-day attribution is generated from the shared ICE
-physical gas trading calendar, so weekend and holiday strips use the same
-mapping as the standalone SQL verifier. It does not create a database model,
-frontend cache table, backend job, or new credential requirement.
+The workstation currently uses:
+
+- `GET /api/gas-daily-prices` for the cash, BalMo, and active monthly matrix.
+- `GET /api/gas-daily-prices/monthly-settles` for the Gas Pricing Monthly
+  Settles tab.
+- `GET /api/gas-daily-prices/contract` for cell-level history drilldowns.
+
+The Gas ICE Settles routes do not read calendar tables, legacy `ice_python_v1_*`
+schemas, Azure SQL, Criterion Snowflake, or weather-adjusted WDD sources. Active
+monthly/front values are selected from available settlement rows in
+`ice_python.settlements`; settlement rows are treated as the settlement/expiry
+reference until a promoted `helios_prod` calendar contract is introduced. The
+Matrix tab defaults Cash and BalMo to `vwap_close`; each column can switch to
+`settlement`, `open`, `high`, `low`, `close`, or `vwap_close` independently.
+Monthly Settles tab is market-first: Futures and Cash render side by side, with
+BalMo underneath. Futures, Cash, and BalMo all use month x year cells. Cash and
+BalMo cells display the monthly average of the selected daily price field, and
+cell drilldowns are filtered to the daily rows inside that month/year. Basis
+outrights are derived as Henry Hub fixed futures plus the market basis leg when
+both legs share a trade date.
+The market region metadata comes from `backend.scrapes.ice_python.symbols.gas` and
+uses EIA storage-region keys: `east`, `midwest`, `mountain`, `pacific`, and
+`south_central`. The view does not create a database model, frontend cache
+table, backend job, or new credential requirement.
 
 ## Power ICE Settles Source Contract
 

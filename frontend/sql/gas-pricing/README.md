@@ -2,6 +2,10 @@
 
 Standalone, read-only SQL scripts for ICE next-day gas price shaping.
 
+The current frontend Gas Pricing workstation does not call these calendar-based
+hourly scripts. Its matrix view reads `helios_prod.ice_python.settlements`
+directly through the Next.js API routes under `frontend/app/api/gas-daily-prices/`.
+
 ## Files
 
 - `marts/ice_python_next_day_gas_hourly.sql`: reproduces the legacy

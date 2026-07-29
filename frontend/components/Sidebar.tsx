@@ -71,6 +71,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     navItems: [
       { id: "ice-settlements", label: "Power ICE Settles" },
       { id: "spark-spreads", label: "Power Sparks" },
+      { id: "gas-prices", label: "Gas ICE Settles" },
     ],
   });
 
@@ -112,7 +113,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },
-        { id: "gas-prices", label: "Gas Pricing" },
         { id: "pjm-generation", label: "Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "positions-home", label: "Old Positions Home" },

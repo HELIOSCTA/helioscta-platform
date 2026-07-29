@@ -1,28 +1,30 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 import {
   DAILY_GAS_MARKETS,
   buildDailyGasMarketValuesSql,
   getIceGasRegistryCounts,
+  normalizeDailyGasPriceBasis,
   type DailyGasCurveColumn,
   type DailyGasMarket,
   type DailyGasPriceRow,
   type DailyGasPricesPayload,
+  type GasPriceBasis,
 } from "@/lib/gasPricing";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
 const CACHE_HEADER = "public, s-maxage=300, stale-while-revalidate=60";
-const MONTH_COLUMNS = 12;
+const MONTH_COLUMNS = 24;
+const DEFAULT_CASH_BALMO_BASIS: GasPriceBasis = "vwap_close";
 
 const ROUTE_CONFIG = {
   route: "/api/gas-daily-prices",
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "Local-dev ICE physical gas curve snapshot",
+  purpose: "ICE physical gas curve snapshot",
   p95TargetMs: 2_500,
   freshnessSource: "ice_python.settlements updated_at",
 } as const;
@@ -47,6 +49,7 @@ interface RawGasCurveCell {
   source_symbol: string | null;
   source_symbols: string | null;
   updated_at: string | null;
+  trend_points: unknown;
 }
 
 function parseIsoDate(value: string | null): string | null {
@@ -66,7 +69,59 @@ function maxString(values: Array<string | null>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
-function buildSql(): string {
+function parseTrendPoints(value: unknown): Array<{ tradeDate: string | null; value: number | null }> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((point) => {
+      if (!point || typeof point !== "object") return null;
+      const record = point as Record<string, unknown>;
+      const tradeDate =
+        typeof record.tradeDate === "string"
+          ? record.tradeDate.slice(0, 10)
+          : typeof record.trade_date === "string"
+            ? record.trade_date.slice(0, 10)
+            : null;
+      return {
+        tradeDate,
+        value: toNumber(record.value),
+      };
+    })
+    .filter((point): point is { tradeDate: string | null; value: number | null } => point !== null);
+}
+
+function normalizeCashBalmoBasis(value: string | null): GasPriceBasis {
+  if (!value) return DEFAULT_CASH_BALMO_BASIS;
+  const normalized = normalizeDailyGasPriceBasis(value);
+  return normalized === value ? normalized : DEFAULT_CASH_BALMO_BASIS;
+}
+
+function priceBasisSqlField(basis: GasPriceBasis): string {
+  switch (basis) {
+    case "settlement":
+      return "settlement";
+    case "open":
+      return "open";
+    case "high":
+      return "high";
+    case "low":
+      return "low";
+    case "close":
+      return "close";
+    case "vwap_close":
+      return "vwap_close";
+  }
+}
+
+function buildSql({
+  cashBasis,
+  balmoBasis,
+}: {
+  cashBasis: GasPriceBasis;
+  balmoBasis: GasPriceBasis;
+}): string {
+  const cashField = priceBasisSqlField(cashBasis);
+  const balmoField = priceBasisSqlField(balmoBasis);
+
   return `
     with requested as (
       select
@@ -88,69 +143,30 @@ ${buildDailyGasMarketValuesSql()}
         curve_style
       )
     ),
-    futures_products as (
-      select 'HNG'::text as product
-      union
-      select futures_product::text as product
-      from market_registry
-      where futures_product is not null
-    ),
     selected_trade_date as (
       select coalesce(
         (select requested_trade_date from requested),
         (
           select max(s.trade_date)::date
           from ice_python.settlements s
-          where s.symbol ~ '^HNG [FGHJKMNQUVXZ][0-9]{2}-IUS$'
-            and s.settlement is not null
-            and s.settlement::text <> 'NaN'
+          where s.symbol in (select cash_symbol from market_registry)
+            and s.vwap_close is not null
+            and s.vwap_close::text <> 'NaN'
         ),
         (
           select max(s.trade_date)::date
           from ice_python.settlements s
-          where s.symbol in (select cash_symbol from market_registry)
+          where s.symbol ~ '^HNG [FGHJKMNQUVXZ][0-9]{2}-IUS$'
+            and s.settlement is not null
+            and s.settlement::text <> 'NaN'
         )
       ) as trade_date
     ),
-    parsed_monthly_symbols as (
-      select
-        s.symbol,
-        match_parts[1] as product,
-        match_parts[2] as strip_code,
-        make_date(
-          2000 + match_parts[3]::int,
-          case match_parts[2]
-            when 'F' then 1
-            when 'G' then 2
-            when 'H' then 3
-            when 'J' then 4
-            when 'K' then 5
-            when 'M' then 6
-            when 'N' then 7
-            when 'Q' then 8
-            when 'U' then 9
-            when 'V' then 10
-            when 'X' then 11
-            when 'Z' then 12
-          end,
-          1
-        ) as contract_month
-      from ice_python.settlements s
-      cross join selected_trade_date d
-      cross join lateral regexp_match(s.symbol, '^([A-Z0-9]+) ([FGHJKMNQUVXZ])([0-9]{2})-IUS$') as match_parts
-      where s.trade_date::date = d.trade_date
-        and match_parts[1] in (select product from futures_products)
-    ),
     active_months as (
-      select contract_month
-      from (
-        select distinct contract_month
-        from parsed_monthly_symbols
-        cross join selected_trade_date d
-        where contract_month >= date_trunc('month', d.trade_date)::date
-      ) months
-      order by contract_month
-      limit ${MONTH_COLUMNS}
+      select
+        (date_trunc('month', d.trade_date)::date + (month_offset || ' month')::interval)::date as contract_month
+      from selected_trade_date d
+      cross join generate_series(1, ${MONTH_COLUMNS}) as offsets(month_offset)
     ),
     month_columns as (
       select
@@ -318,56 +334,136 @@ ${buildDailyGasMarketValuesSql()}
       cross join market_registry m
       cross join columns c
     ),
-    cell_daily_values as (
+    single_leg_targets as (
       select
         mc.row_sort,
         mc.market,
         mc.column_key,
-        s.trade_date::date as trade_date,
-        case
-          when s.trade_date is null then null
-          when count(*) filter (
-            where case
-              when mc.column_kind in ('cash', 'balmo') then nullif(s.vwap_close::text, 'NaN')::double precision
-              else nullif(s.settlement::text, 'NaN')::double precision
-            end is not null
-          ) = cardinality(mc.source_symbols)
-          then sum(
-            case
-              when mc.column_kind in ('cash', 'balmo') then nullif(s.vwap_close::text, 'NaN')::double precision
-              else nullif(s.settlement::text, 'NaN')::double precision
-            end
-          )
-          else null
-        end as value,
-        max(s.updated_at) as updated_at
+        mc.column_kind,
+        mc.source_symbols[1] as source_symbol
       from market_columns mc
-      cross join selected_trade_date d
-      left join lateral unnest(mc.source_symbols) as leg(symbol) on true
-      left join ice_python.settlements s
-        on s.symbol = leg.symbol
-       and s.trade_date::date <= d.trade_date
-      group by mc.row_sort, mc.market, mc.column_key, mc.column_kind, cardinality(mc.source_symbols), s.trade_date::date
+      where cardinality(mc.source_symbols) = 1
+        and mc.source_symbols[1] is not null
+    ),
+    basis_month_targets as (
+      select
+        mc.row_sort,
+        mc.market,
+        mc.column_key,
+        mc.henry_symbol,
+        mc.market_month_symbol
+      from market_columns mc
+      where mc.column_kind = 'month'
+        and mc.curve_style = 'basis'
+        and mc.henry_symbol is not null
+        and mc.market_month_symbol is not null
     ),
     cell_latest as (
       select
-        row_sort,
-        market,
-        column_key,
-        trade_date,
-        value,
-        updated_at
+        t.row_sort,
+        t.market,
+        t.column_key,
+        latest.trade_date,
+        latest.value,
+        latest.updated_at
+      from single_leg_targets t
+      cross join selected_trade_date d
+      left join lateral (
+        select
+          s.trade_date::date as trade_date,
+          case
+            when t.column_kind = 'cash' then nullif(s.${cashField}::text, 'NaN')::double precision
+            when t.column_kind = 'balmo' then nullif(s.${balmoField}::text, 'NaN')::double precision
+            else nullif(s.settlement::text, 'NaN')::double precision
+          end as value,
+          s.updated_at
+        from ice_python.settlements s
+        where s.symbol = t.source_symbol
+          and s.trade_date::date <= d.trade_date
+          and case
+            when t.column_kind = 'cash' then nullif(s.${cashField}::text, 'NaN')::double precision
+            when t.column_kind = 'balmo' then nullif(s.${balmoField}::text, 'NaN')::double precision
+            else nullif(s.settlement::text, 'NaN')::double precision
+          end is not null
+        order by s.trade_date desc
+        limit 1
+      ) latest on true
+
+      union all
+
+      select
+        t.row_sort,
+        t.market,
+        t.column_key,
+        latest.trade_date,
+        latest.value,
+        latest.updated_at
+      from basis_month_targets t
+      cross join selected_trade_date d
+      left join lateral (
+        select
+          h.trade_date::date as trade_date,
+          nullif(h.settlement::text, 'NaN')::double precision
+            + nullif(basis_leg.settlement::text, 'NaN')::double precision as value,
+          (
+            select max(value)
+            from (values (h.updated_at), (basis_leg.updated_at)) as updated(value)
+          ) as updated_at
+        from ice_python.settlements h
+        inner join ice_python.settlements basis_leg
+          on basis_leg.symbol = t.market_month_symbol
+         and basis_leg.trade_date::date = h.trade_date::date
+         and nullif(basis_leg.settlement::text, 'NaN') is not null
+        where h.symbol = t.henry_symbol
+          and h.trade_date::date <= d.trade_date
+          and nullif(h.settlement::text, 'NaN') is not null
+        order by h.trade_date desc
+        limit 1
+      ) latest on true
+    ),
+    cash_balmo_trends as (
+      select
+        trend_source.row_sort,
+        trend_source.market,
+        trend_source.column_key,
+        jsonb_agg(
+          jsonb_build_object(
+            'tradeDate', trend_source.trade_date::text,
+            'value', trend_source.value
+          )
+          order by trend_source.trade_date
+        ) as trend_points
       from (
         select
-          cell_daily_values.*,
-          row_number() over (
-            partition by row_sort, market, column_key
-            order by trade_date desc
-          ) as row_number
-        from cell_daily_values
-        where value is not null
-      ) ranked
-      where row_number = 1
+          mc.row_sort,
+          mc.market,
+          mc.column_key,
+          s.trade_date::date as trade_date,
+          s.value
+        from market_columns mc
+        cross join selected_trade_date d
+        cross join lateral (
+          select
+            s.trade_date,
+            case
+              when mc.column_kind = 'cash' then nullif(s.${cashField}::text, 'NaN')::double precision
+              when mc.column_kind = 'balmo' then nullif(s.${balmoField}::text, 'NaN')::double precision
+            end as value
+          from ice_python.settlements s
+          where s.symbol = mc.source_symbols[1]
+            and s.trade_date::date <= d.trade_date
+            and case
+              when mc.column_kind = 'cash' then nullif(s.${cashField}::text, 'NaN')::double precision
+              when mc.column_kind = 'balmo' then nullif(s.${balmoField}::text, 'NaN')::double precision
+            end is not null
+          order by s.trade_date desc
+          limit 7
+        ) s
+        where mc.column_kind in ('cash', 'balmo')
+          and cardinality(mc.source_symbols) = 1
+          and mc.source_symbols[1] is not null
+      ) trend_source
+      group by trend_source.row_sort, trend_source.market, trend_source.column_key
     )
     select
       mc.trade_date::text as trade_date,
@@ -388,12 +484,17 @@ ${buildDailyGasMarketValuesSql()}
       latest.trade_date::text as value_trade_date,
       mc.display_symbol as source_symbol,
       array_to_string(mc.source_symbols, ',') as source_symbols,
-      to_char(latest.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at
+      to_char(latest.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at,
+      coalesce(trend.trend_points, '[]'::jsonb) as trend_points
     from market_columns mc
     left join cell_latest latest
       on latest.row_sort = mc.row_sort
      and latest.market = mc.market
      and latest.column_key = mc.column_key
+    left join cash_balmo_trends trend
+      on trend.row_sort = mc.row_sort
+     and trend.market = mc.market
+     and trend.column_key = mc.column_key
     order by mc.row_sort, mc.column_sort;
   `;
 }
@@ -401,6 +502,8 @@ ${buildDailyGasMarketValuesSql()}
 function buildPayload(
   rawRows: RawGasCurveCell[],
   priceBasis: DailyGasPricesPayload["priceBasis"],
+  cashBasis: DailyGasPricesPayload["cashBasis"],
+  balmoBasis: DailyGasPricesPayload["balmoBasis"],
 ): DailyGasPricesPayload {
   const tradeDate = rawRows[0]?.trade_date ?? "";
   const registryCounts = getIceGasRegistryCounts();
@@ -434,6 +537,7 @@ function buildPayload(
         symbols: {},
         sourceSymbols: {},
         updatedAt: {},
+        trends: {},
         sort: raw.row_sort,
       };
       rowsByMarket.set(raw.market, row);
@@ -448,6 +552,7 @@ function buildPayload(
       ? raw.source_symbols.split(",").filter(Boolean)
       : [];
     row.updatedAt[raw.column_key] = raw.updated_at === "-infinity" ? null : raw.updated_at;
+    row.trends[raw.column_key] = parseTrendPoints(raw.trend_points);
   }
 
   const columns = [...columnsByKey.values()]
@@ -473,11 +578,14 @@ function buildPayload(
       symbols: row.symbols,
       sourceSymbols: row.sourceSymbols,
       updatedAt: row.updatedAt,
+      trends: row.trends,
     }));
   const expectedValueCount = columns.length * rows.length;
 
   return {
     priceBasis,
+    cashBasis,
+    balmoBasis,
     tradeDate,
     columns,
     markets: DAILY_GAS_MARKETS,
@@ -499,18 +607,11 @@ function buildPayload(
 }
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return {
-      status: 404,
-      payload: { error: "Gas pricing is local-only while the ICE price grid is being validated." },
-      headers: { "Cache-Control": "no-store" },
-      rowCount: 0,
-    };
-  }
-
   const { searchParams } = new URL(request.url);
   const tradeDateParam = searchParams.get("tradeDate") ?? searchParams.get("date");
   const tradeDate = parseIsoDate(tradeDateParam);
+  const cashBasis = normalizeCashBalmoBasis(searchParams.get("cashBasis") ?? searchParams.get("cashPriceBasis"));
+  const balmoBasis = normalizeCashBalmoBasis(searchParams.get("balmoBasis") ?? searchParams.get("balmoPriceBasis"));
   if (tradeDateParam && !tradeDate) {
     return {
       status: 400,
@@ -520,7 +621,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     };
   }
 
-  const rawRows = await query<RawGasCurveCell>(buildSql(), [tradeDate]);
+  const rawRows = await query<RawGasCurveCell>(buildSql({ cashBasis, balmoBasis }), [tradeDate]);
 
   if (!rawRows.length || !rawRows[0]?.trade_date) {
     return {
@@ -531,7 +632,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     };
   }
 
-  const payload = buildPayload(rawRows, "settlement");
+  const payload = buildPayload(rawRows, "settlement", cashBasis, balmoBasis);
 
   return {
     payload,

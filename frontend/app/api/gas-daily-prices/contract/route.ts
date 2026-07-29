@@ -1,6 +1,5 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -11,7 +10,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "Local-dev ICE physical gas contract history detail",
+  purpose: "ICE physical gas contract history detail",
   p95TargetMs: 1_500,
   freshnessSource: "ice_python.settlements trade_date",
 } as const;
@@ -112,6 +111,7 @@ with daily as (
     from ice_python.settlements as s
     where s.symbol = any($1::text[])
       and ($2::date is null or s.trade_date::date <= $2::date)
+      and ($3::date is null or s.trade_date::date >= $3::date)
     group by s.trade_date::date
     having count(distinct s.symbol) = cardinality($1::text[])
 ),
@@ -135,15 +135,6 @@ order by trade_date;
 `;
 
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return {
-      status: 404,
-      payload: { error: "Gas pricing is local-only while the ICE price grid is being validated." },
-      headers: { "Cache-Control": "no-store" },
-      rowCount: 0,
-    };
-  }
-
   const { searchParams } = new URL(request.url);
   const endTradeDateParam = searchParams.get("endTradeDate");
   const endTradeDate = parseIsoDate(endTradeDateParam);
@@ -151,6 +142,24 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     return {
       status: 400,
       payload: { error: "endTradeDate must be YYYY-MM-DD." },
+      headers: { "Cache-Control": "no-store" },
+      rowCount: 0,
+    };
+  }
+  const startTradeDateParam = searchParams.get("startTradeDate");
+  const startTradeDate = parseIsoDate(startTradeDateParam);
+  if (startTradeDateParam && !startTradeDate) {
+    return {
+      status: 400,
+      payload: { error: "startTradeDate must be YYYY-MM-DD." },
+      headers: { "Cache-Control": "no-store" },
+      rowCount: 0,
+    };
+  }
+  if (startTradeDate && endTradeDate && startTradeDate > endTradeDate) {
+    return {
+      status: 400,
+      payload: { error: "startTradeDate must be on or before endTradeDate." },
       headers: { "Cache-Control": "no-store" },
       rowCount: 0,
     };
@@ -168,7 +177,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     };
   }
 
-  const rows = await query<GasContractHistorySourceRow>(CONTRACT_HISTORY_SQL, [symbols, endTradeDate]);
+  const rows = await query<GasContractHistorySourceRow>(CONTRACT_HISTORY_SQL, [
+    symbols,
+    endTradeDate,
+    startTradeDate,
+  ]);
   const history = rows.map(normalizeRow);
   const latest = history.at(-1) ?? null;
   const settlements = history

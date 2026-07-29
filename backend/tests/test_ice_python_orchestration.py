@@ -25,6 +25,7 @@ from backend.orchestration.ice_python.settlements import _runtime
 from backend.orchestration.ice_python.settlements import registry
 from backend.scrapes.ice_python.symbols import east_power
 from backend.scrapes.ice_python.symbols import ercot
+from backend.scrapes.ice_python.symbols import gas
 from backend.scrapes.ice_python.symbols import pjm
 from backend.scrapes.ice_python.symbols import west_power
 
@@ -151,6 +152,26 @@ def test_gas_next_day_wrapper_selects_default_symbols(monkeypatch):
     assert summary["symbols"][0] == "XGF D1-IPG"
     assert captured["fields"] == ["Settle"]
     assert captured["require_rows"] is False
+
+
+def test_gas_symbol_metadata_uses_eia_storage_regions():
+    eia_regions = {"east", "midwest", "mountain", "pacific", "south_central"}
+    entries = [
+        *gas.get_next_day_gas_symbols(),
+        *gas.get_balmo_gas_symbols(),
+        *gas.get_gas_futures_products(),
+    ]
+    regions = {entry["region"] for entry in entries}
+    next_day_regions_by_hub = {
+        entry["hub"]: entry["region"]
+        for entry in gas.get_next_day_gas_symbols()
+    }
+
+    assert regions == eia_regions
+    assert next_day_regions_by_hub["FGT Zone 3"] == "east"
+    assert next_day_regions_by_hub["NGPL Midcontinent"] == "south_central"
+    assert next_day_regions_by_hub["CIG Mainline"] == "mountain"
+    assert next_day_regions_by_hub["SoCal Citygate"] == "pacific"
 
 
 @pytest.mark.parametrize(

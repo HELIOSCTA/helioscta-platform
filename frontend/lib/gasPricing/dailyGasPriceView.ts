@@ -2,13 +2,11 @@ import type { GasPriceBasis } from "./hourlyGasPricingSql";
 import { DAILY_GAS_MARKETS } from "./iceGasRegistry";
 
 export type GasRegion =
-  | "louisiana"
-  | "southeast"
-  | "east_texas"
-  | "northeast"
+  | "east"
   | "midwest"
-  | "rockies_northwest"
-  | "southwest";
+  | "mountain"
+  | "pacific"
+  | "south_central";
 
 export type GasCurveColumnKind = "cash" | "balmo" | "month";
 
@@ -29,6 +27,11 @@ export interface DailyGasMarket {
   curveStyle: "fixed" | "basis" | "none";
 }
 
+export interface DailyGasTrendPoint {
+  tradeDate: string | null;
+  value: number | null;
+}
+
 export interface DailyGasPriceRow {
   region: GasRegion;
   market: string;
@@ -42,10 +45,13 @@ export interface DailyGasPriceRow {
   symbols: Record<string, string | null>;
   sourceSymbols: Record<string, string[]>;
   updatedAt: Record<string, string | null>;
+  trends: Record<string, DailyGasTrendPoint[]>;
 }
 
 export interface DailyGasPricesPayload {
   priceBasis: GasPriceBasis;
+  cashBasis: GasPriceBasis;
+  balmoBasis: GasPriceBasis;
   tradeDate: string;
   columns: DailyGasCurveColumn[];
   markets: DailyGasMarket[];
@@ -65,14 +71,20 @@ export interface DailyGasPricesPayload {
   };
 }
 
+export const GAS_REGION_ORDER: GasRegion[] = [
+  "south_central",
+  "east",
+  "pacific",
+  "mountain",
+  "midwest",
+];
+
 export const GAS_REGION_LABELS: Record<GasRegion, string> = {
-  louisiana: "Louisiana",
-  southeast: "Louisiana/Southeast",
-  east_texas: "East Texas",
-  northeast: "Northeast",
+  east: "East",
   midwest: "Midwest",
-  rockies_northwest: "Rockies/Northwest",
-  southwest: "Southwest",
+  mountain: "Mountain",
+  pacific: "Pacific",
+  south_central: "South Central",
 };
 
 export const GAS_CURVE_MONTH_CODES: Record<number, string> = {

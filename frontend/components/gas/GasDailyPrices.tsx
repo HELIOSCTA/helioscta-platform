@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -17,18 +17,35 @@ import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/Col
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
+  DAILY_GAS_PRICE_BASIS_LABELS,
   GAS_REGION_LABELS,
+  GAS_REGION_ORDER,
   getIceGasRegistryEntry,
   getIceGasVerificationLabel,
   type DailyGasCurveColumn,
   type DailyGasPriceRow,
   type DailyGasPricesPayload,
+  type DailyGasTrendPoint,
+  type GasPriceBasis,
+  type GasRegion,
   type IceGasRegistryEntry,
 } from "@/lib/gasPricing";
+import GasMonthlySettles from "./GasMonthlySettles";
 
 const API_TTL_MS = 5 * 60 * 1000;
 const EMPTY_FILTER_VALUES: string[] = [];
-const PRICE_FIELD_LABEL = "Cash/BalMo VWAP | Contracts Settlement";
+const DEFAULT_CASH_BALMO_BASIS: GasPriceBasis = "vwap_close";
+const MATRIX_INFO_COLUMN_WIDTH = 52;
+const MATRIX_MARKET_COLUMN_WIDTH = 240;
+const MATRIX_PRICE_COLUMN_WIDTH = 92;
+const GAS_PRICE_FIELD_OPTIONS: Array<{ key: GasPriceBasis; label: string }> = [
+  { key: "vwap_close", label: DAILY_GAS_PRICE_BASIS_LABELS.vwap_close },
+  { key: "settlement", label: DAILY_GAS_PRICE_BASIS_LABELS.settlement },
+  { key: "open", label: DAILY_GAS_PRICE_BASIS_LABELS.open },
+  { key: "high", label: DAILY_GAS_PRICE_BASIS_LABELS.high },
+  { key: "low", label: DAILY_GAS_PRICE_BASIS_LABELS.low },
+  { key: "close", label: DAILY_GAS_PRICE_BASIS_LABELS.close },
+];
 const GAS_HISTORY_LOOKBACK_OPTIONS = [
   { key: "30", label: "30D", days: 30 },
   { key: "90", label: "90D", days: 90 },
@@ -44,10 +61,27 @@ interface SortState {
 type ColumnFilters = Record<string, string[]>;
 type GasHistoryLookbackKey = (typeof GAS_HISTORY_LOOKBACK_OPTIONS)[number]["key"];
 type GasMatrixDisplayMode = "price" | "basisVsHenry" | "cashSpread";
+type GasPricingTab = "matrix" | "monthlySettles";
+type GasRegionFilterOption = { key: GasRegion | "all"; label: string };
 
 interface SelectedGasCell {
   row: DailyGasPriceRow;
   column: DailyGasCurveColumn;
+}
+
+interface GasInfoHoverCardState {
+  row: DailyGasPriceRow;
+  fullyVerified: boolean;
+  top: number;
+  left: number;
+}
+
+interface GasTrendHoverCardState {
+  title: string;
+  points: Array<{ tradeDate: string | null; value: number }>;
+  delta: number;
+  top: number;
+  left: number;
 }
 
 interface GasContractHistoryPoint {
@@ -94,15 +128,17 @@ interface GasSymbolInfoRow {
   sourceSymbols: string[];
 }
 
-function buildGasMatrixApiUrl(refresh: boolean): string {
+function buildGasMatrixApiUrl(refresh: boolean, cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
   const params = new URLSearchParams();
+  params.set("cashBasis", cashBasis);
+  params.set("balmoBasis", balmoBasis);
   if (refresh) params.set("refresh", "1");
   const query = params.toString();
   return query ? `/api/gas-daily-prices?${query}` : "/api/gas-daily-prices";
 }
 
-function buildCacheKey(): string {
-  return "api:gas-daily-prices:v10:latest-mixed-fields";
+function buildCacheKey(cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
+  return `api:gas-daily-prices:v13:latest-mixed-fields-24-months-cash-balmo-trends:${cashBasis}:${balmoBasis}`;
 }
 
 function fmtPrice(value: number | null | undefined): string {
@@ -146,6 +182,23 @@ function fmtSigned(value: number | null | undefined): string {
   return formatted;
 }
 
+function ControlCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
 function rowGradientColor(value: number | null, min: number, max: number): string {
   if (value === null || !Number.isFinite(min) || !Number.isFinite(max)) {
     return "rgba(15, 23, 42, 0.45)";
@@ -167,8 +220,14 @@ function sortFilterOption(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
-function priceFieldLabel(column: DailyGasCurveColumn): string {
-  return column.kind === "cash" || column.kind === "balmo" ? "VWAP" : "Settlement";
+function priceFieldLabel(
+  column: DailyGasCurveColumn,
+  cashBasis: GasPriceBasis,
+  balmoBasis: GasPriceBasis,
+): string {
+  if (column.kind === "cash") return DAILY_GAS_PRICE_BASIS_LABELS[cashBasis];
+  if (column.kind === "balmo") return DAILY_GAS_PRICE_BASIS_LABELS[balmoBasis];
+  return "Settlement";
 }
 
 function verificationClassName(entry: IceGasRegistryEntry | null): string {
@@ -205,6 +264,73 @@ function hasFullyVerifiedConfiguredSymbols(row: DailyGasPriceRow): boolean {
   ].filter((entry): entry is IceGasRegistryEntry => Boolean(entry));
 
   return configuredEntries.length > 0 && configuredEntries.every(isVerifiedIceEntry);
+}
+
+function gasInfoHoverRows(row: DailyGasPriceRow, fullyVerified: boolean) {
+  return [
+    { label: "Market", value: row.market },
+    { label: "Region", value: GAS_REGION_LABELS[row.region] },
+    { label: "Cash Symbol", value: row.cashSymbol },
+    { label: "BalMo Symbol", value: row.balmoSymbol ?? "-" },
+    { label: "Futures", value: row.futuresProduct ?? "-" },
+    { label: "Curve", value: row.curveStyle },
+    { label: "ICE Status", value: fullyVerified ? "Verified symbols" : "Needs symbol review" },
+  ];
+}
+
+function numericTrendPoints(points: DailyGasTrendPoint[]): Array<{ tradeDate: string | null; value: number }> {
+  return points.filter(
+    (point): point is { tradeDate: string | null; value: number } =>
+      point.value !== null && point.value !== undefined && Number.isFinite(point.value),
+  );
+}
+
+function GasPriceSparkline({
+  points,
+  onHover,
+  onLeave,
+}: {
+  points: DailyGasTrendPoint[];
+  onHover: (element: HTMLElement) => void;
+  onLeave: () => void;
+}) {
+  const numericPoints = numericTrendPoints(points);
+  if (numericPoints.length < 2) return null;
+
+  const width = 36;
+  const height = 14;
+  const pad = 2;
+  const values = numericPoints.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const lastIndex = numericPoints.length - 1;
+  const coordinates = numericPoints
+    .map((point, index) => {
+      const x = pad + (index / lastIndex) * (width - pad * 2);
+      const y = height - pad - ((point.value - min) / range) * (height - pad * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  const delta = numericPoints[lastIndex].value - numericPoints[0].value;
+  const stroke = delta >= 0 ? "#10b981" : "#f87171";
+
+  return (
+    <span
+      className="relative inline-flex shrink-0 items-center"
+      onMouseEnter={(event) => onHover(event.currentTarget)}
+      onMouseLeave={onLeave}
+    >
+      <svg
+        aria-hidden="true"
+        className="h-3.5 w-9"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        <line x1={pad} x2={width - pad} y1={height - pad} y2={height - pad} stroke="#293241" />
+        <polyline fill="none" points={coordinates} stroke={stroke} strokeLinecap="round" strokeWidth="1.7" />
+      </svg>
+    </span>
+  );
 }
 
 function compareNullablePrices(
@@ -640,14 +766,14 @@ function GasHistoryTable({ history }: { history: GasContractHistoryPoint[] }) {
 }
 
 export default function GasDailyPrices() {
-  const infoHeaderRef = useRef<HTMLTableCellElement | null>(null);
-  const regionHeaderRef = useRef<HTMLTableCellElement | null>(null);
+  const [activeTab, setActiveTab] = useState<GasPricingTab>("matrix");
   const [refreshToken, setRefreshToken] = useState(0);
-  const [infoColumnWidth, setInfoColumnWidth] = useState(42);
-  const [regionColumnWidth, setRegionColumnWidth] = useState(96);
   const [freshnessOpen, setFreshnessOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState<GasMatrixDisplayMode>("price");
   const [showGradient, setShowGradient] = useState(false);
+  const [cashBasis, setCashBasis] = useState<GasPriceBasis>(DEFAULT_CASH_BALMO_BASIS);
+  const [balmoBasis, setBalmoBasis] = useState<GasPriceBasis>(DEFAULT_CASH_BALMO_BASIS);
+  const [quickRegionFilters, setQuickRegionFilters] = useState<GasRegion[]>([]);
   const [data, setData] = useState<DailyGasPricesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -658,6 +784,8 @@ export default function GasDailyPrices() {
   const [detailError, setDetailError] = useState<string | null>(null);
   const [columnFilters, setColumnFilters] = useState<ColumnFilters>({});
   const [sortState, setSortState] = useState<SortState | null>(null);
+  const [infoHoverCard, setInfoHoverCard] = useState<GasInfoHoverCardState | null>(null);
+  const [trendHoverCard, setTrendHoverCard] = useState<GasTrendHoverCardState | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -667,8 +795,8 @@ export default function GasDailyPrices() {
     setError(null);
 
     fetchJsonWithCache<DailyGasPricesPayload>({
-      key: buildCacheKey(),
-      url: buildGasMatrixApiUrl(forceRefresh),
+      key: buildCacheKey(cashBasis, balmoBasis),
+      url: buildGasMatrixApiUrl(forceRefresh, cashBasis, balmoBasis),
       ttlMs: API_TTL_MS,
       signal: controller.signal,
       forceRefresh,
@@ -684,7 +812,7 @@ export default function GasDailyPrices() {
       });
 
     return () => controller.abort();
-  }, [refreshToken]);
+  }, [balmoBasis, cashBasis, refreshToken]);
 
   useEffect(() => {
     const symbols = selectedCell?.row.sourceSymbols[selectedCell.column.key] ?? [];
@@ -738,6 +866,16 @@ export default function GasDailyPrices() {
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const henryRow = useMemo(() => rows.find((row) => row.market === "Henry Hub") ?? null, [rows]);
+  const quickRegionOptions = useMemo<GasRegionFilterOption[]>(() => {
+    const configuredRegions = new Set(rows.map((row) => row.region));
+    return [
+      { key: "all", label: "All Regions" },
+      ...GAS_REGION_ORDER.filter((region) => configuredRegions.has(region)).map((region) => ({
+        key: region,
+        label: GAS_REGION_LABELS[region],
+      })),
+    ];
+  }, [rows]);
 
   const displayValueForKey = useMemo(
     () =>
@@ -776,25 +914,28 @@ export default function GasDailyPrices() {
     [displayMode, henryRow],
   );
 
+  const cashBasisLabel = DAILY_GAS_PRICE_BASIS_LABELS[cashBasis];
+  const balmoBasisLabel = DAILY_GAS_PRICE_BASIS_LABELS[balmoBasis];
+  const matrixPriceFieldLabel = `Cash ${cashBasisLabel} | BalMo ${balmoBasisLabel} | Contracts Settlement`;
   const matrixValueLabel =
     displayMode === "basisVsHenry"
       ? "Basis vs Henry"
       : displayMode === "cashSpread"
         ? "Cash Spread"
-        : PRICE_FIELD_LABEL;
+        : matrixPriceFieldLabel;
   const formatMatrixValue = useCallback(
     (value: number | null): string => (displayMode === "price" ? fmtPrice(value) : fmtSpreadPrice(value)),
     [displayMode],
   );
 
   useEffect(() => {
-    if (sortState && sortState.key !== "region" && sortState.key !== "market" && !columns.some((column) => column.key === sortState.key)) {
+    if (sortState && sortState.key !== "market" && !columns.some((column) => column.key === sortState.key)) {
       setSortState(null);
     }
   }, [sortState, columns]);
 
   useEffect(() => {
-    const visibleFilterKeys = new Set(["region", "market", ...columns.map((column) => column.key)]);
+    const visibleFilterKeys = new Set(["market", ...columns.map((column) => column.key)]);
     setColumnFilters((filters) =>
       Object.fromEntries(Object.entries(filters).filter(([key]) => visibleFilterKeys.has(key))),
     );
@@ -802,33 +943,44 @@ export default function GasDailyPrices() {
 
   useEffect(() => {
     setColumnFilters((filters) =>
-      Object.fromEntries(Object.entries(filters).filter(([key]) => key === "region" || key === "market")),
+      Object.fromEntries(Object.entries(filters).filter(([key]) => key === "market")),
     );
   }, [displayMode]);
 
+  useEffect(() => {
+    const validRegions = new Set(quickRegionOptions.map((option) => option.key));
+    setQuickRegionFilters((filters) => filters.filter((key) => validRegions.has(key)));
+  }, [quickRegionOptions]);
+
+  const quickFilteredRows = useMemo(() => {
+    const selectedRegions = new Set(quickRegionFilters);
+    return rows.filter((row) => {
+      if (selectedRegions.size > 0 && !selectedRegions.has(row.region)) return false;
+      return true;
+    });
+  }, [quickRegionFilters, rows]);
+
+  const quickFiltersActive = quickRegionFilters.length > 0;
+
   const filterOptions = useMemo(() => {
     const entries: Array<[string, string[]]> = [
-      [
-        "region",
-        [...new Set(rows.map((row) => GAS_REGION_LABELS[row.region]))].sort(sortFilterOption),
-      ],
-      ["market", [...new Set(rows.map((row) => row.market))].sort(sortFilterOption)],
+      ["market", [...new Set(quickFilteredRows.map((row) => row.market))].sort(sortFilterOption)],
       ...columns.map((column): [string, string[]] => [
         column.key,
-        [...new Set(rows.map((row) => formatMatrixValue(displayValueForKey(row, column.key))).filter((value) => value !== "-"))].sort(
+        [...new Set(quickFilteredRows.map((row) => formatMatrixValue(displayValueForKey(row, column.key))).filter((value) => value !== "-"))].sort(
           sortFilterOption,
         ),
       ]),
     ];
     return Object.fromEntries(entries);
-  }, [columns, displayValueForKey, formatMatrixValue, rows]);
+  }, [columns, displayValueForKey, formatMatrixValue, quickFilteredRows]);
 
   const visibleRows = useMemo(() => {
     const activeFilters = Object.entries(columnFilters).filter(([, values]) => values.length > 0);
     const filteredRows =
       activeFilters.length === 0
-        ? rows
-        : rows.filter((row) =>
+        ? quickFilteredRows
+        : quickFilteredRows.filter((row) =>
             activeFilters.every(([key, values]) =>
               values.includes(filterValueForColumn(row, key, displayValueForKey, formatMatrixValue)),
             ),
@@ -845,7 +997,7 @@ export default function GasDailyPrices() {
       if (columnComparison !== 0) return columnComparison;
       return left.market.localeCompare(right.market);
     });
-  }, [columnFilters, displayValueForKey, formatMatrixValue, rows, sortState]);
+  }, [columnFilters, displayValueForKey, formatMatrixValue, quickFilteredRows, sortState]);
   const rowGradientDomains = useMemo(() => {
     return new Map(
       visibleRows.map((row) => {
@@ -876,14 +1028,14 @@ export default function GasDailyPrices() {
         bucket: "Cash",
         symbol: selectedInfoRow.cashSymbol,
         entry: cashEntry,
-        formula: "Cash VWAP",
+        formula: `Cash ${cashBasisLabel}`,
         sourceSymbols: selectedInfoRow.sourceSymbols.cash ?? [selectedInfoRow.cashSymbol],
       },
       {
         bucket: "BalMo",
         symbol: selectedInfoRow.balmoSymbol,
         entry: balmoEntry,
-        formula: selectedInfoRow.balmoSymbol ? "BalMo VWAP" : "No BalMo configured",
+        formula: selectedInfoRow.balmoSymbol ? `BalMo ${balmoBasisLabel}` : "No BalMo configured",
         sourceSymbols: selectedInfoRow.sourceSymbols.balmo ?? (selectedInfoRow.balmoSymbol ? [selectedInfoRow.balmoSymbol] : []),
       },
       {
@@ -911,27 +1063,78 @@ export default function GasDailyPrices() {
     }
 
     return rowsForInfo;
-  }, [selectedInfoRow]);
+  }, [balmoBasisLabel, cashBasisLabel, selectedInfoRow]);
 
-  useEffect(() => {
-    const infoElement = infoHeaderRef.current;
-    const regionElement = regionHeaderRef.current;
-    if (!infoElement || !regionElement) return;
-
-    const updateWidth = () => {
-      const infoMeasured = Math.ceil(infoElement.getBoundingClientRect().width);
-      const regionMeasured = Math.ceil(regionElement.getBoundingClientRect().width);
-      if (infoMeasured > 0) setInfoColumnWidth(infoMeasured);
-      if (regionMeasured > 0) setRegionColumnWidth(regionMeasured);
-    };
-
-    updateWidth();
-    const observer = new ResizeObserver(updateWidth);
-    observer.observe(infoElement);
-    observer.observe(regionElement);
-    return () => observer.disconnect();
-  }, [visibleRows.length]);
-
+  const freshnessTradeDate = data?.tradeDate ?? null;
+  const freshnessDataAsOf = data?.metadata.dataAsOf ?? null;
+  const matrixTableWidth =
+    MATRIX_INFO_COLUMN_WIDTH +
+    MATRIX_MARKET_COLUMN_WIDTH +
+    columns.length * MATRIX_PRICE_COLUMN_WIDTH;
+  const stickyLeftForColumn = (column: DailyGasCurveColumn): number | undefined => {
+    if (column.kind === "cash") return MATRIX_INFO_COLUMN_WIDTH + MATRIX_MARKET_COLUMN_WIDTH;
+    if (column.kind === "balmo") {
+      return MATRIX_INFO_COLUMN_WIDTH + MATRIX_MARKET_COLUMN_WIDTH + MATRIX_PRICE_COLUMN_WIDTH;
+    }
+    return undefined;
+  };
+  const showInfoHoverCard = (
+    row: DailyGasPriceRow,
+    fullyVerified: boolean,
+    element: HTMLElement,
+  ) => {
+    const rect = element.getBoundingClientRect();
+    setInfoHoverCard({
+      row,
+      fullyVerified,
+      top: Math.max(12, rect.top - 10),
+      left: Math.max(12, Math.min(window.innerWidth - 340, rect.right + 12)),
+    });
+  };
+  const showTrendHoverCard = (
+    row: DailyGasPriceRow,
+    column: DailyGasCurveColumn,
+    points: DailyGasTrendPoint[],
+    element: HTMLElement,
+  ) => {
+    const numericPoints = numericTrendPoints(points);
+    if (numericPoints.length < 2) return;
+    const rect = element.getBoundingClientRect();
+    const delta = numericPoints.at(-1)!.value - numericPoints[0].value;
+    const widthPx = 184;
+    const heightPx = 170;
+    const left = Math.min(Math.max(8, rect.right - widthPx), window.innerWidth - widthPx - 8);
+    const below = rect.bottom + 8;
+    const top = below + heightPx > window.innerHeight ? Math.max(8, rect.top - heightPx - 8) : below;
+    setTrendHoverCard({
+      title: `${row.market} ${column.label}`,
+      points: numericPoints,
+      delta,
+      top,
+      left,
+    });
+  };
+  const refreshAll = () => setRefreshToken((value) => value + 1);
+  const clearQuickFilters = () => {
+    setQuickRegionFilters([]);
+  };
+  const toggleQuickRegionFilter = (region: GasRegion | "all") => {
+    if (region === "all") {
+      setQuickRegionFilters([]);
+      return;
+    }
+    setQuickRegionFilters((filters) =>
+      filters.includes(region)
+        ? filters.filter((value) => value !== region)
+        : [...filters, region],
+    );
+  };
+  const switchTab = (tab: GasPricingTab) => {
+    setActiveTab(tab);
+    setSelectedCell(null);
+    setSelectedInfoRow(null);
+    setTrendHoverCard(null);
+  };
   return (
     <div className="relative w-full max-w-none space-y-3 pt-16">
       {error && (
@@ -954,18 +1157,18 @@ export default function GasDailyPrices() {
                     Freshness
                   </span>
                   <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                    {data?.tradeDate ? "Latest" : "Unknown"}
+                    {freshnessTradeDate ? "Latest" : "Unknown"}
                   </span>
                 </div>
                 <p className="mt-1 font-mono text-xs text-gray-500">
-                  {data?.tradeDate ? `Gas pricing ${data.tradeDate}` : "Gas pricing --"}
+                  {freshnessTradeDate ? `Gas pricing ${freshnessTradeDate}` : "Gas pricing --"}
                 </p>
               </div>
             </button>
             <div className="flex shrink-0 items-center gap-2">
               <button
                 type="button"
-                onClick={() => setRefreshToken((value) => value + 1)}
+                onClick={refreshAll}
                 className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
               >
                 Refresh
@@ -983,22 +1186,102 @@ export default function GasDailyPrices() {
             <div className="flex min-w-0 flex-wrap items-stretch gap-2 border-t border-gray-800 p-2">
               <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Latest Trade</p>
-                <p className="mt-1 text-sm font-semibold break-words text-gray-200">{data?.tradeDate ?? "--"}</p>
+                <p className="mt-1 break-words text-sm font-semibold text-gray-200">{freshnessTradeDate ?? "--"}</p>
               </div>
               <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Fields</p>
-                <p className="mt-1 text-sm font-semibold break-words text-gray-200">{PRICE_FIELD_LABEL}</p>
+                <p className="mt-1 text-sm font-semibold break-words text-gray-200">{matrixPriceFieldLabel}</p>
+              </div>
+              <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Data As Of</p>
+                <p className="mt-1 break-words font-mono text-sm font-semibold text-gray-200">
+                  {fmtDateTime(freshnessDataAsOf)}
+                </p>
               </div>
             </div>
           )}
         </div>
       </div>
 
+      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-2">
+        {[
+          { key: "matrix" as const, label: "Gas Pricing Matrix" },
+          { key: "monthlySettles" as const, label: "Monthly Settles" },
+        ].map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            onClick={() => switchTab(tab.key)}
+            aria-pressed={activeTab === tab.key}
+            className={`rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+              activeTab === tab.key
+                ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                : "border-gray-800 bg-gray-950/35 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "matrix" && (
+        <div className="space-y-3">
+      <ControlCard title="Matrix Filters">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Filters
+            </span>
+            <span className="h-px flex-1 bg-gray-800" />
+            <span className="text-xs text-gray-500">
+              {quickFilteredRows.length.toLocaleString()} / {rows.length.toLocaleString()} markets
+            </span>
+          </div>
+
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Region
+            </span>
+            {quickRegionOptions.map((option) => {
+              const active =
+                option.key === "all"
+                  ? quickRegionFilters.length === 0
+                  : quickRegionFilters.includes(option.key);
+              return (
+                <button
+                  key={option.key}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleQuickRegionFilter(option.key)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+                    active
+                      ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                      : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {quickFiltersActive && (
+            <button
+              type="button"
+              onClick={clearQuickFilters}
+              className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-500 transition-all duration-150 hover:border-gray-600 hover:text-gray-300"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      </ControlCard>
+
       <DataTableShell
         title="Gas Pricing Matrix"
         subtitle={`${data?.tradeDate ? `Latest ${data.tradeDate}` : "Latest"} | ${matrixValueLabel}`}
-        className="mx-auto w-fit max-w-full"
-        bodyClassName="max-h-[82vh] overflow-auto"
+        className="w-full max-w-none"
+        bodyClassName="max-h-[82vh] w-full overflow-auto"
         action={
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -1051,8 +1334,13 @@ export default function GasDailyPrices() {
             <button
               type="button"
               onClick={() => {
+                clearQuickFilters();
                 setColumnFilters({});
                 setSortState(null);
+                setCashBasis(DEFAULT_CASH_BALMO_BASIS);
+                setBalmoBasis(DEFAULT_CASH_BALMO_BASIS);
+                setSelectedCell(null);
+                setTrendHoverCard(null);
               }}
               className="h-8 rounded-md border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
             >
@@ -1061,46 +1349,27 @@ export default function GasDailyPrices() {
           </div>
         }
       >
-          <table className="mx-auto w-max table-auto border-collapse bg-[#0d1119] text-xs text-gray-200">
+          <table
+            className="table-fixed border-collapse bg-[#0d1119] text-xs text-gray-200"
+            style={{ width: matrixTableWidth }}
+          >
+            <colgroup>
+              <col style={{ width: MATRIX_INFO_COLUMN_WIDTH }} />
+              <col style={{ width: MATRIX_MARKET_COLUMN_WIDTH }} />
+              {columns.map((column) => (
+                <col key={column.key} style={{ width: MATRIX_PRICE_COLUMN_WIDTH }} />
+              ))}
+            </colgroup>
             <thead className="sticky top-0 z-30 bg-gray-950">
               <tr>
                 <th
-                  ref={infoHeaderRef}
+                  style={{ left: 0 }}
                   className="sticky left-0 top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-center text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
                 >
                   Info
                 </th>
                 <th
-                  ref={regionHeaderRef}
-                  style={{ left: infoColumnWidth }}
-                  className="sticky top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setSortState({
-                          key: "region",
-                          direction: sortState?.key === "region" && sortState.direction === "asc" ? "desc" : "asc",
-                        })
-                      }
-                      className={sortState?.key === "region" ? "text-sky-200" : ""}
-                      title="Sort Region"
-                    >
-                      Region {sortState?.key === "region" ? (sortState.direction === "asc" ? "A" : "D") : ""}
-                    </button>
-                    <ColumnFilterMenu
-                      label="Region"
-                      options={filterOptions.region ?? EMPTY_FILTER_VALUES}
-                      selected={columnFilters.region ?? EMPTY_FILTER_VALUES}
-                      sortDirection={sortState?.key === "region" ? sortState.direction : null}
-                      onSort={(direction) => setSortState({ key: "region", direction })}
-                      onChange={(values) => setColumnFilters((filters) => ({ ...filters, region: values }))}
-                    />
-                  </div>
-                </th>
-                <th
-                  style={{ left: infoColumnWidth + regionColumnWidth }}
+                  style={{ left: MATRIX_INFO_COLUMN_WIDTH }}
                   className="sticky top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
                 >
                   <div className="flex items-center justify-between gap-2">
@@ -1127,53 +1396,87 @@ export default function GasDailyPrices() {
                     />
                   </div>
                 </th>
-                {columns.map((column) => (
-                  <th
-                    key={column.key}
-                    className={`border-l border-gray-800 px-1.5 py-2 text-center text-[10px] font-bold text-gray-100 ${
-                      column.kind === "month" ? "bg-gray-900" : "bg-gray-950"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSortState({
-                            key: column.key,
-                            direction: sortState?.key === column.key && sortState.direction === "asc" ? "desc" : "asc",
-                          })
-                        }
-                        className={`whitespace-nowrap ${sortState?.key === column.key ? "text-sky-200" : ""}`}
-                        title={`Sort ${column.label}`}
-                      >
-                        {column.label} {sortState?.key === column.key ? (sortState.direction === "asc" ? "A" : "D") : ""}
-                      </button>
-                      <ColumnFilterMenu
-                        label={column.label}
-                        options={filterOptions[column.key] ?? EMPTY_FILTER_VALUES}
-                        selected={columnFilters[column.key] ?? EMPTY_FILTER_VALUES}
-                        sortDirection={sortState?.key === column.key ? sortState.direction : null}
-                        onSort={(direction) => setSortState({ key: column.key, direction })}
-                        onChange={(values) =>
-                          setColumnFilters((filters) => ({ ...filters, [column.key]: values }))
-                        }
-                      />
-                    </div>
-                    <div className="mt-0.5 text-[9px] font-semibold text-gray-500">
-                      {displayMode === "basisVsHenry"
-                        ? "vs Henry"
-                        : displayMode === "cashSpread"
-                          ? "vs Cash"
-                          : priceFieldLabel(column)}
-                    </div>
-                  </th>
-                ))}
+                {columns.map((column) => {
+                  const stickyLeft = stickyLeftForColumn(column);
+                  const selectedColumnBasis =
+                    column.kind === "cash" ? cashBasis : column.kind === "balmo" ? balmoBasis : null;
+                  return (
+                    <th
+                      key={column.key}
+                      style={stickyLeft !== undefined ? { left: stickyLeft } : undefined}
+                      className={`border-l border-gray-800 px-1.5 py-2 text-center text-[10px] font-bold text-gray-100 ${
+                        column.kind === "month" ? "bg-gray-900" : "bg-gray-950"
+                      } ${
+                        stickyLeft !== undefined
+                          ? `sticky top-0 z-50 ${column.kind === "balmo" ? "shadow-[2px_0_0_rgba(31,41,55,0.9)]" : ""}`
+                          : ""
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSortState({
+                              key: column.key,
+                              direction: sortState?.key === column.key && sortState.direction === "asc" ? "desc" : "asc",
+                            })
+                          }
+                          className={`whitespace-nowrap ${sortState?.key === column.key ? "text-sky-200" : ""}`}
+                          title={`Sort ${column.label}`}
+                        >
+                          {column.label} {sortState?.key === column.key ? (sortState.direction === "asc" ? "A" : "D") : ""}
+                        </button>
+                        <ColumnFilterMenu
+                          label={column.label}
+                          options={filterOptions[column.key] ?? EMPTY_FILTER_VALUES}
+                          selected={columnFilters[column.key] ?? EMPTY_FILTER_VALUES}
+                          sortDirection={sortState?.key === column.key ? sortState.direction : null}
+                          onSort={(direction) => setSortState({ key: column.key, direction })}
+                          onChange={(values) =>
+                            setColumnFilters((filters) => ({ ...filters, [column.key]: values }))
+                          }
+                        />
+                      </div>
+                      {selectedColumnBasis ? (
+                        <select
+                          aria-label={`${column.label} pricing field`}
+                          title={`${column.label} pricing field`}
+                          value={selectedColumnBasis}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => {
+                            const nextBasis = event.target.value as GasPriceBasis;
+                            if (column.kind === "cash") setCashBasis(nextBasis);
+                            if (column.kind === "balmo") setBalmoBasis(nextBasis);
+                            setSelectedCell(null);
+                            setTrendHoverCard(null);
+                          }}
+                          className="mt-1 h-6 w-full rounded border border-gray-700 bg-gray-950 px-1 text-[9px] font-semibold text-gray-300 outline-none transition-colors hover:border-gray-600 focus:border-sky-500 focus:text-gray-100"
+                        >
+                          {GAS_PRICE_FIELD_OPTIONS.map((option) => (
+                            <option key={option.key} value={option.key}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div className="mt-0.5 text-[9px] font-semibold text-gray-500">
+                          {displayMode === "basisVsHenry"
+                            ? "vs Henry"
+                            : displayMode === "cashSpread"
+                              ? "vs Cash"
+                              : priceFieldLabel(column, cashBasis, balmoBasis)}
+                        </div>
+                      )}
+                    </th>
+                  );
+                })}
               </tr>
             </thead>
             <tbody>
               {loading && (
                 <tr>
-                  <td colSpan={columns.length + 3 || 30} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={columns.length + 2 || 30} className="px-3 py-10 text-center text-sm text-gray-500">
                     Loading gas pricing...
                   </td>
                 </tr>
@@ -1186,14 +1489,18 @@ export default function GasDailyPrices() {
                     <th className="sticky left-0 z-10 whitespace-nowrap bg-[#0d1119] px-1.5 py-1.5 text-center shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                       <button
                         type="button"
-                        onClick={() => setSelectedInfoRow(row)}
+                        onClick={() => {
+                          setInfoHoverCard(null);
+                          setSelectedInfoRow(row);
+                        }}
+                        onMouseEnter={(event) => showInfoHoverCard(row, fullyVerified, event.currentTarget)}
+                        onMouseLeave={() => setInfoHoverCard(null)}
+                        onFocus={(event) => showInfoHoverCard(row, fullyVerified, event.currentTarget)}
+                        onBlur={() => setInfoHoverCard(null)}
                         className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-bold transition-colors ${
                           fullyVerified
                             ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-100 hover:border-emerald-300 hover:bg-emerald-500/25"
                             : "border-red-500/50 bg-red-500/15 text-red-100 hover:border-red-300 hover:bg-red-500/25"
-                        }`}
-                        title={`${row.market}: ${
-                          fullyVerified ? "all configured symbols verified" : "one or more configured symbols need review"
                         }`}
                         aria-label={`Show symbols for ${row.market}`}
                       >
@@ -1201,18 +1508,13 @@ export default function GasDailyPrices() {
                       </button>
                     </th>
                     <th
-                      style={{ left: infoColumnWidth }}
-                      className="sticky z-10 whitespace-nowrap bg-[#0d1119] px-2 py-1.5 text-left text-[11px] font-semibold text-red-300 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
-                    >
-                      {GAS_REGION_LABELS[row.region]}
-                    </th>
-                    <th
-                      style={{ left: infoColumnWidth + regionColumnWidth }}
+                      style={{ left: MATRIX_INFO_COLUMN_WIDTH }}
                       className="sticky z-10 whitespace-nowrap bg-[#0d1119] px-2 py-1.5 text-left shadow-[2px_0_0_rgba(31,41,55,0.9)]"
                     >
                       <div className="truncate font-semibold text-gray-100" title={row.market}>{row.market}</div>
                     </th>
                     {columns.map((column) => {
+                      const stickyLeft = stickyLeftForColumn(column);
                       const value = displayValueForKey(row, column.key);
                       const valueDate = displayDateForKey(row, column.key);
                       const sourceSymbol = row.symbols[column.key] ?? undefined;
@@ -1222,6 +1524,10 @@ export default function GasDailyPrices() {
                       const rawDate = row.valueDates[column.key] ?? null;
                       const cashValue = row.values.cash ?? null;
                       const henryValue = henryRow?.values[column.key] ?? null;
+                      const trendPoints =
+                        column.kind === "cash" || column.kind === "balmo"
+                          ? row.trends[column.key] ?? []
+                          : [];
                       const cellTitle =
                         displayMode === "basisVsHenry"
                           ? `${sourceSymbol ?? column.label}: ${fmtPrice(rawValue)} (${fmtDate(rawDate)}) - Henry ${fmtPrice(henryValue)}`
@@ -1232,11 +1538,16 @@ export default function GasDailyPrices() {
                         <td
                           key={`${row.market}-${column.key}`}
                           style={{
+                            left: stickyLeft,
                             backgroundColor: showGradient
                               ? rowGradientColor(value, gradientDomain.min, gradientDomain.max)
                               : undefined,
                           }}
-                          className={`border-l border-gray-800 p-0 ${showGradient ? "" : "bg-slate-950/45"}`}
+                          className={`border-l border-gray-800 p-0 ${
+                            stickyLeft !== undefined
+                              ? `sticky z-10 ${column.kind === "balmo" ? "shadow-[2px_0_0_rgba(31,41,55,0.9)]" : ""}`
+                              : ""
+                          } ${showGradient ? "" : stickyLeft !== undefined ? "bg-[#0d1119]" : "bg-slate-950/45"}`}
                         >
                           <button
                             type="button"
@@ -1244,7 +1555,14 @@ export default function GasDailyPrices() {
                             onClick={() => setSelectedCell({ row, column })}
                             className="block h-full min-h-[42px] w-full whitespace-nowrap px-1.5 py-1.5 text-right font-mono text-[11px] tabular-nums text-gray-100 transition-colors hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-cyan-400"
                           >
-                            <div className="font-semibold">{formatMatrixValue(value)}</div>
+                            <div className="flex items-center justify-end gap-1 font-semibold">
+                              <GasPriceSparkline
+                                points={trendPoints}
+                                onHover={(element) => showTrendHoverCard(row, column, trendPoints, element)}
+                                onLeave={() => setTrendHoverCard(null)}
+                              />
+                              <span>{formatMatrixValue(value)}</span>
+                            </div>
                             <div
                               className={`mt-0.5 text-[9px] font-semibold ${
                                 stale ? "text-amber-300" : "text-gray-500"
@@ -1262,7 +1580,7 @@ export default function GasDailyPrices() {
                 })}
               {!loading && data && visibleRows.length === 0 && (
                 <tr>
-                  <td colSpan={columns.length + 3} className="px-3 py-10 text-center text-sm text-gray-500">
+                  <td colSpan={columns.length + 2} className="px-3 py-10 text-center text-sm text-gray-500">
                     No gas pricing is available.
                   </td>
                 </tr>
@@ -1270,6 +1588,55 @@ export default function GasDailyPrices() {
             </tbody>
           </table>
       </DataTableShell>
+
+      {trendHoverCard && (
+        <div
+          className="pointer-events-none fixed z-[80] min-w-[184px] rounded-md border border-gray-700 bg-gray-950 p-2 text-xs shadow-2xl shadow-black/60"
+          style={{ left: trendHoverCard.left, top: trendHoverCard.top }}
+        >
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            {trendHoverCard.title}
+          </div>
+          <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+            Last 7 Days ({fmtSpreadPrice(trendHoverCard.delta)})
+          </div>
+          <div className="space-y-1">
+            {[...trendHoverCard.points].reverse().map((point) => (
+              <div key={`${point.tradeDate}-${point.value}`} className="flex items-center justify-between gap-4">
+                <span className="text-gray-500">{fmtDate(point.tradeDate)}</span>
+                <span className="font-semibold text-gray-100">{fmtPrice(point.value)}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {infoHoverCard && (
+        <div
+          className="pointer-events-none fixed z-[70] w-[340px] rounded-lg border border-sky-900/80 bg-[#101722] p-3 text-xs shadow-2xl shadow-black/60 ring-1 ring-white/[0.03]"
+          style={{ top: infoHoverCard.top, left: infoHoverCard.left }}
+          role="tooltip"
+        >
+          <div className="mb-2 truncate text-sm font-semibold text-gray-100">
+            {infoHoverCard.row.market}
+          </div>
+          <div className="space-y-1.5">
+            {gasInfoHoverRows(infoHoverCard.row, infoHoverCard.fullyVerified).map((item) => (
+              <div
+                key={item.label}
+                className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-t border-gray-800/70 pt-1.5 first:border-t-0 first:pt-0"
+              >
+                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  {item.label}
+                </div>
+                <div className="min-w-0 truncate font-mono font-semibold text-gray-100" title={item.value}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {selectedInfoRow && (
         <div
@@ -1372,7 +1739,7 @@ export default function GasDailyPrices() {
                   {selectedCell.row.market} | {selectedCell.column.label}
                 </div>
                 <div className="mt-1 text-xs text-gray-500">
-                  Latest trade date {fmtDate(data?.tradeDate)} | {PRICE_FIELD_LABEL}
+                  Latest trade date {fmtDate(data?.tradeDate)} | {matrixPriceFieldLabel}
                 </div>
               </div>
               <button
@@ -1431,6 +1798,10 @@ export default function GasDailyPrices() {
           </div>
         </div>
       )}
+        </div>
+      )}
+
+      {activeTab === "monthlySettles" && <GasMonthlySettles />}
     </div>
   );
 }
