@@ -22,6 +22,7 @@ import {
   GAS_REGION_ORDER,
   getIceGasRegistryEntry,
   getIceGasVerificationLabel,
+  type DailyGasCellMarketStats,
   type DailyGasCurveColumn,
   type DailyGasPriceRow,
   type DailyGasPricesPayload,
@@ -38,6 +39,8 @@ const DEFAULT_CASH_BALMO_BASIS: GasPriceBasis = "vwap_close";
 const MATRIX_INFO_COLUMN_WIDTH = 52;
 const MATRIX_MARKET_COLUMN_WIDTH = 240;
 const MATRIX_PRICE_COLUMN_WIDTH = 92;
+const MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH = 108;
+const MATRIX_CASH_BALMO_METRIC_COLUMN_WIDTH = 132;
 const GAS_PRICE_FIELD_OPTIONS: Array<{ key: GasPriceBasis; label: string }> = [
   { key: "vwap_close", label: DAILY_GAS_PRICE_BASIS_LABELS.vwap_close },
   { key: "settlement", label: DAILY_GAS_PRICE_BASIS_LABELS.settlement },
@@ -153,7 +156,7 @@ function buildGasMatrixApiUrl(refresh: boolean, cashBasis: GasPriceBasis, balmoB
 }
 
 function buildCacheKey(cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
-  return `api:gas-daily-prices:v13:latest-mixed-fields-24-months-cash-balmo-trends:${cashBasis}:${balmoBasis}`;
+  return `api:gas-daily-prices:v14:latest-mixed-fields-24-months-cash-balmo-trends-stats:${cashBasis}:${balmoBasis}`;
 }
 
 function fmtPrice(value: number | null | undefined): string {
@@ -195,6 +198,20 @@ function fmtSigned(value: number | null | undefined): string {
   if (value > 0) return `+${formatted}`;
   if (value < 0) return `-${formatted}`;
   return formatted;
+}
+
+function fmtCompactPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return value.toFixed(3);
+}
+
+function matrixColumnWidth(column: DailyGasCurveColumn, showCashBalmoMetrics: boolean): number {
+  if (column.kind === "cash" || column.kind === "balmo") {
+    return showCashBalmoMetrics
+      ? MATRIX_CASH_BALMO_METRIC_COLUMN_WIDTH
+      : MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH;
+  }
+  return MATRIX_PRICE_COLUMN_WIDTH;
 }
 
 function ControlCard({
@@ -345,6 +362,70 @@ function GasPriceSparkline({
         <polyline fill="none" points={coordinates} stroke={stroke} strokeLinecap="round" strokeWidth="1.7" />
       </svg>
     </span>
+  );
+}
+
+function GasCashBalmoCellStats({
+  stats,
+  valueDate,
+  stale,
+  latestTradeDate,
+}: {
+  stats: DailyGasCellMarketStats | null | undefined;
+  valueDate: string | null | undefined;
+  stale: boolean;
+  latestTradeDate: string | null | undefined;
+}) {
+  const ohlc = [
+    { label: "O", value: stats?.open ?? null },
+    { label: "H", value: stats?.high ?? null },
+    { label: "L", value: stats?.low ?? null },
+    { label: "C", value: stats?.close ?? null },
+  ];
+  const volume = stats?.volume ?? null;
+  const hasOhlc = ohlc.some((item) => item.value !== null);
+  const hasVolume = volume !== null;
+
+  if (!hasOhlc && !hasVolume) {
+    return (
+      <div
+        className={`mt-0.5 text-[9px] font-semibold ${
+          stale ? "text-amber-300" : "text-gray-500"
+        }`}
+        title={stale ? `Stale versus latest ${latestTradeDate}` : undefined}
+      >
+        {fmtDate(valueDate)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-0.5 space-y-0.5 text-[9px] font-semibold leading-3">
+      {hasOhlc ? (
+        <div className="grid grid-cols-2 gap-x-1 gap-y-0.5 text-gray-500">
+          {ohlc.map((item) => (
+            <span key={item.label} className="whitespace-nowrap">
+              <span className="text-gray-600">{item.label}</span>{" "}
+              <span className={item.value === null ? "text-gray-700" : "text-gray-400"}>
+                {fmtCompactPrice(item.value)}
+              </span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-end gap-1.5">
+        <span
+          className={stale ? "text-amber-300" : "text-gray-500"}
+          title={stale ? `Stale versus latest ${latestTradeDate}` : undefined}
+        >
+          {fmtDate(valueDate)}
+        </span>
+        <span className="whitespace-nowrap text-sky-300/75">
+          <span className="text-sky-500/80">V</span>{" "}
+          <span>{fmtVolume(volume)}</span>
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -787,6 +868,7 @@ export default function GasDailyPrices({
   const [activeTab, setActiveTab] = useState<GasPricingTab>("matrix");
   const [displayMode, setDisplayMode] = useState<GasMatrixDisplayMode>("price");
   const [showGradient, setShowGradient] = useState(false);
+  const [showCashBalmoMetrics, setShowCashBalmoMetrics] = useState(false);
   const [cashBasis, setCashBasis] = useState<GasPriceBasis>(DEFAULT_CASH_BALMO_BASIS);
   const [balmoBasis, setBalmoBasis] = useState<GasPriceBasis>(DEFAULT_CASH_BALMO_BASIS);
   const [quickRegionFilters, setQuickRegionFilters] = useState<GasRegion[]>([]);
@@ -1120,11 +1202,14 @@ export default function GasDailyPrices({
   const matrixTableWidth =
     MATRIX_INFO_COLUMN_WIDTH +
     MATRIX_MARKET_COLUMN_WIDTH +
-    columns.length * MATRIX_PRICE_COLUMN_WIDTH;
+    columns.reduce((sum, column) => sum + matrixColumnWidth(column, showCashBalmoMetrics), 0);
   const stickyLeftForColumn = (column: DailyGasCurveColumn): number | undefined => {
     if (column.kind === "cash") return MATRIX_INFO_COLUMN_WIDTH + MATRIX_MARKET_COLUMN_WIDTH;
     if (column.kind === "balmo") {
-      return MATRIX_INFO_COLUMN_WIDTH + MATRIX_MARKET_COLUMN_WIDTH + MATRIX_PRICE_COLUMN_WIDTH;
+      const cashColumnWidth = showCashBalmoMetrics
+        ? MATRIX_CASH_BALMO_METRIC_COLUMN_WIDTH
+        : MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH;
+      return MATRIX_INFO_COLUMN_WIDTH + MATRIX_MARKET_COLUMN_WIDTH + cashColumnWidth;
     }
     return undefined;
   };
@@ -1317,6 +1402,19 @@ export default function GasDailyPrices({
             >
               Gradient
             </button>
+            <button
+              type="button"
+              aria-pressed={showCashBalmoMetrics}
+              title="Show or hide Cash/BalMo OHLC and volume details"
+              onClick={() => setShowCashBalmoMetrics((current) => !current)}
+              className={`h-8 rounded-md border px-3 text-xs font-semibold transition-colors ${
+                showCashBalmoMetrics
+                  ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-100"
+                  : "border-gray-700 bg-gray-950 text-gray-400 hover:bg-gray-800 hover:text-white"
+              }`}
+            >
+              {showCashBalmoMetrics ? "Hide Metrics" : "Show Metrics"}
+            </button>
             <div className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-1.5 text-xs text-gray-400">
               {visibleRows.length.toLocaleString()} / {rows.length.toLocaleString()} shown
             </div>
@@ -1328,6 +1426,7 @@ export default function GasDailyPrices({
                 setSortState(null);
                 setCashBasis(DEFAULT_CASH_BALMO_BASIS);
                 setBalmoBasis(DEFAULT_CASH_BALMO_BASIS);
+                setShowCashBalmoMetrics(false);
                 setSelectedCell(null);
                 setTrendHoverCard(null);
               }}
@@ -1346,7 +1445,7 @@ export default function GasDailyPrices({
               <col style={{ width: MATRIX_INFO_COLUMN_WIDTH }} />
               <col style={{ width: MATRIX_MARKET_COLUMN_WIDTH }} />
               {columns.map((column) => (
-                <col key={column.key} style={{ width: MATRIX_PRICE_COLUMN_WIDTH }} />
+                <col key={column.key} style={{ width: matrixColumnWidth(column, showCashBalmoMetrics) }} />
               ))}
             </colgroup>
             <thead className="sticky top-0 z-30 bg-gray-950">
@@ -1504,6 +1603,7 @@ export default function GasDailyPrices({
                     </th>
                     {columns.map((column) => {
                       const stickyLeft = stickyLeftForColumn(column);
+                      const isCashBalmoColumn = column.kind === "cash" || column.kind === "balmo";
                       const value = displayValueForKey(row, column.key);
                       const valueDate = displayDateForKey(row, column.key);
                       const sourceSymbol = row.symbols[column.key] ?? undefined;
@@ -1514,9 +1614,10 @@ export default function GasDailyPrices({
                       const cashValue = row.values.cash ?? null;
                       const henryValue = henryRow?.values[column.key] ?? null;
                       const trendPoints =
-                        column.kind === "cash" || column.kind === "balmo"
+                        isCashBalmoColumn
                           ? row.trends[column.key] ?? []
                           : [];
+                      const marketStats = isCashBalmoColumn ? row.marketStats[column.key] ?? null : null;
                       const cellTitle =
                         displayMode === "basisVsHenry"
                           ? `${sourceSymbol ?? column.label}: ${fmtPrice(rawValue)} (${fmtDate(rawDate)}) - Henry ${fmtPrice(henryValue)}`
@@ -1542,7 +1643,9 @@ export default function GasDailyPrices({
                             type="button"
                             title={cellTitle}
                             onClick={() => setSelectedCell({ row, column })}
-                            className="block h-full min-h-[42px] w-full whitespace-nowrap px-1.5 py-1.5 text-right font-mono text-[11px] tabular-nums text-gray-100 transition-colors hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-cyan-400"
+                            className={`block h-full w-full whitespace-nowrap px-1.5 py-1.5 text-right font-mono text-[11px] tabular-nums text-gray-100 transition-colors hover:bg-white/10 focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                              isCashBalmoColumn && showCashBalmoMetrics ? "min-h-[58px]" : "min-h-[42px]"
+                            }`}
                           >
                             <div className="flex items-center justify-end gap-1 font-semibold">
                               <GasPriceSparkline
@@ -1552,14 +1655,23 @@ export default function GasDailyPrices({
                               />
                               <span>{formatMatrixValue(value)}</span>
                             </div>
-                            <div
-                              className={`mt-0.5 text-[9px] font-semibold ${
-                                stale ? "text-amber-300" : "text-gray-500"
-                              }`}
-                              title={stale ? `Stale versus latest ${data?.tradeDate}` : undefined}
-                            >
-                              {fmtDate(valueDate)}
-                            </div>
+                            {isCashBalmoColumn && showCashBalmoMetrics ? (
+                              <GasCashBalmoCellStats
+                                stats={marketStats}
+                                valueDate={valueDate}
+                                stale={stale}
+                                latestTradeDate={data?.tradeDate}
+                              />
+                            ) : (
+                              <div
+                                className={`mt-0.5 text-[9px] font-semibold ${
+                                  stale ? "text-amber-300" : "text-gray-500"
+                                }`}
+                                title={stale ? `Stale versus latest ${data?.tradeDate}` : undefined}
+                              >
+                                {fmtDate(valueDate)}
+                              </div>
+                            )}
                           </button>
                         </td>
                       );

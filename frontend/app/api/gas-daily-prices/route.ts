@@ -50,6 +50,14 @@ interface RawGasCurveCell {
   source_symbols: string | null;
   updated_at: string | null;
   trend_points: unknown;
+  settlement: number | string | null;
+  vwap_close: number | string | null;
+  open: number | string | null;
+  high: number | string | null;
+  low: number | string | null;
+  close: number | string | null;
+  volume: number | string | null;
+  open_interest: number | string | null;
 }
 
 function parseIsoDate(value: string | null): string | null {
@@ -365,7 +373,15 @@ ${buildDailyGasMarketValuesSql()}
         t.column_key,
         latest.trade_date,
         latest.value,
-        latest.updated_at
+        latest.updated_at,
+        latest.settlement,
+        latest.vwap_close,
+        latest.open,
+        latest.high,
+        latest.low,
+        latest.close,
+        latest.volume,
+        latest.open_interest
       from single_leg_targets t
       cross join selected_trade_date d
       left join lateral (
@@ -376,7 +392,15 @@ ${buildDailyGasMarketValuesSql()}
             when t.column_kind = 'balmo' then nullif(s.${balmoField}::text, 'NaN')::double precision
             else nullif(s.settlement::text, 'NaN')::double precision
           end as value,
-          s.updated_at
+          s.updated_at,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.settlement::text, 'NaN')::double precision else null end as settlement,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.vwap_close::text, 'NaN')::double precision else null end as vwap_close,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.open::text, 'NaN')::double precision else null end as open,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.high::text, 'NaN')::double precision else null end as high,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.low::text, 'NaN')::double precision else null end as low,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.close::text, 'NaN')::double precision else null end as close,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.volume::text, 'NaN')::double precision else null end as volume,
+          case when t.column_kind in ('cash', 'balmo') then nullif(s.open_interest::text, 'NaN')::double precision else null end as open_interest
         from ice_python.settlements s
         where s.symbol = t.source_symbol
           and s.trade_date::date <= d.trade_date
@@ -397,7 +421,15 @@ ${buildDailyGasMarketValuesSql()}
         t.column_key,
         latest.trade_date,
         latest.value,
-        latest.updated_at
+        latest.updated_at,
+        null::double precision as settlement,
+        null::double precision as vwap_close,
+        null::double precision as open,
+        null::double precision as high,
+        null::double precision as low,
+        null::double precision as close,
+        null::double precision as volume,
+        null::double precision as open_interest
       from basis_month_targets t
       cross join selected_trade_date d
       left join lateral (
@@ -485,7 +517,15 @@ ${buildDailyGasMarketValuesSql()}
       mc.display_symbol as source_symbol,
       array_to_string(mc.source_symbols, ',') as source_symbols,
       to_char(latest.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at,
-      coalesce(trend.trend_points, '[]'::jsonb) as trend_points
+      coalesce(trend.trend_points, '[]'::jsonb) as trend_points,
+      latest.settlement,
+      latest.vwap_close,
+      latest.open,
+      latest.high,
+      latest.low,
+      latest.close,
+      latest.volume,
+      latest.open_interest
     from market_columns mc
     left join cell_latest latest
       on latest.row_sort = mc.row_sort
@@ -538,6 +578,7 @@ function buildPayload(
         sourceSymbols: {},
         updatedAt: {},
         trends: {},
+        marketStats: {},
         sort: raw.row_sort,
       };
       rowsByMarket.set(raw.market, row);
@@ -553,6 +594,16 @@ function buildPayload(
       : [];
     row.updatedAt[raw.column_key] = raw.updated_at === "-infinity" ? null : raw.updated_at;
     row.trends[raw.column_key] = parseTrendPoints(raw.trend_points);
+    row.marketStats[raw.column_key] = {
+      settlement: toNumber(raw.settlement),
+      vwapClose: toNumber(raw.vwap_close),
+      open: toNumber(raw.open),
+      high: toNumber(raw.high),
+      low: toNumber(raw.low),
+      close: toNumber(raw.close),
+      volume: toNumber(raw.volume),
+      openInterest: toNumber(raw.open_interest),
+    };
   }
 
   const columns = [...columnsByKey.values()]
@@ -579,6 +630,7 @@ function buildPayload(
       sourceSymbols: row.sourceSymbols,
       updatedAt: row.updatedAt,
       trends: row.trends,
+      marketStats: row.marketStats,
     }));
   const expectedValueCount = columns.length * rows.length;
 

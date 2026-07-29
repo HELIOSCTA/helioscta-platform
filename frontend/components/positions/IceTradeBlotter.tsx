@@ -1749,6 +1749,7 @@ function renderSettlementSummaryCellMetric(cell: SettlementSummaryCell): React.R
     { label: "L", value: settlementSummaryMetricValue(cell, "low") },
     { label: "C", value: settlementSummaryMetricValue(cell, "close") },
   ];
+  const volume = settlementSummaryMetricValue(cell, "volume");
 
   return (
     <span className="flex flex-col items-end gap-1">
@@ -1762,6 +1763,10 @@ function renderSettlementSummaryCellMetric(cell: SettlementSummaryCell): React.R
             </span>
           </span>
         ))}
+      </span>
+      <span className="whitespace-nowrap text-[9px] font-semibold leading-3 text-sky-300/75">
+        <span className="text-sky-500/80">V</span>{" "}
+        <span>{fmtSettlementSummaryMetric(volume, "volume")}</span>
       </span>
     </span>
   );

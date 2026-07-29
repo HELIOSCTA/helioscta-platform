@@ -32,6 +32,17 @@ export interface DailyGasTrendPoint {
   value: number | null;
 }
 
+export interface DailyGasCellMarketStats {
+  settlement: number | null;
+  vwapClose: number | null;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+  openInterest: number | null;
+}
+
 export interface DailyGasPriceRow {
   region: GasRegion;
   market: string;
@@ -46,6 +57,7 @@ export interface DailyGasPriceRow {
   sourceSymbols: Record<string, string[]>;
   updatedAt: Record<string, string | null>;
   trends: Record<string, DailyGasTrendPoint[]>;
+  marketStats: Record<string, DailyGasCellMarketStats>;
 }
 
 export interface DailyGasPricesPayload {
