@@ -30,8 +30,8 @@ boundary, or log path changes.
 
 ## pjm-codex-analyst
 
-- Status: deployed on `helioscta-prod-vm-01`; timer enabled on
-  `2026-07-29 14:59 UTC`.
+- Status: deployed on `helioscta-prod-vm-01`; timer intentionally paused on
+  `2026-07-29` after successful setup and smoke verification.
 - Host: `helioscta-prod-vm-01`.
 - Runtime path: runtime bundle under `/var/lib/helioscta/pjm-analyst/runtime`;
   repo checkout remains `/opt/helioscta-platform`.
@@ -54,7 +54,7 @@ boundary, or log path changes.
   `0.146.0`.
 - Schedule: `Mon..Sat` at `06:45` and `13:30 America/New_York`, with
   `RandomizedDelaySec=5min`, `Persistent=false`, and a `45min` service
-  timeout.
+  timeout. The unit remains installed, but the timer is currently disabled.
 - Output path:
   - `/var/lib/helioscta/pjm-analyst/output/latest.json`
   - `/var/lib/helioscta/pjm-analyst/output/latest.md`
