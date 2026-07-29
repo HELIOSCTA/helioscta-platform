@@ -1398,6 +1398,10 @@ function addSettlementSummaryValues(
   const settle = toFiniteNumber(row.settlement);
   const iceMark = toFiniteNumber(row.ice_settlement);
   const vwap = toFiniteNumber(row.vwap_close);
+  const open = toFiniteNumber(row.open);
+  const high = toFiniteNumber(row.high);
+  const low = toFiniteNumber(row.low);
+  const close = toFiniteNumber(row.close);
   const volume = toFiniteNumber(row.volume);
 
   target.rowCount += 1;
@@ -1418,6 +1422,22 @@ function addSettlementSummaryValues(
   if (vwap !== null) {
     target.vwapCount += 1;
     target.vwapTotal += vwap;
+  }
+  if (open !== null) {
+    target.openCount += 1;
+    target.openTotal += open;
+  }
+  if (high !== null) {
+    target.highCount += 1;
+    target.highTotal += high;
+  }
+  if (low !== null) {
+    target.lowCount += 1;
+    target.lowTotal += low;
+  }
+  if (close !== null) {
+    target.closeCount += 1;
+    target.closeTotal += close;
   }
   if (volume !== null) {
     target.volumeCount += 1;
@@ -1456,6 +1476,14 @@ function buildSettlementSummary(rows: DailySettlementRow[]): { columns: TradeSum
         iceMarkTotal: 0,
         vwapCount: 0,
         vwapTotal: 0,
+        openCount: 0,
+        openTotal: 0,
+        highCount: 0,
+        highTotal: 0,
+        lowCount: 0,
+        lowTotal: 0,
+        closeCount: 0,
+        closeTotal: 0,
         volumeCount: 0,
         volumeTotal: 0,
         sourceLabels: new Set<string>(),
@@ -1482,6 +1510,14 @@ function buildSettlementSummary(rows: DailySettlementRow[]): { columns: TradeSum
         iceMarkTotal: 0,
         vwapCount: 0,
         vwapTotal: 0,
+        openCount: 0,
+        openTotal: 0,
+        highCount: 0,
+        highTotal: 0,
+        lowCount: 0,
+        lowTotal: 0,
+        closeCount: 0,
+        closeTotal: 0,
         volumeCount: 0,
         volumeTotal: 0,
         sourceLabels: new Set<string>(),
@@ -1558,6 +1594,18 @@ function settlementSummaryMetricValue(
   }
   if (metric === "vwap") {
     return rowOrCell.vwapCount === 0 ? null : rowOrCell.vwapTotal / rowOrCell.vwapCount;
+  }
+  if (metric === "open") {
+    return rowOrCell.openCount === 0 ? null : rowOrCell.openTotal / rowOrCell.openCount;
+  }
+  if (metric === "high") {
+    return rowOrCell.highCount === 0 ? null : rowOrCell.highTotal / rowOrCell.highCount;
+  }
+  if (metric === "low") {
+    return rowOrCell.lowCount === 0 ? null : rowOrCell.lowTotal / rowOrCell.lowCount;
+  }
+  if (metric === "close") {
+    return rowOrCell.closeCount === 0 ? null : rowOrCell.closeTotal / rowOrCell.closeCount;
   }
   if (metric === "settle") {
     return rowOrCell.settleCount === 0 ? null : rowOrCell.settleTotal / rowOrCell.settleCount;
@@ -1639,6 +1687,13 @@ function settlementSummaryMetricBadge(
       label: "WVAP",
       className: "border-cyan-500/40 bg-cyan-500/10 text-cyan-200",
       title: "WVAP.",
+    };
+  }
+  if (metric === "open" || metric === "high" || metric === "low" || metric === "close") {
+    return {
+      label: "ICE",
+      className: "border-sky-500/40 bg-sky-500/10 text-sky-200",
+      title: "ICE market-stat value.",
     };
   }
   return null;
@@ -2133,6 +2188,14 @@ interface SettlementSummaryCell {
   iceMarkTotal: number;
   vwapCount: number;
   vwapTotal: number;
+  openCount: number;
+  openTotal: number;
+  highCount: number;
+  highTotal: number;
+  lowCount: number;
+  lowTotal: number;
+  closeCount: number;
+  closeTotal: number;
   volumeCount: number;
   volumeTotal: number;
   sourceLabels: Set<string>;
@@ -2155,6 +2218,14 @@ interface SettlementSummaryRow {
   iceMarkTotal: number;
   vwapCount: number;
   vwapTotal: number;
+  openCount: number;
+  openTotal: number;
+  highCount: number;
+  highTotal: number;
+  lowCount: number;
+  lowTotal: number;
+  closeCount: number;
+  closeTotal: number;
   volumeCount: number;
   volumeTotal: number;
   sourceLabels: Set<string>;
@@ -2167,6 +2238,10 @@ type SettlementSummaryMetric =
   | "ice_mark"
   | "settle_or_vwap"
   | "vwap"
+  | "open"
+  | "high"
+  | "low"
+  | "close"
   | "volume";
 type SettlementHistoryLookback = 7 | 14 | 30 | 90 | "all";
 type SettlementHistoryColumnKey =
@@ -2190,7 +2265,14 @@ interface SettlementHistorySelection {
   historyEndDate: string;
 }
 
-const SETTLEMENT_SUMMARY_METRIC: SettlementSummaryMetric = "settle_or_vwap";
+const DEFAULT_SETTLEMENT_SUMMARY_METRIC: SettlementSummaryMetric = "settle_or_vwap";
+const SETTLEMENT_SUMMARY_METRICS: { key: SettlementSummaryMetric; label: string }[] = [
+  { key: "settle_or_vwap", label: "Mark" },
+  { key: "open", label: "Open" },
+  { key: "high", label: "High" },
+  { key: "low", label: "Low" },
+  { key: "close", label: "Close" },
+];
 const SETTLEMENT_HISTORY_ALL_START_DATE = "2020-01-01";
 const SETTLEMENT_HISTORY_LOOKBACKS: SettlementHistoryLookback[] = [7, 14, 30, 90, "all"];
 const SETTLEMENT_HISTORY_FILTER_COLUMNS: {
@@ -5547,6 +5629,8 @@ export default function IceTradeBlotter({
   const [selectedTradeSummaryKey, setSelectedTradeSummaryKey] = useState<string | null>(null);
   const [tradeSummaryMetric, setTradeSummaryMetric] =
     useState<TradeSummaryMetric>("net_quantity");
+  const [settlementSummaryMetric, setSettlementSummaryMetric] =
+    useState<SettlementSummaryMetric>(DEFAULT_SETTLEMENT_SUMMARY_METRIC);
   const [quickTraderFilter, setQuickTraderFilter] = useState("All");
   const [quickAssetFilters, setQuickAssetFilters] = useState<string[]>([]);
   const [quickRegionFilters, setQuickRegionFilters] = useState<string[]>([
@@ -9051,6 +9135,23 @@ export default function IceTradeBlotter({
             bodyClassName="w-fit max-w-full"
             action={
               <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-md border border-gray-800 bg-gray-950/40 p-1">
+                  {SETTLEMENT_SUMMARY_METRICS.map((metric) => (
+                    <button
+                      key={metric.key}
+                      type="button"
+                      aria-pressed={settlementSummaryMetric === metric.key}
+                      onClick={() => setSettlementSummaryMetric(metric.key)}
+                      className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
+                        settlementSummaryMetric === metric.key
+                          ? "bg-sky-500/15 text-sky-200"
+                          : "text-gray-400 hover:bg-gray-900 hover:text-gray-200"
+                      }`}
+                    >
+                      {metric.label}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
                   onClick={openSettlesDebug}
@@ -9130,12 +9231,12 @@ export default function IceTradeBlotter({
                             const cell = row.cells[column.key];
                             const historyTitle = `Show ${row.product} ${column.label} settle history`;
                             const summaryValue = cell
-                              ? settlementSummaryMetricValue(cell, SETTLEMENT_SUMMARY_METRIC)
+                              ? settlementSummaryMetricValue(cell, settlementSummaryMetric)
                               : null;
                             const summaryTone =
-                              cell && cell.settledCount === cell.rowCount
+                              settlementSummaryMetric === "settle_or_vwap" && cell && cell.settledCount === cell.rowCount
                                 ? "settle"
-                                : cell && cell.activeMarkCount > 0
+                                : settlementSummaryMetric === "settle_or_vwap" && cell && cell.activeMarkCount > 0
                                   ? "wvap"
                                   : undefined;
                             return (
@@ -9156,7 +9257,7 @@ export default function IceTradeBlotter({
                                     <span>
                                       {renderSettlementSummaryCellMetric(
                                         cell,
-                                        SETTLEMENT_SUMMARY_METRIC
+                                        settlementSummaryMetric
                                       )}
                                     </span>
                                   </span>
@@ -9284,7 +9385,7 @@ export default function IceTradeBlotter({
                   </div>
                 </div>
                 <div className="max-w-[calc(100vw-24px)] overflow-auto">
-                  <table className="min-w-[1320px] divide-y divide-gray-800 text-left text-xs">
+                  <table className="min-w-[1680px] divide-y divide-gray-800 text-left text-xs">
                     <thead className="bg-gray-950 text-[10px] uppercase tracking-wide text-gray-500">
                       <tr>
                         {SETTLEMENT_HISTORY_FILTER_COLUMNS.slice(0, 4).map((column) => {
@@ -9344,6 +9445,10 @@ export default function IceTradeBlotter({
                         <th className="px-3 py-2 text-right font-semibold">Mark</th>
                         <th className="px-3 py-2 text-right font-semibold">Actual Settle</th>
                         <th className="px-3 py-2 text-right font-semibold">ICE Settle</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE Open</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE High</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE Low</th>
+                        <th className="px-3 py-2 text-right font-semibold">ICE Close</th>
                         <th className="px-3 py-2 text-right font-semibold">ICE WVAP</th>
                         <th className="px-3 py-2 text-right font-semibold">ICE Volume</th>
                         {SETTLEMENT_HISTORY_FILTER_COLUMNS.slice(4).map((column) => {
@@ -9411,19 +9516,19 @@ export default function IceTradeBlotter({
                     <tbody className="divide-y divide-gray-800">
                       {settlementHistoryLoading ? (
                         <tr>
-                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-gray-500">
+                          <td colSpan={17} className="px-3 py-8 text-center text-sm text-gray-500">
                             Loading settle history...
                           </td>
                         </tr>
                       ) : settlementHistoryError ? (
                         <tr>
-                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-red-300">
+                          <td colSpan={17} className="px-3 py-8 text-center text-sm text-red-300">
                             {settlementHistoryError}
                           </td>
                         </tr>
                       ) : displayedSettlementHistoryRows.length === 0 ? (
                         <tr>
-                          <td colSpan={13} className="px-3 py-8 text-center text-sm text-gray-500">
+                          <td colSpan={17} className="px-3 py-8 text-center text-sm text-gray-500">
                             No settle history found for this settle symbol.
                           </td>
                         </tr>
@@ -9433,6 +9538,10 @@ export default function IceTradeBlotter({
                           const confidence = dailySettlementConfidence(row);
                           const settleValue = toFiniteNumber(row.settlement);
                           const iceSettle = toFiniteNumber(row.ice_settlement);
+                          const iceOpen = toFiniteNumber(row.open);
+                          const iceHigh = toFiniteNumber(row.high);
+                          const iceLow = toFiniteNumber(row.low);
+                          const iceClose = toFiniteNumber(row.close);
                           const iceWvap = toFiniteNumber(row.vwap_close);
                           const settleApplies =
                             settlementHistorySettleTradeDateByWindow.get(
@@ -9522,6 +9631,34 @@ export default function IceTradeBlotter({
                                 )}`}
                               >
                                 <SettlementPriceBox value={iceSettle} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  iceOpen
+                                )}`}
+                              >
+                                <SettlementPriceBox value={iceOpen} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  iceHigh
+                                )}`}
+                              >
+                                <SettlementPriceBox value={iceHigh} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  iceLow
+                                )}`}
+                              >
+                                <SettlementPriceBox value={iceLow} />
+                              </td>
+                              <td
+                                className={`whitespace-nowrap px-3 py-2 text-right tabular-nums text-gray-300 ${settlementValueCellClass(
+                                  iceClose
+                                )}`}
+                              >
+                                <SettlementPriceBox value={iceClose} />
                               </td>
                               <td
                                 className={`whitespace-nowrap px-3 py-2 text-right tabular-nums ${
