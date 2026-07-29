@@ -515,8 +515,9 @@ Fixed-price markets use the market futures product directly, such as
 futures plus the market basis futures on the same `trade_date`. Calendar Spread
 uses near all-in outright minus far all-in outright; basis markets therefore
 compute `(Henry near + basis near) - (Henry far + basis far)`. The chart x-axis
-uses the same second-business-day expiry proxy as Power Sparks and does not read
-an exchange-calendar table. Freshness comes from
+uses the observed final settlement date for expired contracts when available;
+otherwise it uses a gas monthly proxy of the third business day before the
+delivery month starts. It does not read an exchange-calendar table. Freshness comes from
 `ice_python.settlements.updated_at` and latest matched `trade_date`. The page
 does not create a database model, frontend cache table, backend job, or new
 credential requirement.

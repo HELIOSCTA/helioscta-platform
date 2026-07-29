@@ -131,7 +131,7 @@ export function nextGasCurveStrip(strip: string): string {
 export function currentGasCurveStrip(referenceDate = new Date()): string {
   const currentMonthIndex = referenceDate.getUTCMonth();
   const currentYear = referenceDate.getUTCFullYear();
-  const expiry = secondBusinessDayAfterDeliveryMonth(currentMonthIndex + 1, currentYear);
+  const expiry = thirdBusinessDayBeforeDeliveryMonth(currentMonthIndex + 1, currentYear);
   const todayUtc = Date.UTC(currentYear, currentMonthIndex, referenceDate.getUTCDate());
   const defaultMonthIndex = todayUtc > expiry.getTime() ? currentMonthIndex + 1 : currentMonthIndex;
   return GAS_CURVE_STRIPS[defaultMonthIndex % GAS_CURVE_STRIPS.length] ?? "F";
@@ -431,13 +431,13 @@ function calendarFarYear(nearStrip: string, farStrip: string, nearYear: number):
   return farMonth <= nearMonth ? nearYear + 1 : nearYear;
 }
 
-function secondBusinessDayAfterDeliveryMonth(month: number, year: number): Date {
-  const date = new Date(Date.UTC(year, month, 1));
+function thirdBusinessDayBeforeDeliveryMonth(month: number, year: number): Date {
+  const date = new Date(Date.UTC(year, month - 1, 1));
   let count = 0;
-  while (count < 2) {
+  while (count < 3) {
+    date.setUTCDate(date.getUTCDate() - 1);
     const day = date.getUTCDay();
     if (day !== 0 && day !== 6) count += 1;
-    if (count < 2) date.setUTCDate(date.getUTCDate() + 1);
   }
   return date;
 }
@@ -447,7 +447,7 @@ function expiryTimeForLeg(
   latestSourceTradeTime: number | null,
   observedFinalTradeTimeBySymbol: Map<string, number>,
 ): number {
-  const projected = secondBusinessDayAfterDeliveryMonth(STRIP_TO_MONTH.get(leg.strip) ?? 1, leg.year).getTime();
+  const projected = thirdBusinessDayBeforeDeliveryMonth(STRIP_TO_MONTH.get(leg.strip) ?? 1, leg.year).getTime();
   if (!leg.referenceSymbol || latestSourceTradeTime === null || projected > latestSourceTradeTime) {
     return projected;
   }
