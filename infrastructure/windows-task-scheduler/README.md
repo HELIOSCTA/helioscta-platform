@@ -513,20 +513,28 @@ FROM bbg_dapi.bbg_historical
 GROUP BY security, data_type
 ORDER BY security, data_type;
 ```
+
 ## WoodMac NatGas Datafeed Import
 
-The legacy raw WoodMac/Genscape NatGas datafeed Task Scheduler package has
-been copied here for migration and scheduler management context only:
+The raw WoodMac/Genscape NatGas datafeed Task Scheduler package has been copied
+here for migration and scheduler management:
 
 ```text
 infrastructure/windows-task-scheduler/wm_natgasdatafeed_import/
 ```
 
-Migration status: reference-only in this repo. Do not run the copied `.ts.*`
-registration scripts until the Task Scheduler cutover is explicitly approved.
+Migration status: platform tasks are registered from this repo under
+`\HeliosCTA\NatGas\` on the scheduler host. The package contains an elevated
+installer that updates the platform-owned wrapper tasks and can disable any
+remaining legacy tasks in the same run:
 
-The current live tasks still run from the legacy
-`helioscta-azure-backend` checkout until cutover:
+```powershell
+.\infrastructure\windows-task-scheduler\wm_natgasdatafeed_import\install_wm_natgasdatafeed_tasks.ps1 `
+  -DisableLegacy
+```
+
+The previous legacy tasks ran from the legacy `helioscta-azure-backend`
+checkout:
 
 ```text
 \helioscta-azure-backend\NatGas\wm_natgasdatafeed_import delta 20
@@ -549,9 +557,50 @@ Observed live cadence:
 - hourly: hourly at `:50`;
 - baseline: manual only.
 
+Target platform cadence:
+
+- `HeliosCTA WM NatGas DataFeed Delta`: every 5 minutes by default, running the
+  delta wrapper;
+- `HeliosCTA WM NatGas DataFeed Hourly`: hourly at `:10` by default, running
+  metadata first and then the scheduled hourly source allowlist;
+- `HeliosCTA WM NatGas DataFeed Index of Customers Manual`: no-trigger manual
+  task for the quarterly Index of Customers load;
+- `HeliosCTA WM NatGas DataFeed Status`: manual visible status window.
+
+The delta and hourly wrappers share one scheduler lock under the configured
+WoodMac working path, so overlapping launches do not collide on shared
+temp/staging tables. Delta skips when another import is already active; hourly
+waits up to 15 minutes for the lock before skipping. The installer registers
+the import tasks with Task Scheduler `IgnoreNew` multiple-instance behavior.
+
+The wrapper lock is owner-aware. Dead-PID locks are cleared automatically. Live
+but idle locks are marked stale in the status helper and cause new wrapper
+launches to exit nonzero rather than silently skipping forever. The wrappers
+also fail the scheduled task when a run creates new pending
+`natgas.load_status` rows or new `administration.error_log` rows.
+
+Routine WoodMac delta and hourly actions launch through
+`conhost.exe --headless powershell.exe`, matching the ICE Python scheduler, so
+frequent imports do not flash or steal focus. Use the visible no-trigger status
+task as the operator console.
+
 For monitoring, use Task Scheduler state, per-run logs under the configured
 datafeed working path, `natgas.load_status`, and `administration.error_log`.
 Task Scheduler success alone does not prove the feed merged successfully.
+
+Install or update the visible read-only status task:
+
+```powershell
+.\infrastructure\windows-task-scheduler\wm_natgasdatafeed_import\install_wm_natgasdatafeed_status_task.ps1
+```
+
+Open it from Task Scheduler or start it manually:
+
+```powershell
+Start-ScheduledTask `
+  -TaskPath "\HeliosCTA\NatGas\" `
+  -TaskName "HeliosCTA WM NatGas DataFeed Status"
+```
 
 ## Positions And Trades Status Window
 

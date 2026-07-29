@@ -1,8 +1,8 @@
 # WM NatGas DataFeed - Verification Guide
 
-Migration status: reference-only in this repo. The live scheduled tasks still
-run from the legacy `helioscta-azure-backend` checkout until an approved
-cutover.
+Migration status: staged for scheduler cutover from this repo. The live import
+tasks still run from the legacy `helioscta-azure-backend` checkout until the
+platform installer is run with `-DisableLegacy`.
 
 ## Key Tables
 
@@ -96,7 +96,7 @@ UNION ALL SELECT 'scheduling_cycles', COUNT(*) FROM natgas.scheduling_cycles
 UNION ALL SELECT 'pipeline_scheduling', COUNT(*) FROM natgas.pipeline_scheduling;
 ```
 
-### Delta task mode (runs hourly at :20, :30, and :40)
+### Delta task mode (runs every 5 minutes after platform cutover)
 
 Check that today's data has landed in core tables:
 
@@ -204,11 +204,16 @@ If this returns no rows, the last scheduled metadata run did not load anything.
 
 ---
 
-## Expected Cadence
+## Expected Cadence After Platform Cutover
 
-| Task mode | Schedule | Registration helper | Expected launches/day |
-|-----------|----------|---------------------|-----------------------|
-| Metadata | Hourly at `:05` and `:10` | `.ts.metadata.ps1` | 48 |
-| Delta | Hourly at `:20`, `:30`, and `:40` | `.ts.delta.ps1` | 72 across three tasks |
-| Hourly | Hourly at `:50` | `.ts.hourly.ps1` | 24 |
-| Baseline | Manual only | none active | On-demand |
+| Task | Schedule | Wrapper | Expected launches/day |
+|------|----------|---------|-----------------------|
+| Delta | Every 5 minutes by default | `run_wm_natgasdatafeed_delta.ps1` | 288 |
+| Hourly | Hourly at `:10` by default | `run_wm_natgasdatafeed_hourly.ps1` | 24 |
+| Status | Manual/no trigger | `show_wm_natgasdatafeed_status.ps1` | On-demand |
+| Baseline | Manual only | direct `gasdatafeed_import.ps1 -sourceType baseline` | On-demand |
+
+The hourly wrapper runs `metadata` first and then `hourly`, matching the
+WoodMac setup guide's SQL Agent job model. The delta and hourly wrappers share
+one scheduler lock, so overlapping launches do not run concurrently. Delta
+skips when the lock is busy, while hourly waits briefly before giving up.
