@@ -128,6 +128,21 @@ interface GasSymbolInfoRow {
   sourceSymbols: string[];
 }
 
+export interface GasDailyPricesFreshnessSummary {
+  status: string;
+  statusClass: string;
+  summary: string;
+  latestDateLabel: string;
+  latestUpdateLabel: string;
+  fieldLabel: string;
+  rowCountLabel: string;
+}
+
+interface GasDailyPricesProps {
+  refreshToken?: number;
+  onFreshnessChange?: (freshness: GasDailyPricesFreshnessSummary) => void;
+}
+
 function buildGasMatrixApiUrl(refresh: boolean, cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
   const params = new URLSearchParams();
   params.set("cashBasis", cashBasis);
@@ -765,10 +780,11 @@ function GasHistoryTable({ history }: { history: GasContractHistoryPoint[] }) {
   );
 }
 
-export default function GasDailyPrices() {
+export default function GasDailyPrices({
+  refreshToken = 0,
+  onFreshnessChange,
+}: GasDailyPricesProps) {
   const [activeTab, setActiveTab] = useState<GasPricingTab>("matrix");
-  const [refreshToken, setRefreshToken] = useState(0);
-  const [freshnessOpen, setFreshnessOpen] = useState(false);
   const [displayMode, setDisplayMode] = useState<GasMatrixDisplayMode>("price");
   const [showGradient, setShowGradient] = useState(false);
   const [cashBasis, setCashBasis] = useState<GasPriceBasis>(DEFAULT_CASH_BALMO_BASIS);
@@ -1067,6 +1083,40 @@ export default function GasDailyPrices() {
 
   const freshnessTradeDate = data?.tradeDate ?? null;
   const freshnessDataAsOf = data?.metadata.dataAsOf ?? null;
+  useEffect(() => {
+    if (error) {
+      onFreshnessChange?.({
+        status: "Error",
+        statusClass: "border-red-500/40 bg-red-500/10 text-red-200",
+        summary: "Gas pricing unavailable",
+        latestDateLabel: freshnessTradeDate ?? "--",
+        latestUpdateLabel: fmtDateTime(freshnessDataAsOf),
+        fieldLabel: matrixPriceFieldLabel,
+        rowCountLabel: data ? `${data.rows.length.toLocaleString()} markets` : "--",
+      });
+      return;
+    }
+
+    onFreshnessChange?.({
+      status: freshnessTradeDate ? "Latest" : "Unknown",
+      statusClass: freshnessTradeDate
+        ? "border-sky-500/40 bg-sky-500/10 text-sky-100"
+        : "border-gray-700 bg-gray-950/40 text-gray-400",
+      summary: freshnessTradeDate ? `Gas pricing ${freshnessTradeDate}` : "Gas pricing --",
+      latestDateLabel: freshnessTradeDate ?? "--",
+      latestUpdateLabel: fmtDateTime(freshnessDataAsOf),
+      fieldLabel: matrixPriceFieldLabel,
+      rowCountLabel: data ? `${data.rows.length.toLocaleString()} markets` : loading ? "Loading" : "--",
+    });
+  }, [
+    data,
+    error,
+    freshnessDataAsOf,
+    freshnessTradeDate,
+    loading,
+    matrixPriceFieldLabel,
+    onFreshnessChange,
+  ]);
   const matrixTableWidth =
     MATRIX_INFO_COLUMN_WIDTH +
     MATRIX_MARKET_COLUMN_WIDTH +
@@ -1114,7 +1164,6 @@ export default function GasDailyPrices() {
       left,
     });
   };
-  const refreshAll = () => setRefreshToken((value) => value + 1);
   const clearQuickFilters = () => {
     setQuickRegionFilters([]);
   };
@@ -1136,72 +1185,12 @@ export default function GasDailyPrices() {
     setTrendHoverCard(null);
   };
   return (
-    <div className="relative w-full max-w-none space-y-3 pt-16">
+    <div className="w-full max-w-none space-y-3">
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
           {error}
         </div>
       )}
-
-      <div className="absolute right-0 top-0 flex justify-end">
-        <div className="w-fit max-w-full rounded-lg border border-gray-800 bg-[#12141d] shadow-xl shadow-black/20">
-          <div className="flex w-full min-w-0 items-center justify-between gap-3 px-3 py-2">
-            <button
-              type="button"
-              onClick={() => setFreshnessOpen((open) => !open)}
-              className="min-w-0 flex-1 text-left transition-colors"
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    Freshness
-                  </span>
-                  <span className="rounded-md border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-100">
-                    {freshnessTradeDate ? "Latest" : "Unknown"}
-                  </span>
-                </div>
-                <p className="mt-1 font-mono text-xs text-gray-500">
-                  {freshnessTradeDate ? `Gas pricing ${freshnessTradeDate}` : "Gas pricing --"}
-                </p>
-              </div>
-            </button>
-            <div className="flex shrink-0 items-center gap-2">
-              <button
-                type="button"
-                onClick={refreshAll}
-                className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-              >
-                Refresh
-              </button>
-              <button
-                type="button"
-                onClick={() => setFreshnessOpen((open) => !open)}
-                className="text-xs text-gray-500 transition-colors hover:text-gray-300"
-              >
-                {freshnessOpen ? "Hide v" : "Show >"}
-              </button>
-            </div>
-          </div>
-          {freshnessOpen && (
-            <div className="flex min-w-0 flex-wrap items-stretch gap-2 border-t border-gray-800 p-2">
-              <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Latest Trade</p>
-                <p className="mt-1 break-words text-sm font-semibold text-gray-200">{freshnessTradeDate ?? "--"}</p>
-              </div>
-              <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Fields</p>
-                <p className="mt-1 text-sm font-semibold break-words text-gray-200">{matrixPriceFieldLabel}</p>
-              </div>
-              <div className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Data As Of</p>
-                <p className="mt-1 break-words font-mono text-sm font-semibold text-gray-200">
-                  {fmtDateTime(freshnessDataAsOf)}
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
       <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-2">
         {[

@@ -7,7 +7,9 @@ import FreshnessCard from "@/components/dashboard/FreshnessCard";
 import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
-import GasDailyPrices from "@/components/gas/GasDailyPrices";
+import GasDailyPrices, {
+  type GasDailyPricesFreshnessSummary,
+} from "@/components/gas/GasDailyPrices";
 import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
@@ -228,6 +230,16 @@ const DEFAULT_ICE_SETTLEMENTS_FRESHNESS: IceTradeBlotterFreshnessSummary = {
   rowCountLabel: "--",
 };
 
+const DEFAULT_GAS_DAILY_PRICES_FRESHNESS: GasDailyPricesFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-950/40 text-gray-400",
+  summary: "Gas pricing --",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+  fieldLabel: "Cash VWAP Close | BalMo VWAP Close | Contracts Settlement",
+  rowCountLabel: "--",
+};
+
 const DEFAULT_GENSCAPE_NOMS_FRESHNESS: GenscapeNomsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
@@ -431,6 +443,7 @@ export default function HomePageClient({
   const [rawIceBlotterRefreshToken, setRawIceBlotterRefreshToken] = useState(0);
   const [clearStreetTradesRefreshToken, setClearStreetTradesRefreshToken] = useState(0);
   const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
+  const [gasDailyPricesRefreshToken, setGasDailyPricesRefreshToken] = useState(0);
   const [genscapeNomsRefreshToken, setGenscapeNomsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [powerLmpAddersFreshnessOpen, setPowerLmpAddersFreshnessOpen] = useState(false);
@@ -452,6 +465,8 @@ export default function HomePageClient({
   const [clearStreetTradesFreshnessOpen, setClearStreetTradesFreshnessOpen] =
     useState(false);
   const [iceSettlementsFreshnessOpen, setIceSettlementsFreshnessOpen] =
+    useState(false);
+  const [gasDailyPricesFreshnessOpen, setGasDailyPricesFreshnessOpen] =
     useState(false);
   const [genscapeNomsFreshnessOpen, setGenscapeNomsFreshnessOpen] =
     useState(false);
@@ -500,6 +515,10 @@ export default function HomePageClient({
   const [iceSettlementsFreshness, setIceSettlementsFreshness] =
     useState<IceTradeBlotterFreshnessSummary>(
       DEFAULT_ICE_SETTLEMENTS_FRESHNESS,
+    );
+  const [gasDailyPricesFreshness, setGasDailyPricesFreshness] =
+    useState<GasDailyPricesFreshnessSummary>(
+      DEFAULT_GAS_DAILY_PRICES_FRESHNESS,
     );
   const [genscapeNomsFreshness, setGenscapeNomsFreshness] =
     useState<GenscapeNomsFreshnessSummary>(DEFAULT_GENSCAPE_NOMS_FRESHNESS);
@@ -1087,6 +1106,29 @@ export default function HomePageClient({
               />
             )}
 
+            {activeSection === "gas-prices" && (
+              <FreshnessCard
+                statusLabel={gasDailyPricesFreshness.status}
+                statusClass={gasDailyPricesFreshness.statusClass}
+                summary={gasDailyPricesFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: gasDailyPricesFreshness.status,
+                    className: gasDailyPricesFreshness.statusClass,
+                  },
+                  { label: "Latest Trade", value: gasDailyPricesFreshness.latestDateLabel },
+                  { label: "Fields", value: gasDailyPricesFreshness.fieldLabel },
+                  { label: "Data As Of", value: gasDailyPricesFreshness.latestUpdateLabel },
+                  { label: "Markets", value: gasDailyPricesFreshness.rowCountLabel },
+                ]}
+                open={gasDailyPricesFreshnessOpen}
+                onToggle={() => setGasDailyPricesFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setGasDailyPricesRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "noms" && (
               <FreshnessCard
                 statusLabel={genscapeNomsFreshness.status}
@@ -1365,7 +1407,10 @@ export default function HomePageClient({
             <IcePmiCurveTable />
           )}
           {activeSection === "gas-prices" && (
-            <GasDailyPrices />
+            <GasDailyPrices
+              refreshToken={gasDailyPricesRefreshToken}
+              onFreshnessChange={setGasDailyPricesFreshness}
+            />
           )}
           {showLocalDevFeatures && activeSection === "pjm-generation" && (
             <PjmGeneration
