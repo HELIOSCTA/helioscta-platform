@@ -1742,11 +1742,29 @@ function settlementSummaryColumnDeliveryRange(
   };
 }
 
-function renderSettlementSummaryCellMetric(
-  cell: SettlementSummaryCell,
-  metric: SettlementSummaryMetric
-): React.ReactNode {
-  return renderSettlementSummaryMetric(cell, metric);
+function renderSettlementSummaryCellMetric(cell: SettlementSummaryCell): React.ReactNode {
+  const ohlc: { label: string; value: number | null }[] = [
+    { label: "O", value: settlementSummaryMetricValue(cell, "open") },
+    { label: "H", value: settlementSummaryMetricValue(cell, "high") },
+    { label: "L", value: settlementSummaryMetricValue(cell, "low") },
+    { label: "C", value: settlementSummaryMetricValue(cell, "close") },
+  ];
+
+  return (
+    <span className="flex flex-col items-end gap-1">
+      {renderSettlementSummaryMetric(cell, "settle_or_vwap")}
+      <span className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px] font-semibold leading-3 text-gray-500">
+        {ohlc.map((item) => (
+          <span key={item.label} className="whitespace-nowrap">
+            <span className="text-gray-600">{item.label}</span>{" "}
+            <span className={item.value === null ? "text-gray-700" : "text-gray-400"}>
+              {fmtOptionalPrice(item.value)}
+            </span>
+          </span>
+        ))}
+      </span>
+    </span>
+  );
 }
 
 function sortedFilterValues(values: Array<string | null | undefined>): string[] {
@@ -2265,14 +2283,6 @@ interface SettlementHistorySelection {
   historyEndDate: string;
 }
 
-const DEFAULT_SETTLEMENT_SUMMARY_METRIC: SettlementSummaryMetric = "settle_or_vwap";
-const SETTLEMENT_SUMMARY_METRICS: { key: SettlementSummaryMetric; label: string }[] = [
-  { key: "settle_or_vwap", label: "Mark" },
-  { key: "open", label: "Open" },
-  { key: "high", label: "High" },
-  { key: "low", label: "Low" },
-  { key: "close", label: "Close" },
-];
 const SETTLEMENT_HISTORY_ALL_START_DATE = "2020-01-01";
 const SETTLEMENT_HISTORY_LOOKBACKS: SettlementHistoryLookback[] = [7, 14, 30, 90, "all"];
 const SETTLEMENT_HISTORY_FILTER_COLUMNS: {
@@ -5629,8 +5639,6 @@ export default function IceTradeBlotter({
   const [selectedTradeSummaryKey, setSelectedTradeSummaryKey] = useState<string | null>(null);
   const [tradeSummaryMetric, setTradeSummaryMetric] =
     useState<TradeSummaryMetric>("net_quantity");
-  const [settlementSummaryMetric, setSettlementSummaryMetric] =
-    useState<SettlementSummaryMetric>(DEFAULT_SETTLEMENT_SUMMARY_METRIC);
   const [quickTraderFilter, setQuickTraderFilter] = useState("All");
   const [quickAssetFilters, setQuickAssetFilters] = useState<string[]>([]);
   const [quickRegionFilters, setQuickRegionFilters] = useState<string[]>([
@@ -9135,23 +9143,6 @@ export default function IceTradeBlotter({
             bodyClassName="w-fit max-w-full"
             action={
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex rounded-md border border-gray-800 bg-gray-950/40 p-1">
-                  {SETTLEMENT_SUMMARY_METRICS.map((metric) => (
-                    <button
-                      key={metric.key}
-                      type="button"
-                      aria-pressed={settlementSummaryMetric === metric.key}
-                      onClick={() => setSettlementSummaryMetric(metric.key)}
-                      className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-                        settlementSummaryMetric === metric.key
-                          ? "bg-sky-500/15 text-sky-200"
-                          : "text-gray-400 hover:bg-gray-900 hover:text-gray-200"
-                      }`}
-                    >
-                      {metric.label}
-                    </button>
-                  ))}
-                </div>
                 <button
                   type="button"
                   onClick={openSettlesDebug}
@@ -9174,7 +9165,7 @@ export default function IceTradeBlotter({
                       return (
                         <th
                           key={column.key}
-                          className="w-[132px] whitespace-nowrap px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide"
+                          className="w-[154px] whitespace-nowrap px-3 py-2 text-right text-[10px] font-semibold uppercase tracking-wide"
                           title={deliveryRange?.title}
                         >
                           <span className="block">{column.label}</span>
@@ -9231,12 +9222,12 @@ export default function IceTradeBlotter({
                             const cell = row.cells[column.key];
                             const historyTitle = `Show ${row.product} ${column.label} settle history`;
                             const summaryValue = cell
-                              ? settlementSummaryMetricValue(cell, settlementSummaryMetric)
+                              ? settlementSummaryMetricValue(cell, "settle_or_vwap")
                               : null;
                             const summaryTone =
-                              settlementSummaryMetric === "settle_or_vwap" && cell && cell.settledCount === cell.rowCount
+                              cell && cell.settledCount === cell.rowCount
                                 ? "settle"
-                                : settlementSummaryMetric === "settle_or_vwap" && cell && cell.activeMarkCount > 0
+                                : cell && cell.activeMarkCount > 0
                                   ? "wvap"
                                   : undefined;
                             return (
@@ -9255,10 +9246,7 @@ export default function IceTradeBlotter({
                                 {cell ? (
                                   <span className="inline-flex items-start justify-end gap-1.5">
                                     <span>
-                                      {renderSettlementSummaryCellMetric(
-                                        cell,
-                                        settlementSummaryMetric
-                                      )}
+                                      {renderSettlementSummaryCellMetric(cell)}
                                     </span>
                                   </span>
                                 ) : (
