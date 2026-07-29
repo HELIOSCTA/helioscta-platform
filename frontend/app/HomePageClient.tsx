@@ -236,7 +236,7 @@ const DEFAULT_GAS_DAILY_PRICES_FRESHNESS: GasDailyPricesFreshnessSummary = {
   summary: "Gas pricing --",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
-  fieldLabel: "Cash VWAP Close | BalMo VWAP Close | Contracts Settlement",
+  fieldLabel: "Cash VWAP | BalMo VWAP | Contracts Settlement",
   rowCountLabel: "--",
 };
 

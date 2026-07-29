@@ -110,7 +110,7 @@ export const DAILY_GAS_PRICE_BASIS_LABELS: Record<GasPriceBasis, string> = {
   high: "High",
   low: "Low",
   close: "Close",
-  vwap_close: "VWAP Close",
+  vwap_close: "VWAP",
 };
 
 function sqlText(value: string): string {
