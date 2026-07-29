@@ -153,6 +153,8 @@ type ExplorerMetric =
 type ExplorerViewMode = "latest" | "change";
 type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
 type AreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
+type CompareChartRow = Record<string, number | null>;
+type CompareYAxisDomain = [number, number];
 
 const API_CACHE_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_LOOKBACK_HOURS = 72;
@@ -465,6 +467,45 @@ function compareChartRows(rows: ForecastDateCompareHour[]): Array<Record<string,
   });
 }
 
+function compareYAxisDomain({
+  rows,
+  keys,
+  includeZero = false,
+  minPadding = 250,
+  clampNonNegative = false,
+}: {
+  rows: CompareChartRow[];
+  keys: string[];
+  includeZero?: boolean;
+  minPadding?: number;
+  clampNonNegative?: boolean;
+}): CompareYAxisDomain | undefined {
+  const values = rows.flatMap((row) =>
+    keys
+      .map((key) => row[key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+  );
+  if (!values.length) return undefined;
+
+  const domainValues = includeZero ? [...values, 0] : values;
+  const min = Math.min(...domainValues);
+  const max = Math.max(...domainValues);
+  const range = max - min;
+  const magnitude = Math.max(Math.abs(min), Math.abs(max), 1);
+  const padding =
+    range > 0 ? Math.max(range * 0.08, minPadding) : Math.max(magnitude * 0.02, minPadding);
+  let lower = min - padding;
+  let upper = max + padding;
+
+  if (clampNonNegative && min >= 0 && lower < 0) lower = 0;
+  if (includeZero) {
+    lower = Math.min(lower, 0);
+    upper = Math.max(upper, 0);
+  }
+
+  return [Math.floor(lower), Math.ceil(upper)];
+}
+
 function lookbackTagHour(tag: string | null | undefined): number | null {
   const match = tag?.trim().match(/^(\d+)\s*h(?:ours?)?\s+ago$/i);
   return match ? Number(match[1]) : null;
@@ -621,6 +662,7 @@ export default function PjmForecasts({
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
+  const [focusedLoadCompareArea, setFocusedLoadCompareArea] = useState<string | null>(null);
   const [collapsedCompareCards, setCollapsedCompareCards] = useState<Set<string>>(() => new Set());
   const [lookbackHours, setLookbackHours] = useState<number>(DEFAULT_LOOKBACK_HOURS);
   const [hiddenLookbackSeries, setHiddenLookbackSeries] = useState<Set<string>>(() => new Set());
@@ -644,10 +686,34 @@ export default function PjmForecasts({
     setCompareDataByArea({});
     setCompareError(null);
     setCompareRampingEnabled(false);
+    setFocusedLoadCompareArea(null);
     setCollapsedCompareCards(new Set());
     setCompareBaseDate(null);
     setCompareTargetDate(null);
   }, [sourceMode]);
+
+  useEffect(() => {
+    if (forecastType !== "load" || forecastMode !== "compareDay") {
+      setFocusedLoadCompareArea(null);
+    }
+  }, [forecastMode, forecastType]);
+
+  useEffect(() => {
+    if (focusedLoadCompareArea && !compareDataByArea[focusedLoadCompareArea]) {
+      setFocusedLoadCompareArea(null);
+    }
+  }, [compareDataByArea, focusedLoadCompareArea]);
+
+  useEffect(() => {
+    if (!focusedLoadCompareArea) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocusedLoadCompareArea(null);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [focusedLoadCompareArea]);
 
   useEffect(() => {
     if (refreshToken > 0) return;
@@ -1160,29 +1226,56 @@ export default function PjmForecasts({
 
   const renderLoadCompareChart = (
     payload: ForecastDateComparePayload,
-    loadCompareRows: Array<Record<string, number | null>>,
-  ) => (
-    <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
-      <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <h3 className="text-base font-semibold text-gray-100">{payload.area}</h3>
-        <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
-          <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-            {compareBaseDateLabel} issue: {fmtDateTime(payload.baseIssue)}
-          </span>
-          <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
-            {compareTargetDateLabel} issue: {fmtDateTime(payload.compareIssue)}
-          </span>
+    loadCompareRows: CompareChartRow[],
+    options: { heightClass?: string; showFocusButton?: boolean } = {},
+  ) => {
+    const heightClass = options.heightClass ?? "h-[300px]";
+    const showFocusButton = options.showFocusButton ?? true;
+    const yAxisDomain = compareRampingEnabled
+      ? compareYAxisDomain({
+          rows: loadCompareRows,
+          keys: ["baseRamp", "compareRamp"],
+          includeZero: true,
+          minPadding: 100,
+        })
+      : compareYAxisDomain({
+          rows: loadCompareRows,
+          keys: ["base", "compare"],
+          clampNonNegative: true,
+        });
+
+    return (
+      <div className="rounded-lg border border-gray-800 bg-[#0d1119] p-3">
+        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <h3 className="text-base font-semibold text-gray-100">{payload.area}</h3>
+          <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-gray-400">
+            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+              {compareBaseDateLabel} issue: {fmtDateTime(payload.baseIssue)}
+            </span>
+            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1">
+              {compareTargetDateLabel} issue: {fmtDateTime(payload.compareIssue)}
+            </span>
+            {showFocusButton && (
+              <button
+                type="button"
+                onClick={() => setFocusedLoadCompareArea(payload.area)}
+                className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                aria-label={`Focus ${payload.area} compare-day chart`}
+              >
+                Focus
+              </button>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="h-[300px]">
-        <ResponsiveContainer width="100%" height="100%">
-          {compareRampingEnabled ? (
-            <BarChart
-              data={loadCompareRows}
-              margin={{ top: 8, right: 20, bottom: 18, left: 8 }}
-              barGap={1}
-              barCategoryGap="18%"
-            >
+        <div className={heightClass}>
+          <ResponsiveContainer width="100%" height="100%">
+            {compareRampingEnabled ? (
+              <BarChart
+                data={loadCompareRows}
+                margin={{ top: 8, right: 20, bottom: 18, left: 8 }}
+                barGap={1}
+                barCategoryGap="18%"
+              >
               <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
               <XAxis
                 dataKey="he"
@@ -1193,6 +1286,7 @@ export default function PjmForecasts({
                 label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
               />
               <YAxis
+                domain={yAxisDomain}
                 tick={{ fill: "#d1d5db", fontSize: 10 }}
                 tickFormatter={(value) => fmtCompactMw(Number(value))}
                 width={62}
@@ -1224,6 +1318,7 @@ export default function PjmForecasts({
                 label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
               />
               <YAxis
+                domain={yAxisDomain}
                 tick={{ fill: "#d1d5db", fontSize: 10 }}
                 tickFormatter={(value) => fmtCompactMw(Number(value))}
                 width={62}
@@ -1265,6 +1360,7 @@ export default function PjmForecasts({
       </div>
     </div>
   );
+  };
 
   const renderLoadCompareTable = (loadCompareRows: Array<Record<string, number | null>>) => {
     const valueFormatter = compareRampingEnabled ? fmtSignedMw : fmtMw;
@@ -1392,6 +1488,55 @@ export default function PjmForecasts({
             </tbody>
           </table>
         </div>
+      </div>
+    );
+  };
+
+  const renderFocusedLoadCompareChart = () => {
+    const payload = focusedLoadCompareArea ? compareDataByArea[focusedLoadCompareArea] : null;
+    if (!payload) return null;
+
+    const rows = compareChartRows(payload.rows);
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/75 p-2 sm:p-4"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setFocusedLoadCompareArea(null);
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="load-compare-focus-title"
+          className="mx-auto flex h-full max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl shadow-black/50"
+        >
+          <div className="flex flex-col gap-3 border-b border-gray-800 p-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h2 id="load-compare-focus-title" className="text-sm font-semibold text-gray-100">
+                {payload.area} Compare Day
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">
+                {compareRampingEnabled ? "Hourly ramps" : "Hourly levels"} | {compareBaseDateLabel} vs{" "}
+                {compareTargetDateLabel}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFocusedLoadCompareArea(null)}
+              className="self-start rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">
+            {renderLoadCompareChart(payload, rows, {
+              heightClass: "h-[70vh]",
+              showFocusButton: false,
+            })}
+          </div>
+        </section>
       </div>
     );
   };
@@ -2217,6 +2362,7 @@ export default function PjmForecasts({
           {renderExplorerModal()}
         </>
       )}
+      {renderFocusedLoadCompareChart()}
     </div>
   );
 }

@@ -180,6 +180,9 @@ type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
 type DetailRowType = "Snapshot" | "Delta";
 type CompareMwField = Exclude<keyof NetLoadDateCompareHour, "he">;
 type ComparePlotRows = Map<ComponentKey, Array<Record<string, number | null>>>;
+type CompareChartRow = Record<string, number | null>;
+type CompareYAxisDomain = [number, number];
+type FocusedCompareChart = { area: string; componentKey: ComponentKey };
 
 interface DetailTableRow extends NetLoadVintageCurve {
   rowType: DetailRowType;
@@ -661,7 +664,7 @@ function compareValue(row: NetLoadDateCompareHour, field: CompareMwField): numbe
 function compareChartRows(
   rows: NetLoadDateCompareHour[],
   component: (typeof COMPARE_COMPONENTS)[number],
-): Array<Record<string, number | null>> {
+): CompareChartRow[] {
   return rows.map((row, index) => {
     const previousRow = rows[index - 1];
     const base = compareValue(row, component.baseKey);
@@ -682,6 +685,45 @@ function compareChartRows(
       rampDelta: baseRamp === null || compareRamp === null ? null : compareRamp - baseRamp,
     };
   });
+}
+
+function compareYAxisDomain({
+  rows,
+  keys,
+  includeZero = false,
+  minPadding = 250,
+  clampNonNegative = false,
+}: {
+  rows: CompareChartRow[];
+  keys: string[];
+  includeZero?: boolean;
+  minPadding?: number;
+  clampNonNegative?: boolean;
+}): CompareYAxisDomain | undefined {
+  const values = rows.flatMap((row) =>
+    keys
+      .map((key) => row[key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+  );
+  if (!values.length) return undefined;
+
+  const domainValues = includeZero ? [...values, 0] : values;
+  const min = Math.min(...domainValues);
+  const max = Math.max(...domainValues);
+  const range = max - min;
+  const magnitude = Math.max(Math.abs(min), Math.abs(max), 1);
+  const padding =
+    range > 0 ? Math.max(range * 0.08, minPadding) : Math.max(magnitude * 0.02, minPadding);
+  let lower = min - padding;
+  let upper = max + padding;
+
+  if (clampNonNegative && min >= 0 && lower < 0) lower = 0;
+  if (includeZero) {
+    lower = Math.min(lower, 0);
+    upper = Math.max(upper, 0);
+  }
+
+  return [Math.floor(lower), Math.ceil(upper)];
 }
 
 function SectionCard({
@@ -762,6 +804,7 @@ export default function PjmNetLoadForecast({
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
+  const [focusedCompareChart, setFocusedCompareChart] = useState<FocusedCompareChart | null>(null);
   const [selectedComponent, setSelectedComponent] = useState<ComponentKey>("netLoad");
   const [lookbackHours, setLookbackHours] = useState(DEFAULT_LOOKBACK_HOURS);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set());
@@ -787,7 +830,31 @@ export default function PjmNetLoadForecast({
     setCompareBaseDate(null);
     setCompareTargetDate(null);
     setCompareRampingEnabled(false);
+    setFocusedCompareChart(null);
   }, [sourceMode]);
+
+  useEffect(() => {
+    if (activeTab !== "compareDay") {
+      setFocusedCompareChart(null);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (focusedCompareChart && !compareDataByArea[focusedCompareChart.area]) {
+      setFocusedCompareChart(null);
+    }
+  }, [compareDataByArea, focusedCompareChart]);
+
+  useEffect(() => {
+    if (!focusedCompareChart) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocusedCompareChart(null);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [focusedCompareChart]);
 
   useEffect(() => {
     let active = true;
@@ -1229,16 +1296,37 @@ export default function PjmNetLoadForecast({
   const renderCompareProfileChart = (
     component: (typeof COMPARE_COMPONENTS)[number],
     plotRows: ComparePlotRows,
+    options: { area?: string; heightClass?: string; showFocusButton?: boolean } = {},
   ) => {
     const rows = plotRows.get(component.key) ?? [];
+    const heightClass = options.heightClass ?? "h-56";
+    const showFocusButton = options.showFocusButton ?? true;
+    const focusArea = options.area;
+    const yAxisDomain = compareYAxisDomain({
+      rows,
+      keys: ["base", "compare"],
+      clampNonNegative: true,
+    });
 
     return (
       <div
         key={`${component.key}-profile`}
         className="rounded-md border border-gray-800 bg-gray-950/30 p-2"
       >
-        <h3 className="mb-1 text-center text-xs font-semibold text-gray-100">{component.label}</h3>
-        <div className="h-56">
+        <div className="mb-1 flex min-h-7 items-center justify-between gap-2">
+          <h3 className="min-w-0 truncate text-xs font-semibold text-gray-100">{component.label}</h3>
+          {showFocusButton && focusArea && (
+            <button
+              type="button"
+              onClick={() => setFocusedCompareChart({ area: focusArea, componentKey: component.key })}
+              className="rounded-md border border-gray-700 bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+              aria-label={`Focus ${focusArea} ${component.label} compare-day chart`}
+            >
+              Focus
+            </button>
+          )}
+        </div>
+        <div className={heightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={rows} margin={{ top: 8, right: 12, bottom: 18, left: 0 }}>
               <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
@@ -1251,6 +1339,7 @@ export default function PjmNetLoadForecast({
                 label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
               />
               <YAxis
+                domain={yAxisDomain}
                 tick={{ fill: "#d1d5db", fontSize: 10 }}
                 tickFormatter={(value) => fmtCompactMw(Number(value))}
                 width={60}
@@ -1296,18 +1385,40 @@ export default function PjmNetLoadForecast({
   const renderCompareRampChart = (
     component: (typeof COMPARE_COMPONENTS)[number],
     plotRows: ComparePlotRows,
+    options: { area?: string; heightClass?: string; showFocusButton?: boolean } = {},
   ) => {
     const rows = plotRows.get(component.key) ?? [];
+    const heightClass = options.heightClass ?? "h-56";
+    const showFocusButton = options.showFocusButton ?? true;
+    const focusArea = options.area;
+    const yAxisDomain = compareYAxisDomain({
+      rows,
+      keys: ["baseRamp", "compareRamp"],
+      includeZero: true,
+      minPadding: 100,
+    });
 
     return (
       <div
         key={`${component.key}-ramp`}
         className="rounded-md border border-gray-800 bg-gray-950/30 p-2"
       >
-        <h3 className="mb-1 text-center text-xs font-semibold text-gray-100">
-          {component.label} Ramp
-        </h3>
-        <div className="h-56">
+        <div className="mb-1 flex min-h-7 items-center justify-between gap-2">
+          <h3 className="min-w-0 truncate text-xs font-semibold text-gray-100">
+            {component.label} Ramp
+          </h3>
+          {showFocusButton && focusArea && (
+            <button
+              type="button"
+              onClick={() => setFocusedCompareChart({ area: focusArea, componentKey: component.key })}
+              className="rounded-md border border-gray-700 bg-gray-800 px-2 py-0.5 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+              aria-label={`Focus ${focusArea} ${component.label} ramp compare-day chart`}
+            >
+              Focus
+            </button>
+          )}
+        </div>
+        <div className={heightClass}>
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={rows}
@@ -1325,6 +1436,7 @@ export default function PjmNetLoadForecast({
                 label={{ value: "HE", position: "insideBottom", offset: -8, fill: "#d1d5db" }}
               />
               <YAxis
+                domain={yAxisDomain}
                 tick={{ fill: "#d1d5db", fontSize: 10 }}
                 tickFormatter={(value) => fmtCompactMw(Number(value))}
                 width={60}
@@ -1672,8 +1784,8 @@ export default function PjmNetLoadForecast({
                   <div className="grid gap-3 xl:grid-cols-4">
                     {COMPARE_COMPONENTS.map((component) =>
                       compareRampingEnabled
-                        ? renderCompareRampChart(component, plotRows)
-                        : renderCompareProfileChart(component, plotRows),
+                        ? renderCompareRampChart(component, plotRows, { area })
+                        : renderCompareProfileChart(component, plotRows, { area }),
                     )}
                   </div>
                   {renderCompareDataTable(plotRows)}
@@ -1684,6 +1796,63 @@ export default function PjmNetLoadForecast({
         </div>
       )}
     </SectionCard>
+    );
+  };
+
+  const renderFocusedCompareChart = () => {
+    if (!focusedCompareChart) return null;
+
+    const payload = compareDataByArea[focusedCompareChart.area];
+    const component = COMPARE_COMPONENTS.find((item) => item.key === focusedCompareChart.componentKey);
+    if (!payload || !component) return null;
+
+    const rows = compareChartRows(payload.rows, component);
+    const plotRows: ComparePlotRows = new Map([[component.key, rows]]);
+    const chart = compareRampingEnabled
+      ? renderCompareRampChart(component, plotRows, {
+          heightClass: "h-[70vh]",
+          showFocusButton: false,
+        })
+      : renderCompareProfileChart(component, plotRows, {
+          heightClass: "h-[70vh]",
+          showFocusButton: false,
+        });
+
+    return (
+      <div
+        className="fixed inset-0 z-50 bg-black/75 p-2 sm:p-4"
+        role="presentation"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setFocusedCompareChart(null);
+        }}
+      >
+        <section
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="net-load-compare-focus-title"
+          className="mx-auto flex h-full max-h-[92vh] w-full max-w-7xl flex-col overflow-hidden rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl shadow-black/50"
+        >
+          <div className="flex flex-col gap-3 border-b border-gray-800 p-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <h2 id="net-load-compare-focus-title" className="text-sm font-semibold text-gray-100">
+                {payload.area} {component.label}
+                {compareRampingEnabled ? " Ramp" : ""} Compare Day
+              </h2>
+              <p className="mt-1 text-xs text-gray-500">
+                {sourceLabel(sourceMode)} | {compareBaseLegend} vs {compareTargetLegend}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setFocusedCompareChart(null)}
+              className="self-start rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+            >
+              Close
+            </button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">{chart}</div>
+        </section>
+      </div>
     );
   };
 
@@ -2392,6 +2561,7 @@ export default function PjmNetLoadForecast({
           {renderModal()}
         </>
       )}
+      {renderFocusedCompareChart()}
     </div>
   );
 }
