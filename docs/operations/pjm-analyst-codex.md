@@ -50,7 +50,7 @@ Create `/etc/helioscta/pjm-analyst.env` as root-owned config:
 
 ```text
 CODEX_HOME=/var/lib/helioscta/pjm-analyst/codex-home
-CODEX_BIN=/usr/local/bin/codex
+CODEX_BIN=/var/lib/helioscta/pjm-analyst/.local/bin/codex
 HELIOS_ANALYST_WORKDIR=/var/lib/helioscta/pjm-analyst/workspace
 HELIOS_ANALYST_OUTPUT_DIR=/var/lib/helioscta/pjm-analyst/output
 
