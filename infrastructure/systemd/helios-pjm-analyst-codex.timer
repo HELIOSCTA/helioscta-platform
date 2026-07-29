@@ -1,0 +1,13 @@
+[Unit]
+Description=Scheduled HeliosCTA PJM Codex analyst timer
+
+[Timer]
+OnCalendar=Mon..Sat *-*-* 06:45:00 America/New_York
+OnCalendar=Mon..Sat *-*-* 13:30:00 America/New_York
+Persistent=false
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-pjm-analyst-codex.service
+
+[Install]
+WantedBy=timers.target

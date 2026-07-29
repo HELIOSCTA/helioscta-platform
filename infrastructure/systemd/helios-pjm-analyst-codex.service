@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA scheduled PJM Codex analyst
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios-analyst
+Group=helios-analyst
+WorkingDirectory=/var/lib/helioscta/pjm-analyst/workspace
+EnvironmentFile=/etc/helioscta/pjm-analyst.env
+ExecStart=/bin/bash /var/lib/helioscta/pjm-analyst/runtime/run_pjm_analyst_codex.sh
+TimeoutStartSec=45min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-pjm-analyst-codex
+
+[Install]
+WantedBy=multi-user.target

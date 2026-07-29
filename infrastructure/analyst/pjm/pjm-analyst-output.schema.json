@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_at_utc",
+    "status",
+    "headline",
+    "confidence",
+    "market_dates",
+    "markdown_memo",
+    "findings",
+    "evidence",
+    "follow_up_questions",
+    "vercel_interface"
+  ],
+  "properties": {
+    "run_at_utc": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp for the analyst run."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["ok", "warning", "stale", "blocked"]
+    },
+    "headline": {
+      "type": "string"
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "market_dates": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prior_market_date", "current_market_date"],
+      "properties": {
+        "prior_market_date": { "type": ["string", "null"] },
+        "current_market_date": { "type": ["string", "null"] }
+      }
+    },
+    "markdown_memo": {
+      "type": "string",
+      "description": "Human-readable memo with citations to source tables and query summaries."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "area", "title", "detail", "confidence", "sources"],
+        "properties": {
+          "severity": { "type": "string", "enum": ["info", "watch", "warning", "critical"] },
+          "area": { "type": "string" },
+          "title": { "type": "string" },
+          "detail": { "type": "string" },
+          "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+          "sources": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "window", "query_summary", "row_count"],
+        "properties": {
+          "source": { "type": "string" },
+          "window": { "type": "string" },
+          "query_summary": { "type": "string" },
+          "row_count": { "type": ["integer", "null"] }
+        }
+      }
+    },
+    "follow_up_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "vercel_interface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ready_for_frontend", "recommended_storage", "notes"],
+      "properties": {
+        "ready_for_frontend": { "type": "boolean" },
+        "recommended_storage": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+interface:
+  display_name: "PJM Analyst"
+  short_description: "Run evidence-backed PJM power analyst investigations."
+  default_prompt: "Use pjm-analyst to investigate today's PJM market, model miss, constraints, tie flows, forecasts, outages, and pricing context with read-only evidence."

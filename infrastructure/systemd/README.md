@@ -42,6 +42,24 @@ The production policy is documented in
 runtime journal storage is capped at `256M`, and failed scrape file logs are
 kept under `/var/log/helioscta` for operator review.
 
+## PJM Codex Analyst
+
+The staged PJM analyst loop uses:
+
+```text
+helios-pjm-analyst-codex.service
+helios-pjm-analyst-codex.timer
+```
+
+It runs `codex exec` through
+`infrastructure/analyst/pjm/run_pjm_analyst_codex.sh` as the isolated
+`helios-analyst` service user. Codex gets a writable scratch workspace so it
+can run the read-only query helper, but data access must stay limited to
+analyst-safe MCP/database tools and `helios_readonly`. The service writes memo
+artifacts under `/var/lib/helioscta/pjm-analyst/output`. It must not use
+`OPENAI_API_KEY`, `CODEX_API_KEY`, `helios_admin`, or the backend writer env
+file. See `docs/operations/pjm-analyst-codex.md` before enabling.
+
 ## First Job
 
 The first production timer is:

@@ -15,6 +15,10 @@ inside this repository can discover reusable HeliosCTA workflows.
   scheduled scripts using read-only production telemetry.
 - `helioscta-dbt-final-cte`: enforce terminal `FINAL` CTE style for
   `dbt/azure_postgres` SQL models and run the bundled style checker.
+- `pjm-analyst`: run evidence-backed PJM analyst investigations for scheduled
+  or ad hoc market memos, including model miss attribution, Ops Summary and tie
+  flows, constraints, forecasts, outages, and price context using read-only
+  evidence only.
 
 ## Validation
 
@@ -24,4 +28,5 @@ From the repo root:
 python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\positions-trades-product-matching
 python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\helioscta-telemetry-health
 python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\helioscta-dbt-final-cte
+python C:\Users\AidanKeaveny\.codex\skills\.system\skill-creator\scripts\quick_validate.py .agents\skills\pjm-analyst
 ```

@@ -28,6 +28,41 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## pjm-codex-analyst
+
+- Status: staged in repo; not deployed or enabled on `helioscta-prod-vm-01`.
+- Intended host: `helioscta-prod-vm-01`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: dedicated `helios-analyst`, not a member of the `helios` group.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-analyst-codex.service`
+  - `infrastructure/systemd/helios-pjm-analyst-codex.timer`
+- Runner:
+  - `infrastructure/analyst/pjm/run_pjm_analyst_codex.sh`
+- Runtime bundle:
+  - copied from repo into `/var/lib/helioscta/pjm-analyst/runtime`
+- Skill:
+  - `.agents/skills/pjm-analyst`
+- Credential boundary: ChatGPT-managed Codex auth under
+  `/var/lib/helioscta/pjm-analyst/codex-home`; isolated Codex workspace-write
+  sandbox for scratch execution; read-only MCP/database tools only; no
+  API-key billing env vars and no `helios_admin`/writer credentials.
+- Output path:
+  - `/var/lib/helioscta/pjm-analyst/output/latest.json`
+  - `/var/lib/helioscta/pjm-analyst/output/latest.md`
+- Vercel path: future frontend access should read sanitized stored analyst
+  runs from Azure Postgres or blob storage. Vercel must not run Codex or hold
+  Codex account auth.
+- Operator docs:
+  - `docs/operations/pjm-analyst-codex.md`
+- Verification before enabling:
+  - Validate the skill.
+  - Install and authenticate Codex for `helios-analyst`.
+  - Configure read-only MCP/database access.
+  - Run `sudo systemctl start helios-pjm-analyst-codex.service`.
+  - Confirm non-empty latest JSON/Markdown artifacts and no writer/admin
+    credentials in the service environment.
+
 ## external-chat-alerting-retirement
 
 - Status: deployed on `helioscta-prod-vm-01` on `2026-07-21 14:47 UTC`.
