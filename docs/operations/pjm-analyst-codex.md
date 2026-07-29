@@ -65,7 +65,8 @@ HELIOS_POSTGRES_READONLY_SSLMODE=require
 Use Codex MCP config under that `CODEX_HOME` to provide read-only tools. Prefer
 `helios_readonly` only. Do not include writer/admin database credentials.
 Keep the file owned by `root:helios-analyst` with mode `0640`, one
-`KEY=value` per line, and Unix line endings.
+`KEY=value` per line, and Unix line endings. Quote password values with single
+quotes when they contain shell metacharacters such as `$`.
 
 ## Install Timer
 
@@ -105,15 +106,19 @@ sudo -u helios-analyst -H test -s /var/lib/helioscta/pjm-analyst/output/latest.m
 Smoke the read-only SQL helper before enabling the timer:
 
 ```bash
-sudo -u helios-analyst -H bash -lc '
-  set -a
-  . /etc/helioscta/pjm-analyst.env
-  set +a
+sudo systemd-run \
+  --unit=helios-pjm-analyst-db-smoke \
+  --wait \
+  --collect \
+  --pipe \
+  --property=User=helios-analyst \
+  --property=Group=helios-analyst \
+  --property=EnvironmentFile=/etc/helioscta/pjm-analyst.env \
+  --property=WorkingDirectory=/var/lib/helioscta/pjm-analyst/workspace \
   /var/lib/helioscta/pjm-analyst/runtime/.venv/bin/python \
-    /var/lib/helioscta/pjm-analyst/runtime/read_only_pg_query.py \
-    --sql "select current_database() as database_name, current_user as user_name" \
-    --max-rows 5
-'
+  /var/lib/helioscta/pjm-analyst/runtime/read_only_pg_query.py \
+  --sql "select current_database() as database_name, current_user as user_name" \
+  --max-rows 5
 ```
 
 Add the copied skill to `/var/lib/helioscta/pjm-analyst/codex-home/config.toml`

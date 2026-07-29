@@ -30,9 +30,11 @@ boundary, or log path changes.
 
 ## pjm-codex-analyst
 
-- Status: staged in repo; not deployed or enabled on `helioscta-prod-vm-01`.
-- Intended host: `helioscta-prod-vm-01`.
-- Runtime path: `/opt/helioscta-platform`.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled on
+  `2026-07-29 14:59 UTC`.
+- Host: `helioscta-prod-vm-01`.
+- Runtime path: runtime bundle under `/var/lib/helioscta/pjm-analyst/runtime`;
+  repo checkout remains `/opt/helioscta-platform`.
 - Service user: dedicated `helios-analyst`, not a member of the `helios` group.
 - Unit files:
   - `infrastructure/systemd/helios-pjm-analyst-codex.service`
@@ -47,6 +49,12 @@ boundary, or log path changes.
   `/var/lib/helioscta/pjm-analyst/codex-home`; isolated Codex workspace-write
   sandbox for scratch execution; read-only MCP/database tools only; no
   API-key billing env vars and no `helios_admin`/writer credentials.
+- Codex CLI: standalone install for `helios-analyst` at
+  `/var/lib/helioscta/pjm-analyst/.local/bin/codex`; verified version
+  `0.146.0`.
+- Schedule: `Mon..Sat` at `06:45` and `13:30 America/New_York`, with
+  `RandomizedDelaySec=5min`, `Persistent=false`, and a `45min` service
+  timeout.
 - Output path:
   - `/var/lib/helioscta/pjm-analyst/output/latest.json`
   - `/var/lib/helioscta/pjm-analyst/output/latest.md`
@@ -56,12 +64,22 @@ boundary, or log path changes.
 - Operator docs:
   - `docs/operations/pjm-analyst-codex.md`
 - Verification before enabling:
-  - Validate the skill.
-  - Install and authenticate Codex for `helios-analyst`.
-  - Configure read-only MCP/database access.
-  - Run `sudo systemctl start helios-pjm-analyst-codex.service`.
-  - Confirm non-empty latest JSON/Markdown artifacts and no writer/admin
-    credentials in the service environment.
+  - Skill validation passed locally with `quick_validate.py`.
+  - VM systemd unit verification passed; only an unrelated `snapd.service`
+    warning was emitted by `systemd-analyze`.
+  - Read-only DB smoke returned `current_database() = helios_prod` and
+    `current_user = helios_readonly`.
+  - API-key guard refused to run when `OPENAI_API_KEY` was injected.
+  - SQL helper refused non-SELECT SQL.
+  - Manual service smoke succeeded on `2026-07-29 14:58 UTC`, writing
+    non-empty `latest.json` and `latest.md`; output status was `warning`,
+    confidence was `medium`, and the structured payload was marked
+    `ready_for_frontend=true`.
+  - First smoke consumed `93,010` Codex-reported tokens under ChatGPT-managed
+    auth.
+- Deployment note: the VM repo checkout was clean but behind `main`, so the
+  analyst runtime and unit files were extracted from committed `origin/main`
+  paths instead of fast-forwarding unrelated production code.
 
 ## external-chat-alerting-retirement
 
