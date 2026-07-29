@@ -131,10 +131,19 @@ export function nextGasCurveStrip(strip: string): string {
 export function currentGasCurveStrip(referenceDate = new Date()): string {
   const currentMonthIndex = referenceDate.getUTCMonth();
   const currentYear = referenceDate.getUTCFullYear();
-  const expiry = thirdBusinessDayBeforeDeliveryMonth(currentMonthIndex + 1, currentYear);
   const todayUtc = Date.UTC(currentYear, currentMonthIndex, referenceDate.getUTCDate());
-  const defaultMonthIndex = todayUtc > expiry.getTime() ? currentMonthIndex + 1 : currentMonthIndex;
-  return GAS_CURVE_STRIPS[defaultMonthIndex % GAS_CURVE_STRIPS.length] ?? "F";
+
+  for (let offset = 0; offset < GAS_CURVE_STRIPS.length; offset += 1) {
+    const candidateMonthIndex = currentMonthIndex + offset;
+    const candidateYear = currentYear + Math.floor(candidateMonthIndex / GAS_CURVE_STRIPS.length);
+    const candidateMonth = (candidateMonthIndex % GAS_CURVE_STRIPS.length) + 1;
+    const expiry = thirdBusinessDayBeforeDeliveryMonth(candidateMonth, candidateYear);
+    if (todayUtc <= expiry.getTime()) {
+      return GAS_CURVE_STRIPS[candidateMonth - 1] ?? "F";
+    }
+  }
+
+  return GAS_CURVE_STRIPS[currentMonthIndex] ?? "F";
 }
 
 export function defaultGasCurveYearWindow(referenceYear = new Date().getUTCFullYear()): {
