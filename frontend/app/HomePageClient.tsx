@@ -10,6 +10,7 @@ import ClearStreetTrades, {
 import GasDailyPrices, {
   type GasDailyPricesFreshnessSummary,
 } from "@/components/gas/GasDailyPrices";
+import GasCurveEvolution from "@/components/gas/GasCurveEvolution";
 import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
@@ -323,6 +324,12 @@ function parseInitialSection(
   }
   if (value === "gas-prices") {
     return "gas-prices";
+  }
+  if (
+    value === "gas-outright" ||
+    (!value && (viewValue === "gas-outright" || viewValue === "cal-spread"))
+  ) {
+    return "gas-outright";
   }
   if (showLocalDevFeatures && value === "pjm-generation") {
     return "pjm-generation";
@@ -729,6 +736,13 @@ export default function HomePageClient({
         footer: "Gas ICE Settles | Source: ice_python.settlements / helios_prod",
       };
     }
+    if (activeSection === "gas-outright") {
+      return {
+        title: "Gas Outright",
+        subtitle: "ICE gas monthly outright and calendar-spread evolution by EIA region and market.",
+        footer: "Gas Outright | Source: ice_python.settlements / helios_prod",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
       return {
         title: "Generation",
@@ -825,9 +839,12 @@ export default function HomePageClient({
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
-    activeSection === "spark-spreads";
+    activeSection === "spark-spreads" ||
+    activeSection === "gas-outright";
   const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
-  const usesGasMarketEyebrow = activeSection === "gas-prices";
+  const usesGasMarketEyebrow =
+    activeSection === "gas-prices" ||
+    activeSection === "gas-outright";
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
     showLocalDevFeatures && activeSection === "gtn-balance";
@@ -1411,6 +1428,9 @@ export default function HomePageClient({
               refreshToken={gasDailyPricesRefreshToken}
               onFreshnessChange={setGasDailyPricesFreshness}
             />
+          )}
+          {activeSection === "gas-outright" && (
+            <GasCurveEvolution />
           )}
           {showLocalDevFeatures && activeSection === "pjm-generation" && (
             <PjmGeneration

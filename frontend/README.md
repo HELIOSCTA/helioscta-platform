@@ -469,6 +469,8 @@ The workstation currently uses:
 - `GET /api/gas-daily-prices` for the cash, BalMo, and active monthly matrix.
 - `GET /api/gas-daily-prices/monthly-settles` for the Gas Pricing Monthly
   Settles tab.
+- `GET /api/gas-curve-evolution` for the Gas Outright and Calendar Spread curve
+  evolution page.
 - `GET /api/gas-daily-prices/contract` for cell-level history drilldowns.
 
 The Gas ICE Settles routes do not read calendar tables, legacy `ice_python_v1_*`
@@ -488,6 +490,36 @@ The market region metadata comes from `backend.scrapes.ice_python.symbols.gas` a
 uses EIA storage-region keys: `east`, `midwest`, `mountain`, `pacific`, and
 `south_central`. The view does not create a database model, frontend cache
 table, backend job, or new credential requirement.
+
+## Gas Outright Source Contract
+
+The Gas Outright page reads monthly ICE gas futures settlement marks with
+`helios_readonly` from `helios_prod.ice_python.settlements`. It appears in the
+`Pricing` sidebar section at `/?section=gas-outright` directly below Gas ICE
+Settles and is production-visible on Vercel.
+
+The page has two tabs:
+
+- `Gas Outright`: one EIA region, one gas market, and one monthly `gasStrip`.
+- `Calendar Spread`: one EIA region, one gas market, and `gasNear - gasFar`.
+
+The route `GET /api/gas-curve-evolution` accepts bounded params
+`view=gas-outright|cal-spread`, `market`, `gasStrip`, `gasNear`, `gasFar`,
+`startYear`, and `endYear`. `sparkStrip` is accepted only as a fallback for
+reference links when `gasStrip` is missing. The default page state is South
+Central, Henry Hub, Gas Outright, and the current/front monthly strip. The
+default year window is current year minus four through current year plus two.
+
+Fixed-price markets use the market futures product directly, such as
+`HNG H27-IUS`. Basis markets compute all-in outright values as Henry Hub fixed
+futures plus the market basis futures on the same `trade_date`. Calendar Spread
+uses near all-in outright minus far all-in outright; basis markets therefore
+compute `(Henry near + basis near) - (Henry far + basis far)`. The chart x-axis
+uses the same second-business-day expiry proxy as Power Sparks and does not read
+an exchange-calendar table. Freshness comes from
+`ice_python.settlements.updated_at` and latest matched `trade_date`. The page
+does not create a database model, frontend cache table, backend job, or new
+credential requirement.
 
 ## Power ICE Settles Source Contract
 

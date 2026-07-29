@@ -23,6 +23,7 @@ export type ActiveSection =
   | "gtn-balance"
   | "ice-pmi-curve"
   | "gas-prices"
+  | "gas-outright"
   | "pjm-price-duration-curves"
   | "pjm-price-distributions"
   | "pjm-generation"
@@ -72,6 +73,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "ice-settlements", label: "Power ICE Settles" },
       { id: "spark-spreads", label: "Power Sparks" },
       { id: "gas-prices", label: "Gas ICE Settles" },
+      { id: "gas-outright", label: "Gas Outright" },
     ],
   });
 
