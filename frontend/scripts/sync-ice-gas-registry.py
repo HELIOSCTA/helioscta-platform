@@ -1,4 +1,4 @@
-"""Sync backend ICE gas registry metadata into a frontend JSON artifact."""
+"""Sync backend ICE gas registry metadata into frontend and dbt artifacts."""
 from __future__ import annotations
 
 import json
@@ -11,6 +11,14 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUTPUT_PATH = REPO_ROOT / "frontend" / "lib" / "gasPricing" / "ice_gas_registry.json"
+DBT_SYMBOL_VALUES_MACRO_PATH = (
+    REPO_ROOT
+    / "dbt"
+    / "azure_postgres"
+    / "macros"
+    / "pjm_da_model"
+    / "ice_python_next_day_gas_symbol_values.sql"
+)
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -98,14 +106,72 @@ def build_markets(
     return markets
 
 
-def main() -> int:
+def sql_literal(value: object) -> str:
+    return "'" + str(value).replace("'", "''") + "'"
+
+
+def render_dbt_symbol_values_macro(next_day_rows: list[dict[str, Any]]) -> str:
+    value_rows = []
+    for index, row in enumerate(next_day_rows):
+        value_rows.append(
+            "        "
+            f"({sql_literal(row['symbol'])}::text, "
+            f"{sql_literal(row['description'])}::text, "
+            f"{sql_literal(row['region'])}::text, "
+            f"{index}::int)"
+        )
+
+    return "\n".join(
+        [
+            "-- GENERATED FILE. DO NOT EDIT.",
+            "-- Source: backend.scrapes.ice_python.symbols.gas",
+            "-- Rebuild: python frontend/scripts/sync-ice-gas-registry.py",
+            "",
+            "{% macro ice_python_next_day_gas_symbol_values() -%}",
+            "values",
+            ",\n".join(value_rows),
+            "{%- endmacro %}",
+            "",
+        ]
+    )
+
+
+def existing_generated_at(path: Path) -> str | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    value = payload.get("metadata", {}).get("generatedAt")
+    return str(value) if value else None
+
+
+def write_or_check(path: Path, content: str, *, check: bool) -> bool:
+    if check:
+        current = path.read_text(encoding="utf-8") if path.exists() else None
+        if current != content:
+            print(f"Out of sync: {path.relative_to(REPO_ROOT)}", file=sys.stderr)
+            return False
+        print(f"Checked {path.relative_to(REPO_ROOT)}")
+        return True
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    print(f"Wrote {path.relative_to(REPO_ROOT)}")
+    return True
+
+
+def main(check: bool = False) -> int:
     next_day_rows = [serializable_row(row) for row in gas.get_next_day_gas_symbols()]
     balmo_rows = [serializable_row(row) for row in gas.get_balmo_gas_symbols()]
     futures_rows = [serializable_row(row) for row in gas.get_gas_futures_products()]
+    generated_at = existing_generated_at(OUTPUT_PATH) if check else None
     payload = {
         "metadata": {
             "source": "backend.scrapes.ice_python.symbols.gas",
-            "generatedAt": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "generatedAt": generated_at
+            or datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
             "nextDayCount": len(next_day_rows),
             "balmoCount": len(balmo_rows),
             "futuresProductCount": len(futures_rows),
@@ -116,8 +182,17 @@ def main() -> int:
         "futures": futures_rows,
         "markets": build_markets(next_day_rows, balmo_rows, futures_rows),
     }
-    OUTPUT_PATH.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"Wrote {OUTPUT_PATH.relative_to(REPO_ROOT)}")
+    ok = True
+    ok &= write_or_check(
+        OUTPUT_PATH,
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        check=check,
+    )
+    ok &= write_or_check(
+        DBT_SYMBOL_VALUES_MACRO_PATH,
+        render_dbt_symbol_values_macro(next_day_rows),
+        check=check,
+    )
     print(
         "Counts: "
         f"next_day={payload['metadata']['nextDayCount']} "
@@ -125,8 +200,8 @@ def main() -> int:
         f"futures={payload['metadata']['futuresProductCount']} "
         f"markets={payload['metadata']['marketCount']}"
     )
-    return 0
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(check="--check" in sys.argv[1:]))

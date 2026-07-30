@@ -9,6 +9,8 @@
     "check:api": "node scripts/check-api-health.mjs",
     "check:perf:backoffice": "node scripts/check-backoffice-perf.mjs",
     "warm:backoffice": "node scripts/warm-backoffice-routes.mjs",
+    "sync:ice-gas-registry": "python scripts/sync-ice-gas-registry.py",
+    "check:ice-gas-registry-sync": "python scripts/sync-ice-gas-registry.py --check",
     "verify:ice-gas-registry": "python scripts/verify-ice-gas-registry.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"

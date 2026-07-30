@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import ssl
 import sys
 import urllib.request
 from collections import Counter, defaultdict
@@ -14,6 +15,15 @@ ICE_PRODUCT_CODES_URL = "https://www.ice.com/api/productguide/info/codes/all/csv
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "lib" / "gasPricing" / "ice_gas_registry.json"
 
 
+def _create_https_context() -> ssl.SSLContext:
+    try:
+        import certifi  # type: ignore[import-not-found]
+    except ImportError:
+        return ssl.create_default_context()
+
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def _download_ice_product_codes(url: str = ICE_PRODUCT_CODES_URL) -> list[dict[str, str]]:
     request = urllib.request.Request(
         url,
@@ -22,8 +32,14 @@ def _download_ice_product_codes(url: str = ICE_PRODUCT_CODES_URL) -> list[dict[s
             "Accept": "text/csv,*/*",
         },
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
-        text = response.read().decode("utf-8-sig")
+    try:
+        with urllib.request.urlopen(request, timeout=60, context=_create_https_context()) as response:
+            text = response.read().decode("utf-8-sig")
+    except ssl.SSLError as exc:
+        raise RuntimeError(
+            "Unable to establish a verified HTTPS connection to ICE. "
+            "Install certifi or set SSL_CERT_FILE to a valid CA bundle."
+        ) from exc
     return list(csv.DictReader(text.splitlines()))
 
 

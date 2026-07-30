@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: ice_python
+    schema: ice_python
+    description: >
+      ICE Python settlement source tables loaded into Azure Postgres by the
+      local Windows ICE Python settlement service.
+    tables:
+      - name: settlements
+        description: >
+          Non-option ICE settlement marks. Gas next-day inputs use physical gas
+          D1 symbols and prefer VWAP close with settlement fallback. Grain:
+          trade_date x symbol.
+      - name: settlement_contract_dates
+        description: >
+          ICE contract-date snapshots for settlement symbols. Gas next-day
+          inputs use start_date/end_date as the delivery date window when
+          available. Grain: trade_date x symbol.

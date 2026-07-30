@@ -1743,7 +1743,7 @@
   "metadata": {
     "balmoCount": 22,
     "futuresProductCount": 25,
-    "generatedAt": "2026-07-28T18:09:09+00:00",
+    "generatedAt": "2026-07-30T14:45:01+00:00",
     "marketCount": 29,
     "nextDayCount": 29,
     "source": "backend.scrapes.ice_python.symbols.gas"

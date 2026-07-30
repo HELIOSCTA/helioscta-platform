@@ -34,6 +34,14 @@ models:
           +schema: positions_and_trades_ref_tables
           +materialized: ephemeral
     pjm_da_model:
+      ice_python:
+        +enabled: true
+        +schema: pjm_da_model_ice_python
+        +materialized: ephemeral
+        settlements:
+          +enabled: true
+          +schema: pjm_da_model_ice_python
+          +materialized: ephemeral
       meteologica:
         +enabled: true
         +schema: pjm_da_model_meteologica
