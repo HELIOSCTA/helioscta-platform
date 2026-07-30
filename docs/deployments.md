@@ -28,6 +28,56 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## eia-open-data
+
+- Status: deployed on `helioscta-prod-vm-01`; timers enabled on
+  `2026-07-30 18:50 UTC`.
+- Deployed commits:
+  - `71160f7` for promoted EIA Open Data scrapes, DDL reference SQL, tests, and
+    systemd units.
+  - `c492f1a` for successful-run log cleanup hardening found during smoke
+    testing.
+- Host: `helioscta-prod-vm-01`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: `helios`.
+- Credential boundary: `/etc/helioscta/backend.env` now includes `EIA_API_KEY`;
+  the file remains `0640 root:helios`.
+- Unit files:
+  - `infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.service`
+  - `infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.timer`
+  - `infrastructure/systemd/helios-eia-weekly-underground-storage.service`
+  - `infrastructure/systemd/helios-eia-weekly-underground-storage.timer`
+  - `infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.service`
+  - `infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.timer`
+- Schedule:
+  - EIA-930 daily generation by fuel runs daily at
+    `07:30 America/New_York`, targets the prior Eastern date, and polls every
+    15 minutes for up to 4.5 hours.
+  - Weekly underground storage runs Thursdays at
+    `10:30 America/New_York`, targets the prior Friday week ending, and polls
+    every 2 minutes for up to 90 minutes.
+  - Monthly natural gas consumption runs weekdays from the 28th through 31st
+    at `15:00 America/New_York`; the service uses
+    `run_only_on_likely_release_day=True` so non-final weekdays skip cleanly.
+- Verification:
+  - Local focused pytest passed: `26 passed`.
+  - Local compile/import smoke passed.
+  - Local bounded EIA API/upsert and polling-path smokes succeeded for all
+    three sources.
+  - VM checkout fast-forwarded to `c492f1a` with a clean worktree.
+  - VM compile/import smoke passed under the `helios` service user.
+  - VM systemd smokes succeeded:
+    `helios-eia-930-daily-generation-by-fuel.service` upserted `16,553` rows,
+    `helios-eia-weekly-underground-storage.service` upserted `64` rows, and
+    `helios-eia-nat-gas-consumption-end-use-monthly.service` skipped cleanly
+    outside the likely release-day window.
+  - VM explicit monthly smoke through `systemd-run` upserted `315` rows.
+  - EIA timers are enabled and listed by
+    `systemctl list-timers 'helios-eia-*' --all --no-pager`.
+- Residual risk: VM production venv does not include `pytest`, so VM validation
+  used compile/import plus systemd/live smokes rather than running pytest on
+  the host.
+
 ## pjm-codex-analyst
 
 - Status: deployed on `helioscta-prod-vm-01`; timer intentionally paused on
