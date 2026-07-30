@@ -133,6 +133,7 @@ GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
 GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
+GET /api/eia-generation?region=US48&season=summer&date=YYYY-MM-DD
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
 GET /api/pjm-tightness-lookback?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
@@ -573,6 +574,48 @@ fuel summary rows, and source-window freshness. Capacity and
 scheduled-generation feeds are joined as nonblocking overlays, so fuel-mix date
 depth and intraday availability are not limited by `pjm.rt_and_self_ecomax`.
 
+## Local DEV EIA Generation Source Contract
+
+The EIA Generation DEV view (`/?view=eia-generation`) reads daily EIA-930 fuel
+mix rows from `eia.eia_930_daily_generation_by_fuel`, daily demand/net
+generation rows from `eia.eia_930_daily_region_data`, and observed WSI electric
+degree-day buckets from `weather.wsi_daily_weighted_degree_day_observations`.
+All frontend reads use `helios_readonly`. It is hidden from Vercel navigation
+and `GET /api/eia-generation` returns `404` outside local Next.js runs.
+
+Source systems: EIA Open Data API v2, Hourly Electric Grid Monitor daily fuel
+type and daily region-data datasets; WSI Trader historical weighted degree-day
+observations.
+
+Promoted raw table grain:
+`period x respondent x fueltype x timezone` for fuel rows and
+`period x respondent x type x timezone` for daily region rows. The dashboard
+presents one row per `period x respondent` by selecting a preferred timezone
+variant per region before aggregation. Region buttons map to EIA respondents as:
+`US48 -> US48`, `PJM -> PJM`, `MISO -> MISO`, `ERCOT -> ERCO`,
+`CAISO -> CISO`, `ISONE -> ISNE`, `NYISO -> NYIS`, `SWPP -> SWPP`,
+`TVA -> TVA`, and `SOCO -> SOCO`.
+
+The route accepts bounded params
+`region=US48|PJM|MISO|ERCOT|CAISO|ISONE|NYISO|SWPP|TVA|SOCO`, optional
+`season=summer|winter`, optional `date=YYYY-MM-DD`, and `refresh=1`. It
+converts source daily `megawatthours` values to daily average MW by dividing
+by 24, then returns the Home tab KPI fuel shares, last-15-day current/prior
+tables, full prior-year and current-year-to-date daily rows for YoY fuel
+charts, source freshness, and the selected timezone. Thermal share is defined
+as gas plus coal. Demand and net generation come from EIA-930 daily region
+`D` and `NG` rows. Weather response and weather-adjusted demand anomaly use
+WSI `electric_cdd` for summer and `electric_hdd` for winter, mapped through
+each region's explicit WSI broad entity (`US48 -> CONUS`,
+PJM/ISONE/NYISO/TVA/SOCO -> EAST, MISO -> MIDWEST,
+ERCOT/SWPP -> SOUTHCENTRAL, CAISO -> PACIFIC). Only the requested season
+returns weather chart rows; the opposite season is returned as a lightweight
+pending payload until the client requests it.
+
+The local view keeps `region`, `season`, `date`, and `tab` in the URL. The
+Home tab renders KPI cards, recent current/prior tables, YoY fuel charts, and
+weather response panels. Monthly Averages, Regional Modeling, and YoY + MTD
+tabs are read-only aggregations over the same route payload.
 ## Local DEV PJM Tightness Lookback Source Contract
 
 The Tightness Lookback DEV view is an adequacy-first lookback for a selected

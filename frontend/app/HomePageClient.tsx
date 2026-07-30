@@ -4,6 +4,9 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
+import EiaGenerationDashboard, {
+  type EiaGenerationFreshnessSummary,
+} from "@/components/eia/EiaGenerationDashboard";
 import ClearStreetTrades, {
   type ClearStreetTradesFreshnessSummary,
 } from "@/components/clear-street/ClearStreetTrades";
@@ -124,6 +127,15 @@ const DEFAULT_PJM_GENERATION_FRESHNESS: PjmGenerationFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Generation --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_EIA_GENERATION_FRESHNESS: EiaGenerationFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "EIA generation --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -331,6 +343,9 @@ function parseInitialSection(
   ) {
     return "gas-outright";
   }
+  if (showLocalDevFeatures && (value === "eia-generation" || viewValue === "eia-generation")) {
+    return "eia-generation";
+  }
   if (showLocalDevFeatures && value === "pjm-generation") {
     return "pjm-generation";
   }
@@ -437,6 +452,7 @@ export default function HomePageClient({
   const [pjmPriceDistributionsRefreshToken, setPjmPriceDistributionsRefreshToken] =
     useState(0);
   const [pjmGenerationRefreshToken, setPjmGenerationRefreshToken] = useState(0);
+  const [eiaGenerationRefreshToken, setEiaGenerationRefreshToken] = useState(0);
   const [pjmTightnessLookbackRefreshToken, setPjmTightnessLookbackRefreshToken] =
     useState(0);
   const [pjmOpsSummaryRefreshToken, setPjmOpsSummaryRefreshToken] = useState(0);
@@ -458,6 +474,7 @@ export default function HomePageClient({
   const [pjmPriceDistributionsFreshnessOpen, setPjmPriceDistributionsFreshnessOpen] =
     useState(false);
   const [pjmGenerationFreshnessOpen, setPjmGenerationFreshnessOpen] = useState(false);
+  const [eiaGenerationFreshnessOpen, setEiaGenerationFreshnessOpen] = useState(false);
   const [pjmTightnessLookbackFreshnessOpen, setPjmTightnessLookbackFreshnessOpen] =
     useState(false);
   const [pjmOpsSummaryFreshnessOpen, setPjmOpsSummaryFreshnessOpen] = useState(false);
@@ -491,6 +508,8 @@ export default function HomePageClient({
     );
   const [pjmGenerationFreshness, setPjmGenerationFreshness] =
     useState<PjmGenerationFreshnessSummary>(DEFAULT_PJM_GENERATION_FRESHNESS);
+  const [eiaGenerationFreshness, setEiaGenerationFreshness] =
+    useState<EiaGenerationFreshnessSummary>(DEFAULT_EIA_GENERATION_FRESHNESS);
   const [pjmTightnessLookbackFreshness, setPjmTightnessLookbackFreshness] =
     useState<PjmTightnessLookbackFreshnessSummary>(
       DEFAULT_PJM_TIGHTNESS_LOOKBACK_FRESHNESS,
@@ -575,7 +594,7 @@ export default function HomePageClient({
 
   const replaceRouteState = (section: ActiveSection) => {
     const params = new URLSearchParams(searchParams.toString());
-    if (isBackOfficeSection(section)) {
+    if (isBackOfficeSection(section) || section === "eia-generation") {
       params.set("view", section);
       params.delete("section");
     } else {
@@ -743,6 +762,15 @@ export default function HomePageClient({
         footer: "Gas Outright | Source: ice_python.settlements / helios_prod",
       };
     }
+    if (showLocalDevFeatures && activeSection === "eia-generation") {
+      return {
+        title: "EIA Generation Dashboard",
+        subtitle:
+          "EIA-930 daily demand, net generation, fuel mix, and weather-adjusted load context by ISO.",
+        footer:
+          "EIA-930 Hourly Grid Monitor (daily aggregation) | Source: Azure PostgreSQL",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
       return {
         title: "Generation",
@@ -837,11 +865,15 @@ export default function HomePageClient({
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIceSettlements = activeSection === "ice-settlements";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
+  const isEiaGenerationSection = showLocalDevFeatures && activeSection === "eia-generation";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
     activeSection === "gas-outright";
-  const usesPowerMarketEyebrow = isHistoricalSettlements || isIceSettlements;
+  const usesPowerMarketEyebrow =
+    isEiaGenerationSection ||
+    isHistoricalSettlements ||
+    isIceSettlements;
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
     activeSection === "gas-outright";
@@ -864,6 +896,8 @@ export default function HomePageClient({
               ? "h-screen w-full overflow-hidden bg-white p-0"
               : isNavDailyPositionSheet
               ? "w-full max-w-none px-5 py-8 sm:px-12"
+              : isEiaGenerationSection
+              ? "mx-auto w-full max-w-[1700px] px-4 py-8 sm:px-8"
               : `w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${
                   isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""
                 }`
@@ -1189,6 +1223,28 @@ export default function HomePageClient({
               />
             )}
 
+            {showLocalDevFeatures && activeSection === "eia-generation" && (
+              <FreshnessCard
+                statusLabel={eiaGenerationFreshness.status}
+                statusClass={eiaGenerationFreshness.statusClass}
+                summary={eiaGenerationFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: eiaGenerationFreshness.status,
+                    className: eiaGenerationFreshness.statusClass,
+                  },
+                  { label: "Region", value: eiaGenerationFreshness.targetDateLabel },
+                  { label: "Latest EIA Day", value: eiaGenerationFreshness.latestDateLabel },
+                  { label: "Source Update", value: eiaGenerationFreshness.latestUpdateLabel },
+                ]}
+                open={eiaGenerationFreshnessOpen}
+                onToggle={() => setEiaGenerationFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setEiaGenerationRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "pjm-tightness-lookback" && (
               <FreshnessCard
                 statusLabel={pjmTightnessLookbackFreshness.status}
@@ -1436,6 +1492,12 @@ export default function HomePageClient({
             <PjmGeneration
               refreshToken={pjmGenerationRefreshToken}
               onFreshnessChange={setPjmGenerationFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "eia-generation" && (
+            <EiaGenerationDashboard
+              refreshToken={eiaGenerationRefreshToken}
+              onFreshnessChange={setEiaGenerationFreshness}
             />
           )}
           {showLocalDevFeatures && activeSection === "pjm-tightness-lookback" && (

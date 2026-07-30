@@ -26,6 +26,7 @@ export type ActiveSection =
   | "gas-outright"
   | "pjm-price-duration-curves"
   | "pjm-price-distributions"
+  | "eia-generation"
   | "pjm-generation"
   | "pjm-tightness-lookback"
   | "pjm-ops-summary"
@@ -115,6 +116,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },
+        { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 demand + fuel mix" },
         { id: "pjm-generation", label: "Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "positions-home", label: "Old Positions Home" },
