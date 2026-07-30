@@ -13,7 +13,7 @@ from backend.orchestration.ice_python.settlements._runtime import preview_values
 
 
 DEFAULT_LOOKBACK_DAYS = 14
-DEFAULT_MAX_MISSING_SYMBOL_RATIO = 0.20
+DEFAULT_MAX_MISSING_SYMBOL_RATIO: float | None = None
 
 logger = logging.getLogger(__name__)
 

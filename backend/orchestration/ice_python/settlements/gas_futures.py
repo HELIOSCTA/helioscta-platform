@@ -19,7 +19,7 @@ API_SCRAPE_NAME = "orchestration_ice_python_settlements_gas_futures"
 REGISTRY_LABEL = "gas_futures"
 DEFAULT_MONTHS_FORWARD = 36
 DEFAULT_LOOKBACK_DAYS = registry.DEFAULT_LOOKBACK_DAYS
-DEFAULT_MAX_MISSING_SYMBOL_RATIO = 0.0
+DEFAULT_MAX_MISSING_SYMBOL_RATIO = registry.DEFAULT_MAX_MISSING_SYMBOL_RATIO
 
 logger = logging.getLogger(__name__)
 

@@ -76,11 +76,16 @@ Linux systemd units for ICE Python.
 Each wrapper defaults to today's contract-date snapshot plus a 14-day inclusive
 settlement lookback window. Set `lookback_days=0` for single-date behavior.
 PJM, ERCOT, western power, eastern power, and gas futures wrappers default from
-the current month through 36 months forward. Western and eastern power daily
-wrappers pull exact daily symbols used by the positions/trades export contract.
-The scheduled gas futures feed is split into core, Gulf, West, and East wrappers
-for clearer status and smaller reruns; the unsplit `gas_futures` wrapper remains
-available for manual backfill or broad ad hoc runs.
+the current month through 36 months forward. Scheduled ICE settlement wrappers
+are availability-first: missing symbols or missing fields do not fail a run when
+ICE returns usable rows for the rest of the request. Missing symbols are logged
+in the application log and summarized in `ops.api_fetch_log.metadata`; zero-row
+pulls and real runtime exceptions remain fatal by default. Western and eastern
+power daily wrappers pull exact daily symbols used by the positions/trades
+export contract. The scheduled gas futures feed is split into core, Gulf, West,
+and East wrappers for clearer status and smaller reruns; the unsplit
+`gas_futures` wrapper remains available for manual backfill or broad ad hoc
+runs.
 
 The runtime writes to `ice_python.settlements` and
 `ice_python.settlement_contract_dates`. Those tables are operator-created from

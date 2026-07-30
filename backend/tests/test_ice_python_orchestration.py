@@ -10,6 +10,7 @@ import pytest
 
 from backend.orchestration.ice_python import job_runner
 from backend.orchestration.ice_python import _policies
+from backend.orchestration.ice_python.settlements import gas_futures
 from backend.orchestration.ice_python.settlements import gas_futures_core
 from backend.orchestration.ice_python.settlements import gas_futures_east
 from backend.orchestration.ice_python.settlements import gas_futures_gulf
@@ -350,6 +351,48 @@ def test_split_gas_futures_wrappers_select_product_groups(
     assert captured["registry_label"] == expected_registry
     assert captured["fields"] == ["Settle"]
     assert captured["require_rows"] is False
+
+
+def test_gas_futures_run_allows_missing_symbols_by_default(monkeypatch):
+    captured_generation: dict[str, object] = {}
+    captured_registry: dict[str, object] = {}
+
+    def fake_get_futures_symbols_for_horizon(**kwargs):
+        captured_generation.update(kwargs)
+        return ["HNG N26-IUS", "HNG Q26-IUS"]
+
+    def fake_run_registry_settlements(**kwargs):
+        captured_registry.update(kwargs)
+        return {
+            "registry": kwargs["registry_label"],
+            "symbols": kwargs["symbols"],
+            "rows_processed": 1,
+        }
+
+    monkeypatch.setattr(
+        gas_futures.gas,
+        "get_futures_symbols_for_horizon",
+        fake_get_futures_symbols_for_horizon,
+    )
+    monkeypatch.setattr(
+        gas_futures.registry,
+        "run_registry_settlements",
+        fake_run_registry_settlements,
+    )
+    monkeypatch.setattr(
+        gas_futures,
+        "run_with_logging",
+        lambda pipeline_name, log_dir, operation, database: operation(None),
+    )
+
+    summary = gas_futures.run(products=["HNG"], require_rows=False)
+
+    assert summary["symbols"] == ["HNG N26-IUS", "HNG Q26-IUS"]
+    assert captured_generation["products"] == ["HNG"]
+    assert captured_generation["start_date"] is None
+    assert captured_generation["months_forward"] == gas_futures.DEFAULT_MONTHS_FORWARD
+    assert captured_registry["symbols"] == ["HNG N26-IUS", "HNG Q26-IUS"]
+    assert captured_registry["max_missing_symbol_ratio"] is None
 
 
 def test_pjm_short_term_tolerates_empty_contract_date_refresh(monkeypatch):
@@ -726,6 +769,49 @@ def test_registry_runner_fails_when_symbol_coverage_breaches_threshold(monkeypat
             fields=["Settle"],
             max_missing_symbol_ratio=0.25,
         )
+
+
+def test_registry_runner_allows_missing_symbol_coverage_by_default(monkeypatch):
+    monkeypatch.setattr(
+        registry.settlements_pull,
+        "resolve_date_range",
+        lambda trade_date=None, start_date=None, end_date=None: (
+            date(2026, 6, 17),
+            date(2026, 6, 17),
+        ),
+    )
+    monkeypatch.setattr(
+        registry.contract_dates_pull,
+        "run_contract_dates",
+        lambda **kwargs: {
+            "symbols_requested": 4,
+            "symbols_returned": 4,
+            "symbols_missing": [],
+            "rows_processed": 4,
+            "target_table": "ice_python.settlement_contract_dates",
+        },
+    )
+    monkeypatch.setattr(
+        registry.settlements_pull,
+        "run_settlements",
+        lambda **kwargs: {
+            "symbols_requested": 4,
+            "symbols_returned": 2,
+            "symbols_missing": ["A", "B"],
+            "rows_processed": 2,
+            "target_table": "ice_python.settlements",
+        },
+    )
+
+    summary = registry.run_registry_settlements(
+        pipeline_name="test_ice_registry",
+        registry_label="test",
+        symbols=["A", "B", "C", "D"],
+        fields=["Settle"],
+    )
+
+    assert summary["rows_processed"] == 6
+    assert summary["settlements"]["symbols_missing"] == ["A", "B"]
 
 
 def test_registry_validation_errors_are_not_retried_by_transient_policy():
