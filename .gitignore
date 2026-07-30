@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 .pytest_cache/
 .pytest_tmp/
@@ -31,8 +32,17 @@ infrastructure/azure-postgres/bootstrap/
 !.local/README.md
 .local/obsidian/
 
+# Agent-generated local artifacts
+.agents/prompts/*.md
+!.agents/prompts/implementation-task-contract.md
+.agents/skills/pjm-da-model-inputs/
+
 # Local-only modelling workspace
-modelling/
+/modelling/
+!backend/modelling/
+!backend/modelling/**
+backend/modelling/**/__pycache__/
+backend/modelling/**/*.py[cod]
 
 # Local Excel workbook binaries
 excel/**/*.xls*
@@ -61,5 +71,7 @@ frontend/node_modules/
 frontend/.next/
 frontend/.env*
 !frontend/.env.example
+frontend/.local/
+frontend/frontend/
 
 .vercel
