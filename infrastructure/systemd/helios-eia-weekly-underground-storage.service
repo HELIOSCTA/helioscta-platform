@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA EIA weekly underground storage orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-eia-weekly-underground-storage.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.eia.weekly_underground_storage
+TimeoutStartSec=2h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-eia-weekly-underground-storage
+
+[Install]
+WantedBy=multi-user.target

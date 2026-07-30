@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA EIA monthly natural gas consumption orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-eia-nat-gas-consumption-end-use-monthly.lock /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.eia.nat_gas_consumption_end_use_monthly import main; main(run_only_on_likely_release_day=True)"
+TimeoutStartSec=7h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-eia-nat-gas-consumption-end-use-monthly
+
+[Install]
+WantedBy=multi-user.target

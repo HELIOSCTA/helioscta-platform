@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA EIA-930 daily generation by fuel orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 07:30:00 America/New_York
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-eia-930-daily-generation-by-fuel.service
+
+[Install]
+WantedBy=timers.target

@@ -613,6 +613,79 @@ This avoids corrupting secrets that contain characters such as `$`. See
 The exception is `backend.backfills.power.lmp_price_backfill_7_day`, which is
 the promoted scheduled repair wrapper around the LMP scrape/backfill paths.
 
+## EIA Open Data
+
+The promoted EIA Open Data workflows have dedicated release-aware timers:
+
+```text
+helios-eia-930-daily-generation-by-fuel.service
+helios-eia-930-daily-generation-by-fuel.timer
+helios-eia-weekly-underground-storage.service
+helios-eia-weekly-underground-storage.timer
+helios-eia-nat-gas-consumption-end-use-monthly.service
+helios-eia-nat-gas-consumption-end-use-monthly.timer
+```
+
+The EIA-930 daily generation workflow runs
+`backend.orchestration.eia.eia_930_daily_generation_by_fuel`, upserts raw daily
+fuel mix rows into `eia.eia_930_daily_generation_by_fuel`, and targets the
+prior Eastern date. The timer runs daily at `07:30 America/New_York` with
+`Persistent=true`; scheduled runs poll every 15 minutes for up to 4.5 hours.
+
+The weekly underground storage workflow runs
+`backend.orchestration.eia.weekly_underground_storage`, upserts weekly storage
+series into `eia.weekly_underground_storage`, and targets the Friday
+week-ending date published by the Thursday release. The timer runs Thursdays at
+`10:30 America/New_York` with `Persistent=true`; scheduled runs poll every 2
+minutes for up to 90 minutes.
+
+The monthly natural gas consumption workflow runs
+`backend.orchestration.eia.nat_gas_consumption_end_use_monthly`, upserts
+monthly end-use consumption series into
+`eia.nat_gas_consumption_end_use_monthly`, and targets the two-month-lag report
+month. systemd cannot express EIA's last-business-day release exactly, so the
+timer starts on weekdays from the 28th through 31st at `15:00
+America/New_York`; the service calls the orchestration with
+`run_only_on_likely_release_day=True` so non-final weekdays skip without
+pulling the API. This guard does not model federal holidays; run the module
+manually with an explicit `target_month` if EIA moves a release outside the
+normal final-weekday window.
+
+Do not enable these timers until `/etc/helioscta/backend.env` contains
+`EIA_API_KEY` and the `eia` source tables/indexes have been applied with the
+`helios_admin` role.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-eia-930-daily-generation-by-fuel.service
+sudo systemctl start helios-eia-weekly-underground-storage.service
+sudo systemctl enable --now helios-eia-930-daily-generation-by-fuel.timer
+sudo systemctl enable --now helios-eia-weekly-underground-storage.timer
+sudo systemctl enable --now helios-eia-nat-gas-consumption-end-use-monthly.timer
+```
+
+Verify the workflows with:
+
+```bash
+systemctl status helios-eia-930-daily-generation-by-fuel.service
+systemctl status helios-eia-930-daily-generation-by-fuel.timer
+journalctl -u helios-eia-930-daily-generation-by-fuel.service -n 200 --no-pager
+systemctl status helios-eia-weekly-underground-storage.service
+systemctl status helios-eia-weekly-underground-storage.timer
+journalctl -u helios-eia-weekly-underground-storage.service -n 200 --no-pager
+systemctl status helios-eia-nat-gas-consumption-end-use-monthly.service
+systemctl status helios-eia-nat-gas-consumption-end-use-monthly.timer
+journalctl -u helios-eia-nat-gas-consumption-end-use-monthly.service -n 200 --no-pager
+```
+
 ## WSI Hourly Observed Weather
 
 The WSI hourly observed weather workflow has its own timer:
@@ -881,6 +954,12 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-da-lmps.serv
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-da-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-rt-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-rt-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.service /etc/systemd/system/
@@ -932,6 +1011,9 @@ sudo systemctl enable --now helios-pjm-ops-sum.timer
 sudo systemctl enable --now helios-ercot-dam-stlmnt-pnt-prices.timer
 sudo systemctl enable --now helios-caiso-da-lmps.timer
 sudo systemctl enable --now helios-caiso-rt-lmps.timer
+sudo systemctl enable --now helios-eia-930-daily-generation-by-fuel.timer
+sudo systemctl enable --now helios-eia-weekly-underground-storage.timer
+sudo systemctl enable --now helios-eia-nat-gas-consumption-end-use-monthly.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
@@ -974,6 +1056,8 @@ sudo systemctl start helios-pjm-ops-sum.service
 sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-caiso-da-lmps.service
 sudo systemctl start helios-caiso-rt-lmps.service
+sudo systemctl start helios-eia-930-daily-generation-by-fuel.service
+sudo systemctl start helios-eia-weekly-underground-storage.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
@@ -1146,6 +1230,20 @@ journalctl -u helios-caiso-da-lmps.service -n 200 --no-pager
 systemctl status helios-caiso-rt-lmps.service
 systemctl status helios-caiso-rt-lmps.timer
 journalctl -u helios-caiso-rt-lmps.service -n 200 --no-pager
+```
+
+For EIA Open Data:
+
+```bash
+systemctl status helios-eia-930-daily-generation-by-fuel.service
+systemctl status helios-eia-930-daily-generation-by-fuel.timer
+journalctl -u helios-eia-930-daily-generation-by-fuel.service -n 200 --no-pager
+systemctl status helios-eia-weekly-underground-storage.service
+systemctl status helios-eia-weekly-underground-storage.timer
+journalctl -u helios-eia-weekly-underground-storage.service -n 200 --no-pager
+systemctl status helios-eia-nat-gas-consumption-end-use-monthly.service
+systemctl status helios-eia-nat-gas-consumption-end-use-monthly.timer
+journalctl -u helios-eia-nat-gas-consumption-end-use-monthly.service -n 200 --no-pager
 ```
 
 For the ERCOT load batch:

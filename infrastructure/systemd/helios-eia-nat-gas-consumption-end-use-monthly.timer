@@ -1,0 +1,12 @@
+[Unit]
+Description=Monthly HeliosCTA EIA natural gas consumption orchestration timer
+
+[Timer]
+OnCalendar=Mon..Fri *-*-28..31 15:00:00 America/New_York
+Persistent=true
+RandomizedDelaySec=10min
+AccuracySec=1min
+Unit=helios-eia-nat-gas-consumption-end-use-monthly.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Weekly HeliosCTA EIA underground storage orchestration timer
+
+[Timer]
+OnCalendar=Thu *-*-* 10:30:00 America/New_York
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-eia-weekly-underground-storage.service
+
+[Install]
+WantedBy=timers.target

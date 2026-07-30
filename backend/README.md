@@ -24,6 +24,7 @@ DBT_POSTGRES_DBNAME=helios_prod
 DBT_POSTGRES_SSLMODE=require
 
 PJM_API_KEY=
+EIA_API_KEY=
 
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
 HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com,Kapil.Saxena@HeliosCTA.com
@@ -163,6 +164,50 @@ credentials. The first promoted MISO runtime module is
 `backend.orchestration.power.miso.real_time_total_load`. MISO asks public users
 to avoid accessing real-time links more than once per minute, so
 scheduled jobs should use a conservative cadence.
+
+EIA Open Data API helpers use `EIA_API_KEY`. Promoted EIA runtime modules live
+under `backend.scrapes.eia`, with orchestration at `backend.orchestration.eia`
+and manual backfills at `backend.backfills.eia`.
+Scheduled EIA orchestration modules are release-aware pollers: scheduled runs
+wait for the target period to appear before upserting, while backfill and test
+runs stay single-shot by default so historical replays do not block.
+The EIA-930 daily fuel-mix source used for website-style daily views runs
+through `backend.scrapes.eia.eia_930_daily_generation_by_fuel`, with
+orchestration at
+`backend.orchestration.eia.eia_930_daily_generation_by_fuel` and manual
+backfills at
+`backend.backfills.eia.eia_930_daily_generation_by_fuel`. It writes raw daily
+rows to `eia.eia_930_daily_generation_by_fuel` at
+`period x respondent x fueltype x timezone` grain, preserving the EIA response
+field names after SQL-safe hyphen replacement (`respondent_name`, `type_name`,
+and `timezone_description`). The timezone key is required because the public
+EIA daily endpoint returns multiple timezone variants for a single
+`period x respondent x fueltype`; curated website marts should choose a
+canonical timezone before renaming fields for Edi-style
+`DATE x RESPONDENT x FUELTYPE` tables. Schedule the daily orchestrator after
+the public daily refresh window, around `07:30 America/New_York`; it targets
+the prior Eastern date and polls every 15 minutes for up to 4.5 hours.
+Weekly natural gas underground storage runs through
+`backend.scrapes.eia.weekly_underground_storage`, with orchestration at
+`backend.orchestration.eia.weekly_underground_storage` and manual backfills at
+`backend.backfills.eia.weekly_underground_storage`. It writes
+weekly storage rows to `eia.weekly_underground_storage` at
+`eia_week_ending x series` grain, preserving EIA source dimensions such as
+`duoarea`, `process`, and `series` while storing parsed `region` as a
+convenience column. Schedule it around the Thursday `10:30 America/New_York`
+release; it targets the prior Friday week-ending date and polls every 2
+minutes for up to 90 minutes until the expected storage series are present.
+Monthly natural gas consumption by end use runs through
+`backend.scrapes.eia.nat_gas_consumption_end_use_monthly`, with
+orchestration at
+`backend.orchestration.eia.nat_gas_consumption_end_use_monthly` and manual
+backfills at
+`backend.backfills.eia.nat_gas_consumption_end_use_monthly`. It writes
+monthly consumption rows to `eia.nat_gas_consumption_end_use_monthly` at
+`report_month x series` grain, preserving EIA area, product, and end-use
+process dimensions while storing volumes in `value_mmcf`. Schedule it on the
+Natural Gas Monthly last-business-day afternoon release; it targets the
+two-month-lag report month and polls every 30 minutes for up to 6 hours.
 
 WSI Trader weather helpers use `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and
 `WSI_TRADER_PASSWORD`. The promoted observed runtime module is
