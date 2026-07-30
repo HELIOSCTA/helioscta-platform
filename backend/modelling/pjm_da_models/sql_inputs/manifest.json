@@ -1,0 +1,180 @@
+{
+  "contractId": "pjm_da_model_backend_sql_inputs",
+  "displayName": "PJM DA Model Backend SQL Inputs",
+  "runtimeSqlRoot": "backend/modelling/pjm_da_models/sql_inputs",
+  "generatedBy": "dbt/azure_postgres/scripts/promote_pjm_da_model_backend_sql.py",
+  "dbtRuntimeVars": {
+    "pjm_da_model_param_mode": "runtime"
+  },
+  "compileCommandFromDbtProjectRoot": "dbt compile --profiles-dir . --select +path:models/pjm_da_model --vars \"{pjm_da_model_param_mode: runtime}\"",
+  "artifacts": {
+    "available_target_dates": {
+      "displayName": "Meteologica DA price available target dates",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/available_target_dates.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/meteologica/da_price_forecast/meteologica_da_price_forecast_available_dates.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\meteologica\\da_price_forecast\\meteologica_da_price_forecast_available_dates.sql",
+      "consumers": [
+        "meteo_baseline_price"
+      ]
+    },
+    "meteo_da_price_forecast_hourly": {
+      "displayName": "Meteologica DA price forecast hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/meteo_da_price_forecast_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/meteologica/da_price_forecast/meteologica_da_price_forecast_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\meteologica\\da_price_forecast\\meteologica_da_price_forecast_hourly.sql",
+      "consumers": [
+        "meteo_baseline_price"
+      ]
+    },
+    "actual_da_lmps_hourly": {
+      "displayName": "PJM actual DA LMPs hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/actual_da_lmps_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/da_lmps_hourly/pjm_da_lmps_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\da_lmps_hourly\\pjm_da_lmps_hourly.sql",
+      "consumers": [
+        "meteo_baseline_price"
+      ]
+    },
+    "ice_python_next_day_gas": {
+      "displayName": "ICE Python next-day gas long-form daily",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/ice_python_next_day_gas.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/ice_python/settlements/ice_python_next_day_gas.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\ice_python\\settlements\\ice_python_next_day_gas.sql",
+      "consumers": [
+        "gas_monthly_settles_frontend",
+        "salt_model_frontend"
+      ]
+    },
+    "ice_python_next_day_gas_pjm_features": {
+      "displayName": "ICE Python next-day gas PJM features",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/ice_python_next_day_gas_pjm_features.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/ice_python/settlements/ice_python_next_day_gas_pjm_features.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\ice_python\\settlements\\ice_python_next_day_gas_pjm_features.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "ice_python_next_day_gas_hourly": {
+      "displayName": "ICE Python next-day gas hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/ice_python_next_day_gas_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/ice_python/settlements/ice_python_next_day_gas_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\ice_python\\settlements\\ice_python_next_day_gas_hourly.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "actual_da_lmps_hourly_history": {
+      "displayName": "PJM actual DA LMPs hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/actual_da_lmps_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/da_lmps_hourly/pjm_da_lmps_hourly_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\da_lmps_hourly\\pjm_da_lmps_hourly_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "rto_load_hourly_history": {
+      "displayName": "PJM RTO load hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/rto_load_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/rto_load_hourly/pjm_rto_load_hourly_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\rto_load_hourly\\pjm_rto_load_hourly_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "rto_load_forecast_hourly_history": {
+      "displayName": "PJM RTO load forecast hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/rto_load_forecast_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/load_forecast_hourly/pjm_rto_load_forecast_hourly_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\load_forecast_hourly\\pjm_rto_load_forecast_hourly_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "rto_load_latest_forecast_hourly": {
+      "displayName": "PJM RTO latest load forecast hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/rto_load_latest_forecast_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/load_forecast_hourly/pjm_rto_load_latest_forecast_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\load_forecast_hourly\\pjm_rto_load_latest_forecast_hourly.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "renewables_hourly_history": {
+      "displayName": "PJM renewables hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/renewables_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/gen_by_fuel/pjm_gen_by_fuel_renewables_hourly_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\gen_by_fuel\\pjm_gen_by_fuel_renewables_hourly_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "renewables_latest_forecast_hourly": {
+      "displayName": "PJM latest renewables forecast hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/renewables_latest_forecast_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/gen_by_fuel/pjm_renewables_latest_forecast_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\gen_by_fuel\\pjm_renewables_latest_forecast_hourly.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "gen_outages_daily_history": {
+      "displayName": "PJM generation outages daily history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/gen_outages_daily_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/gen_outages/pjm_gen_outages_daily_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\gen_outages\\pjm_gen_outages_daily_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "gen_outages_daily_latest_forecast": {
+      "displayName": "PJM generation outages daily latest forecast",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/gen_outages_daily_latest_forecast.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/pjm/gen_outages/pjm_gen_outages_daily_latest_forecast.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\pjm\\gen_outages\\pjm_gen_outages_daily_latest_forecast.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "meteologica_pjm_rto_latest_forecast_hourly": {
+      "displayName": "Meteologica PJM RTO latest forecast hourly",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/meteo_pjm_rto_latest_forecast_hourly.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/meteologica/pjm_forecast_hourly/meteologica_pjm_rto_latest_forecast_hourly.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\meteologica\\pjm_forecast_hourly\\meteologica_pjm_rto_latest_forecast_hourly.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "meteologica_pjm_rto_forecast_hourly_history": {
+      "displayName": "Meteologica PJM RTO forecast hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/meteo_pjm_rto_forecast_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/meteologica/pjm_forecast_hourly/meteologica_pjm_rto_forecast_hourly_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\meteologica\\pjm_forecast_hourly\\meteologica_pjm_rto_forecast_hourly_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "wsi_temperature_hourly_history": {
+      "displayName": "WSI temperature hourly history",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/wsi_temperature_hourly_history.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/weather/wsi_hourly_temperature/weather_wsi_hourly_temperature_history.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\weather\\wsi_hourly_temperature\\weather_wsi_hourly_temperature_history.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    },
+    "wsi_temperature_hourly_latest_forecast": {
+      "displayName": "WSI temperature hourly latest forecast",
+      "promotedSql": "backend/modelling/pjm_da_models/sql_inputs/wsi_temperature_hourly_latest_forecast.sql",
+      "dbtModel": "dbt/azure_postgres/models/pjm_da_model/weather/wsi_hourly_temperature/weather_wsi_hourly_temperature_latest_forecast.sql",
+      "dbtCompiledSql": "dbt\\azure_postgres\\target\\compiled\\helioscta_platform\\models\\pjm_da_model\\weather\\wsi_hourly_temperature\\weather_wsi_hourly_temperature_latest_forecast.sql",
+      "consumers": [
+        "like_day_model_knn_sunny"
+      ]
+    }
+  },
+  "knownSourceGaps": {
+    "nerc_holiday": "The old calendar table is intentionally not migrated. Python derives weekday/weekend features and defaults NERC holiday to 0.",
+    "ice_gas_non_trading_days": "ICE gas uses settlements.trade_date with the simple next-day and Friday-weekend rule; special holiday handling is out of scope.",
+    "output_publication": "Model outputs are not published to database cache tables in this pass. Meteologica Baseline Pricing can be executed from frontend TypeScript by reading these promoted SQL inputs with helios_readonly; backend Python runners remain read-only."
+  }
+}
