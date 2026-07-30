@@ -1,5 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { bindPromotedSql, readPjmDaPromotedSql } from "@/lib/server/pjmDaPromotedSql";
 import {
   DAILY_GAS_MARKETS,
   GAS_CURVE_MONTH_CODES,
@@ -24,6 +25,8 @@ const MIN_YEAR = CURRENT_YEAR - 20;
 const MAX_YEAR = CURRENT_YEAR + 10;
 const MAX_YEAR_SPAN = 15;
 const HENRY_FUTURES_PRODUCT = "HNG";
+const SETTLEMENTS_SOURCE = "ice_python.settlements" as const;
+const NEXT_DAY_GAS_SOURCE = "ice_python_next_day_gas" as const;
 
 const ROUTE_CONFIG = {
   route: "/api/gas-daily-prices/monthly-settles",
@@ -86,6 +89,12 @@ interface DailySourceRow {
   value: number | string | null;
   volume: number | string | null;
   updated_at: string | Date | null;
+  date_basis: "trade_date" | "gas_day";
+}
+
+interface SqlRequest {
+  text: string;
+  values: ReadonlyArray<unknown>;
 }
 
 function intParam(value: string | null, fallback: number, min: number, max: number): number {
@@ -154,6 +163,10 @@ function toTimestampString(value: unknown): string | null {
 
 function maxString(values: Array<string | null>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
+function promotedSqlBody(sql: string): string {
+  return sql.trim().replace(/;\s*$/, "");
 }
 
 function yearSuffix(year: number): string {
@@ -278,13 +291,52 @@ select
   extract(day from s.trade_date)::int as day_of_month,
   nullif(s.${field}::text, 'NaN')::double precision as value,
   nullif(s.volume::text, 'NaN')::double precision as volume,
-  to_char(s.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at
+  to_char(s.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at,
+  'trade_date'::text as date_basis
 from ice_python.settlements s
 where s.symbol = $1
   and extract(year from s.trade_date)::int between $2 and $3
   and nullif(s.${field}::text, 'NaN') is not null
 order by s.trade_date;
 `;
+}
+
+function buildGasDayCashSql({
+  sourceSymbol,
+  startDate,
+  endDate,
+}: {
+  sourceSymbol: string;
+  startDate: string;
+  endDate: string;
+}): SqlRequest {
+  const promoted = bindPromotedSql(readPjmDaPromotedSql(NEXT_DAY_GAS_SOURCE), {
+    start_date: startDate,
+    end_date: endDate,
+  });
+  const symbolParam = `$${promoted.values.length + 1}`;
+
+  return {
+    text: `
+with gas_day_source as (
+${promotedSqlBody(promoted.text)}
+)
+select
+  g.gas_day::date as trade_date,
+  extract(year from g.gas_day)::int as contract_year,
+  extract(month from g.gas_day)::int as contract_month,
+  extract(day from g.gas_day)::int as day_of_month,
+  g.gas_price::double precision as value,
+  null::double precision as volume,
+  to_char(g.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at,
+  'gas_day'::text as date_basis
+from gas_day_source g
+where g.symbol = ${symbolParam}::text
+  and g.gas_price is not null
+order by g.gas_day;
+`,
+    values: [...promoted.values, sourceSymbol],
+  };
 }
 
 function basePayload({
@@ -298,6 +350,7 @@ function basePayload({
   rowCount,
   valueCount,
   dataAsOf,
+  source = SETTLEMENTS_SOURCE,
 }: {
   mode: GasMonthlySettlesMode;
   market: DailyGasMarket;
@@ -309,6 +362,7 @@ function basePayload({
   rowCount: number;
   valueCount: number;
   dataAsOf: string | null;
+  source?: GasMonthlySettlesPayload["source"];
 }): GasMonthlySettlesPayload {
   const registryCounts = getIceGasRegistryCounts();
   const expectedValueCount = rows.reduce(
@@ -317,7 +371,7 @@ function basePayload({
   );
   return {
     product: "gas",
-    source: "ice_python.settlements",
+    source,
     mode,
     market,
     priceBasis,
@@ -332,7 +386,7 @@ function basePayload({
     rows,
     metadata: {
       dataAsOf,
-      sourceTable: "ice_python.settlements",
+      sourceTable: source,
       rowCount,
       valueCount,
       missingValueCount: Math.max(0, expectedValueCount - valueCount),
@@ -382,6 +436,7 @@ async function buildFuturesPayload({
         formula: target.formula,
         contractMonth: target.contractMonth,
         pointType: target.pointType,
+        dateBasis: "trade_date",
       };
     }
     return {
@@ -418,14 +473,27 @@ async function buildDailyPayload({
   priceBasis: GasPriceBasis;
 }): Promise<GasMonthlySettlesPayload> {
   const sourceSymbol = mode === "cash" ? market.cashSymbol : market.balmoSymbol;
-  const formula = `${sourceSymbol ?? "No symbol"} ${priceBasis.replace("_", " ")} monthly average`;
-  const sourceRows = sourceSymbol
-    ? await query<DailySourceRow>(buildDailySql(priceBasis), [
-        sourceSymbol,
-        years[0],
-        years.at(-1) ?? years[0],
-      ])
-    : [];
+  const useGasDayCash = mode === "cash";
+  const firstYear = years[0];
+  const lastYear = years.at(-1) ?? firstYear;
+  const formula = sourceSymbol
+    ? useGasDayCash
+      ? `${sourceSymbol} gas-day cash monthly average`
+      : `${sourceSymbol} ${priceBasis.replace("_", " ")} monthly average`
+    : "No symbol";
+  const sqlRequest: SqlRequest | null = sourceSymbol
+    ? useGasDayCash
+      ? buildGasDayCashSql({
+          sourceSymbol,
+          startDate: `${firstYear}-01-01`,
+          endDate: `${lastYear}-12-31`,
+        })
+      : {
+          text: buildDailySql(priceBasis),
+          values: [sourceSymbol, firstYear, lastYear],
+        }
+    : null;
+  const sourceRows = sqlRequest ? await query<DailySourceRow>(sqlRequest.text, sqlRequest.values) : [];
   const sourceByMonthYear = new Map<string, DailySourceRow[]>();
   for (const row of sourceRows) {
     const contractMonth = toNumber(row.contract_month);
@@ -469,6 +537,7 @@ async function buildDailyPayload({
         formula: sourceSymbol ? formula : mode === "balmo" ? "No BalMo configured" : "No cash symbol configured",
         contractMonth: contractMonthDate(year, month),
         pointType: mode,
+        dateBasis: useGasDayCash ? "gas_day" : "trade_date",
       };
     }
     return {
@@ -490,6 +559,7 @@ async function buildDailyPayload({
     rowCount: sourceRows.length,
     valueCount,
     dataAsOf: maxString(sourceRows.map((row) => toTimestampString(row.updated_at) ?? toDateString(row.trade_date))),
+    source: useGasDayCash ? NEXT_DAY_GAS_SOURCE : SETTLEMENTS_SOURCE,
   });
 }
 
@@ -501,7 +571,12 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const years = yearsBetween(startYear, endYear);
   const futuresDisplay = normalizeFuturesDisplay(searchParams.get("futuresDisplay"), market);
   const requestedPriceBasis = normalizeDailyGasPriceBasis(searchParams.get("priceBasis"));
-  const priceBasis = mode === "futures" ? "settlement" : requestedPriceBasis === "settlement" ? "vwap_close" : requestedPriceBasis;
+  let priceBasis: GasPriceBasis = requestedPriceBasis;
+  if (mode === "futures") {
+    priceBasis = "settlement";
+  } else if (mode === "cash" || requestedPriceBasis === "settlement") {
+    priceBasis = "vwap_close";
+  }
 
   const payload =
     mode === "futures"

@@ -4,6 +4,8 @@ import type { DailyGasMarket } from "./dailyGasPriceView";
 export type GasMonthlySettlesMode = "futures" | "cash" | "balmo";
 export type GasMonthlyFuturesDisplay = "outright" | "basis";
 export type GasMonthlySettlesPointType = "forward" | "settled" | "cash" | "balmo";
+export type GasMonthlySettlesDateBasis = "trade_date" | "gas_day";
+export type GasMonthlySettlesSource = "ice_python.settlements" | "ice_python_next_day_gas";
 
 export interface GasMonthlySettlesColumn {
   key: string;
@@ -23,6 +25,7 @@ export interface GasMonthlySettlesCell {
   formula: string;
   contractMonth: string | null;
   pointType: GasMonthlySettlesPointType;
+  dateBasis: GasMonthlySettlesDateBasis;
 }
 
 export interface GasMonthlySettlesRow {
@@ -34,7 +37,7 @@ export interface GasMonthlySettlesRow {
 
 export interface GasMonthlySettlesPayload {
   product: "gas";
-  source: "ice_python.settlements";
+  source: GasMonthlySettlesSource;
   mode: GasMonthlySettlesMode;
   market: DailyGasMarket;
   priceBasis: GasPriceBasis;
@@ -45,7 +48,7 @@ export interface GasMonthlySettlesPayload {
   rows: GasMonthlySettlesRow[];
   metadata: {
     dataAsOf: string | null;
-    sourceTable: "ice_python.settlements";
+    sourceTable: GasMonthlySettlesSource;
     rowCount: number;
     valueCount: number;
     missingValueCount: number;

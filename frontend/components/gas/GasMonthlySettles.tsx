@@ -50,6 +50,11 @@ interface SelectedMonthlyCell {
 
 interface GasContractHistoryPoint {
   tradeDate: string | null;
+  iceTradeDate?: string | null;
+  sourceSymbol?: string | null;
+  hubName?: string | null;
+  priceBasis?: string | null;
+  sourceTradeDate?: string | null;
   settlement: number | null;
   vwapClose: number | null;
   volume: number | null;
@@ -64,6 +69,7 @@ interface GasContractHistoryPoint {
 interface GasContractHistoryPayload {
   product: "gas";
   source: string;
+  dateBasis?: "trade_date" | "gas_day";
   sourceSymbols: string[];
   aggregation: "single" | "henry_plus_basis";
   rowCount: number;
@@ -86,6 +92,11 @@ interface GasContractHistoryPayload {
 
 interface MonthlyChartRow {
   tradeDate: string;
+  iceTradeDate: string | null;
+  sourceSymbol: string | null;
+  hubName: string | null;
+  priceBasis: string | null;
+  sourceTradeDate: string | null;
   settlement: number | null;
   vwapClose: number | null;
   volume: number | null;
@@ -95,6 +106,7 @@ interface MonthlyHistoryTooltipProps {
   active?: boolean;
   label?: string;
   payload?: Array<{ payload?: MonthlyChartRow }>;
+  dateBasis: "trade_date" | "gas_day";
 }
 
 interface MonthlyCellStatus {
@@ -153,7 +165,19 @@ function fmtVolume(value: number | null | undefined): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-function pointTypeLabel(pointType: GasMonthlySettlesCell["pointType"]): string {
+function fmtPriceBasisLabel(value: string | null | undefined): string {
+  if (!value) return "-";
+  return value
+    .split(" + ")
+    .map((part) => DAILY_GAS_PRICE_BASIS_LABELS[part as GasPriceBasis] ?? part.replaceAll("_", " "))
+    .join(" + ");
+}
+
+function pointTypeLabel(
+  pointType: GasMonthlySettlesCell["pointType"],
+  dateBasis: GasMonthlySettlesCell["dateBasis"],
+): string {
+  if (pointType === "cash" && dateBasis === "gas_day") return "Gas Day";
   if (pointType === "forward") return "Fwd";
   if (pointType === "settled") return "Settle";
   if (pointType === "balmo") return "BalMo";
@@ -162,6 +186,41 @@ function pointTypeLabel(pointType: GasMonthlySettlesCell["pointType"]): string {
 
 function marketCacheToken(market: DailyGasMarket): string {
   return market.market.replace(/[^a-z0-9]+/gi, "_").toLowerCase();
+}
+
+function monthlyTableSymbol({
+  mode,
+  market,
+  futuresDisplay,
+}: {
+  mode: GasMonthlySettlesMode;
+  market: DailyGasMarket;
+  futuresDisplay: GasMonthlyFuturesDisplay;
+}): string {
+  if (mode === "cash") return market.cashSymbol;
+  if (mode === "balmo") return market.balmoSymbol ?? "No BalMo symbol";
+  if (market.curveStyle === "basis" && futuresDisplay === "outright" && market.futuresProduct) {
+    return `HNG + ${market.futuresProduct}`;
+  }
+  return market.futuresProduct ?? "No futures symbol";
+}
+
+function monthlyTableMethod({
+  mode,
+  payload,
+  priceBasis,
+  futuresDisplay,
+}: {
+  mode: GasMonthlySettlesMode;
+  payload: GasMonthlySettlesPayload | null;
+  priceBasis: GasPriceBasis;
+  futuresDisplay: GasMonthlyFuturesDisplay;
+}): string {
+  if (mode === "futures") {
+    return `${GAS_MONTHLY_FUTURES_DISPLAY_LABELS[payload?.futuresDisplay ?? futuresDisplay]} settlement`;
+  }
+  if (mode === "cash") return "Gas-day cash avg";
+  return `Monthly avg ${DAILY_GAS_PRICE_BASIS_LABELS[payload?.priceBasis ?? priceBasis]}`;
 }
 
 function cellValueText(cell: GasMonthlySettlesCell | null | undefined, payload: GasMonthlySettlesPayload | null): string {
@@ -239,7 +298,7 @@ function monthlyCellStatus(
   }
 
   return {
-    label: `${pointTypeLabel(cell.pointType)} ${dateText}`,
+    label: `${pointTypeLabel(cell.pointType, cell.dateBasis)} ${dateText}`,
     statusClass: "text-cyan-200",
     valueClass: "text-gray-100",
     buttonClass: "border-white/5 hover:border-cyan-400/50",
@@ -302,7 +361,7 @@ function buildMonthlySettlesCacheKey({
   endYear: number;
 }): string {
   return [
-    "api:gas-monthly-settles:v2",
+    "api:gas-monthly-settles:v3",
     mode,
     marketCacheToken(market),
     priceBasis,
@@ -326,11 +385,20 @@ function tableSubtitle({
   futuresDisplay: GasMonthlyFuturesDisplay;
 }): string {
   const market = payload?.market.market ?? selectedMarket.market;
+  const sourceTable = payload?.metadata.sourceTable ?? (mode === "cash" ? "ice_python_next_day_gas" : "ice_python.settlements");
+  const sourceSymbol = monthlyTableSymbol({
+    mode,
+    market: payload?.market ?? selectedMarket,
+    futuresDisplay: payload?.futuresDisplay ?? futuresDisplay,
+  });
+  const method = monthlyTableMethod({
+    mode,
+    payload,
+    priceBasis,
+    futuresDisplay,
+  });
   const dataAsOf = payload?.metadata.dataAsOf ? `Data as of ${fmtDateTime(payload.metadata.dataAsOf)}` : "Latest available";
-  if (mode === "futures") {
-    return `${market} | ${GAS_MONTHLY_FUTURES_DISPLAY_LABELS[payload?.futuresDisplay ?? futuresDisplay]} | ${dataAsOf}`;
-  }
-  return `${market} | Monthly avg ${DAILY_GAS_PRICE_BASIS_LABELS[payload?.priceBasis ?? priceBasis]} | ${dataAsOf}`;
+  return `${market} | ${sourceSymbol} | ${method} | ${sourceTable} | ${dataAsOf}`;
 }
 
 function monthBounds(contractMonth: string | null | undefined): { start: string; end: string } | null {
@@ -345,24 +413,34 @@ function monthBounds(contractMonth: string | null | undefined): { start: string;
   };
 }
 
-function MonthlyHistoryTooltip({ active, payload, label }: MonthlyHistoryTooltipProps) {
+function MonthlyHistoryTooltip({ active, payload, label, dateBasis }: MonthlyHistoryTooltipProps) {
   if (!active) return null;
   const row = payload?.find((item) => item.payload)?.payload;
   if (!row) return null;
+  const isGasDay = dateBasis === "gas_day";
 
   return (
     <div className="rounded-md border border-gray-700 bg-slate-950 px-3 py-2 text-xs shadow-xl shadow-black/40">
       <div className="mb-1 font-mono text-sm text-gray-100">{label}</div>
       <div className="space-y-1">
-        <div className="text-emerald-300">Settlement: {fmtPrice(row.settlement)}</div>
-        <div className="text-sky-300">VWAP: {fmtPrice(row.vwapClose)}</div>
-        <div className="text-blue-300">Volume: {fmtVolume(row.volume)}</div>
+        <div className="text-emerald-300">{isGasDay ? "Gas price" : "Settlement"}: {fmtPrice(row.settlement)}</div>
+        {isGasDay && <div className="text-gray-300">ICE trade: {fmtDate(row.iceTradeDate)}</div>}
+        {isGasDay && <div className="text-gray-300">Basis: {fmtPriceBasisLabel(row.priceBasis)}</div>}
+        {!isGasDay && <div className="text-sky-300">VWAP: {fmtPrice(row.vwapClose)}</div>}
+        {!isGasDay && <div className="text-blue-300">Volume: {fmtVolume(row.volume)}</div>}
       </div>
     </div>
   );
 }
 
-function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }) {
+function MonthlyHistoryChart({
+  history,
+  dateBasis,
+}: {
+  history: GasContractHistoryPoint[];
+  dateBasis: "trade_date" | "gas_day";
+}) {
+  const isGasDay = dateBasis === "gas_day";
   const chartData = useMemo(
     () =>
       history
@@ -370,6 +448,11 @@ function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }
         .slice(-220)
         .map((point) => ({
           tradeDate: point.tradeDate?.slice(0, 10) ?? "",
+          iceTradeDate: point.iceTradeDate ?? null,
+          sourceSymbol: point.sourceSymbol ?? null,
+          hubName: point.hubName ?? null,
+          priceBasis: point.priceBasis ?? null,
+          sourceTradeDate: point.sourceTradeDate ?? null,
           settlement: point.settlement,
           vwapClose: point.vwapClose,
           volume: point.volume,
@@ -388,7 +471,9 @@ function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }
   return (
     <div className="rounded-md border border-gray-800 bg-gray-950/25 p-3">
       <div className="mb-2 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-        <div className="text-sm font-semibold text-gray-100">Settlement, VWAP, and Volume</div>
+        <div className="text-sm font-semibold text-gray-100">
+          {isGasDay ? "Gas-Day Cash Price" : "Settlement, VWAP, and Volume"}
+        </div>
         <div className="font-mono text-xs text-gray-500">
           {chartData[0].tradeDate} to {chartData.at(-1)?.tradeDate}
         </div>
@@ -418,8 +503,8 @@ function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }
               width={62}
               tickFormatter={(value) => fmtVolume(Number(value))}
             />
-            <Tooltip content={<MonthlyHistoryTooltip />} />
-            <Bar yAxisId="volume" dataKey="volume" fill="#38bdf8" opacity={0.16} barSize={12} />
+            <Tooltip content={<MonthlyHistoryTooltip dateBasis={dateBasis} />} />
+            {!isGasDay && <Bar yAxisId="volume" dataKey="volume" fill="#38bdf8" opacity={0.16} barSize={12} />}
             <Line
               yAxisId="price"
               type="monotone"
@@ -429,15 +514,17 @@ function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }
               dot={false}
               connectNulls
             />
-            <Line
-              yAxisId="price"
-              type="monotone"
-              dataKey="vwapClose"
-              stroke="#38bdf8"
-              strokeWidth={2}
-              dot={false}
-              connectNulls
-            />
+            {!isGasDay && (
+              <Line
+                yAxisId="price"
+                type="monotone"
+                dataKey="vwapClose"
+                stroke="#38bdf8"
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -445,8 +532,15 @@ function MonthlyHistoryChart({ history }: { history: GasContractHistoryPoint[] }
   );
 }
 
-function MonthlyHistoryTable({ history }: { history: GasContractHistoryPoint[] }) {
+function MonthlyHistoryTable({
+  history,
+  dateBasis,
+}: {
+  history: GasContractHistoryPoint[];
+  dateBasis: "trade_date" | "gas_day";
+}) {
   const rows = useMemo(() => [...history].reverse().slice(0, 160), [history]);
+  const isGasDay = dateBasis === "gas_day";
 
   return (
     <div className="rounded-md border border-gray-800 bg-gray-950/25">
@@ -455,32 +549,74 @@ function MonthlyHistoryTable({ history }: { history: GasContractHistoryPoint[] }
         <div className="text-xs text-gray-500">{history.length.toLocaleString()} source rows</div>
       </div>
       <div className="max-h-[320px] overflow-auto">
-        <table className="w-full min-w-[760px] border-collapse text-xs text-gray-200">
+        <table className={`w-full border-collapse text-xs text-gray-200 ${isGasDay ? "min-w-[980px]" : "min-w-[760px]"}`}>
           <thead className="sticky top-0 z-10 bg-gray-950 text-[10px] uppercase tracking-wider text-gray-500">
-            <tr>
-              <th className="px-3 py-2 text-left font-semibold">Trade Date</th>
-              <th className="px-3 py-2 text-right font-semibold">Settlement</th>
-              <th className="px-3 py-2 text-right font-semibold">VWAP</th>
-              <th className="px-3 py-2 text-right font-semibold">Open</th>
-              <th className="px-3 py-2 text-right font-semibold">High</th>
-              <th className="px-3 py-2 text-right font-semibold">Low</th>
-              <th className="px-3 py-2 text-right font-semibold">Close</th>
-              <th className="px-3 py-2 text-right font-semibold">Volume</th>
-            </tr>
+            {isGasDay ? (
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">Gas Day</th>
+                <th className="px-3 py-2 text-left font-semibold">ICE Trade Date</th>
+                <th className="px-3 py-2 text-left font-semibold">ICE Symbol</th>
+                <th className="px-3 py-2 text-left font-semibold">Hub</th>
+                <th className="px-3 py-2 text-right font-semibold">Gas Price</th>
+                <th className="px-3 py-2 text-left font-semibold">Price Basis</th>
+                <th className="px-3 py-2 text-left font-semibold">Source Trade Date</th>
+                <th className="px-3 py-2 text-left font-semibold">Updated</th>
+              </tr>
+            ) : (
+              <tr>
+                <th className="px-3 py-2 text-left font-semibold">Trade Date</th>
+                <th className="px-3 py-2 text-right font-semibold">Settlement</th>
+                <th className="px-3 py-2 text-right font-semibold">VWAP</th>
+                <th className="px-3 py-2 text-right font-semibold">Open</th>
+                <th className="px-3 py-2 text-right font-semibold">High</th>
+                <th className="px-3 py-2 text-right font-semibold">Low</th>
+                <th className="px-3 py-2 text-right font-semibold">Close</th>
+                <th className="px-3 py-2 text-right font-semibold">Volume</th>
+              </tr>
+            )}
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {rows.map((row, index) => (
-              <tr key={`${row.tradeDate ?? "missing"}-${index}`}>
-                <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.tradeDate)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">{fmtPrice(row.settlement)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">{fmtPrice(row.vwapClose)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">{fmtPrice(row.open)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">{fmtPrice(row.high)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">{fmtPrice(row.low)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">{fmtPrice(row.close)}</td>
-                <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-300">{fmtVolume(row.volume)}</td>
-              </tr>
-            ))}
+            {rows.map((row, index) =>
+              isGasDay ? (
+                <tr key={`${row.tradeDate ?? "missing"}-${index}`}>
+                  <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.tradeDate)}</td>
+                  <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.iceTradeDate)}</td>
+                  <td className="px-3 py-2 font-mono text-gray-100">{row.sourceSymbol ?? "-"}</td>
+                  <td className="px-3 py-2 text-gray-200">{row.hubName ?? "-"}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">
+                    {fmtPrice(row.settlement)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-300">{fmtPriceBasisLabel(row.priceBasis)}</td>
+                  <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.sourceTradeDate)}</td>
+                  <td className="px-3 py-2 font-mono text-gray-300">{fmtDateTime(row.updatedAt)}</td>
+                </tr>
+              ) : (
+                <tr key={`${row.tradeDate ?? "missing"}-${index}`}>
+                  <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.tradeDate)}</td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">
+                    {fmtPrice(row.settlement)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">
+                    {fmtPrice(row.vwapClose)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">
+                    {fmtPrice(row.open)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">
+                    {fmtPrice(row.high)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">
+                    {fmtPrice(row.low)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-400">
+                    {fmtPrice(row.close)}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-300">
+                    {fmtVolume(row.volume)}
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>
@@ -745,12 +881,15 @@ export default function GasMonthlySettles() {
     } else if (selectedCell.cell.tradeDate) {
       params.set("endTradeDate", selectedCell.cell.tradeDate);
     }
+    if (selectedCell.cell.dateBasis === "gas_day") {
+      params.set("dateBasis", "gas_day");
+    }
 
     setDetailLoading(true);
     setDetailError(null);
 
     fetchJsonWithCache<GasContractHistoryPayload>({
-      key: `api:gas-monthly-settles:contract:${symbols.join("|")}:${bounds?.start ?? "open"}:${bounds?.end ?? selectedCell.cell.tradeDate ?? "latest"}`,
+      key: `api:gas-monthly-settles:contract:${selectedCell.cell.dateBasis}:${symbols.join("|")}:${bounds?.start ?? "open"}:${bounds?.end ?? selectedCell.cell.tradeDate ?? "latest"}`,
       url: `/api/gas-daily-prices/contract?${params.toString()}`,
       ttlMs: API_TTL_MS,
       signal: controller.signal,
@@ -777,7 +916,18 @@ export default function GasMonthlySettles() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedCell]);
 
+  const selectedCellDateBasis = selectedCell?.cell.dateBasis ?? "trade_date";
+  const selectedDateLabel = selectedCellDateBasis === "gas_day" ? "Gas Day" : "Trade Date";
+  const historyDateBasis = detailPayload?.dateBasis ?? selectedCellDateBasis;
   const selectedSourceText = selectedCell?.cell.sourceSymbols.join(" + ") ?? "-";
+  const selectedDetailMetadataText = [
+    selectedSourceText,
+    selectedCell?.payload.metadata.sourceTable,
+    selectedCellDateBasis,
+    selectedCell?.cell.formula,
+  ]
+    .filter(Boolean)
+    .join(" | ");
   const selectedRegionLabel = selectedRegion === "all" ? "All Regions" : GAS_REGION_LABELS[selectedRegion];
   const filterSubtitle = `${selectedRegionLabel} | ${selectedMarket.market} | ${DEFAULT_START_YEAR}-${DEFAULT_END_YEAR}`;
 
@@ -903,7 +1053,7 @@ export default function GasMonthlySettles() {
                   {selectedCell.payload.market.market} | {GAS_MONTHLY_SETTLES_MODE_LABELS[selectedCell.payload.mode]} | {selectedCell.row.label} {selectedCell.column.label}
                 </div>
                 <div className="mt-1 truncate text-xs text-gray-500">
-                  {selectedSourceText} | {selectedCell.cell.formula}
+                  {selectedDetailMetadataText}
                 </div>
               </div>
               <button
@@ -924,7 +1074,7 @@ export default function GasMonthlySettles() {
                   </p>
                 </div>
                 <div className="rounded-md border border-gray-800 bg-gray-950/35 p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Trade Date</p>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{selectedDateLabel}</p>
                   <p className="mt-2 font-mono text-sm font-semibold text-gray-100">{fmtDate(selectedCell.cell.tradeDate)}</p>
                 </div>
                 <div className="rounded-md border border-gray-800 bg-gray-950/35 p-3">
@@ -955,8 +1105,8 @@ export default function GasMonthlySettles() {
               )}
               {detailPayload && !detailLoading && (
                 <>
-                  <MonthlyHistoryChart history={detailPayload.history} />
-                  <MonthlyHistoryTable history={detailPayload.history} />
+                  <MonthlyHistoryChart history={detailPayload.history} dateBasis={historyDateBasis} />
+                  <MonthlyHistoryTable history={detailPayload.history} dateBasis={historyDateBasis} />
                 </>
               )}
             </div>
