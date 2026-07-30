@@ -242,6 +242,7 @@ class PipelineLogger:
             if self.capture_root and handler in root_logger.handlers:
                 root_logger.removeHandler(handler)
             handler.close()
+        self._handlers.clear()
 
         if (
             self.delete_if_no_errors
@@ -249,4 +250,7 @@ class PipelineLogger:
             and self._log_file_path
             and self._log_file_path.exists()
         ):
-            os.remove(self._log_file_path)
+            try:
+                os.remove(self._log_file_path)
+            except OSError:
+                pass
