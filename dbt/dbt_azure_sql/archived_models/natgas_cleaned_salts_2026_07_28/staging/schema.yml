@@ -1,0 +1,39 @@
+version: 2
+
+models:
+
+  - name: staging_v1_salts_noms
+    description: '{{ doc("natgas_staging_salts_noms") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: storage_facility_name
+        description: '{{ doc("natgas_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+      - name: storage_signed_scheduled_cap
+        description: '{{ doc("natgas_col_storage_signed_scheduled_cap") }}'
+
+  - name: staging_v1_salts_inventories
+    description: '{{ doc("natgas_staging_salts_inventories") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: storage_facility_name
+        description: '{{ doc("natgas_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+        tests:
+          - not_null
+      - name: storage_signed_scheduled_cap
+        description: '{{ doc("natgas_col_storage_signed_scheduled_cap") }}'

@@ -1,0 +1,121 @@
+version: 2
+
+models:
+
+  - name: source_v1_genscape_noms
+    description: >
+      Enriched gas nomination records. Joins raw nominations with pipeline, location,
+      cycle, and no-notice reference data. Filtered to gas_day >= 2020-01-01.
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+      - name: pipeline_id
+        description: '{{ doc("natgas_col_pipeline_id") }}'
+      - name: pipeline_name
+        description: '{{ doc("natgas_col_pipeline_name") }}'
+      - name: pipeline_short_name
+        description: '{{ doc("natgas_col_pipeline_short_name") }}'
+      - name: tariff_zone
+        description: '{{ doc("natgas_col_tariff_zone") }}'
+      - name: state
+        description: '{{ doc("natgas_col_state") }}'
+      - name: county
+        description: '{{ doc("natgas_col_county") }}'
+      - name: location_id
+        description: '{{ doc("natgas_col_location_id") }}'
+      - name: facility
+        description: '{{ doc("natgas_col_facility") }}'
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+      - name: sign
+        description: '{{ doc("natgas_col_sign") }}'
+      - name: cycle_code
+        description: '{{ doc("natgas_col_cycle_code") }}'
+      - name: cycle_name
+        description: '{{ doc("natgas_col_cycle_name") }}'
+      - name: scheduled_cap
+        description: '{{ doc("natgas_col_scheduled_cap") }}'
+      - name: signed_scheduled_cap
+        description: '{{ doc("natgas_col_signed_scheduled_cap") }}'
+      - name: no_notice_capacity
+        description: '{{ doc("natgas_col_no_notice_capacity") }}'
+      - name: operational_cap
+        description: '{{ doc("natgas_col_operational_cap") }}'
+      - name: available_cap
+        description: '{{ doc("natgas_col_available_cap") }}'
+      - name: design_cap
+        description: '{{ doc("natgas_col_design_cap") }}'
+
+  - name: source_v1_lng_noms
+    description: >
+      LNG plant-filtered nominations. Maps location_role_ids to 9 LNG export facilities
+      (Calcasieu, Cameron, Corpus Christi, Cove Point, Elba, Freeport, Golden Pass,
+      Plaquemines, Sabine). Filtered to gas_day >= 2020-01-01.
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: lng_plant
+        description: '{{ doc("natgas_col_lng_plant") }}'
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['CALCASIEU', 'CAMERON', 'CORPUS_CHRISTI', 'COVE_POINT', 'ELBA', 'FREEPORT', 'GOLDEN_PASS', 'PLAQUEMINES', 'SABINE']
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+
+  - name: source_v1_salts_reference_table
+    description: >
+      Lookup table mapping location_role_ids to named salt cavern storage facilities
+      for nomination flow analysis. Covers 16 facilities across TX, LA, MS, AL.
+    columns:
+      - name: storage_facility_name
+        description: '{{ doc("natgas_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+          - unique
+      - name: storage_sign
+        description: '{{ doc("natgas_col_storage_sign") }}'
+        tests:
+          - not_null
+          - accepted_values:
+              values: [-1, 1]
+
+  - name: source_v1_salts_inventories_reference_table
+    description: >
+      Lookup table mapping location_role_ids to named salt cavern storage facilities
+      for inventory metric analysis. Covers 5 facilities with inventory, change_inventory,
+      injection, withdrawal, and net facility withdrawal roles.
+    columns:
+      - name: storage_facility_name
+        description: '{{ doc("natgas_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+          - unique
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['INVENTORY', 'CHANGE_INVENTORY', 'INJECTION', 'WITHDRAWAL', 'NET FAC WITHDRAWAL']
+      - name: storage_sign
+        description: '{{ doc("natgas_col_storage_sign") }}'
+        tests:
+          - not_null

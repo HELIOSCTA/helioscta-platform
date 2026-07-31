@@ -1,0 +1,20 @@
+version: 2
+
+sources:
+
+  - name: natgas_v1
+    schema: natgas
+    description: '{{ doc("natgas_overview") }}'
+    tables:
+      - name: nominations
+        description: '{{ doc("natgas_source_nominations") }}'
+      - name: nomination_cycles
+        description: '{{ doc("natgas_source_nomination_cycles") }}'
+      - name: no_notice
+        description: '{{ doc("natgas_source_no_notice") }}'
+      - name: location_role
+        description: '{{ doc("natgas_source_location_role") }}'
+      - name: location_extended
+        description: '{{ doc("natgas_source_location_extended") }}'
+      - name: pipelines
+        description: '{{ doc("natgas_source_pipelines") }}'

@@ -1,0 +1,103 @@
+version: 2
+
+models:
+
+  - name: genscape_noms
+    description: '{{ doc("natgas_mart_genscape_noms") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+      - name: pipeline_short_name
+        description: '{{ doc("natgas_col_pipeline_short_name") }}'
+      - name: state
+        description: '{{ doc("natgas_col_state") }}'
+      - name: facility
+        description: '{{ doc("natgas_col_facility") }}'
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+      - name: cycle_code
+        description: '{{ doc("natgas_col_cycle_code") }}'
+      - name: scheduled_cap
+        description: '{{ doc("natgas_col_scheduled_cap") }}'
+      - name: signed_scheduled_cap
+        description: '{{ doc("natgas_col_signed_scheduled_cap") }}'
+
+  - name: lng_facilities
+    description: '{{ doc("natgas_mart_lng_facilities") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: lng_plant
+        description: '{{ doc("natgas_col_lng_plant") }}'
+        tests:
+          - not_null
+      - name: facility
+        description: '{{ doc("natgas_col_facility") }}'
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+      - name: scheduled_cap
+        description: '{{ doc("natgas_col_scheduled_cap") }}'
+      - name: signed_scheduled_cap
+        description: '{{ doc("natgas_col_signed_scheduled_cap") }}'
+
+  - name: salt_facilities_bcf
+    description: '{{ doc("natgas_mart_salt_facilities_bcf") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+          - unique
+      - name: salts_total
+        description: 'Total salt cavern storage flows across all facilities in BCF.'
+      - name: salts_tx
+        description: 'Texas regional subtotal (golden_triangle, keystone, moss_bluff, tres_palacios) in BCF.'
+      - name: salts_la
+        description: 'Louisiana regional subtotal (arcadia, boardwalk, bobcat, egan, jefferson_island, la_storage, perryville, pine_prarie) in BCF.'
+      - name: salts_ms
+        description: 'Mississippi regional subtotal (eminence, leaf_river, mississippi_hub, petal, southern_pines) in BCF.'
+      - name: salts_al
+        description: 'Alabama regional subtotal (bay_gas) in BCF.'
+
+  - name: salt_inventories
+    description: '{{ doc("natgas_mart_salt_inventories") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+          - unique
+      - name: eminence_inv
+        description: 'Eminence storage inventory level.'
+      - name: eminence_delta
+        description: 'Eminence storage inventory change.'
+      - name: eminence_daily_flows
+        description: 'Eminence net daily injection/withdrawal flows.'
+      - name: golden_triangle_inv
+        description: 'Golden Triangle storage inventory level.'
+      - name: golden_triangle_delta
+        description: 'Golden Triangle storage inventory change.'
+      - name: golden_triangle_daily_flows
+        description: 'Golden Triangle net daily flows.'
+      - name: perryville_inv
+        description: 'Perryville storage inventory level.'
+      - name: perryville_daily_flows
+        description: 'Perryville net daily flows.'
+      - name: pine_prarie_inv
+        description: 'Pine Prairie storage inventory level.'
+      - name: pine_prarie_delta
+        description: 'Pine Prairie storage inventory change.'
+      - name: pine_prarie_daily_flows
+        description: 'Pine Prairie net daily flows.'
+      - name: southern_pines_inv
+        description: 'Southern Pines storage inventory level.'
+      - name: southern_pines_daily_flows
+        description: 'Southern Pines net daily flows.'

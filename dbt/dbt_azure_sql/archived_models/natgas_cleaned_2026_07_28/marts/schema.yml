@@ -1,0 +1,49 @@
+version: 2
+
+models:
+
+  - name: genscape_noms
+    description: '{{ doc("natgas_mart_genscape_noms") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: '{{ doc("natgas_col_location_role_id") }}'
+        tests:
+          - not_null
+      - name: pipeline_short_name
+        description: '{{ doc("natgas_col_pipeline_short_name") }}'
+      - name: state
+        description: '{{ doc("natgas_col_state") }}'
+      - name: facility
+        description: '{{ doc("natgas_col_facility") }}'
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+      - name: cycle_code
+        description: '{{ doc("natgas_col_cycle_code") }}'
+      - name: scheduled_cap
+        description: '{{ doc("natgas_col_scheduled_cap") }}'
+      - name: signed_scheduled_cap
+        description: '{{ doc("natgas_col_signed_scheduled_cap") }}'
+
+  - name: lng_facilities
+    description: '{{ doc("natgas_mart_lng_facilities") }}'
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+      - name: lng_plant
+        description: '{{ doc("natgas_col_lng_plant") }}'
+        tests:
+          - not_null
+      - name: facility
+        description: '{{ doc("natgas_col_facility") }}'
+      - name: role
+        description: '{{ doc("natgas_col_role") }}'
+      - name: scheduled_cap
+        description: '{{ doc("natgas_col_scheduled_cap") }}'
+      - name: signed_scheduled_cap
+        description: '{{ doc("natgas_col_signed_scheduled_cap") }}'

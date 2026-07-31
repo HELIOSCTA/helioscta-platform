@@ -1,0 +1,63 @@
+version: 2
+
+models:
+
+  - name: utils_v1_nerc_holidays
+    description: >
+      Reference table of NERC holidays from 2014 through 2028.
+      Used by the gas day calendar to flag holiday dates.
+    columns:
+      - name: nerc_holiday
+        description: 'Date of a NERC-recognized holiday.'
+        tests:
+          - not_null
+          - unique
+
+  - name: utils_v1_gas_day_daily
+    description: >
+      Gas day date spine from 2010-01-01 through 7 years ahead of the current year.
+      Includes year, month, summer/winter season, EIA storage week, day-of-week,
+      weekend flag, and NERC holiday flag. Excludes Feb 29 (leap day).
+    columns:
+      - name: gas_day
+        description: '{{ doc("natgas_col_gas_day") }}'
+        tests:
+          - not_null
+          - unique
+      - name: year
+        description: 'Calendar year.'
+        tests:
+          - not_null
+      - name: year_month
+        description: 'First day of the calendar month (YYYY-MM-01).'
+      - name: summer_winter
+        description: 'Season: SUMMER (Apr-Oct) or WINTER (Nov-Mar).'
+        tests:
+          - accepted_values:
+              values: ['SUMMER', 'WINTER']
+      - name: summer_winter_yyyy
+        description: 'Season contract code (e.g., JV-26 for Summer 2026, XH-27 for Winter 2026-27).'
+      - name: month
+        description: 'Calendar month number (1-12).'
+      - name: mm_dd
+        description: 'Month-day formatted as MM-dd.'
+      - name: mm_dd_cy
+        description: 'Current-year date with same month-day.'
+      - name: eia_storage_week
+        description: 'EIA storage reporting week (Friday-aligned).'
+      - name: eia_storage_week_number
+        description: 'EIA storage week number within the year.'
+      - name: day_of_week
+        description: 'Day name (e.g., Monday, Tuesday).'
+      - name: day_of_week_number
+        description: 'Day number (1=Sunday, 7=Saturday).'
+      - name: is_weekend
+        description: '1 if Saturday or Sunday, 0 otherwise.'
+        tests:
+          - accepted_values:
+              values: [0, 1]
+      - name: is_nerc_holiday
+        description: '1 if the date is a NERC holiday, 0 otherwise.'
+        tests:
+          - accepted_values:
+              values: [0, 1]

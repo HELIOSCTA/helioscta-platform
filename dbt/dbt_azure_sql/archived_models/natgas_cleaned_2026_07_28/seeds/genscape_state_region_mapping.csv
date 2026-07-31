@@ -1,0 +1,83 @@
+state,state_abb,country,eia_ng_regions,eia_padd_regions
+Alabama,AL,US,South Central,PADD 1
+Arizona,AZ,US,Mountain,PADD 5
+Arkansas,AR,US,South Central,PADD 3
+California,CA,US,Pacific,PADD 5
+Colorado,CO,US,Mountain,PADD 4
+Connecticut,CT,US,East,PADD 1
+Delaware,DE,US,East,PADD 1
+Florida,FL,US,East,PADD 1
+Georgia,GA,US,East,PADD 1
+Idaho,ID,US,Mountain,PADD 4
+Illinois,IL,US,Midwest,PADD 2
+Indiana,IN,US,Midwest,PADD 2
+Iowa,IA,US,Midwest,PADD 2
+Kansas,KS,US,South Central,PADD 2
+Kentucky,KY,US,Midwest,PADD 2
+Louisiana,LA,US,South Central,PADD 3
+Maine,ME,US,East,PADD 1
+Maryland,MD,US,East,PADD 1
+Massachusetts,MA,US,East,PADD 1
+Michigan,MI,US,Midwest,PADD 2
+Minnesota,MN,US,Midwest,PADD 2
+Mississippi,MS,US,South Central,PADD 3
+Missouri,MO,US,Midwest,PADD 2
+Montana,MT,US,Mountain,PADD 4
+Nebraska,NE,US,Mountain,PADD 5
+Nevada,NV,US,Mountain,PADD 5
+New Hampshire,NH,US,East,PADD 1
+New Jersey,NJ,US,East,PADD 1
+New Mexico,NM,US,Mountain,PADD 3
+New York,NY,US,East,PADD 1
+North Carolina,NC,US,East,PADD 1
+North Dakota,ND,US,Mountain,PADD 4
+Ohio,OH,US,East,PADD 2
+Oklahoma,OK,US,South Central,PADD 2
+Oregon,OR,US,Pacific,PADD 5
+Pennsylvania,PA,US,East,PADD 1
+Rhode Island,RI,US,East,PADD 1
+South Carolina,SC,US,East,PADD 1
+South Dakota,SD,US,Mountain,PADD 4
+Tennessee,TN,US,Midwest,PADD 2
+Texas,TX,US,South Central,PADD 3
+Utah,UT,US,Mountain,PADD 4
+Virginia,VA,US,East,PADD 1
+Washington,WA,US,Pacific,PADD 5
+West Virginia,WV,US,East,PADD 1
+Wisconsin,WI,US,Midwest,PADD 2
+Wyoming,WY,US,Mountain,PADD 4
+Alberta,AB,Canada,Canada,Canada
+British Columbia,BC,Canada,Canada,Canada
+Manitoba,MB,Canada,Canada,Canada
+Ontario,ON,Canada,Canada,Canada
+Quebec,QC,Canada,Canada,Canada
+Saskatchewan,SK,Canada,Canada,Canada
+Aguascalientes,AGU,Mexico,Mexico,Mexico
+Baja California,BCN,Mexico,Mexico,Mexico
+Baja California Sur,BCS,Mexico,Mexico,Mexico
+Campeche,CAM,Mexico,Mexico,Mexico
+Chiapas,CHP,Mexico,Mexico,Mexico
+Chihuahua,CHH,Mexico,Mexico,Mexico
+Coahuila de Zaragoza,COA,Mexico,Mexico,Mexico
+Colima,COL,Mexico,Mexico,Mexico
+Durango,DUR,Mexico,Mexico,Mexico
+Guanajuato,GUA,Mexico,Mexico,Mexico
+Hidalgo,HID,Mexico,Mexico,Mexico
+Jalisco,JAL,Mexico,Mexico,Mexico
+Mexico,MEX,Mexico,Mexico,Mexico
+Michoacan de Ocampo,MIC,Mexico,Mexico,Mexico
+Nuevo Leon,NLE,Mexico,Mexico,Mexico
+Oaxaca,OAX,Mexico,Mexico,Mexico
+Puebla,PUE,Mexico,Mexico,Mexico
+Queretaro,QUE,Mexico,Mexico,Mexico
+San Luis Potosi,SLP,Mexico,Mexico,Mexico
+Sinaloa,SIN,Mexico,Mexico,Mexico
+Sonora,SON,Mexico,Mexico,Mexico
+Tabasco,TAB,Mexico,Mexico,Mexico
+Tamaulipas,TAM,Mexico,Mexico,Mexico
+Tlaxcala,TLA,Mexico,Mexico,Mexico
+Veracruz de Ignacio de La Llave,VER,Mexico,Mexico,Mexico
+Yucatan,YUC,Mexico,Mexico,Mexico
+Zacatecas,ZAC,Mexico,Mexico,Mexico
+NOT ASSIGNED,,Unknown,Unknown,Unknown
+US Unassigned,,US,Unknown,Unknown

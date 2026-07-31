@@ -1,0 +1,127 @@
+version: 2
+
+models:
+
+  - name: source_v1_genscape_noms
+    description: >
+      Enriched Wood Mackenzie / Genscape NatGas nominations used by the salts
+      staging models. Raw rows from natgas.nominations are joined to nomination
+      cycles, no-notice capacity, location-role metadata, location metadata,
+      and pipeline metadata.
+    columns:
+      - name: gas_day
+        description: Gas flow date.
+        tests:
+          - not_null
+      - name: pipeline_id
+        description: WM DataFeed pipeline identifier.
+      - name: pipeline_name
+        description: Pipeline name from natgas.pipelines.
+      - name: pipeline_short_name
+        description: Pipeline short name from natgas.pipelines.
+      - name: tariff_zone
+        description: Tariff zone from natgas.location_extended.
+      - name: tz_id
+        description: Tariff zone identifier from natgas.location_extended.
+      - name: state
+        description: Location state from natgas.location_extended.
+      - name: county
+        description: Location county from natgas.location_extended.
+      - name: loc_name
+        description: Location name from natgas.location_extended.
+      - name: location_id
+        description: WM DataFeed location identifier.
+      - name: location_role_id
+        description: WM DataFeed location role identifier.
+        tests:
+          - not_null
+      - name: facility
+        description: Facility name from natgas.location_extended.
+      - name: role
+        description: Location role from natgas.location_role.
+      - name: role_code
+        description: Location role code from natgas.location_role.
+      - name: interconnecting_entity
+        description: Interconnecting entity name from natgas.location_extended.
+      - name: interconnecting_pipeline_short_name
+        description: Pipeline short name for the interconnecting entity.
+      - name: meter
+        description: Meter code from natgas.location_role.
+      - name: drn
+        description: Delivery receipt number from natgas.location_role.
+      - name: latitude
+        description: Location latitude.
+      - name: longitude
+        description: Location longitude.
+      - name: sign
+        description: Raw nomination flow sign from natgas.location_role.
+      - name: cycle_code
+        description: Nomination cycle code.
+      - name: cycle_name
+        description: Nomination cycle name.
+      - name: units
+        description: Nomination volume units.
+      - name: pipeline_balance_flag
+        description: Location best-flow flag from natgas.location_extended.
+      - name: storage_flag
+        description: Storage flag from natgas.location_role.
+      - name: scheduled_cap
+        description: Scheduled nomination capacity.
+      - name: signed_scheduled_cap
+        description: Scheduled capacity multiplied by the raw location-role sign.
+      - name: no_notice_capacity
+        description: No-notice capacity joined by gas_day and location_role_id.
+      - name: operational_cap
+        description: Operational capacity.
+      - name: available_cap
+        description: Available capacity.
+      - name: design_cap
+        description: Design capacity.
+
+  - name: source_v1_salts_reference_table
+    description: >
+      Inline salt cavern storage lookup mapping WM DataFeed location_role_ids
+      to facility names, regions, business roles, and storage-specific signs
+      for daily flow analysis.
+    columns:
+      - name: storage_facility_name
+        description: '{{ doc("salts_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: WM DataFeed location role identifier.
+        tests:
+          - not_null
+          - unique
+      - name: storage_sign
+        description: '{{ doc("salts_col_storage_sign") }}'
+        tests:
+          - not_null
+          - accepted_values:
+              values: [-1, 1]
+
+  - name: source_v1_salts_inventories_reference_table
+    description: >
+      Inline salt cavern storage lookup mapping inventory, inventory change,
+      injection, withdrawal, and net facility withdrawal roles for the tracked
+      inventory facilities.
+    columns:
+      - name: storage_facility_name
+        description: '{{ doc("salts_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: WM DataFeed location role identifier.
+        tests:
+          - not_null
+          - unique
+      - name: role
+        description: Business role assigned to the location role.
+        tests:
+          - not_null
+          - accepted_values:
+              values: ['INVENTORY', 'CHANGE_INVENTORY', 'INJECTION', 'WITHDRAWAL', 'NET FAC WITHDRAWAL']
+      - name: storage_sign
+        description: '{{ doc("salts_col_storage_sign") }}'
+        tests:
+          - not_null

@@ -1,0 +1,57 @@
+version: 2
+
+models:
+
+  - name: marts_v1_salt_facilities_bcf
+    description: '{{ doc("salts_mart_facilities_bcf") }}'
+    columns:
+      - name: gas_day
+        description: Gas day for the daily salts flow aggregate.
+        tests:
+          - not_null
+          - unique
+      - name: salts_total
+        description: Total salt cavern storage flows across all facilities in BCF.
+      - name: salts_tx
+        description: Texas regional subtotal in BCF.
+      - name: salts_la
+        description: Louisiana regional subtotal in BCF.
+      - name: salts_ms
+        description: Mississippi regional subtotal in BCF.
+      - name: salts_al
+        description: Alabama regional subtotal in BCF.
+
+  - name: marts_v1_salt_inventories
+    description: '{{ doc("salts_mart_inventories") }}'
+    columns:
+      - name: gas_day
+        description: Gas day for the daily salts inventory aggregate.
+        tests:
+          - not_null
+          - unique
+      - name: eminence_inv
+        description: Eminence storage inventory level.
+      - name: eminence_delta
+        description: Eminence storage inventory change.
+      - name: eminence_daily_flows
+        description: Eminence net daily injection/withdrawal flows.
+      - name: golden_triangle_inv
+        description: Golden Triangle storage inventory level.
+      - name: golden_triangle_delta
+        description: Golden Triangle storage inventory change.
+      - name: golden_triangle_daily_flows
+        description: Golden Triangle net daily flows.
+      - name: perryville_inv
+        description: Perryville storage inventory level.
+      - name: perryville_daily_flows
+        description: Perryville net daily flows.
+      - name: pine_prarie_inv
+        description: Pine Prairie storage inventory level.
+      - name: pine_prarie_delta
+        description: Pine Prairie storage inventory change.
+      - name: pine_prarie_daily_flows
+        description: Pine Prairie net daily flows.
+      - name: southern_pines_inv
+        description: Southern Pines storage inventory level.
+      - name: southern_pines_daily_flows
+        description: Southern Pines net daily flows.

@@ -1,0 +1,39 @@
+version: 2
+
+models:
+
+  - name: staging_v1_salts_noms
+    description: '{{ doc("salts_staging_salts_noms") }}'
+    columns:
+      - name: gas_day
+        description: Gas day for the WM DataFeed nomination row.
+        tests:
+          - not_null
+      - name: storage_facility_name
+        description: '{{ doc("salts_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: location_role_id
+        description: WM DataFeed location role identifier.
+        tests:
+          - not_null
+      - name: storage_signed_scheduled_cap
+        description: '{{ doc("salts_col_storage_signed_scheduled_cap") }}'
+
+  - name: staging_v1_salts_inventories
+    description: '{{ doc("salts_staging_salts_inventories") }}'
+    columns:
+      - name: gas_day
+        description: Gas day for the WM DataFeed nomination row.
+        tests:
+          - not_null
+      - name: storage_facility_name
+        description: '{{ doc("salts_col_storage_facility_name") }}'
+        tests:
+          - not_null
+      - name: role
+        description: Salt inventory or flow role.
+        tests:
+          - not_null
+      - name: storage_signed_scheduled_cap
+        description: '{{ doc("salts_col_storage_signed_scheduled_cap") }}'

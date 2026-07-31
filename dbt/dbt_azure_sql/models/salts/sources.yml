@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+
+  - name: natgas_v1
+    schema: natgas
+    description: >
+      Wood Mackenzie / Genscape NatGas DataFeed raw tables in Azure SQL
+      database GenscapeDataFeed. Salts models read these raw nominations and
+      location metadata directly from schema natgas.
+    tables:
+      - name: nominations
+        description: >
+          Daily nomination rows keyed by gas_day, location_role_id, and
+          cycle_code.
+      - name: nomination_cycles
+        description: Nomination cycle lookup keyed by cycle_code.
+      - name: no_notice
+        description: No-notice capacity by gas_day and location_role_id.
+      - name: location_role
+        description: Location-role metadata and flow sign by location_role_id.
+      - name: location_extended
+        description: Location metadata keyed by location_id.
+      - name: pipelines
+        description: Pipeline metadata keyed by pipeline_id and name.
