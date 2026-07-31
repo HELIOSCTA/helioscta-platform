@@ -40,6 +40,9 @@ AZURE_SQL_REQUEST_TIMEOUT_MS=28000
 
 The frontend validates `AZURE_SQL_DB_NAME=GenscapeDataFeed` before connecting.
 Do not expose Azure SQL credentials through `NEXT_PUBLIC_*` variables.
+The Azure SQL helper also accepts local alias names:
+`AZURE_SQL_SERVER`, `AZURE_SQL_DATABASE`, `AZURE_SQL_USER`, and
+`AZURE_SQL_PASSWORD`.
 
 The local DEV-only GTN Balance page reads directly from Criterion Snowflake.
 Set these server-only variables for local development:
@@ -126,12 +129,83 @@ preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
 SP15/NP15 trading hubs; CAISO RT is hourly-averaged from promoted five-minute
 OASIS intervals.
 
+## Local DEV Power Settles Dashboard Source Contract
+
+The Power Settles dashboard (`/?section=power-settles-dashboard`) is local-dev
+only while the consolidated dashboard pattern is still being designed. It is
+hidden from Vercel navigation, direct section routing is disabled on Vercel,
+and `GET /api/power-settles-dashboard` returns `404` outside local Next.js
+runs. It summarizes total LMP only for DA, RT, and DART at each ISO's default
+hub: PJM `WESTERN HUB`, ERCOT `HB_NORTH`, ISO-NE `.H.INTERNAL_HUB`, and CAISO
+`TH_SP15_GEN-APND`.
+
+The route `GET /api/power-settles-dashboard` accepts bounded params
+`date=YYYY-MM-DD`, `rtSource=verified|unverified`, `lookbackDays=1..14`, and
+`refresh=1`. Without `date`, each ISO resolves its own latest complete DA/RT
+date from the existing LMP source contract and exposes that date per row.
+DART is derived as matched hourly `DA - RT` before flat, on-peak, off-peak,
+and peak-hour summaries are calculated. The payload includes one compact row
+per ISO, latest DA/RT source dates, source-table names, as-of timestamps,
+status, detail links into the full LMP page, and recent daily flat values.
+
+The route uses `observedJsonRoute`, process-local route caching, and local
+`Cache-Control: public, s-maxage=300, stale-while-revalidate=60`. It does not
+read protected Back Office data, create cache tables, add credentials, or
+mount the full LMP dashboard multiple times.
+
+## Local DEV PJM DA Model Runtime
+
+The PJM DA Model page (`/?section=pjm-da-model`) is local-dev only while the
+PJM DA model frontend workflow is being staged. It is hidden from Vercel
+navigation and `GET /api/pjm-da-meteo-baseline-price` returns `404` outside
+local Next.js runs. The legacy section alias
+`/?section=pjm-da-meteo-baseline-price` still resolves locally to the same
+page.
+
+The staged page currently exposes internal tabs for `Overview`, `DA Forecast`,
+`Inputs`, and `Replay`. `DA Forecast` and `Inputs` are implemented; `Overview`
+and `Replay` are placeholders. The frontend intentionally does not render a
+lineage page or lineage panel in this staging pass.
+
+This route does not read model output/cache tables. It runs the model in
+TypeScript by reading the dbt-promoted SQL artifacts committed under
+`backend/modelling/pjm_da_models/sql_inputs/`, translating generated
+`%(name)s` placeholders to `pg` positional parameters, and executing those
+queries against `helios_prod` with `helios_readonly`. The same promotion script
+also writes a Vercel-safe mirror under
+`frontend/sql/pjm_da_model/sql_inputs/` because the Vercel project root is
+`frontend`.
+
+Relevant promoted SQL artifacts:
+
+```text
+backend/modelling/pjm_da_models/sql_inputs/available_target_dates.sql
+backend/modelling/pjm_da_models/sql_inputs/meteo_da_price_forecast_hourly.sql
+backend/modelling/pjm_da_models/sql_inputs/actual_da_lmps_hourly.sql
+backend/modelling/pjm_da_models/sql_inputs/manifest.json
+frontend/sql/pjm_da_model/sql_inputs/manifest.json
+```
+
+The route accepts bounded params `horizon=tomorrow|next3|full`,
+`runDate=YYYY-MM-DD`, `targetDate=YYYY-MM-DD`, `limit=1..60`,
+`includeActuals=0|1`, and `refresh=1`. Defaults preserve the Python model
+behavior: 10:00 America/New_York cutoff converted to UTC, `lead_days=1` for
+tomorrow, and `lead_days=null` for next-three/full prediction-window runs.
+
+Caching is non-persistent only: the server route uses process-local memory
+cache with `refresh=1` bypass, and the component uses the shared client JSON
+cache. No model results are written to Postgres.
+
 Local development also exposes a clearly separated `DEV` sidebar section:
 
 ```text
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
 GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
+GET /api/power-settles-dashboard?lookbackDays=7&rtSource=unverified
+GET /api/pjm-da-meteo-baseline-price?horizon=tomorrow
+GET /api/gas-daily-prices?tradeDate=YYYY-MM-DD
+GET /api/salts/wx-adj-scrapes?season=summer&month=7&weatherMetric=southcentral_population_cdd&saltsMetric=salts_total
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/eia-generation?region=US48&season=summer&date=YYYY-MM-DD
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
@@ -616,6 +690,7 @@ The local view keeps `region`, `season`, `date`, and `tab` in the URL. The
 Home tab renders KPI cards, recent current/prior tables, YoY fuel charts, and
 weather response panels. Monthly Averages, Regional Modeling, and YoY + MTD
 tabs are read-only aggregations over the same route payload.
+
 ## Local DEV PJM Tightness Lookback Source Contract
 
 The Tightness Lookback DEV view is an adequacy-first lookback for a selected
@@ -936,6 +1011,90 @@ fallback. The writer user must be `helios_admin` and the database must be
 RT selections can still be handed to Noms through session storage or direct
 `locationRoleId` URL params for ad hoc work.
 
+## Local DEV Salts Source Contract
+
+The Salt Model page (`/?section=salts`) is local-dev only while the legacy
+salts dashboards are being migrated. It is hidden from Vercel navigation,
+direct section routing is disabled on Vercel, and
+`GET /api/salts/wx-adj-scrapes` returns 404 outside local Next.js runs.
+
+The default Salt Model tab is the promoted weather-adjusted salts view. It
+reads the bounded `/api/salts/wx-adj-scrapes` payload and uses the promoted
+GenscapeDataFeed salt nomination flow columns for daily, weekly, and monthly
+table heatmaps plus the full selected season/month weather-adjusted plot grid.
+
+The Salt Plots tab recreates the reference facility seasonality and
+injection/withdrawal plot page. It requests `includeInventory=1` and reads the
+promoted compiled dbt SQL at
+`frontend/sql/salts/marts/marts_v1_salt_inventories.sql` against Azure SQL
+`GenscapeDataFeed.natgas` raw tables. The source dbt model is
+`dbt/dbt_azure_sql/models/salts/marts/marts_v1_salt_inventories.sql`. The route
+normalizes inventory and capacity fields to Bcf, daily flow to MMcf/d, and
+season cumulative flow to MMcf before rendering KPI cards, all-facility
+seasonal small multiples, focused inventory/flow drilldowns, flow-window small
+multiples, and a facility scoreboard for Golden Triangle, Pine Prairie,
+Perryville, Southern Pines, and Eminence.
+
+The Salt Model tab reads the promoted compiled dbt SQL at
+`frontend/sql/salts/marts/marts_v1_salt_facilities_bcf.sql` against Azure SQL
+`GenscapeDataFeed.natgas` raw tables, then joins those salts rows in the route
+process by gas day/date to `helios_prod` daily weather rows from
+`weather.wsi_daily_weighted_degree_day_observations` and to promoted
+long-form `ice_python_next_day_gas` next-day physical gas cash prices from
+`ice_python.settlements`, keyed by `gas_day x symbol` for all active
+next-day symbols in the ICE gas registry. The source dbt models are
+`dbt/dbt_azure_sql/models/salts/marts/marts_v1_salt_facilities_bcf.sql` for
+salts and
+`dbt/azure_postgres/models/pjm_da_model/ice_python/settlements/ice_python_next_day_gas.sql`
+for gas-day cash prices. EIA fields from the legacy dashboard are not part of
+this first tab; future tabs should use `helios_prod` contracts for non-salts
+data.
+
+Primary grain: one gas day after the route-level date join.
+
+The route accepts bounded params `season=winter|summer`, `month=1..12`
+constrained to the selected season, `weatherMetric`, `saltsMetric`,
+`lookbackYears=1..7`, `recentDays=1..31`, optional
+`tableLookbackMonths=12..84`, legacy optional `modelDaily=1`, optional
+`includeInventory=1`, and optional `saltPlotLookbackDays=365..3650`.
+`modelDaily=1`
+keeps direct daily-flow checks honest by returning HTTP 422 with
+`Salt query returned no rows for the selected window.` when the selected daily
+flow window has no joined rows. `includeInventory=1` appends the Salt Plots
+inventory payload from the promoted inventory mart. Winter weather metrics are
+`southcentral_gas_hdd` and `conus_gas_hdd`; summer weather metrics are
+`southcentral_population_cdd` and `conus_population_cdd`; salts metrics are
+`salts_total`, `salts_tx`, `salts_la`, `salts_ms`, and `salts_al`.
+The current tab renders the full selected season/month grid: 2 weather metrics
+by 5 salts metrics, for 10 plots from one API/database fetch.
+
+The Salt Model tab also uses the same route's bounded 36-month joined row
+set for the first table migration pass. The frontend renders one collapsible
+`Tables - Genscape Scrapes + Cash Gas` pivot table above the plot grid from
+the promoted BCF total/regional/facility-flow columns and the promoted
+next-day cash gas symbol rows. Daily BCF flow values display as MMcf/d, weekly
+and monthly flow periods sum to MMcf, and gas cash prices display as $/MMBtu
+with weekly/monthly periods averaging the gas-day prices. The table has `Daily`,
+`Weekly`, and `Monthly` modes: Daily shows the latest 14 gas days, Weekly shows
+the latest 6 Friday week-ending periods, and Monthly shows the latest 12
+calendar months. A period change toggle controls derived `DoD`, `WoW`, or
+`MoM / YoY` rows based on the selected mode, and a gradient toggle controls
+row-relative heatmap styling across the visible period columns. The default
+`Focused` view shows total and regional rows plus Golden Triangle, Pine
+Prairie, Perryville, Southern Pines, Eminence, and all ICE next-day cash gas
+price rows from `frontend/lib/gasPricing/ice_gas_registry.json`, which is
+generated from `backend/scrapes/ice_python/symbols/gas.py` by
+`npm run sync:ice-gas-registry`;
+`All Facilities` adds all facility flow columns emitted by the promoted mart.
+The salts rows are flow metrics, not true inventory levels. Legacy EIA fields
+remain excluded until they have approved `helios_prod` source contracts.
+
+The local route does not write or cache salts data in Azure Postgres, and it
+does not require deployed Azure SQL `salts` views. Before making Salts
+production-visible, either deploy the dbt Azure SQL views with an operator
+principal or document the approved production pattern for executing promoted
+compiled SQL directly.
+
 ## Criterion GTN Balance Source Contract
 
 The GTN Balance page (`/?section=gtn-balance`) is local-dev only while the
@@ -994,6 +1153,7 @@ Run the endpoint health check after a local build or production deploy:
 
 ```bash
 npm run check:api -- --base-url=http://localhost:3000 --cache-bust
+npm run check:api -- --base-url=http://localhost:3000 --filter="Power Settles" --cache-bust
 npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bust
 npm run check:api -- --filter=NAV --base-url=https://frontend-helioscta.vercel.app
 npm run check:api -- --filter="Back Office" --base-url=https://frontend-helioscta.vercel.app --allow-slow

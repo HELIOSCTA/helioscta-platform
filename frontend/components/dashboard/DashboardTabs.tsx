@@ -3,6 +3,7 @@
 export interface DashboardTabOption<T extends string> {
   value: T;
   label: string;
+  description?: string;
   disabled?: boolean;
 }
 
@@ -39,10 +40,15 @@ export default function DashboardTabs<T extends string>({
   className = "",
 }: DashboardTabsProps<T>) {
   const classes = VARIANT_CLASSES[variant];
+  const hasDescriptions = tabs.some((tab) => tab.description);
 
   return (
     <div
-      className={`flex flex-wrap ${classes.list} ${className}`}
+      className={
+        hasDescriptions
+          ? `inline-flex flex-wrap gap-1 ${className}`
+          : `flex flex-wrap ${classes.list} ${className}`
+      }
       role="tablist"
       aria-label={ariaLabel}
     >
@@ -54,13 +60,29 @@ export default function DashboardTabs<T extends string>({
             type="button"
             role="tab"
             aria-selected={active}
+            aria-disabled={tab.disabled ? true : undefined}
             disabled={tab.disabled}
             onClick={() => onChange(tab.value)}
-            className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-              active ? classes.active : classes.inactive
-            }`}
+            className={
+              hasDescriptions
+                ? `flex flex-col items-start rounded-md border px-4 py-2 text-left transition-all duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
+                    active
+                      ? "border-cyan-500/50 bg-cyan-500/10"
+                      : "border-transparent hover:border-gray-700 hover:bg-gray-800/50"
+                  }`
+                : `rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                    active ? classes.active : classes.inactive
+                  }`
+            }
           >
-            {tab.label}
+            {tab.description ? (
+              <span className="flex flex-col items-start text-left">
+                <span className="text-sm font-semibold text-gray-100">{tab.label}</span>
+                <span className="text-xs font-normal text-gray-400">{tab.description}</span>
+              </span>
+            ) : (
+              tab.label
+            )}
           </button>
         );
       })}

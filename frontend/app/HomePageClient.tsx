@@ -42,6 +42,8 @@ import PjmDaLmps, {
   type PowerIso as PjmLmpIso,
   type RtLmpSource as PjmLmpRtSource,
 } from "@/components/pjm/PjmDaLmps";
+import PowerSettlesDashboard from "@/components/pjm/PowerSettlesDashboard";
+import PjmDaMeteoBaselinePrice from "@/components/pjm/PjmDaMeteoBaselinePrice";
 import PowerLmpAdders, {
   type PowerLmpAddersFreshnessSummary,
 } from "@/components/pjm/PowerLmpAdders";
@@ -70,8 +72,15 @@ import PjmTermBible, { type PjmTermBibleFreshnessSummary } from "@/components/pj
 import WeatherDashboard, {
   type WeatherDashboardFreshnessSummary,
 } from "@/components/weather/WeatherDashboard";
+import ShortTermWeatherDashboard from "@/components/weather/ShortTermWeatherDashboard";
 import Sidebar, { type ActiveSection } from "@/components/Sidebar";
 import SparkSpreadEvolution from "@/components/spark/SparkSpreadEvolution";
+import SaltsDashboard, {
+  parseSaltsTabFromView,
+  saltsChromeForTab,
+  viewForSaltsTab,
+  type SaltsTab,
+} from "@/components/salts/SaltsDashboard";
 import BackOfficeHome from "@/components/backoffice/BackOfficeHome";
 import BackOfficePositionsTrades from "@/components/backoffice/BackOfficePositionsTrades";
 import BackOfficeMonitor from "@/components/backoffice/BackOfficeMonitor";
@@ -300,6 +309,9 @@ function parseInitialSection(
   if (backOfficeSection) {
     return backOfficeSection;
   }
+  if (showLocalDevFeatures && value === "power-settles-dashboard") {
+    return "power-settles-dashboard";
+  }
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
   }
@@ -343,11 +355,20 @@ function parseInitialSection(
   ) {
     return "gas-outright";
   }
+  if (showLocalDevFeatures && (value === "salts" || parseSaltsTabFromView(viewValue))) {
+    return "salts";
+  }
   if (showLocalDevFeatures && (value === "eia-generation" || viewValue === "eia-generation")) {
     return "eia-generation";
   }
   if (showLocalDevFeatures && value === "pjm-generation") {
     return "pjm-generation";
+  }
+  if (
+    showLocalDevFeatures &&
+    (value === "pjm-da-model" || value === "pjm-da-meteo-baseline-price")
+  ) {
+    return "pjm-da-model";
   }
   if (showLocalDevFeatures && value === "pjm-tightness-lookback") {
     return "pjm-tightness-lookback";
@@ -356,6 +377,7 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
+  if (showLocalDevFeatures && value === "weather-short-term") return "weather-short-term";
   if (
     showLocalDevFeatures &&
     (value === "pjm-price-distributions" || value === "pjm-actuals-regime-scatter")
@@ -578,10 +600,18 @@ export default function HomePageClient({
   const initialGenscapeNomsSelectionSource = parseTextParam(
     searchParams.get("selectionSource"),
   );
+  const routeSaltsTab = parseSaltsTabFromView(searchParams.get("view")) ?? "wx-adj-scrapes";
+  const [saltsActiveTab, setSaltsActiveTab] = useState<SaltsTab>(routeSaltsTab);
 
   useEffect(() => {
     setActiveSection((current) => (current === routeSection ? current : routeSection));
   }, [routeSection]);
+
+  useEffect(() => {
+    if (activeSection !== "salts") return;
+    const routedTab = parseSaltsTabFromView(searchParams.get("view"));
+    setSaltsActiveTab(routedTab ?? "wx-adj-scrapes");
+  }, [activeSection, searchParams]);
 
   useEffect(() => {
     if (!showLocalDevFeatures || searchParams.get("section") !== "pjm-net-load-forecast") return;
@@ -610,7 +640,25 @@ export default function HomePageClient({
     replaceRouteState(section);
   };
 
+  const handleSaltsTabChange = (tab: SaltsTab) => {
+    setSaltsActiveTab(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", viewForSaltsTab(tab));
+    params.delete("section");
+    params.delete("forecastView");
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  };
+
   const meta = useMemo(() => {
+    if (showLocalDevFeatures && activeSection === "power-settles-dashboard") {
+      return {
+        title: "DEV / Power Settles",
+        subtitle:
+          "Cross-ISO total LMP settles summary for DA, RT, and DART default hubs.",
+        footer:
+          "Power Settles | Sources: promoted PJM, ERCOT, ISO-NE, and CAISO LMP tables / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "pjm-price-duration-curves") {
       return {
         title: "Price Analytics",
@@ -762,13 +810,16 @@ export default function HomePageClient({
         footer: "Gas Outright | Source: ice_python.settlements / helios_prod",
       };
     }
+    if (showLocalDevFeatures && activeSection === "salts") {
+      return saltsChromeForTab(saltsActiveTab);
+    }
     if (showLocalDevFeatures && activeSection === "eia-generation") {
       return {
         title: "EIA Generation Dashboard",
         subtitle:
-          "EIA-930 daily demand, net generation, fuel mix, and weather-adjusted load context by ISO.",
+          "EIA-930 daily generation by ISO - fuel mix, gas burns, coal-gas switching, and renewables displacement.",
         footer:
-          "EIA-930 Hourly Grid Monitor (daily aggregation) | Source: Azure PostgreSQL",
+          "EIA Generation Dashboard | Sources: EIA-930 daily generation by fuel, daily region data, and WSI weather / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "pjm-generation") {
@@ -778,6 +829,15 @@ export default function HomePageClient({
           "PJM fuel mix, daily generation capacity, and scheduled generation economic max by operating hour.",
         footer:
           "Generation | Source: PJM Data Miner gen_by_fuel, day_gen_capacity, and rt_and_self_ecomax / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "pjm-da-model") {
+      return {
+        title: "PJM DA Model",
+        subtitle:
+          "Probabilistic PJM day-ahead LMP forecasts, model quality, analogs, and gas/load/outage context.",
+        footer:
+          "PJM DA Model | Sources: promoted PJM DA model SQL inputs / helios_prod readonly",
       };
     }
     if (showLocalDevFeatures && activeSection === "pjm-tightness-lookback") {
@@ -846,6 +906,15 @@ export default function HomePageClient({
         footer: "Weather | Source: WSI / Azure PostgreSQL",
       };
     }
+    if (showLocalDevFeatures && activeSection === "weather-short-term") {
+      return {
+        title: "Short-Term Weather",
+        subtitle:
+          "Public-source radar, station observations, and short-term forecasts for storm timing.",
+        footer:
+          "Short-Term Weather | Sources: IEM NEXRAD, IEM ASOS/MADIS, NOAA/NWS, and NOAA MRMS reference",
+      };
+    }
     if (activeSection === "power-lmp-adders") {
       return {
         title: "LMP Adders & Reserves",
@@ -860,23 +929,29 @@ export default function HomePageClient({
         "PJM, ERCOT, ISO-NE, and CAISO day-ahead, real-time, and DART power prices.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
-  }, [activeSection, showLocalDevFeatures]);
+  }, [activeSection, saltsActiveTab, showLocalDevFeatures]);
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIceSettlements = activeSection === "ice-settlements";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
+  const isSaltModelSection = showLocalDevFeatures && activeSection === "salts";
+  const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
   const isEiaGenerationSection = showLocalDevFeatures && activeSection === "eia-generation";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
-    activeSection === "gas-outright";
+    activeSection === "gas-outright" ||
+    isSaltModelSection;
   const usesPowerMarketEyebrow =
+    (showLocalDevFeatures && activeSection === "power-settles-dashboard") ||
+    isPjmDaModelSection ||
     isEiaGenerationSection ||
     isHistoricalSettlements ||
     isIceSettlements;
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
-    activeSection === "gas-outright";
+    activeSection === "gas-outright" ||
+    isSaltModelSection;
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
     showLocalDevFeatures && activeSection === "gtn-balance";
@@ -898,6 +973,8 @@ export default function HomePageClient({
               ? "w-full max-w-none px-5 py-8 sm:px-12"
               : isEiaGenerationSection
               ? "mx-auto w-full max-w-[1700px] px-4 py-8 sm:px-8"
+              : isSaltModelSection
+              ? "mx-auto max-w-[1700px] w-full px-4 py-8 sm:px-8"
               : `w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${
                   isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""
                 }`
@@ -909,13 +986,23 @@ export default function HomePageClient({
               <p className="mb-1 hidden text-xs font-semibold uppercase tracking-widest text-gray-500 md:block">
                 {usesBackOfficeEyebrow
                   ? "Helios CTA | Back Office"
-                  : usesPowerMarketEyebrow
+                  : isPjmDaModelSection
+                    ? "Helios CTA | Power / PJM"
+                    : usesPowerMarketEyebrow
                     ? "Helios CTA | Power Markets"
                     : usesGasMarketEyebrow
                       ? "Helios CTA | Gas Markets"
                       : "HeliosCTA"}
               </p>
-              <h1 className="text-xl font-bold text-gray-100 sm:text-3xl">{meta.title}</h1>
+              <h1
+                className={
+                  isSaltModelSection
+                    ? "text-2xl font-bold text-gray-100 sm:text-3xl"
+                    : "text-xl font-bold text-gray-100 sm:text-3xl"
+                }
+              >
+                {meta.title}
+              </h1>
               <p
                 className="mt-2 max-w-full whitespace-normal break-words text-sm text-gray-500 sm:max-w-3xl"
               >
@@ -928,6 +1015,19 @@ export default function HomePageClient({
                   meta.subtitle
                 )}
               </p>
+              {isSaltModelSection && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {saltsChromeForTab(saltsActiveTab).badges.map((badge) => (
+                    <span
+                      key={`${badge.label}:${badge.value}`}
+                      className="inline-flex items-center gap-1 rounded-md bg-gray-800 px-2.5 py-1 text-xs text-gray-400"
+                    >
+                      <span className="text-gray-600">{badge.label}</span>
+                      <span className="text-gray-300">{badge.value}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
 
             {activeSection === "pjm-da-lmps" && (
@@ -1393,6 +1493,12 @@ export default function HomePageClient({
               onFreshnessChange={setPjmDaLmpsFreshness}
             />
           )}
+          {showLocalDevFeatures && activeSection === "power-settles-dashboard" && (
+            <PowerSettlesDashboard />
+          )}
+          {isPjmDaModelSection && (
+            <PjmDaMeteoBaselinePrice />
+          )}
           {activeSection === "power-lmp-adders" && (
             <PowerLmpAdders
               refreshToken={powerLmpAddersRefreshToken}
@@ -1488,6 +1594,13 @@ export default function HomePageClient({
           {activeSection === "gas-outright" && (
             <GasCurveEvolution />
           )}
+          {showLocalDevFeatures && activeSection === "salts" && (
+            <SaltsDashboard
+              activeTab={saltsActiveTab}
+              initialTab={saltsActiveTab}
+              onTabChange={handleSaltsTabChange}
+            />
+          )}
           {showLocalDevFeatures && activeSection === "pjm-generation" && (
             <PjmGeneration
               refreshToken={pjmGenerationRefreshToken}
@@ -1548,6 +1661,9 @@ export default function HomePageClient({
               refreshToken={pjmWeatherRefreshToken}
               onFreshnessChange={setPjmWeatherFreshness}
             />
+          )}
+          {showLocalDevFeatures && activeSection === "weather-short-term" && (
+            <ShortTermWeatherDashboard />
           )}
           {!isGtnResearchViewerReplica && (
             <p className="mt-6 text-center text-xs text-gray-600">{meta.footer}</p>

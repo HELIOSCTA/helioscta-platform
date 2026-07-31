@@ -47,3 +47,7 @@ export function isHistoricalSettlementsDevEnabled(): boolean {
 export function isNavPositionsDevEnabled(): boolean {
   return isLocalOnlyFeatureEnabled();
 }
+
+export function isPjmDaModelDevEnabled(): boolean {
+  return isLocalOnlyFeatureEnabled();
+}

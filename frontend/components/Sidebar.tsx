@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export type ActiveSection =
+  | "power-settles-dashboard"
   | "pjm-da-lmps"
   | "power-lmp-adders"
   | "pjm-term-bible"
@@ -24,6 +25,7 @@ export type ActiveSection =
   | "ice-pmi-curve"
   | "gas-prices"
   | "gas-outright"
+  | "salts"
   | "pjm-price-duration-curves"
   | "pjm-price-distributions"
   | "eia-generation"
@@ -33,7 +35,9 @@ export type ActiveSection =
   | "pjm-load-growth"
   | "pjm-forecasts"
   | "pjm-outages"
-  | "pjm-weather";
+  | "pjm-weather"
+  | "pjm-da-model"
+  | "weather-short-term";
 
 interface SidebarProps {
   activeSection: ActiveSection;
@@ -113,12 +117,16 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       key: "dev",
       label: "DEV",
       navItems: [
+        { id: "pjm-da-model", label: "PJM DA Model", description: "Meteo baseline DA forecast staging" },
+        { id: "power-settles-dashboard", label: "Power Settles", description: "DA / RT / DART by ISO" },
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },
-        { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 demand + fuel mix" },
-        { id: "pjm-generation", label: "Generation" },
+        { id: "salts", label: "Salt Model" },
+        { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
+        { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
+        { id: "weather-short-term", label: "Short-Term Weather" },
         { id: "positions-home", label: "Old Positions Home" },
         { id: "nav-positions", label: "Old NAV Positions" },
         { id: "clear-street-trades", label: "Old Clear Street Trades" },
@@ -138,6 +146,16 @@ export default function Sidebar({
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
     () => Object.fromEntries(topSections.map((s) => [s.key, s.key !== "dev"]))
   );
+
+  useEffect(() => {
+    const activeTopSection = getSections(showLocalDevFeatures).find((section) =>
+      section.navItems.some((item) => isItemActive(item, activeSection)),
+    );
+    if (!activeTopSection) return;
+    setExpandedSections((current) =>
+      current[activeTopSection.key] ? current : { ...current, [activeTopSection.key]: true },
+    );
+  }, [activeSection, showLocalDevFeatures]);
 
   const toggleSection = (key: string) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));

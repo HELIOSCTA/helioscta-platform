@@ -26,6 +26,22 @@ const endpoints = [
     targetMs: 1_500,
   },
   {
+    name: "Power Settles dashboard",
+    path: "/api/power-settles-dashboard?lookbackDays=3&rtSource=unverified",
+    targetMs: 1_500,
+    devOnly: true,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.isoCount,
+  },
+  {
+    name: "PJM DA Model",
+    path: "/api/pjm-da-meteo-baseline-price?horizon=tomorrow",
+    targetMs: 10_000,
+    devOnly: true,
+    minRows: 1,
+    rowCount: (body) => body?.summary?.hourlyRowCount,
+  },
+  {
     name: "PJM term bible",
     path: "/api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=onpeak&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7",
     targetMs: 2_500,

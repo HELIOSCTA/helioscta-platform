@@ -11,10 +11,11 @@ const REQUIRED_DATABASE = "GenscapeDataFeed";
 const DEFAULT_CONNECTION_TIMEOUT_MS = 12_000;
 const DEFAULT_REQUEST_TIMEOUT_MS = 28_000;
 
-function requiredEnv(name: string): string {
-  const value = process.env[name];
+function requiredEnv(name: string, aliases: string[] = []): string {
+  const names = [name, ...aliases];
+  const value = names.map((envName) => process.env[envName]).find(Boolean);
   if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
+    throw new Error(`Missing required environment variable: ${names.join(" or ")}`);
   }
   return value;
 }
@@ -35,11 +36,11 @@ function assertSafeDatabase(database: string): string {
 
 function buildConfig(): sql.config {
   return {
-    server: requiredEnv("AZURE_SQL_DB_HOST"),
+    server: requiredEnv("AZURE_SQL_DB_HOST", ["AZURE_SQL_SERVER"]),
     port: envInt("AZURE_SQL_DB_PORT", 1433),
-    database: assertSafeDatabase(requiredEnv("AZURE_SQL_DB_NAME")),
-    user: requiredEnv("AZURE_SQL_DB_USER"),
-    password: requiredEnv("AZURE_SQL_DB_PASSWORD"),
+    database: assertSafeDatabase(requiredEnv("AZURE_SQL_DB_NAME", ["AZURE_SQL_DATABASE"])),
+    user: requiredEnv("AZURE_SQL_DB_USER", ["AZURE_SQL_USER"]),
+    password: requiredEnv("AZURE_SQL_DB_PASSWORD", ["AZURE_SQL_PASSWORD"]),
     options: {
       encrypt: true,
       trustServerCertificate: false,

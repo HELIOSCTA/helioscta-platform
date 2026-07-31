@@ -11,6 +11,7 @@ import {
   routeCacheHeaders,
 } from "@/lib/server/routeCache";
 import {
+  EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
   EIA_GENERATION_SEASON_OPTIONS,
   EIA_GENERATION_SOURCE_TABLE,
   EIA_REGION_DATA_SOURCE_TABLE,
@@ -18,10 +19,16 @@ import {
   getEiaGenerationRegion,
   type EiaGenerationDailyRow,
   type EiaGenerationKpi,
+  type EiaGenerationMonthlyPayload,
   type EiaGenerationMetricKey,
   type EiaGenerationPayload,
+  type EiaGenerationRegionalHealthItem,
+  type EiaGenerationRegionalModelingPayload,
+  type EiaGenerationRegionalModelRow,
   type EiaGenerationRegionConfig,
   type EiaGenerationSeason,
+  type EiaGenerationYoyMtdPayload,
+  type EiaGenerationYoyStackRow,
   type EiaGenerationWeatherBucket,
   type EiaGenerationWeatherPoint,
   type EiaGenerationWeatherSeasonData,
@@ -37,6 +44,7 @@ const KPI_LOOKBACK_DAYS = 30;
 const HOURS_PER_DAY = 24;
 const WEATHER_START_DATE = "2019-01-01";
 const MAX_HISTORICAL_WEATHER_POINTS = 600;
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 type WeatherMetricName = "electric_cdd" | "electric_hdd";
 
 const ROUTE_CONFIG = {
@@ -301,6 +309,514 @@ function buildPendingWeatherBySeason(
   };
 }
 
+function buildMonthlyPayload({
+  daily,
+  currentYear,
+  priorYear,
+}: {
+  daily: EiaGenerationDailyRow[];
+  currentYear: number | null;
+  priorYear: number | null;
+}): EiaGenerationMonthlyPayload {
+  const rows = MONTH_LABELS.map((month, index) => {
+    const monthNumber = index + 1;
+    const currentRows =
+      currentYear === null
+        ? []
+        : daily.filter((row) => row.year === currentYear && row.month === monthNumber);
+    const maxCurrentDay = currentRows.length
+      ? Math.max(...currentRows.map((row) => row.day))
+      : 0;
+    const priorRows =
+      priorYear === null || maxCurrentDay === 0
+        ? []
+        : daily.filter(
+            (row) =>
+              row.year === priorYear &&
+              row.month === monthNumber &&
+              row.day <= maxCurrentDay,
+          );
+    const demandMw = avgDailyValue(currentRows, (row) => row.demandMw);
+    const priorDemandMw = avgDailyValue(priorRows, (row) => row.demandMw);
+    const netGenerationMw = avgDailyValue(currentRows, (row) => row.netGenerationMw);
+    const priorNetGenerationMw = avgDailyValue(priorRows, (row) => row.netGenerationMw);
+    const gasMw = avgDailyValue(currentRows, (row) => row.gasMw);
+    const priorGasMw = avgDailyValue(priorRows, (row) => row.gasMw);
+    const coalMw = avgDailyValue(currentRows, (row) => row.coalMw);
+    const priorCoalMw = avgDailyValue(priorRows, (row) => row.coalMw);
+    const nukeMw = avgDailyValue(currentRows, (row) => row.nukeMw);
+    const hydroMw = avgDailyValue(currentRows, (row) => row.hydroMw);
+    const priorHydroMw = avgDailyValue(priorRows, (row) => row.hydroMw);
+    const windMw = avgDailyValue(currentRows, (row) => row.windMw);
+    const priorWindMw = avgDailyValue(priorRows, (row) => row.windMw);
+    const solarMw = avgDailyValue(currentRows, (row) => row.solarMw);
+    const priorSolarMw = avgDailyValue(priorRows, (row) => row.solarMw);
+    const otherMw = avgDailyValue(currentRows, (row) => row.otherMw);
+    const renewableMw = avgDailyValue(currentRows, (row) =>
+      dailyFuelSum(row, ["hydroMw", "windMw", "solarMw"]),
+    );
+    const priorRenewableMw = avgDailyValue(priorRows, (row) =>
+      dailyFuelSum(row, ["hydroMw", "windMw", "solarMw"]),
+    );
+    const gasSharePct = pct(gasMw, netGenerationMw);
+    const priorGasSharePct = pct(priorGasMw, priorNetGenerationMw);
+
+    return {
+      month,
+      monthNumber,
+      currentYear,
+      priorYear,
+      currentDayCount: currentRows.length,
+      priorDayCount: priorRows.length,
+      demandMw,
+      priorDemandMw,
+      demandDeltaMw:
+        demandMw === null || priorDemandMw === null ? null : round(demandMw - priorDemandMw),
+      netGenerationMw,
+      priorNetGenerationMw,
+      netGenerationDeltaMw:
+        netGenerationMw === null || priorNetGenerationMw === null
+          ? null
+          : round(netGenerationMw - priorNetGenerationMw),
+      gasMw,
+      priorGasMw,
+      gasDeltaMw: gasMw === null || priorGasMw === null ? null : round(gasMw - priorGasMw),
+      coalMw,
+      priorCoalMw,
+      coalDeltaMw: coalMw === null || priorCoalMw === null ? null : round(coalMw - priorCoalMw),
+      nukeMw,
+      hydroMw,
+      priorHydroMw,
+      hydroDeltaMw:
+        hydroMw === null || priorHydroMw === null ? null : round(hydroMw - priorHydroMw),
+      windMw,
+      priorWindMw,
+      windDeltaMw: windMw === null || priorWindMw === null ? null : round(windMw - priorWindMw),
+      solarMw,
+      priorSolarMw,
+      solarDeltaMw:
+        solarMw === null || priorSolarMw === null ? null : round(solarMw - priorSolarMw),
+      otherMw,
+      renewableMw,
+      priorRenewableMw,
+      renewableDeltaMw:
+        renewableMw === null || priorRenewableMw === null
+          ? null
+          : round(renewableMw - priorRenewableMw),
+      gasSharePct,
+      priorGasSharePct,
+      gasShareDeltaPctPoint:
+        gasSharePct === null || priorGasSharePct === null
+          ? null
+          : round(gasSharePct - priorGasSharePct, 1),
+      gasThermalPct: pct(gasMw, sum([gasMw, coalMw])),
+      priorGasThermalPct: pct(priorGasMw, sum([priorGasMw, priorCoalMw])),
+      coalSharePct: pct(coalMw, netGenerationMw),
+      nukeSharePct: pct(nukeMw, netGenerationMw),
+      hydroSharePct: pct(hydroMw, netGenerationMw),
+      windSharePct: pct(windMw, netGenerationMw),
+      solarSharePct: pct(solarMw, netGenerationMw),
+      otherSharePct: pct(otherMw, netGenerationMw),
+      renewableSharePct: pct(renewableMw, netGenerationMw),
+      priorRenewableSharePct: pct(priorRenewableMw, priorNetGenerationMw),
+    };
+  });
+
+  const hasRows = rows.some((row) => row.currentDayCount > 0);
+  return {
+    status: hasRows ? "available" : "source_pending",
+    aggregationGrain:
+      "month x respondent; monthly values are averages of daily average MW rows",
+    rows,
+    message: hasRows ? null : "No current-year EIA-930 generation rows are available.",
+  };
+}
+
+function buildRegionalModelingPayload({
+  daily,
+  currentYear,
+}: {
+  daily: EiaGenerationDailyRow[];
+  currentYear: number | null;
+}): EiaGenerationRegionalModelingPayload {
+  const modelRows: EiaGenerationRegionalModelRow[] = MONTH_LABELS.map((month, index) => {
+    const monthNumber = index + 1;
+    const rows =
+      currentYear === null
+        ? []
+        : daily.filter((row) => row.year === currentYear && row.month === monthNumber);
+    const demandMw = avgDailyValue(rows, (row) => row.demandMw);
+    const netGenerationMw = avgDailyValue(rows, (row) => row.netGenerationMw);
+    const gasMw = avgDailyValue(rows, (row) => row.gasMw);
+    const coalMw = avgDailyValue(rows, (row) => row.coalMw);
+    const thermalMw = avgDailyValue(rows, (row) => dailyFuelSum(row, ["gasMw", "coalMw"]));
+    const nuclearHydroMw = avgDailyValue(rows, (row) => dailyFuelSum(row, ["nukeMw", "hydroMw"]));
+    const renewableMw = avgDailyValue(rows, (row) => dailyFuelSum(row, ["windMw", "solarMw"]));
+    const residualMw =
+      demandMw === null || netGenerationMw === null ? null : round(demandMw - netGenerationMw);
+    const gasBurnBcfd = bcfdFromGasMw(gasMw);
+    const monthlyGasBcf = sumBcf(rows);
+    const annualizedGasBcf =
+      monthlyGasBcf === null || !currentYear
+        ? null
+        : round((monthlyGasBcf / Math.max(rows.length, 1)) * 365, 1);
+
+    return {
+      month,
+      monthNumber,
+      demandMw,
+      netGenerationMw,
+      gasMw,
+      coalMw,
+      thermalMw,
+      nuclearHydroMw,
+      renewableMw,
+      residualMw,
+      gasBurnBcfd,
+      monthlyGasBcf,
+      annualizedGasBcf,
+      days: rows.length,
+      status: rows.length && gasMw !== null ? "available" : "source_pending",
+    };
+  });
+
+  const currentRows =
+    currentYear === null ? [] : daily.filter((row) => row.year === currentYear);
+  const regionMissingInputs = currentRows.filter(
+    (row) => row.demandMw === null || row.netGenerationMw === null,
+  ).length;
+  const criticalMissingInputs = currentRows.filter((row) => row.gasMw === null).length;
+  const coalGasZeroFallbacks = currentRows.filter(
+    (row) => row.gasMw === 0 || row.coalMw === 0,
+  ).length;
+  const health: EiaGenerationRegionalHealthItem[] = [
+    {
+      key: "region_missing_inputs",
+      label: "Region Missing Inputs",
+      value: regionMissingInputs,
+      unit: "count",
+      status: regionMissingInputs > 0 ? "warning" : "ok",
+      detail: "Current-year rows missing EIA demand or net generation.",
+    },
+    {
+      key: "region_critical_missing",
+      label: "Region Critical Missing",
+      value: criticalMissingInputs,
+      unit: "count",
+      status: criticalMissingInputs > 0 ? "warning" : "ok",
+      detail: "Current-year rows missing gas generation needed for Bcf/d conversion.",
+    },
+    {
+      key: "coal_gas_zero_fallbacks",
+      label: "Coal/Gas Zero Fallbacks",
+      value: coalGasZeroFallbacks,
+      unit: "count",
+      status: coalGasZeroFallbacks > 0 ? "warning" : "ok",
+      detail: "Rows where coal or gas is zero. No fallback value is applied.",
+    },
+    {
+      key: "thermal_bcfd_fallbacks",
+      label: "Thermal + Bcfd Fallbacks",
+      value: "Source pending",
+      unit: "status",
+      status: "source_pending",
+      detail: "EA defaults, snapshot release, and persisted heat-rate overrides are not promoted yet.",
+    },
+  ];
+
+  const hasModelRows = modelRows.some((row) => row.status === "available");
+  return {
+    status: hasModelRows ? "available" : "source_pending",
+    defaultHeatRateMmbtuPerMwh: EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+    heatRateSourceStatus: "default",
+    heatRateFormula:
+      "gas_avg_mw x heat_rate_mmbtu_per_mwh x 24 / 1,000,000 = bcf_per_day",
+    snapshotReleaseAt: null,
+    snapshotStatus: "source_pending",
+    health,
+    powerBalanceRows: modelRows,
+    gasDemandRows: modelRows,
+    tradingViewRows: modelRows,
+    message:
+      "Gas burn is derived from EIA gas generation and the dashboard default heat rate. EA defaults, snapshot release values, and persisted overrides remain source-pending.",
+  };
+}
+
+function buildYoyMtdPayload({
+  daily,
+  selectedDate,
+  currentYear,
+  priorYear,
+}: {
+  daily: EiaGenerationDailyRow[];
+  selectedDate: string | null;
+  currentYear: number | null;
+  priorYear: number | null;
+}): EiaGenerationYoyMtdPayload {
+  if (!selectedDate || !currentYear || !priorYear) {
+    return {
+      status: "source_pending",
+      selectedMonth: null,
+      selectedDay: null,
+      heatRateMmbtuPerMwh: EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+      kpis: [],
+      cumulativePath: [],
+      attribution: [],
+      dailyDeltas: [],
+      stackRows: [],
+      monthEndProjectionBcf: null,
+      message: "No selected EIA date is available for MTD calculations.",
+    };
+  }
+
+  const selectedMonth = Number.parseInt(selectedDate.slice(5, 7), 10);
+  const selectedDay = Number.parseInt(selectedDate.slice(8, 10), 10);
+  const currentRows = daily.filter(
+    (row) => row.year === currentYear && row.month === selectedMonth && row.day <= selectedDay,
+  );
+  const priorRows = daily.filter(
+    (row) => row.year === priorYear && row.month === selectedMonth && row.day <= selectedDay,
+  );
+  const priorFullMonthRows = daily.filter(
+    (row) => row.year === priorYear && row.month === selectedMonth,
+  );
+  const currentByDay = new Map(currentRows.map((row) => [row.day, row]));
+  const priorByDay = new Map(priorRows.map((row) => [row.day, row]));
+
+  let currentCumulative = 0;
+  let priorCumulative = 0;
+  const cumulativePath = Array.from({ length: selectedDay }, (_, index) => {
+    const day = index + 1;
+    const currentRow = currentByDay.get(day);
+    const priorRow = priorByDay.get(day);
+    const currentBcfd = currentRow ? bcfForDailyRow(currentRow) : null;
+    const priorBcfd = priorRow ? bcfForDailyRow(priorRow) : null;
+    if (currentBcfd !== null) currentCumulative += currentBcfd;
+    if (priorBcfd !== null) priorCumulative += priorBcfd;
+    return {
+      day,
+      currentDate: currentRow?.date ?? null,
+      priorDate: priorRow?.date ?? null,
+      currentBcfd,
+      priorBcfd,
+      deltaBcfd:
+        currentBcfd === null || priorBcfd === null ? null : round(currentBcfd - priorBcfd, 3),
+      currentCumulativeBcf: currentBcfd === null ? null : round(currentCumulative, 2),
+      priorCumulativeBcf: priorBcfd === null ? null : round(priorCumulative, 2),
+      deltaCumulativeBcf:
+        currentBcfd === null || priorBcfd === null
+          ? null
+          : round(currentCumulative - priorCumulative, 2),
+    };
+  });
+
+  const currentAvgBcfd = round(avg(currentRows.map((row) => bcfForDailyRow(row))), 3);
+  const priorAvgBcfd = round(avg(priorRows.map((row) => bcfForDailyRow(row))), 3);
+  const currentTotalBcf = sumBcf(currentRows);
+  const priorTotalBcf = sumBcf(priorRows);
+  const monthDays = daysInMonth(currentYear, selectedMonth);
+  const monthEndProjectionBcf =
+    currentTotalBcf === null || !currentRows.length
+      ? null
+      : round((currentTotalBcf / currentRows.length) * monthDays, 2);
+  const priorFullMonthBcf = sumBcf(priorFullMonthRows);
+  const deltaAvgBcfd =
+    currentAvgBcfd === null || priorAvgBcfd === null ? null : round(currentAvgBcfd - priorAvgBcfd, 3);
+  const demandDeltaMw = round(
+    (avg(currentRows.map((row) => row.demandMw)) ?? 0) -
+      (avg(priorRows.map((row) => row.demandMw)) ?? 0),
+  );
+  const coalMwDelta = round(
+    (avg(currentRows.map((row) => row.coalMw)) ?? 0) -
+      (avg(priorRows.map((row) => row.coalMw)) ?? 0),
+  );
+  const windSolarDeltaMw = round(
+    (avg(currentRows.map((row) => dailyFuelSum(row, ["windMw", "solarMw"]))) ?? 0) -
+      (avg(priorRows.map((row) => dailyFuelSum(row, ["windMw", "solarMw"]))) ?? 0),
+  );
+  const nukeHydroDeltaMw = round(
+    (avg(currentRows.map((row) => dailyFuelSum(row, ["nukeMw", "hydroMw"]))) ?? 0) -
+      (avg(priorRows.map((row) => dailyFuelSum(row, ["nukeMw", "hydroMw"]))) ?? 0),
+  );
+
+  const stackValue = (
+    selector: (row: EiaGenerationDailyRow) => number | null,
+    unit: EiaGenerationYoyStackRow["unit"],
+  ): Pick<EiaGenerationYoyStackRow, "unit" | "current" | "prior" | "delta" | "status"> => {
+    const current = round(avg(currentRows.map(selector)), unit === "pct" || unit === "bcfd" ? 3 : 1);
+    const prior = round(avg(priorRows.map(selector)), unit === "pct" || unit === "bcfd" ? 3 : 1);
+    return {
+      unit,
+      current,
+      prior,
+      delta: current === null || prior === null ? null : round(current - prior, unit === "pct" || unit === "bcfd" ? 3 : 1),
+      status: statusForValues([current, prior]),
+    };
+  };
+
+  return {
+    status: currentAvgBcfd !== null && priorAvgBcfd !== null ? "available" : "source_pending",
+    selectedMonth,
+    selectedDay,
+    heatRateMmbtuPerMwh: EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+    kpis: [
+      {
+        key: "currentAvgBcfd",
+        label: "CY MTD Avg Bcf/d",
+        unit: "bcfd",
+        current: currentAvgBcfd,
+        prior: null,
+        delta: null,
+        status: currentAvgBcfd === null ? "source_pending" : "available",
+      },
+      {
+        key: "priorAvgBcfd",
+        label: "LY MTD Avg Bcf/d",
+        unit: "bcfd",
+        current: priorAvgBcfd,
+        prior: null,
+        delta: null,
+        status: priorAvgBcfd === null ? "source_pending" : "available",
+      },
+      {
+        key: "deltaAvgBcfd",
+        label: "YoY Delta Bcf/d",
+        unit: "bcfd",
+        current: currentAvgBcfd,
+        prior: priorAvgBcfd,
+        delta: deltaAvgBcfd,
+        status: deltaAvgBcfd === null ? "source_pending" : "available",
+      },
+      {
+        key: "currentTotalBcf",
+        label: "CY MTD Total Bcf",
+        unit: "bcf",
+        current: currentTotalBcf,
+        prior: null,
+        delta: null,
+        status: currentTotalBcf === null ? "source_pending" : "available",
+      },
+      {
+        key: "priorTotalBcf",
+        label: "LY MTD Total Bcf",
+        unit: "bcf",
+        current: priorTotalBcf,
+        prior: null,
+        delta: null,
+        status: priorTotalBcf === null ? "source_pending" : "available",
+      },
+      {
+        key: "monthEndProjectionDeltaBcf",
+        label: "Month-End Projection vs LY",
+        unit: "bcf",
+        current: monthEndProjectionBcf,
+        prior: priorFullMonthBcf,
+        delta:
+          monthEndProjectionBcf === null || priorFullMonthBcf === null
+            ? null
+            : round(monthEndProjectionBcf - priorFullMonthBcf, 2),
+        status:
+          monthEndProjectionBcf === null || priorFullMonthBcf === null
+            ? "source_pending"
+            : "available",
+      },
+    ],
+    cumulativePath,
+    attribution: [
+      {
+        key: "load",
+        label: "Load",
+        valueBcfd: null,
+        status: "source_pending",
+        detail: `Demand delta: ${demandDeltaMw === null ? "pending" : `${demandDeltaMw} MW`}. Conversion attribution model not promoted.`,
+      },
+      {
+        key: "renewables",
+        label: "Renewables",
+        valueBcfd: null,
+        status: "source_pending",
+        detail: `Wind + solar delta: ${windSolarDeltaMw === null ? "pending" : `${windSolarDeltaMw} MW`}. Gas displacement model not promoted.`,
+      },
+      {
+        key: "coal_switch",
+        label: "Coal Switch",
+        valueBcfd: null,
+        status: "source_pending",
+        detail: `Coal delta: ${coalMwDelta === null ? "pending" : `${coalMwDelta} MW`}. Coal-to-gas switching model not promoted.`,
+      },
+      {
+        key: "nuke_hydro",
+        label: "Nuke + Hydro",
+        valueBcfd: null,
+        status: "source_pending",
+        detail: `Nuclear + hydro delta: ${nukeHydroDeltaMw === null ? "pending" : `${nukeHydroDeltaMw} MW`}. Attribution model not promoted.`,
+      },
+      {
+        key: "residual",
+        label: "Residual",
+        valueBcfd: deltaAvgBcfd,
+        status: deltaAvgBcfd === null ? "source_pending" : "available",
+        detail: "Actual YoY gas burn delta after source-pending attribution components.",
+      },
+    ],
+    dailyDeltas: cumulativePath,
+    stackRows: [
+      {
+        section: "Gas Burn",
+        metric: "Avg Bcf/d",
+        ...stackValue((row) => bcfForDailyRow(row), "bcfd"),
+      },
+      {
+        section: "Gas Burn",
+        metric: "Total Bcf",
+        unit: "bcf",
+        current: currentTotalBcf,
+        prior: priorTotalBcf,
+        delta: currentTotalBcf === null || priorTotalBcf === null ? null : round(currentTotalBcf - priorTotalBcf, 2),
+        status: statusForValues([currentTotalBcf, priorTotalBcf]),
+      },
+      {
+        section: "Demand",
+        metric: "Avg Demand MW",
+        ...stackValue((row) => row.demandMw, "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Net Gen MW",
+        ...stackValue((row) => row.netGenerationMw, "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Gas MW",
+        ...stackValue((row) => row.gasMw, "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Coal MW",
+        ...stackValue((row) => row.coalMw, "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Wind + Solar MW",
+        ...stackValue((row) => dailyFuelSum(row, ["windMw", "solarMw"]), "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Nuke + Hydro MW",
+        ...stackValue((row) => dailyFuelSum(row, ["nukeMw", "hydroMw"]), "mw"),
+      },
+      {
+        section: "Supply",
+        metric: "Gas % Thermal",
+        ...stackValue((row) => row.gasThermalPct, "pct"),
+      },
+    ],
+    monthEndProjectionBcf,
+    message:
+      "Gas burn MTD is derived from EIA gas generation and the dashboard default heat rate. Load, renewables, coal-switch, and nuke/hydro attribution components remain source-pending until a promoted attribution model exists.",
+  };
+}
+
 function buildEmptyPayload({
   region,
   requestedDate,
@@ -331,6 +847,21 @@ function buildEmptyPayload({
       deltaPctPoint: null,
       sparkline: [],
     })),
+    monthly: buildMonthlyPayload({
+      daily: [],
+      currentYear: null,
+      priorYear: null,
+    }),
+    regionalModeling: buildRegionalModelingPayload({
+      daily: [],
+      currentYear: null,
+    }),
+    yoyMtd: buildYoyMtdPayload({
+      daily: [],
+      selectedDate: null,
+      currentYear: null,
+      priorYear: null,
+    }),
     freshness: {
       sourceTable: `${EIA_GENERATION_SOURCE_TABLE} + ${EIA_REGION_DATA_SOURCE_TABLE}`,
       sourceSystem: "EIA Open Data API v2 / electricity/rto daily endpoints",
@@ -522,6 +1053,60 @@ function avg(values: Array<number | null>): number | null {
   const numbers = values.filter((value): value is number => value !== null);
   if (!numbers.length) return null;
   return numbers.reduce((sum, value) => sum + value, 0) / numbers.length;
+}
+
+function sum(values: Array<number | null>): number | null {
+  const numbers = values.filter((value): value is number => value !== null);
+  if (!numbers.length) return null;
+  return numbers.reduce((total, value) => total + value, 0);
+}
+
+function daysInMonth(year: number, monthNumber: number): number {
+  return new Date(Date.UTC(year, monthNumber, 0)).getUTCDate();
+}
+
+function dailyFuelSum(
+  row: EiaGenerationDailyRow,
+  keys: Array<keyof Pick<
+    EiaGenerationDailyRow,
+    "gasMw" | "coalMw" | "nukeMw" | "hydroMw" | "windMw" | "solarMw" | "otherMw"
+  >>,
+): number | null {
+  return sum(keys.map((key) => row[key]));
+}
+
+function avgDailyValue(
+  rows: EiaGenerationDailyRow[],
+  selector: (row: EiaGenerationDailyRow) => number | null,
+  digits = 1,
+): number | null {
+  return round(avg(rows.map(selector)), digits);
+}
+
+function bcfdFromGasMw(
+  gasMw: number | null,
+  heatRateMmbtuPerMwh = EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+): number | null {
+  if (gasMw === null) return null;
+  return round((gasMw * heatRateMmbtuPerMwh * HOURS_PER_DAY) / 1_000_000, 3);
+}
+
+function bcfForDailyRow(
+  row: EiaGenerationDailyRow,
+  heatRateMmbtuPerMwh = EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+): number | null {
+  return bcfdFromGasMw(row.gasMw, heatRateMmbtuPerMwh);
+}
+
+function sumBcf(
+  rows: EiaGenerationDailyRow[],
+  heatRateMmbtuPerMwh = EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+): number | null {
+  return round(sum(rows.map((row) => bcfForDailyRow(row, heatRateMmbtuPerMwh))), 2);
+}
+
+function statusForValues(values: Array<number | null>): "available" | "source_pending" {
+  return values.every((value) => value !== null) ? "available" : "source_pending";
 }
 
 function seasonIncludesMonth(season: EiaGenerationSeason, month: number): boolean {
@@ -1099,6 +1684,9 @@ async function loadPayload(request: Request): Promise<ObservedRouteResult> {
     priorTable,
     daily,
     kpis: buildKpis({ daily, currentYear, priorYear, selectedDate }),
+    monthly: buildMonthlyPayload({ daily, currentYear, priorYear }),
+    regionalModeling: buildRegionalModelingPayload({ daily, currentYear }),
+    yoyMtd: buildYoyMtdPayload({ daily, selectedDate, currentYear, priorYear }),
     freshness: {
       sourceTable: `${EIA_GENERATION_SOURCE_TABLE} + ${EIA_REGION_DATA_SOURCE_TABLE}`,
       sourceSystem: "EIA Open Data API v2 / electricity/rto daily endpoints",

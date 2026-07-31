@@ -65,6 +65,8 @@ const ISO_CONFIGS: Record<PowerIso, IsoConfig> = {
   },
 };
 
+const POWER_SETTLES_DASHBOARD_ISOS: PowerIso[] = ["pjm", "ercot", "isone", "caiso"];
+
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
   ercot: { start: 7, end: 22 },
@@ -88,6 +90,70 @@ interface HourRow {
   hour_ending: number;
   value: number | string | null;
   as_of: string | null;
+}
+
+type PowerSettlesDashboardStatus = "ok" | "partial" | "missing";
+
+interface HourlyValueSet {
+  values: Array<number | null>;
+  asOf: string | null;
+}
+
+interface PowerSettlesDashboardProductSummary {
+  flatAvg: number | null;
+  onPeakAvg: number | null;
+  offPeakAvg: number | null;
+  peakHour: number | null;
+  peakPrice: number | null;
+  observationCount: number;
+}
+
+interface PowerSettlesDashboardLookbackDay {
+  date: string;
+  daFlatAvg: number | null;
+  rtFlatAvg: number | null;
+  dartFlatAvg: number | null;
+}
+
+interface PowerSettlesDashboardIsoRow {
+  iso: PowerIso;
+  isoLabel: string;
+  hub: string;
+  targetDate: string | null;
+  latestDaDate: string | null;
+  latestRtDate: string | null;
+  daAsOf: string | null;
+  rtAsOf: string | null;
+  dataAsOf: string | null;
+  sourceTables: {
+    da: string;
+    rt: string;
+  };
+  status: PowerSettlesDashboardStatus;
+  statusDetail: string;
+  detailUrl: string | null;
+  products: {
+    da: PowerSettlesDashboardProductSummary;
+    rt: PowerSettlesDashboardProductSummary;
+    dart: PowerSettlesDashboardProductSummary;
+  };
+  lookback: PowerSettlesDashboardLookbackDay[];
+}
+
+interface PowerSettlesDashboardPayload {
+  component: "total";
+  rtSource: RtLmpSource;
+  lookbackDays: number;
+  requestedDate: string | null;
+  datePolicy: "requested" | "per-iso-latest-complete";
+  rows: PowerSettlesDashboardIsoRow[];
+  summary: {
+    isoCount: number;
+    completeIsoCount: number;
+    partialIsoCount: number;
+    missingIsoCount: number;
+    latestAsOf: string | null;
+  };
 }
 
 export function parsePowerIso(raw: string | null): PowerIso {
@@ -216,6 +282,28 @@ function isoneRtTable(rtSource: RtLmpSource) {
         congestionColumn: "congestion",
         lossColumn: "loss",
       };
+}
+
+function sourceTableFor({
+  iso,
+  product,
+  rtSource,
+}: {
+  iso: PowerIso;
+  product: PowerLmpProduct;
+  rtSource: RtLmpSource;
+}): string {
+  if (product === "da") {
+    if (iso === "pjm") return "pjm.da_hrl_lmps";
+    if (iso === "ercot") return "ercot.dam_stlmnt_pnt_prices";
+    if (iso === "caiso") return "caiso.da_lmps";
+    return "isone.da_hrl_lmps";
+  }
+
+  if (iso === "pjm") return pjmRtTable(rtSource).sourceTable;
+  if (iso === "ercot") return "ercot.settlement_point_prices";
+  if (iso === "caiso") return "caiso.rt_lmps";
+  return isoneRtTable(rtSource).sourceTable;
 }
 
 async function latestDate({
@@ -544,22 +632,7 @@ export async function buildPowerLmpsPayload({
 
   const rows = await lmpRows({ iso, product, rtSource, targetDate, hubs: config.hubs });
   const asOf = maxStamp(rows.map((row) => row.as_of));
-  const source =
-    product === "da"
-      ? iso === "pjm"
-        ? "pjm.da_hrl_lmps"
-        : iso === "ercot"
-          ? "ercot.dam_stlmnt_pnt_prices"
-          : iso === "caiso"
-            ? "caiso.da_lmps"
-            : "isone.da_hrl_lmps"
-      : iso === "pjm"
-        ? pjmRtTable(rtSource).sourceTable
-        : iso === "ercot"
-          ? "ercot.settlement_point_prices"
-          : iso === "caiso"
-            ? "caiso.rt_lmps"
-            : isoneRtTable(rtSource).sourceTable;
+  const source = sourceTableFor({ iso, product, rtSource });
 
   return {
     payload: {
@@ -788,6 +861,289 @@ async function settleRows({
     `,
     [hub, startDate, endDate],
   );
+}
+
+function offsetIsoDate(value: string, days: number): string {
+  const date = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function latestCompleteDate(left: string | null, right: string | null): string | null {
+  if (!left || !right) return null;
+  return left <= right ? left : right;
+}
+
+function hourlyValuesByDate(rows: HourRow[]): Map<string, HourlyValueSet> {
+  const byDate = new Map<string, HourlyValueSet>();
+  for (const row of rows) {
+    const item = byDate.get(row.market_date) ?? { values: emptyHours(), asOf: null };
+    const hourIndex = Number(row.hour_ending) - 1;
+    if (hourIndex >= 0 && hourIndex < 24) {
+      item.values[hourIndex] = toNumber(row.value);
+    }
+    item.asOf = maxStamp([item.asOf, row.as_of]);
+    byDate.set(row.market_date, item);
+  }
+  return byDate;
+}
+
+function productSummary(
+  iso: PowerIso,
+  values: Array<number | null>,
+): PowerSettlesDashboardProductSummary {
+  const observed = values.filter((value): value is number => value !== null);
+  const onPeakValues = values.filter((_, index) => isOnPeakHour(iso, index + 1));
+  const offPeakValues = values.filter((_, index) => !isOnPeakHour(iso, index + 1));
+  let peakHour: number | null = null;
+  let peakPrice: number | null = null;
+
+  values.forEach((value, index) => {
+    if (value === null) return;
+    if (peakPrice === null || value > peakPrice) {
+      peakPrice = value;
+      peakHour = index + 1;
+    }
+  });
+
+  return {
+    flatAvg: avg(values),
+    onPeakAvg: avg(onPeakValues),
+    offPeakAvg: avg(offPeakValues),
+    peakHour,
+    peakPrice,
+    observationCount: observed.length,
+  };
+}
+
+function subtractHourlyValues(
+  left: Array<number | null>,
+  right: Array<number | null>,
+): Array<number | null> {
+  return left.map((value, index) => {
+    const compareValue = right[index] ?? null;
+    return value === null || compareValue === null ? null : value - compareValue;
+  });
+}
+
+function emptyProductSummary(): PowerSettlesDashboardProductSummary {
+  return {
+    flatAvg: null,
+    onPeakAvg: null,
+    offPeakAvg: null,
+    peakHour: null,
+    peakPrice: null,
+    observationCount: 0,
+  };
+}
+
+function dashboardStatus({
+  targetDate,
+  da,
+  rt,
+}: {
+  targetDate: string | null;
+  da: PowerSettlesDashboardProductSummary;
+  rt: PowerSettlesDashboardProductSummary;
+}): { status: PowerSettlesDashboardStatus; detail: string } {
+  if (!targetDate) {
+    return { status: "missing", detail: "No DA/RT date is available for the default hub." };
+  }
+  if (da.observationCount === 0 && rt.observationCount === 0) {
+    return { status: "missing", detail: "No DA or RT hourly values were returned for the selected date." };
+  }
+  if (da.observationCount < 24 || rt.observationCount < 24) {
+    return {
+      status: "partial",
+      detail: `DA ${da.observationCount}/24 hours, RT ${rt.observationCount}/24 hours.`,
+    };
+  }
+  return { status: "ok", detail: "DA and RT both returned 24 hourly values." };
+}
+
+function powerSettlesDetailUrl({
+  iso,
+  targetDate,
+  hub,
+  rtSource,
+}: {
+  iso: PowerIso;
+  targetDate: string | null;
+  hub: string;
+  rtSource: RtLmpSource;
+}): string | null {
+  if (!targetDate) return null;
+  const params = new URLSearchParams({
+    section: "pjm-da-lmps",
+    iso,
+    view: "daily-settles",
+    product: "dart",
+    source: rtSource,
+    date: targetDate,
+    hub,
+    component: "total",
+  });
+  return `/?${params.toString()}`;
+}
+
+async function buildPowerSettlesDashboardIsoRow({
+  iso,
+  requestedDate,
+  lookbackDays,
+  rtSource,
+}: {
+  iso: PowerIso;
+  requestedDate: string | null;
+  lookbackDays: number;
+  rtSource: RtLmpSource;
+}): Promise<PowerSettlesDashboardIsoRow> {
+  const config = ISO_CONFIGS[iso];
+  const hub = config.defaultHub;
+  const [latestDaDate, latestRtDate] = await Promise.all([
+    latestDate({ iso, product: "da", rtSource, hubs: [hub] }),
+    latestDate({ iso, product: "rt", rtSource, hubs: [hub] }),
+  ]);
+  const targetDate = requestedDate ?? latestCompleteDate(latestDaDate, latestRtDate);
+  const sourceTables = {
+    da: sourceTableFor({ iso, product: "da", rtSource }),
+    rt: sourceTableFor({ iso, product: "rt", rtSource }),
+  };
+
+  if (!targetDate) {
+    return {
+      iso,
+      isoLabel: config.label,
+      hub,
+      targetDate: null,
+      latestDaDate,
+      latestRtDate,
+      daAsOf: null,
+      rtAsOf: null,
+      dataAsOf: null,
+      sourceTables,
+      status: "missing",
+      statusDetail: "No latest DA/RT date could be resolved for the default hub.",
+      detailUrl: null,
+      products: {
+        da: emptyProductSummary(),
+        rt: emptyProductSummary(),
+        dart: emptyProductSummary(),
+      },
+      lookback: [],
+    };
+  }
+
+  const startDate = offsetIsoDate(targetDate, 1 - lookbackDays);
+  const [daRows, rtRows] = await Promise.all([
+    settleRows({
+      iso,
+      market: "da",
+      rtSource,
+      startDate,
+      endDate: targetDate,
+      hub,
+      component: "total",
+    }),
+    settleRows({
+      iso,
+      market: "rt",
+      rtSource,
+      startDate,
+      endDate: targetDate,
+      hub,
+      component: "total",
+    }),
+  ]);
+  const daByDate = hourlyValuesByDate(daRows);
+  const rtByDate = hourlyValuesByDate(rtRows);
+  const empty = emptyHours();
+  const targetDa = daByDate.get(targetDate) ?? { values: empty, asOf: null };
+  const targetRt = rtByDate.get(targetDate) ?? { values: empty, asOf: null };
+  const targetDartValues = subtractHourlyValues(targetDa.values, targetRt.values);
+  const da = productSummary(iso, targetDa.values);
+  const rt = productSummary(iso, targetRt.values);
+  const dart = productSummary(iso, targetDartValues);
+  const { status, detail } = dashboardStatus({ targetDate, da, rt });
+  const lookback = dateRange(startDate, targetDate).map((date) => {
+    const dayDa = daByDate.get(date)?.values ?? emptyHours();
+    const dayRt = rtByDate.get(date)?.values ?? emptyHours();
+    const dayDart = subtractHourlyValues(dayDa, dayRt);
+    return {
+      date,
+      daFlatAvg: productSummary(iso, dayDa).flatAvg,
+      rtFlatAvg: productSummary(iso, dayRt).flatAvg,
+      dartFlatAvg: productSummary(iso, dayDart).flatAvg,
+    };
+  });
+  const dataAsOf = maxStamp([targetDa.asOf, targetRt.asOf]);
+
+  return {
+    iso,
+    isoLabel: config.label,
+    hub,
+    targetDate,
+    latestDaDate,
+    latestRtDate,
+    daAsOf: targetDa.asOf,
+    rtAsOf: targetRt.asOf,
+    dataAsOf,
+    sourceTables,
+    status,
+    statusDetail: detail,
+    detailUrl: powerSettlesDetailUrl({ iso, targetDate, hub, rtSource }),
+    products: {
+      da,
+      rt,
+      dart,
+    },
+    lookback,
+  };
+}
+
+export async function buildPowerSettlesDashboardPayload({
+  requestedDate,
+  lookbackDays,
+  rtSource,
+}: {
+  requestedDate: string | null;
+  lookbackDays: number;
+  rtSource: RtLmpSource;
+}) {
+  const normalizedLookbackDays = Number.isFinite(lookbackDays) ? Math.trunc(lookbackDays) : 7;
+  const boundedLookbackDays = Math.min(Math.max(normalizedLookbackDays, 1), 14);
+  const rows = await Promise.all(
+    POWER_SETTLES_DASHBOARD_ISOS.map((iso) =>
+      buildPowerSettlesDashboardIsoRow({
+        iso,
+        requestedDate,
+        lookbackDays: boundedLookbackDays,
+        rtSource,
+      }),
+    ),
+  );
+  const latestAsOf = maxStamp(rows.map((row) => row.dataAsOf));
+  const payload: PowerSettlesDashboardPayload = {
+    component: "total",
+    rtSource,
+    lookbackDays: boundedLookbackDays,
+    requestedDate,
+    datePolicy: requestedDate ? "requested" : "per-iso-latest-complete",
+    rows,
+    summary: {
+      isoCount: rows.length,
+      completeIsoCount: rows.filter((row) => row.status === "ok").length,
+      partialIsoCount: rows.filter((row) => row.status === "partial").length,
+      missingIsoCount: rows.filter((row) => row.status === "missing").length,
+      latestAsOf,
+    },
+  };
+
+  return {
+    payload,
+    rowCount: rows.length,
+    dataAsOf: latestAsOf,
+  };
 }
 
 export async function buildPowerLmpSettlesPayload({

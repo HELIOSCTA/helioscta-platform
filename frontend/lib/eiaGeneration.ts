@@ -154,6 +154,8 @@ export type EiaGenerationYoyMetricKey =
   | "solarMw"
   | "solarSharePct";
 
+export const EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH = 8;
+
 export interface EiaGenerationKpi {
   key: EiaGenerationMetricKey;
   label: string;
@@ -233,6 +235,162 @@ export interface EiaGenerationDailyRow {
   otherSharePct: number | null;
 }
 
+export interface EiaGenerationMonthlyRow {
+  month: string;
+  monthNumber: number;
+  currentYear: number | null;
+  priorYear: number | null;
+  currentDayCount: number;
+  priorDayCount: number;
+  demandMw: number | null;
+  priorDemandMw: number | null;
+  demandDeltaMw: number | null;
+  netGenerationMw: number | null;
+  priorNetGenerationMw: number | null;
+  netGenerationDeltaMw: number | null;
+  gasMw: number | null;
+  priorGasMw: number | null;
+  gasDeltaMw: number | null;
+  coalMw: number | null;
+  priorCoalMw: number | null;
+  coalDeltaMw: number | null;
+  nukeMw: number | null;
+  hydroMw: number | null;
+  priorHydroMw: number | null;
+  hydroDeltaMw: number | null;
+  windMw: number | null;
+  priorWindMw: number | null;
+  windDeltaMw: number | null;
+  solarMw: number | null;
+  priorSolarMw: number | null;
+  solarDeltaMw: number | null;
+  otherMw: number | null;
+  renewableMw: number | null;
+  priorRenewableMw: number | null;
+  renewableDeltaMw: number | null;
+  gasSharePct: number | null;
+  priorGasSharePct: number | null;
+  gasShareDeltaPctPoint: number | null;
+  gasThermalPct: number | null;
+  priorGasThermalPct: number | null;
+  coalSharePct: number | null;
+  nukeSharePct: number | null;
+  hydroSharePct: number | null;
+  windSharePct: number | null;
+  solarSharePct: number | null;
+  otherSharePct: number | null;
+  renewableSharePct: number | null;
+  priorRenewableSharePct: number | null;
+}
+
+export interface EiaGenerationMonthlyPayload {
+  status: "available" | "source_pending";
+  aggregationGrain: string;
+  rows: EiaGenerationMonthlyRow[];
+  message: string | null;
+}
+
+export interface EiaGenerationRegionalHealthItem {
+  key: string;
+  label: string;
+  value: number | string | null;
+  unit: "count" | "status" | "pct" | "mw" | "bcfd";
+  status: "ok" | "warning" | "source_pending";
+  detail: string;
+}
+
+export interface EiaGenerationRegionalModelRow {
+  month: string;
+  monthNumber: number;
+  demandMw: number | null;
+  netGenerationMw: number | null;
+  gasMw: number | null;
+  coalMw: number | null;
+  thermalMw: number | null;
+  nuclearHydroMw: number | null;
+  renewableMw: number | null;
+  residualMw: number | null;
+  gasBurnBcfd: number | null;
+  monthlyGasBcf: number | null;
+  annualizedGasBcf: number | null;
+  days: number;
+  status: "available" | "source_pending";
+}
+
+export interface EiaGenerationRegionalModelingPayload {
+  status: "available" | "source_pending";
+  defaultHeatRateMmbtuPerMwh: number;
+  heatRateSourceStatus: "default" | "source_pending";
+  heatRateFormula: string;
+  snapshotReleaseAt: string | null;
+  snapshotStatus: "source_pending";
+  health: EiaGenerationRegionalHealthItem[];
+  powerBalanceRows: EiaGenerationRegionalModelRow[];
+  gasDemandRows: EiaGenerationRegionalModelRow[];
+  tradingViewRows: EiaGenerationRegionalModelRow[];
+  message: string | null;
+}
+
+export interface EiaGenerationYoyMtdKpi {
+  key:
+    | "currentAvgBcfd"
+    | "priorAvgBcfd"
+    | "deltaAvgBcfd"
+    | "currentTotalBcf"
+    | "priorTotalBcf"
+    | "monthEndProjectionDeltaBcf";
+  label: string;
+  unit: "bcfd" | "bcf";
+  current: number | null;
+  prior: number | null;
+  delta: number | null;
+  status: "available" | "source_pending";
+}
+
+export interface EiaGenerationMtdPathRow {
+  day: number;
+  currentDate: string | null;
+  priorDate: string | null;
+  currentBcfd: number | null;
+  priorBcfd: number | null;
+  deltaBcfd: number | null;
+  currentCumulativeBcf: number | null;
+  priorCumulativeBcf: number | null;
+  deltaCumulativeBcf: number | null;
+}
+
+export interface EiaGenerationMtdAttributionRow {
+  key: "load" | "renewables" | "coal_switch" | "nuke_hydro" | "residual";
+  label: string;
+  valueBcfd: number | null;
+  status: "available" | "source_pending";
+  detail: string;
+}
+
+export interface EiaGenerationYoyStackRow {
+  section: "Gas Burn" | "Demand" | "Supply";
+  metric: string;
+  unit: "bcfd" | "bcf" | "mw" | "pct";
+  current: number | null;
+  prior: number | null;
+  delta: number | null;
+  status: "available" | "source_pending";
+}
+
+export interface EiaGenerationYoyMtdPayload {
+  status: "available" | "source_pending";
+  selectedMonth: number | null;
+  selectedDay: number | null;
+  heatRateMmbtuPerMwh: number;
+  kpis: EiaGenerationYoyMtdKpi[];
+  cumulativePath: EiaGenerationMtdPathRow[];
+  attribution: EiaGenerationMtdAttributionRow[];
+  dailyDeltas: EiaGenerationMtdPathRow[];
+  stackRows: EiaGenerationYoyStackRow[];
+  monthEndProjectionBcf: number | null;
+  message: string | null;
+}
+
 export interface EiaGenerationSourceFreshness {
   sourceTable: string;
   sourceSystem: string;
@@ -263,6 +421,9 @@ export interface EiaGenerationPayload {
   priorTable: EiaGenerationDailyRow[];
   daily: EiaGenerationDailyRow[];
   kpis: EiaGenerationKpi[];
+  monthly: EiaGenerationMonthlyPayload;
+  regionalModeling: EiaGenerationRegionalModelingPayload;
+  yoyMtd: EiaGenerationYoyMtdPayload;
   freshness: EiaGenerationSourceFreshness;
   weatherBySeason: Record<EiaGenerationSeason, EiaGenerationWeatherSeasonData>;
   demandStatus: "available" | "source_pending";

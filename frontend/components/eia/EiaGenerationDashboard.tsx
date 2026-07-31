@@ -8,6 +8,7 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Legend,
   Line,
   LineChart,
   ReferenceLine,
@@ -21,6 +22,7 @@ import {
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
+  EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
   EIA_GENERATION_FUEL_COLORS,
   EIA_GENERATION_PAGE_TABS,
   EIA_GENERATION_REGIONS,
@@ -28,12 +30,17 @@ import {
   EIA_GENERATION_SOURCE_TABLE,
   getEiaGenerationRegion,
   type EiaGenerationDailyRow,
+  type EiaGenerationMonthlyRow,
   type EiaGenerationMetricKey,
+  type EiaGenerationMtdPathRow,
   type EiaGenerationPayload,
   type EiaGenerationPageTab,
+  type EiaGenerationRegionalModelRow,
   type EiaGenerationRegion,
   type EiaGenerationSeason,
   type EiaGenerationWeatherSeasonData,
+  type EiaGenerationYoyMtdPayload,
+  type EiaGenerationYoyStackRow,
   type EiaGenerationYoyMetricKey,
 } from "@/lib/eiaGeneration";
 
@@ -62,39 +69,13 @@ interface MonthlyDeltaRow {
   delta: number | null;
 }
 
-interface MonthlyAverageRow {
-  month: string;
-  currentDemandMw: number | null;
-  priorDemandMw: number | null;
-  demandDeltaMw: number | null;
-  currentNetGenerationMw: number | null;
-  gasMw: number | null;
-  coalMw: number | null;
-  windMw: number | null;
-  solarMw: number | null;
-  gasThermalPct: number | null;
-  renewableSharePct: number | null;
+interface LocalRegionalModelRow extends EiaGenerationRegionalModelRow {
+  heatRateMmbtuPerMwh: number;
 }
 
-interface MtdMetricRow {
-  key: "demand" | "net" | "gas" | "coal" | "wind" | "solar" | "gasThermal";
-  label: string;
-  unit: "mw" | "pct";
-  color: string;
-  current: number | null;
-  prior: number | null;
-  delta: number | null;
-}
-
-interface RegionalModelRow {
-  label: string;
-  value: string;
-  detail: string;
-  tone: "demand" | "thermal" | EiaGenerationMetricKey;
-}
+type HeatRateScope = "region" | "all";
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const DEFAULT_REGION: EiaGenerationRegion = "US48";
 const DEFAULT_SEASON: EiaGenerationSeason = "summer";
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTH_TICKS = MONTH_LABELS.map((_, index) => `${String(index + 1).padStart(2, "0")}-01`);
@@ -144,21 +125,27 @@ const YOY_METRICS: Array<{
 ];
 
 const MONTHLY_AVERAGE_COLUMNS: Array<{
-  key: keyof MonthlyAverageRow;
+  key: keyof EiaGenerationMonthlyRow;
   label: string;
-  kind: "text" | "mw" | "pct" | "delta";
+  kind: "text" | "mw" | "pct";
+  tone?: EiaGenerationMetricKey | "net";
 }> = [
   { key: "month", label: "Month", kind: "text" },
-  { key: "currentDemandMw", label: "Demand", kind: "mw" },
-  { key: "priorDemandMw", label: "Prior Demand", kind: "mw" },
-  { key: "demandDeltaMw", label: "Demand YoY", kind: "delta" },
-  { key: "currentNetGenerationMw", label: "Net Gen", kind: "mw" },
-  { key: "gasMw", label: "Gas", kind: "mw" },
-  { key: "coalMw", label: "Coal", kind: "mw" },
-  { key: "windMw", label: "Wind", kind: "mw" },
-  { key: "solarMw", label: "Solar", kind: "mw" },
-  { key: "gasThermalPct", label: "Gas % Thermal", kind: "pct" },
-  { key: "renewableSharePct", label: "Renewable %", kind: "pct" },
+  { key: "netGenerationMw", label: "Net Gen", kind: "mw", tone: "net" },
+  { key: "gasMw", label: "Gas Gen", kind: "mw", tone: "gas" },
+  { key: "coalMw", label: "Coal Gen", kind: "mw", tone: "coal" },
+  { key: "nukeMw", label: "Nuke Gen", kind: "mw", tone: "nuke" },
+  { key: "hydroMw", label: "Hydro Gen", kind: "mw", tone: "hydro" },
+  { key: "windMw", label: "Wind Gen", kind: "mw", tone: "wind" },
+  { key: "solarMw", label: "Solar Gen", kind: "mw", tone: "solar" },
+  { key: "otherMw", label: "Other Gen", kind: "mw", tone: "other" },
+  { key: "gasSharePct", label: "Gas %", kind: "pct", tone: "gas" },
+  { key: "coalSharePct", label: "Coal %", kind: "pct", tone: "coal" },
+  { key: "nukeSharePct", label: "Nuke %", kind: "pct", tone: "nuke" },
+  { key: "hydroSharePct", label: "Hydro %", kind: "pct", tone: "hydro" },
+  { key: "windSharePct", label: "Wind %", kind: "pct", tone: "wind" },
+  { key: "solarSharePct", label: "Solar %", kind: "pct", tone: "solar" },
+  { key: "otherSharePct", label: "Other %", kind: "pct", tone: "other" },
 ];
 
 const TONE_TEXT_CLASSES: Record<EiaGenerationMetricKey | "thermal" | "net" | "demand", string> = {
@@ -173,11 +160,6 @@ const TONE_TEXT_CLASSES: Record<EiaGenerationMetricKey | "thermal" | "net" | "de
   net: "text-gray-200",
   demand: "text-sky-300",
 };
-
-function initialRegionFromLocation(): EiaGenerationRegion {
-  if (typeof window === "undefined") return DEFAULT_REGION;
-  return getEiaGenerationRegion(new URLSearchParams(window.location.search).get("region")).key;
-}
 
 function parseSeason(value: string | null): EiaGenerationSeason | null {
   return value === "summer" || value === "winter" ? value : null;
@@ -202,18 +184,6 @@ function seasonFromDate(value: string): EiaGenerationSeason {
   return EIA_GENERATION_SEASON_OPTIONS.find((option) => option.key === "winter")?.months.includes(month)
     ? "winter"
     : "summer";
-}
-
-function initialSeasonFromLocation(): EiaGenerationSeason {
-  if (typeof window === "undefined") return DEFAULT_SEASON;
-  const params = new URLSearchParams(window.location.search);
-  const routedDate = parseIsoDate(params.get("date") ?? params.get("endDate"));
-  return parseSeason(params.get("season")) ?? (routedDate ? seasonFromDate(routedDate) : DEFAULT_SEASON);
-}
-
-function initialTabFromLocation(): EiaGenerationPageTab {
-  if (typeof window === "undefined") return "home";
-  return parsePageTab(new URLSearchParams(window.location.search).get("tab")) ?? "home";
 }
 
 function seasonDayIndex(season: EiaGenerationSeason, monthDay: string): number {
@@ -288,6 +258,28 @@ function fmtDeltaMw(value: number | null | undefined): string {
 function fmtWeather(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return value.toFixed(1);
+}
+
+function fmtBcfd(value: number | null | undefined, suffix = false): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const formatted = value.toFixed(2);
+  return suffix ? `${formatted} Bcf/d` : formatted;
+}
+
+function fmtBcf(value: number | null | undefined, suffix = false): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  const formatted = value.toFixed(1);
+  return suffix ? `${formatted} Bcf` : formatted;
+}
+
+function fmtDeltaBcfd(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
+function fmtDeltaBcf(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}`;
 }
 
 function fmtDate(value: string | null | undefined): string {
@@ -427,180 +419,98 @@ function buildMonthlyDeltaRows(payload: EiaGenerationPayload, key: EiaGeneration
   });
 }
 
-function avgDailyMetric(
-  rows: EiaGenerationDailyRow[],
-  key: keyof EiaGenerationDailyRow,
+function scaleBcfValue(
+  value: number | null,
+  heatRateMmbtuPerMwh: number,
+  sourceHeatRateMmbtuPerMwh: number,
+  digits = 2,
 ): number | null {
-  return round(avg(rows.map((row) => toNumber(row[key]))));
-}
-
-function renewableShare(row: EiaGenerationDailyRow): number | null {
-  const renewableMw = [row.hydroMw, row.windMw, row.solarMw]
-    .map(toNumber)
-    .reduce<number | null>((sum, value) => (value === null ? sum : (sum ?? 0) + value), null);
-  return pctLocal(renewableMw, row.netGenerationMw);
-}
-
-function pctLocal(numerator: number | null, denominator: number | null): number | null {
-  if (numerator === null || denominator === null || denominator === 0) return null;
-  return round((numerator / denominator) * 100, 1);
-}
-
-function buildMonthlyAverageRows(payload: EiaGenerationPayload): MonthlyAverageRow[] {
-  const currentYear = payload.currentYear;
-  const priorYear = payload.priorYear;
-  if (!currentYear || !priorYear) {
-    return MONTH_LABELS.map((month) => ({
-      month,
-      currentDemandMw: null,
-      priorDemandMw: null,
-      demandDeltaMw: null,
-      currentNetGenerationMw: null,
-      gasMw: null,
-      coalMw: null,
-      windMw: null,
-      solarMw: null,
-      gasThermalPct: null,
-      renewableSharePct: null,
-    }));
+  if (value === null || !Number.isFinite(value) || !Number.isFinite(heatRateMmbtuPerMwh)) {
+    return null;
   }
+  if (!Number.isFinite(sourceHeatRateMmbtuPerMwh) || sourceHeatRateMmbtuPerMwh === 0) {
+    return value;
+  }
+  return round(value * (heatRateMmbtuPerMwh / sourceHeatRateMmbtuPerMwh), digits);
+}
 
-  return MONTH_LABELS.map((month, index) => {
-    const monthNumber = index + 1;
-    const currentRows = payload.daily.filter(
-      (row) => row.year === currentYear && row.month === monthNumber,
-    );
-    const priorRows = payload.daily.filter(
-      (row) => row.year === priorYear && row.month === monthNumber,
-    );
-    const currentDemandMw = avgDailyMetric(currentRows, "demandMw");
-    const priorDemandMw = avgDailyMetric(priorRows, "demandMw");
+function gasBcfdFromMw(gasMw: number | null, heatRateMmbtuPerMwh: number): number | null {
+  if (gasMw === null || !Number.isFinite(gasMw) || !Number.isFinite(heatRateMmbtuPerMwh)) {
+    return null;
+  }
+  return round((gasMw * heatRateMmbtuPerMwh * 24) / 1_000_000, 3);
+}
+
+function applyHeatRateToRegionalRows(
+  rows: EiaGenerationRegionalModelRow[],
+  heatRateForMonth: (monthNumber: number) => number,
+): LocalRegionalModelRow[] {
+  return rows.map((row) => {
+    const heatRateMmbtuPerMwh = heatRateForMonth(row.monthNumber);
+    const gasBurnBcfd = gasBcfdFromMw(row.gasMw, heatRateMmbtuPerMwh);
+    const monthlyGasBcf =
+      gasBurnBcfd === null || row.days === 0 ? null : round(gasBurnBcfd * row.days, 2);
     return {
-      month,
-      currentDemandMw,
-      priorDemandMw,
-      demandDeltaMw:
-        currentDemandMw === null || priorDemandMw === null ? null : round(currentDemandMw - priorDemandMw),
-      currentNetGenerationMw: avgDailyMetric(currentRows, "netGenerationMw"),
-      gasMw: avgDailyMetric(currentRows, "gasMw"),
-      coalMw: avgDailyMetric(currentRows, "coalMw"),
-      windMw: avgDailyMetric(currentRows, "windMw"),
-      solarMw: avgDailyMetric(currentRows, "solarMw"),
-      gasThermalPct: avgDailyMetric(currentRows, "gasThermalPct"),
-      renewableSharePct: round(avg(currentRows.map(renewableShare))),
+      ...row,
+      heatRateMmbtuPerMwh,
+      gasBurnBcfd,
+      monthlyGasBcf,
+      annualizedGasBcf:
+        gasBurnBcfd === null ? null : round(gasBurnBcfd * 365, 1),
     };
   });
 }
 
-function buildMtdMetricRows(payload: EiaGenerationPayload): MtdMetricRow[] {
-  const selectedDate = payload.selectedDate;
-  const currentYear = payload.currentYear;
-  const priorYear = payload.priorYear;
-  if (!selectedDate || !currentYear || !priorYear) return [];
-  const selectedMonth = Number.parseInt(selectedDate.slice(5, 7), 10);
-  const selectedDay = Number.parseInt(selectedDate.slice(8, 10), 10);
-  const currentRows = payload.daily.filter(
-    (row) => row.year === currentYear && row.month === selectedMonth && row.day <= selectedDay,
-  );
-  const priorRows = payload.daily.filter(
-    (row) => row.year === priorYear && row.month === selectedMonth && row.day <= selectedDay,
-  );
-  const configs: Array<{
-    key: MtdMetricRow["key"];
-    label: string;
-    unit: "mw" | "pct";
-    color: string;
-    selector: (row: EiaGenerationDailyRow) => number | null;
-  }> = [
-    { key: "demand", label: "Demand", unit: "mw", color: "#38bdf8", selector: (row) => row.demandMw },
-    { key: "net", label: "Net Gen", unit: "mw", color: "#e5e7eb", selector: (row) => row.netGenerationMw },
-    { key: "gas", label: "Gas", unit: "mw", color: EIA_GENERATION_FUEL_COLORS.gas, selector: (row) => row.gasMw },
-    { key: "coal", label: "Coal", unit: "mw", color: EIA_GENERATION_FUEL_COLORS.coal, selector: (row) => row.coalMw },
-    { key: "wind", label: "Wind", unit: "mw", color: EIA_GENERATION_FUEL_COLORS.wind, selector: (row) => row.windMw },
-    { key: "solar", label: "Solar", unit: "mw", color: EIA_GENERATION_FUEL_COLORS.solar, selector: (row) => row.solarMw },
-    { key: "gasThermal", label: "Gas % Thermal", unit: "pct", color: EIA_GENERATION_FUEL_COLORS.gas, selector: (row) => row.gasThermalPct },
-  ];
-
-  return configs.map((config) => {
-    const current = round(avg(currentRows.map(config.selector)));
-    const prior = round(avg(priorRows.map(config.selector)));
-    return {
-      key: config.key,
-      label: config.label,
-      unit: config.unit,
-      color: config.color,
-      current,
-      prior,
-      delta: current === null || prior === null ? null : round(current - prior),
-    };
+function scaleYoyMtdPayload(
+  payload: EiaGenerationYoyMtdPayload,
+  heatRateMmbtuPerMwh: number,
+): EiaGenerationYoyMtdPayload {
+  const sourceHeatRate = payload.heatRateMmbtuPerMwh || EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH;
+  const scale = (value: number | null, digits = 2) =>
+    scaleBcfValue(value, heatRateMmbtuPerMwh, sourceHeatRate, digits);
+  const scalePath = (row: EiaGenerationMtdPathRow): EiaGenerationMtdPathRow => ({
+    ...row,
+    currentBcfd: scale(row.currentBcfd, 3),
+    priorBcfd: scale(row.priorBcfd, 3),
+    deltaBcfd: scale(row.deltaBcfd, 3),
+    currentCumulativeBcf: scale(row.currentCumulativeBcf, 2),
+    priorCumulativeBcf: scale(row.priorCumulativeBcf, 2),
+    deltaCumulativeBcf: scale(row.deltaCumulativeBcf, 2),
   });
+
+  return {
+    ...payload,
+    heatRateMmbtuPerMwh,
+    kpis: payload.kpis.map((kpi) => ({
+      ...kpi,
+      current: scale(kpi.current, kpi.unit === "bcfd" ? 3 : 2),
+      prior: scale(kpi.prior, kpi.unit === "bcfd" ? 3 : 2),
+      delta: scale(kpi.delta, kpi.unit === "bcfd" ? 3 : 2),
+    })),
+    cumulativePath: payload.cumulativePath.map(scalePath),
+    dailyDeltas: payload.dailyDeltas.map(scalePath),
+    attribution: payload.attribution.map((row) => ({
+      ...row,
+      valueBcfd: scale(row.valueBcfd, 3),
+    })),
+    stackRows: payload.stackRows.map((row) => {
+      if (row.unit !== "bcfd" && row.unit !== "bcf") return row;
+      return {
+        ...row,
+        current: scale(row.current, row.unit === "bcfd" ? 3 : 2),
+        prior: scale(row.prior, row.unit === "bcfd" ? 3 : 2),
+        delta: scale(row.delta, row.unit === "bcfd" ? 3 : 2),
+      };
+    }),
+    monthEndProjectionBcf: scale(payload.monthEndProjectionBcf, 2),
+  };
 }
 
-function buildMtdChartRows(payload: EiaGenerationPayload): YoyChartRow[] {
-  const selectedDate = payload.selectedDate;
-  const currentYear = payload.currentYear;
-  const priorYear = payload.priorYear;
-  if (!selectedDate || !currentYear || !priorYear) return [];
-  const selectedMonth = Number.parseInt(selectedDate.slice(5, 7), 10);
-  const selectedDay = Number.parseInt(selectedDate.slice(8, 10), 10);
-  const currentByDay = new Map(
-    payload.daily
-      .filter((row) => row.year === currentYear && row.month === selectedMonth && row.day <= selectedDay)
-      .map((row) => [row.day, row]),
-  );
-  const priorByDay = new Map(
-    payload.daily
-      .filter((row) => row.year === priorYear && row.month === selectedMonth && row.day <= selectedDay)
-      .map((row) => [row.day, row]),
-  );
-
-  return Array.from({ length: selectedDay }, (_, index) => index + 1).map((day) => ({
-    monthDay: String(day).padStart(2, "0"),
-    current: toNumber(currentByDay.get(day)?.demandMw),
-    prior: toNumber(priorByDay.get(day)?.demandMw),
-  }));
-}
-
-function buildRegionalModelRows(
-  payload: EiaGenerationPayload,
-  weather: EiaGenerationWeatherSeasonData,
-): RegionalModelRow[] {
-  const latest = payload.selectedDate
-    ? payload.daily.find((row) => row.date === payload.selectedDate)
-    : undefined;
-  const demandMw = toNumber(latest?.demandMw);
-  const netGenerationMw = toNumber(latest?.netGenerationMw);
-  const thermalMw = [latest?.gasMw, latest?.coalMw]
-    .map(toNumber)
-    .reduce<number | null>((sum, value) => (value === null ? sum : (sum ?? 0) + value), null);
-  const renewablePct = latest ? renewableShare(latest) : null;
-  const currentWeatherPoint = weather.currentPoints.at(-1);
-  return [
-    {
-      label: "Demand minus net generation",
-      value: fmtDeltaMw(demandMw === null || netGenerationMw === null ? null : demandMw - netGenerationMw),
-      detail: `${fmtMw(demandMw, true)} demand | ${fmtMw(netGenerationMw, true)} net gen`,
-      tone: "demand",
-    },
-    {
-      label: "Thermal dispatch",
-      value: fmtMw(thermalMw, true),
-      detail: `${fmtPct(latest?.thermalSharePct)} of net generation`,
-      tone: "thermal",
-    },
-    {
-      label: "Renewables",
-      value: fmtPct(renewablePct),
-      detail: "Hydro + wind + solar share of net generation",
-      tone: "wind",
-    },
-    {
-      label: "Weather anomaly",
-      value: fmtDeltaMw(currentWeatherPoint?.demandAnomalyMw),
-      detail: `${weather.entityLabel ?? weather.entityId ?? "Weather"} | ${weather.metricLabel}`,
-      tone: "solar",
-    },
-  ];
+function formatStackValue(value: number | null, unit: EiaGenerationYoyStackRow["unit"]): string {
+  if (unit === "bcfd") return fmtBcfd(value);
+  if (unit === "bcf") return fmtBcf(value);
+  if (unit === "pct") return fmtPct(value);
+  return fmtMw(value);
 }
 
 function cellValue(row: EiaGenerationDailyRow, column: (typeof TABLE_COLUMNS)[number]): ReactNode {
@@ -671,6 +581,50 @@ function KpiCard({ kpi }: { kpi: EiaGenerationPayload["kpis"][number] }) {
         <Sparkline points={kpi.sparkline} color={color} />
       </div>
     </div>
+  );
+}
+
+function ChartCard({
+  title,
+  subtitle,
+  help,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  help: string;
+  children: (focused: boolean) => ReactNode;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <section
+      className={`rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4 ${
+        focused ? "xl:col-span-2" : ""
+      }`}
+    >
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-semibold text-gray-100">{title}</h2>
+          {subtitle && <p className="mt-1 text-xs text-gray-500">{subtitle}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            title={help}
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-700 text-[11px] font-semibold text-gray-500"
+          >
+            ?
+          </span>
+          <button
+            type="button"
+            onClick={() => setFocused((current) => !current)}
+            className="h-6 rounded-md border border-gray-700 px-2 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+          >
+            {focused ? "Exit" : "Focus"}
+          </button>
+        </div>
+      </div>
+      {children(focused)}
+    </section>
   );
 }
 
@@ -790,6 +744,26 @@ function SourceContractStrip({ data }: { data: EiaGenerationPayload }) {
   );
 }
 
+function SourceStatusBanner({ data }: { data: EiaGenerationPayload }) {
+  const ageDays = dateAgeDays(data.latestDate);
+  const stale = ageDays !== null && ageDays > 3;
+  const missingSources = data.metadata.missingSources;
+  if (!stale && missingSources.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+      <p className="font-semibold">
+        {stale ? `Latest EIA day is ${ageDays} days old.` : "Some dashboard inputs are source-pending."}
+      </p>
+      {missingSources.length > 0 && (
+        <p className="mt-1 text-xs text-yellow-200/80">
+          Pending inputs: {missingSources.join(", ")}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function DailyGenerationTable({
   title,
   rows,
@@ -863,6 +837,7 @@ function YoyMetricPanel({
   payload: EiaGenerationPayload;
   metric: (typeof YOY_METRICS)[number];
 }) {
+  const [focused, setFocused] = useState(false);
   const rows = useMemo(() => buildYoyRows(payload, metric.key), [payload, metric.key]);
   const monthlyDeltas = useMemo(
     () => buildMonthlyDeltaRows(payload, metric.key),
@@ -879,22 +854,36 @@ function YoyMetricPanel({
     metric.unit === "pct"
       ? (value: unknown) => fmtPct(toNumber(value))
       : (value: unknown) => fmtMw(toNumber(value), true);
+  const chartHeight = focused ? "h-[520px]" : metric.showMonthlyDelta ? "h-[230px]" : "h-[320px]";
+  const emptyHeight = focused ? "h-[520px]" : "h-[320px]";
 
   return (
-    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
+    <section className={`rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4 ${focused ? "xl:col-span-2" : ""}`}>
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">
             {payload.region.label} - {metric.label}: {currentYear} vs {priorYear}
           </h2>
         </div>
-        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-gray-700 text-[11px] font-semibold text-gray-500">
-          ?
-        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <span
+            title="Current-year and prior-year daily EIA values aligned by month-day."
+            className="flex h-6 w-6 items-center justify-center rounded-md border border-gray-700 text-[11px] font-semibold text-gray-500"
+          >
+            ?
+          </span>
+          <button
+            type="button"
+            onClick={() => setFocused((current) => !current)}
+            className="h-6 rounded-md border border-gray-700 px-2 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+          >
+            {focused ? "Exit" : "Focus"}
+          </button>
+        </div>
       </div>
       {hasRows ? (
         <>
-          <div className={metric.showMonthlyDelta ? "h-[230px]" : "h-[320px]"}>
+          <div className={chartHeight}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={rows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
                 <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
@@ -968,7 +957,7 @@ function YoyMetricPanel({
           )}
         </>
       ) : (
-        <div className="flex h-[320px] items-center justify-center rounded-md border border-gray-800 bg-gray-950/40 text-sm text-gray-500">
+        <div className={`flex ${emptyHeight} items-center justify-center rounded-md border border-gray-800 bg-gray-950/40 text-sm text-gray-500`}>
           No YoY rows are available for this metric.
         </div>
       )}
@@ -977,51 +966,17 @@ function YoyMetricPanel({
 }
 
 function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
-  const rows = useMemo(() => buildMonthlyAverageRows(payload), [payload]);
-  const chartRows = rows.map((row) => ({
-    month: row.month,
-    gas: row.gasMw,
-    coal: row.coalMw,
-    wind: row.windMw,
-    solar: row.solarMw,
-  }));
+  const rows = payload.monthly.rows;
+  const hasRows = rows.some((row) => row.currentDayCount > 0);
 
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-gray-100">
-            {payload.region.label} Monthly Fuel Stack
-          </h2>
-          <p className="mt-1 text-xs text-gray-500">
-            {payload.currentYear ?? "-"} daily-average MW by month
-          </p>
-        </div>
-        <div className="h-[300px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
-              <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
-              <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
-              <YAxis
-                tick={{ fill: "#9ca3af", fontSize: 11 }}
-                tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-                width={58}
-              />
-              <Tooltip
-                contentStyle={tooltipStyle()}
-                formatter={(value, name) => [fmtMw(toNumber(value), true), String(name)]}
-              />
-              <Bar dataKey="gas" stackId="fuel" name="Gas" fill={EIA_GENERATION_FUEL_COLORS.gas} isAnimationActive={false} />
-              <Bar dataKey="coal" stackId="fuel" name="Coal" fill={EIA_GENERATION_FUEL_COLORS.coal} isAnimationActive={false} />
-              <Bar dataKey="wind" stackId="fuel" name="Wind" fill={EIA_GENERATION_FUEL_COLORS.wind} isAnimationActive={false} />
-              <Bar dataKey="solar" stackId="fuel" name="Solar" fill={EIA_GENERATION_FUEL_COLORS.solar} isAnimationActive={false} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
-      <DataTableShell title={`${payload.region.label} Monthly Averages`} bodyClassName="border-gray-800">
-        <table className="w-full min-w-[1160px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+      <DataTableShell
+        title={`${payload.region.label} - Monthly Generation Mix (Avg MW)`}
+        subtitle={`${payload.currentYear ?? "-"} rows are monthly averages of daily EIA-930 average MW. Latest incomplete month is month-to-date.`}
+        bodyClassName="border-gray-800"
+      >
+        <table className="w-full min-w-[1760px] border-collapse bg-[#0d1119] text-xs text-gray-200">
           <thead className="bg-gray-950 text-gray-500">
             <tr>
               {MONTHLY_AVERAGE_COLUMNS.map((column) => (
@@ -1047,20 +1002,13 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
                       ? String(value)
                       : column.kind === "pct"
                         ? fmtPct(numeric)
-                        : column.kind === "delta"
-                          ? fmtDeltaMw(numeric)
-                          : fmtMw(numeric);
-                  const deltaClass =
-                    column.kind === "delta" && numeric !== null
-                      ? numeric >= 0
-                        ? "text-emerald-300"
-                        : "text-rose-300"
-                      : "text-gray-200";
+                        : fmtMw(numeric);
+                  const toneClass = column.tone ? TONE_TEXT_CLASSES[column.tone] : "text-gray-200";
                   return (
                     <td
                       key={`${row.month}-${String(column.key)}`}
                       className={`px-3 py-2 tabular-nums ${
-                        column.kind === "text" ? "text-left font-semibold text-gray-100" : `text-right ${deltaClass}`
+                        column.kind === "text" ? "text-left font-semibold text-gray-100" : `text-right ${toneClass}`
                       }`}
                     >
                       {display}
@@ -1072,27 +1020,235 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
           </tbody>
         </table>
       </DataTableShell>
+
+      {!hasRows && (
+        <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+          {payload.monthly.message ?? "Monthly generation rows are source-pending."}
+        </div>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <ChartCard
+          title="YoY Change in Generation by Fuel Type"
+          subtitle="Demand, gas, and coal deltas use same-month day counts."
+          help="Demand comes from EIA-930 region data. Gas and coal come from EIA-930 generation by fuel."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtDeltaMw(toNumber(value)), String(name)]} />
+                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="demandDeltaMw" name="Demand" fill="#38bdf8" isAnimationActive={false} />
+                  <Bar dataKey="gasDeltaMw" name="Gas" fill={EIA_GENERATION_FUEL_COLORS.gas} isAnimationActive={false} />
+                  <Bar dataKey="coalDeltaMw" name="Coal" fill={EIA_GENERATION_FUEL_COLORS.coal} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Gas % of Thermal Monthly Trend"
+          subtitle={`${payload.currentYear ?? "-"} vs ${payload.priorYear ?? "-"}`}
+          help="Thermal is defined as gas plus coal. The prior year is aligned to the same day count for incomplete current months."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtPct(toNumber(value)), String(name)]} />
+                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                  <Line type="monotone" dataKey="gasThermalPct" name={String(payload.currentYear ?? "Current")} stroke={EIA_GENERATION_FUEL_COLORS.gas} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorGasThermalPct" name={String(payload.priorYear ?? "Prior")} stroke={EIA_GENERATION_FUEL_COLORS.gas} strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="YoY Net Generation"
+          subtitle="Average MW delta by month"
+          help="Net generation is EIA region net generation when available, otherwise summed fuel generation."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [fmtDeltaMw(toNumber(value)), "Net gen delta"]} />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="netGenerationDeltaMw" name="Net Gen YoY" isAnimationActive={false}>
+                    {rows.map((row) => (
+                      <Cell key={row.month} fill={(row.netGenerationDeltaMw ?? 0) >= 0 ? "#059669" : "#dc2626"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="YoY Gas Share"
+          subtitle="Gas share of total generation"
+          help="Gas share is gas average MW divided by net generation average MW."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}pp`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [fmtDeltaPct(toNumber(value)), "Gas share delta"]} />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="gasShareDeltaPctPoint" name="Gas Share YoY" fill={EIA_GENERATION_FUEL_COLORS.gas} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="YoY Change in Renewables Generation"
+          subtitle="Wind, solar, and hydro average MW deltas"
+          help="Renewables here follow the Edi target chart: wind, solar, and hydro generation deltas."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtDeltaMw(toNumber(value)), String(name)]} />
+                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="windDeltaMw" name="Wind" fill={EIA_GENERATION_FUEL_COLORS.wind} isAnimationActive={false} />
+                  <Bar dataKey="solarDeltaMw" name="Solar" fill={EIA_GENERATION_FUEL_COLORS.solar} isAnimationActive={false} />
+                  <Bar dataKey="hydroDeltaMw" name="Hydro" fill={EIA_GENERATION_FUEL_COLORS.hydro} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Renewables Penetration Trend"
+          subtitle={`${payload.currentYear ?? "-"} vs ${payload.priorYear ?? "-"}`}
+          help="Renewables penetration is hydro plus wind plus solar divided by net generation."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[500px]" : "h-[300px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
+                  <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtPct(toNumber(value)), String(name)]} />
+                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                  <Line type="monotone" dataKey="renewableSharePct" name={String(payload.currentYear ?? "Current")} stroke="#14b8a6" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorRenewableSharePct" name={String(payload.priorYear ?? "Prior")} stroke="#14b8a6" strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+      </div>
     </div>
   );
 }
 
 function RegionalModelingTab({
   payload,
-  season,
+  heatRateMmbtuPerMwh,
+  onHeatRateChange,
 }: {
   payload: EiaGenerationPayload;
-  season: EiaGenerationSeason;
+  heatRateMmbtuPerMwh: number;
+  onHeatRateChange: (value: number) => void;
 }) {
-  const weather = payload.weatherBySeason[season];
-  const rows = useMemo(() => buildRegionalModelRows(payload, weather), [payload, weather]);
+  const [overrideScope, setOverrideScope] = useState<HeatRateScope>("region");
+  const [monthlyOverrides, setMonthlyOverrides] = useState<Record<number, string>>({});
+  const defaultHeatRate = payload.regionalModeling.defaultHeatRateMmbtuPerMwh;
+  const modelRows = useMemo(
+    () =>
+      applyHeatRateToRegionalRows(payload.regionalModeling.powerBalanceRows, (monthNumber) => {
+        const parsed = Number(monthlyOverrides[monthNumber]);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : heatRateMmbtuPerMwh;
+      }),
+    [payload.regionalModeling.powerBalanceRows, heatRateMmbtuPerMwh, monthlyOverrides],
+  );
+  const avgBcfd = round(avg(modelRows.map((row) => row.gasBurnBcfd)), 2);
+  const monthlyBcfValues = modelRows
+    .map((row) => row.monthlyGasBcf)
+    .filter((value): value is number => value !== null);
+  const annualBcf = monthlyBcfValues.length
+    ? round(monthlyBcfValues.reduce((total, value) => total + value, 0), 1)
+    : null;
+  const healthWarnings = payload.regionalModeling.health.filter(
+    (item) => item.status !== "ok",
+  ).length;
+  const summaryCards = [
+    {
+      label: "Model Region",
+      value: payload.region.label,
+      detail: payload.region.name,
+      tone: "text-sky-300",
+    },
+    {
+      label: "Avg Bcf/d",
+      value: fmtBcfd(avgBcfd),
+      detail: `Heat rate ${heatRateMmbtuPerMwh.toFixed(2)} MMBtu/MWh`,
+      tone: "text-amber-300",
+    },
+    {
+      label: "Annual Bcf",
+      value: fmtBcf(annualBcf),
+      detail: "Loaded current-year months only",
+      tone: "text-emerald-300",
+    },
+    {
+      label: "Snapshot Release",
+      value: payload.regionalModeling.snapshotReleaseAt
+        ? fmtDateTime(payload.regionalModeling.snapshotReleaseAt)
+        : "Source pending",
+      detail: "EA/API snapshot contract is not promoted",
+      tone: "text-yellow-300",
+    },
+    {
+      label: "Data Health",
+      value: healthWarnings === 0 ? "OK" : `${healthWarnings} flags`,
+      detail: payload.regionalModeling.message ?? "EIA generation model inputs",
+      tone: healthWarnings === 0 ? "text-emerald-300" : "text-yellow-300",
+    },
+  ];
+
+  const setMonthlyOverride = (monthNumber: number, value: string) => {
+    setMonthlyOverrides((current) => ({
+      ...current,
+      [monthNumber]: value,
+    }));
+  };
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-        {rows.map((row) => (
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {summaryCards.map((row) => (
           <div key={row.label} className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20">
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{row.label}</p>
-            <p className={`mt-2 text-xl font-semibold tabular-nums ${TONE_TEXT_CLASSES[row.tone]}`}>
+            <p className={`mt-2 truncate text-xl font-semibold tabular-nums ${row.tone}`}>
               {row.value}
             </p>
             <p className="mt-1 truncate text-xs text-gray-500" title={row.detail}>
@@ -1102,127 +1258,397 @@ function RegionalModelingTab({
         ))}
       </div>
 
-      <DataTableShell title={`${payload.region.label} Model Inputs`} bodyClassName="border-gray-800">
-        <table className="w-full min-w-[780px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
+        <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-100">Heat Rate Assumption</h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {payload.regionalModeling.heatRateFormula}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex h-8 items-center gap-2 rounded-md border border-gray-800 bg-gray-950/70 px-2 text-xs text-gray-500">
+              <span className="font-semibold uppercase tracking-wide">Base</span>
+              <input
+                type="number"
+                min="4"
+                max="14"
+                step="0.1"
+                value={heatRateMmbtuPerMwh}
+                onChange={(event) => {
+                  const parsed = Number(event.target.value);
+                  if (Number.isFinite(parsed) && parsed > 0) onHeatRateChange(parsed);
+                }}
+                className="h-6 w-20 bg-transparent text-right text-xs font-semibold tabular-nums text-gray-200 outline-none [color-scheme:dark]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => onHeatRateChange(defaultHeatRate)}
+              className="h-8 rounded-md border border-gray-800 bg-gray-900 px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-4 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Applied Default</p>
+            <p className="mt-1 text-sm font-semibold tabular-nums text-gray-200">{heatRateMmbtuPerMwh.toFixed(2)} MMBtu/MWh</p>
+          </div>
+          <div className="rounded-md border border-gray-800 bg-gray-950/60 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">API Default</p>
+            <p className="mt-1 text-sm font-semibold tabular-nums text-gray-200">{defaultHeatRate.toFixed(2)} MMBtu/MWh</p>
+          </div>
+          <div className="rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-yellow-300">Persistence</p>
+            <p className="mt-1 text-xs text-yellow-100">Source pending - overrides are local UI state only.</p>
+          </div>
+        </div>
+
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-lg border border-gray-800 bg-gray-950/70 p-1">
+            {([
+              { key: "region", label: payload.region.label },
+              { key: "all", label: "All Regions" },
+            ] satisfies Array<{ key: HeatRateScope; label: string }>).map((item) => {
+              const active = overrideScope === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setOverrideScope(item.key)}
+                  className={`h-8 rounded-md px-3 text-xs font-semibold transition-colors ${
+                    active ? "bg-blue-600 text-white" : "text-gray-500 hover:bg-gray-900 hover:text-gray-300"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMonthlyOverrides({})}
+              className="h-8 rounded-md border border-gray-800 bg-gray-900 px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
+            >
+              Clear Scope
+            </button>
+            <button
+              type="button"
+              onClick={() => setMonthlyOverrides({})}
+              className="h-8 rounded-md border border-gray-800 bg-gray-900 px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
+            >
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-6 xl:grid-cols-12">
+          {MONTH_LABELS.map((month, index) => {
+            const monthNumber = index + 1;
+            return (
+              <label key={month} className="rounded-md border border-gray-800 bg-gray-950/60 p-2">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-gray-500">{month}</span>
+                <input
+                  type="number"
+                  min="4"
+                  max="14"
+                  step="0.1"
+                  placeholder={heatRateMmbtuPerMwh.toFixed(1)}
+                  value={monthlyOverrides[monthNumber] ?? ""}
+                  onChange={(event) => setMonthlyOverride(monthNumber, event.target.value)}
+                  className="mt-1 h-7 w-full bg-transparent text-right text-xs font-semibold tabular-nums text-gray-200 outline-none [color-scheme:dark]"
+                />
+              </label>
+            );
+          })}
+        </div>
+      </section>
+
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {payload.regionalModeling.health.map((item) => {
+          const statusClass =
+            item.status === "ok"
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+              : item.status === "warning"
+                ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-100"
+                : "border-gray-700 bg-gray-950/60 text-gray-300";
+          return (
+            <div key={item.key} className={`rounded-lg border p-3 shadow-xl shadow-black/20 ${statusClass}`}>
+              <p className="text-[10px] font-bold uppercase tracking-wider opacity-70">{item.label}</p>
+              <p className="mt-2 text-xl font-semibold tabular-nums">{item.value ?? "-"}</p>
+              <p className="mt-1 line-clamp-2 text-xs opacity-70" title={item.detail}>{item.detail}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      <DataTableShell title={`${payload.region.label} Power Balance Model (${payload.currentYear ?? "-"})`} bodyClassName="border-gray-800">
+        <table className="w-full min-w-[1280px] border-collapse bg-[#0d1119] text-xs text-gray-200">
           <thead className="bg-gray-950 text-gray-500">
             <tr>
-              <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Input</th>
-              <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">Value</th>
-              <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Detail</th>
+              {["Month", "Demand", "Net Gen", "Gas", "Coal", "Thermal", "Nuke + Hydro", "Wind + Solar", "Demand - Net Gen", "Status"].map((column) => (
+                <th key={column} className={`px-3 py-2 font-semibold uppercase tracking-wide ${column === "Month" || column === "Status" ? "text-left" : "text-right"}`}>{column}</th>
+              ))}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
-            {rows.map((row) => (
-              <tr key={row.label} className="hover:bg-gray-900/60">
-                <td className="px-3 py-2 font-semibold text-gray-100">{row.label}</td>
-                <td className={`px-3 py-2 text-right font-semibold tabular-nums ${TONE_TEXT_CLASSES[row.tone]}`}>
-                  {row.value}
-                </td>
-                <td className="px-3 py-2 text-gray-400">{row.detail}</td>
+            {modelRows.map((row) => (
+              <tr key={row.month} className="hover:bg-gray-900/60">
+                <td className="px-3 py-2 font-semibold text-gray-100">{row.month}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-sky-300">{fmtMw(row.demandMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-200">{fmtMw(row.netGenerationMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-300">{fmtMw(row.gasMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-300">{fmtMw(row.coalMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-orange-200">{fmtMw(row.thermalMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-indigo-300">{fmtMw(row.nuclearHydroMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-cyan-300">{fmtMw(row.renewableMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-sky-300">{fmtDeltaMw(row.residualMw)}</td>
+                <td className="px-3 py-2 text-left text-gray-400">{row.status === "available" ? "Available" : "Source pending"}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </DataTableShell>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <WeatherResponsePanel weather={weather} />
-        <WeatherAnomalyPanel weather={weather} />
-      </div>
+      <DataTableShell title={`${payload.region.label} Gas Demand Conversion`} bodyClassName="border-gray-800">
+        <table className="w-full min-w-[980px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+          <thead className="bg-gray-950 text-gray-500">
+            <tr>
+              {["Month", "Gas MW", "Heat Rate", "Avg Bcf/d", "Monthly Bcf", "Annualized Bcf"].map((column) => (
+                <th key={column} className={`px-3 py-2 font-semibold uppercase tracking-wide ${column === "Month" ? "text-left" : "text-right"}`}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {modelRows.map((row) => (
+              <tr key={row.month} className="hover:bg-gray-900/60">
+                <td className="px-3 py-2 font-semibold text-gray-100">{row.month}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-300">{fmtMw(row.gasMw)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-200">{row.heatRateMmbtuPerMwh.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-300">{fmtBcfd(row.gasBurnBcfd)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-300">{fmtBcf(row.monthlyGasBcf)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-300">{fmtBcf(row.annualizedGasBcf)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTableShell>
+
+      <DataTableShell title={`${payload.region.label} Deduped Total Trading View`} bodyClassName="border-gray-800">
+        <table className="w-full min-w-[980px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+          <thead className="bg-gray-950 text-gray-500">
+            <tr>
+              {["Month", "Avg Bcf/d", "Monthly Bcf", "Annualized Bcf", "Data Health", "Snapshot"].map((column) => (
+                <th key={column} className={`px-3 py-2 font-semibold uppercase tracking-wide ${column === "Month" || column === "Data Health" || column === "Snapshot" ? "text-left" : "text-right"}`}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {modelRows.map((row) => (
+              <tr key={row.month} className="hover:bg-gray-900/60">
+                <td className="px-3 py-2 font-semibold text-gray-100">{row.month}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-amber-300">{fmtBcfd(row.gasBurnBcfd)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-300">{fmtBcf(row.monthlyGasBcf)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-emerald-300">{fmtBcf(row.annualizedGasBcf)}</td>
+                <td className="px-3 py-2 text-left text-gray-400">{row.status === "available" ? "Available" : "Source pending"}</td>
+                <td className="px-3 py-2 text-left text-yellow-300">Source pending</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTableShell>
     </div>
   );
 }
 
-function YoyMtdTab({ payload }: { payload: EiaGenerationPayload }) {
-  const rows = useMemo(() => buildMtdMetricRows(payload), [payload]);
-  const chartRows = useMemo(() => buildMtdChartRows(payload), [payload]);
+function YoyMtdTab({
+  payload,
+  heatRateMmbtuPerMwh,
+}: {
+  payload: EiaGenerationPayload;
+  heatRateMmbtuPerMwh: number;
+}) {
+  const mtd = useMemo(
+    () => scaleYoyMtdPayload(payload.yoyMtd, heatRateMmbtuPerMwh),
+    [payload.yoyMtd, heatRateMmbtuPerMwh],
+  );
   const currentYear = payload.currentYear ?? new Date().getUTCFullYear();
   const priorYear = payload.priorYear ?? currentYear - 1;
   const selectedMonthLabel = payload.selectedDate
     ? MONTH_LABELS[Number.parseInt(payload.selectedDate.slice(5, 7), 10) - 1]
     : null;
+  const attributionRows = mtd.attribution.map((row) => ({
+    ...row,
+    chartValue: row.valueBcfd ?? 0,
+  }));
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-        {rows.map((row) => {
-          const formatter = row.unit === "pct" ? fmtPct : fmtMw;
-          const deltaFormatter = row.unit === "pct" ? fmtDeltaPct : fmtDeltaMw;
-          const deltaClass =
-            row.delta === null
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        {mtd.kpis.map((row) => {
+          const showDelta =
+            row.key === "deltaAvgBcfd" || row.key === "monthEndProjectionDeltaBcf";
+          const primary = showDelta ? row.delta : row.current;
+          const formatter = row.unit === "bcfd" ? fmtBcfd : fmtBcf;
+          const deltaFormatter = row.unit === "bcfd" ? fmtDeltaBcfd : fmtDeltaBcf;
+          const primaryClass =
+            primary === null
               ? "text-gray-500"
-              : row.delta >= 0
-                ? "text-emerald-300"
-                : "text-rose-300";
+              : showDelta
+                ? primary >= 0
+                  ? "text-emerald-300"
+                  : "text-rose-300"
+                : "text-amber-300";
           return (
             <div key={row.key} className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20">
               <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{row.label}</p>
-              <p className="mt-2 text-xl font-semibold tabular-nums" style={{ color: row.color }}>
-                {formatter(row.current)}
+              <p className={`mt-2 text-xl font-semibold tabular-nums ${primaryClass}`}>
+                {showDelta ? deltaFormatter(primary) : formatter(primary)}
               </p>
-              <p className={`mt-1 text-xs font-semibold tabular-nums ${deltaClass}`}>
-                {deltaFormatter(row.delta)}
+              <p className="mt-1 text-xs font-semibold tabular-nums text-gray-500">
+                {row.prior !== null ? `LY ${formatter(row.prior)}` : `HR ${mtd.heatRateMmbtuPerMwh.toFixed(2)}`}
               </p>
             </div>
           );
         })}
       </div>
 
-      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="mb-3">
-          <h2 className="text-sm font-semibold text-gray-100">
-            {payload.region.label} Demand MTD: {currentYear} vs {priorYear}
-          </h2>
-          <p className="mt-1 text-xs text-gray-500">
-            {selectedMonthLabel ?? "Selected month"} through {fmtDate(payload.selectedDate)}
-          </p>
-        </div>
-        <div className="h-[340px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={chartRows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
-              <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
-              <XAxis dataKey="monthDay" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={12} />
-              <YAxis
-                tick={{ fill: "#9ca3af", fontSize: 11 }}
-                tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-                width={58}
-              />
-              <Tooltip
-                contentStyle={tooltipStyle()}
-                labelFormatter={(label) => `${selectedMonthLabel ?? "Day"} ${String(label)}`}
-                formatter={(value, name) => [fmtMw(toNumber(value), true), String(name)]}
-              />
-              <Line
-                type="monotone"
-                dataKey="current"
-                name={String(currentYear)}
-                stroke="#38bdf8"
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="prior"
-                name={String(priorYear)}
-                stroke="#f59e0b"
-                strokeWidth={1.6}
-                strokeDasharray="4 4"
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
-
       <div className="grid gap-4 xl:grid-cols-2">
-        {YOY_METRICS.slice(0, 4).map((metric) => (
-          <YoyMetricPanel key={metric.key} payload={payload} metric={metric} />
-        ))}
+        <ChartCard
+          title="Cumulative MTD Path (Bcf)"
+          subtitle={`${payload.region.label} ${selectedMonthLabel ?? "selected month"} through ${fmtDate(payload.selectedDate)}`}
+          help="Daily gas generation is converted to Bcf using the active heat-rate assumption and accumulated through the selected day."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[520px]" : "h-[340px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={mtd.cumulativePath} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="day" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={12} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => fmtBcf(toNumber(value))} width={58} />
+                  <Tooltip
+                    contentStyle={tooltipStyle()}
+                    labelFormatter={(label) => `${selectedMonthLabel ?? "Day"} ${String(label)}`}
+                    formatter={(value, name) => [fmtBcf(toNumber(value), true), String(name)]}
+                  />
+                  <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
+                  <Line type="monotone" dataKey="currentCumulativeBcf" name={String(currentYear)} stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorCumulativeBcf" name={String(priorYear)} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Delta Attribution (Bcf/d)"
+          subtitle="Source-aware attribution status"
+          help="Only actual gas burn residual is calculated. Load, renewables, coal switch, and nuke/hydro attribution require a promoted model."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[520px]" : "h-[340px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={attributionRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => fmtDeltaBcfd(toNumber(value))} width={58} />
+                  <Tooltip
+                    contentStyle={tooltipStyle()}
+                    formatter={(value, _, item) => [
+                      item.payload.status === "available" ? fmtDeltaBcfd(toNumber(value)) : "Source pending",
+                      item.payload.detail,
+                    ]}
+                  />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="chartValue" name="Bcf/d" isAnimationActive={false}>
+                    {attributionRows.map((row) => (
+                      <Cell
+                        key={row.key}
+                        fill={
+                          row.status !== "available"
+                            ? "#374151"
+                            : (row.valueBcfd ?? 0) >= 0
+                              ? "#059669"
+                              : "#dc2626"
+                        }
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
+
+        <ChartCard
+          title="Daily YoY Delta Strip (Bcf/d)"
+          subtitle={`${currentYear} minus ${priorYear}`}
+          help="Each bar is the daily gas-burn Bcf/d delta for the matching month-day."
+        >
+          {(focused) => (
+            <div className={focused ? "h-[520px]" : "h-[260px]"}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={mtd.dailyDeltas} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                  <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+                  <XAxis dataKey="day" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={8} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => fmtDeltaBcfd(toNumber(value))} width={58} />
+                  <Tooltip
+                    contentStyle={tooltipStyle()}
+                    labelFormatter={(label) => `${selectedMonthLabel ?? "Day"} ${String(label)}`}
+                    formatter={(value) => [fmtDeltaBcfd(toNumber(value)), "YoY delta"]}
+                  />
+                  <ReferenceLine y={0} stroke="#475569" />
+                  <Bar dataKey="deltaBcfd" name="Daily delta" isAnimationActive={false}>
+                    {mtd.dailyDeltas.map((row) => (
+                      <Cell key={row.day} fill={(row.deltaBcfd ?? 0) >= 0 ? "#059669" : "#dc2626"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </ChartCard>
       </div>
+
+      <DataTableShell
+        title={`${payload.region.label} YoY Stack`}
+        subtitle={mtd.message ?? undefined}
+        bodyClassName="border-gray-800"
+      >
+        <table className="w-full min-w-[920px] border-collapse bg-[#0d1119] text-xs text-gray-200">
+          <thead className="bg-gray-950 text-gray-500">
+            <tr>
+              {["Section", "Metric", "Current", "Prior", "Delta", "Status"].map((column) => (
+                <th key={column} className={`px-3 py-2 font-semibold uppercase tracking-wide ${column === "Section" || column === "Metric" || column === "Status" ? "text-left" : "text-right"}`}>{column}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {mtd.stackRows.map((row) => {
+              const deltaClass =
+                row.delta === null
+                  ? "text-gray-500"
+                  : row.delta >= 0
+                    ? "text-emerald-300"
+                    : "text-rose-300";
+              return (
+                <tr key={`${row.section}-${row.metric}`} className="hover:bg-gray-900/60">
+                  <td className="px-3 py-2 font-semibold text-gray-100">{row.section}</td>
+                  <td className="px-3 py-2 text-gray-300">{row.metric}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-200">{formatStackValue(row.current, row.unit)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-gray-400">{formatStackValue(row.prior, row.unit)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${deltaClass}`}>{formatStackValue(row.delta, row.unit)}</td>
+                  <td className="px-3 py-2 text-left text-gray-400">{row.status === "available" ? "Available" : "Source pending"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </DataTableShell>
     </div>
   );
 }
@@ -1500,9 +1926,21 @@ export default function EiaGenerationDashboard({
 }: EiaGenerationDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [region, setRegion] = useState<EiaGenerationRegion>(initialRegionFromLocation);
-  const [activeTab, setActiveTab] = useState<EiaGenerationPageTab>(initialTabFromLocation);
-  const [season, setSeason] = useState<EiaGenerationSeason>(initialSeasonFromLocation);
+  const initialRequestedDate = parseIsoDate(searchParams.get("date") ?? searchParams.get("endDate"));
+  const [region, setRegion] = useState<EiaGenerationRegion>(
+    () => getEiaGenerationRegion(searchParams.get("region")).key,
+  );
+  const [activeTab, setActiveTab] = useState<EiaGenerationPageTab>(
+    () => parsePageTab(searchParams.get("tab")) ?? "home",
+  );
+  const [season, setSeason] = useState<EiaGenerationSeason>(
+    () =>
+      parseSeason(searchParams.get("season")) ??
+      (initialRequestedDate ? seasonFromDate(initialRequestedDate) : DEFAULT_SEASON),
+  );
+  const [heatRateMmbtuPerMwh, setHeatRateMmbtuPerMwh] = useState(
+    EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
+  );
   const [data, setData] = useState<EiaGenerationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1671,6 +2109,8 @@ export default function EiaGenerationDashboard({
         <>
           <SourceContractStrip data={data} />
 
+          <SourceStatusBanner data={data} />
+
           <SeasonToggle season={season} onSeasonChange={handleSeasonChange} />
 
           {activeTab === "home" && (
@@ -1709,9 +2149,15 @@ export default function EiaGenerationDashboard({
 
           {activeTab === "monthly-averages" && <MonthlyAveragesTab payload={data} />}
           {activeTab === "regional-modeling" && (
-            <RegionalModelingTab payload={data} season={season} />
+            <RegionalModelingTab
+              payload={data}
+              heatRateMmbtuPerMwh={heatRateMmbtuPerMwh}
+              onHeatRateChange={setHeatRateMmbtuPerMwh}
+            />
           )}
-          {activeTab === "yoy-mtd" && <YoyMtdTab payload={data} />}
+          {activeTab === "yoy-mtd" && (
+            <YoyMtdTab payload={data} heatRateMmbtuPerMwh={heatRateMmbtuPerMwh} />
+          )}
         </>
       )}
 

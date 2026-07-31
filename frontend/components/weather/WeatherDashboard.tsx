@@ -1,5 +1,6 @@
 "use client";
 
+import FreeWeatherObservations from "@/components/weather/FreeWeatherObservations";
 import WeatherHourlyTemps, { type WeatherFreshnessSummary } from "@/components/weather/WeatherHourlyTemps";
 
 export type WeatherDashboardFreshnessSummary = WeatherFreshnessSummary;
@@ -12,9 +13,12 @@ export default function WeatherDashboard({
   onFreshnessChange?: (freshness: WeatherDashboardFreshnessSummary) => void;
 }) {
   return (
-    <WeatherHourlyTemps
-      refreshToken={refreshToken}
-      onFreshnessChange={onFreshnessChange}
-    />
+    <div className="space-y-4">
+      <FreeWeatherObservations refreshToken={refreshToken} />
+      <WeatherHourlyTemps
+        refreshToken={refreshToken}
+        onFreshnessChange={onFreshnessChange}
+      />
+    </div>
   );
 }
