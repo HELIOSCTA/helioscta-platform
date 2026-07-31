@@ -74,7 +74,7 @@ analysis, load/weather-normalization work, and outage/transmission context.
 | inst_load | Instantaneous Load | Load | Every 5 minutes | 30 days | Near-real-time load driver for price moves |
 | very_short_load_frcst | Five Minute Load Forecast | Load Forecast | Every 5 minutes | 30 days | Forecast-vs-actual load at intraday grain |
 | load_frcstd_7_day | Seven-Day Load Forecast | Load Forecast | Hourly | None | Forward load expectations |
-| load_frcstd_hist | Historical Load Forecasts | Load Forecast | Daily | De-scheduled | No current promoted consumer; keep manual scrape only unless a model-training use case is approved |
+| load_frcstd_hist | Historical Load Forecasts | Load Forecast | Daily | Retired | No current promoted consumer; restore from git history only if a model-training use case is approved |
 | hrl_load_prelim | Hourly Load: Preliminary | Load | Daily | Indefinitely | Early hourly actual load |
 | hrl_load_metered | Hourly Load: Metered | Load | Daily | Indefinitely | Verified hourly actual load |
 | gen_by_fuel | Generation by Fuel Type | Generation | Hourly | Indefinitely | Stack and fuel-mix context |

@@ -4,6 +4,7 @@ import importlib
 import warnings
 
 import pandas as pd
+import pytest
 
 from backend.scrapes.power.pjm import data_miner_feed
 from backend.orchestration.power.pjm import data_miner_batch
@@ -26,7 +27,6 @@ BATCH_FEEDS = [
     "dispatched_reserves",
     "five_min_solar_generation",
     "gen_by_fuel",
-    "load_frcstd_hist",
     "hourly_solar_power_forecast",
     "hourly_wind_power_forecast",
     "hrl_load_metered",
@@ -77,8 +77,13 @@ def test_publication_specific_feeds_are_not_in_early_support_batch():
     assert "load_frcstd_hist" not in data_miner_batch.DEFAULT_FEEDS
 
 
+def test_retired_historical_load_forecast_scrape_is_not_available():
+    assert "load_frcstd_hist" not in FEED_CONFIGS
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("backend.scrapes.power.pjm.load_frcstd_hist")
+
+
 def test_forecast_feed_configs_have_90_day_hot_retention():
-    assert FEED_CONFIGS["load_frcstd_hist"].hot_retention_days is None
     assert FEED_CONFIGS["frcstd_gen_outages"].hot_retention_days is None
     assert FEED_CONFIGS["gen_by_fuel"].hot_retention_days is None
     assert FEED_CONFIGS["rt_and_self_ecomax"].hot_retention_days is None

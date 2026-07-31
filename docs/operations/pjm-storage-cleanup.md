@@ -6,11 +6,13 @@ been de-scheduled in committed code and deployed to the VM.
 
 ## `pjm.load_frcstd_hist`
 
-Status: de-scheduled from `backend.orchestration.power.pjm.data_miner_batch`.
-The lower-level scrape module remains available for manual recovery, but the
-table is not needed by current promoted frontend or production workflows.
+Status: dropped from `helios_prod` on 2026-07-29 20:52 UTC after it had been
+de-scheduled from `backend.orchestration.power.pjm.data_miner_batch`. The
+lower-level scrape module and reference SQL were removed from current code
+after the drop; restore them from git history only if an approved
+model-training or archive use case returns.
 
-Pre-cleanup read-only check:
+Pre-drop read-only check used for the 2026-07-29 cleanup:
 
 ```sql
 SELECT
@@ -20,21 +22,19 @@ SELECT
     pg_size_pretty(pg_total_relation_size('pjm.load_frcstd_hist')) AS total_size;
 ```
 
-Preferred cleanup keeps the table contract but releases storage:
+Cleanup executed in `helios_prod`:
 
 ```sql
-TRUNCATE TABLE pjm.load_frcstd_hist;
-ANALYZE pjm.load_frcstd_hist;
+DROP TABLE pjm.load_frcstd_hist;
 ```
 
 Post-cleanup verification:
 
 ```sql
 SELECT
-    COUNT(*) AS row_count,
-    pg_size_pretty(pg_total_relation_size('pjm.load_frcstd_hist')) AS total_size;
+    to_regclass('pjm.load_frcstd_hist') AS target_regclass,
+    pg_size_pretty(pg_database_size('helios_prod')) AS helios_prod_size;
 ```
 
-Use `DROP TABLE pjm.load_frcstd_hist;` only if the table contract and reference
-SQL are intentionally retired. Keeping the empty table is safer because old
-manual scripts fail less abruptly and read-only permissions remain intact.
+The drop was run without `CASCADE` so dependent views or objects would block
+the cleanup instead of being removed implicitly.
