@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA EIA-930 daily region data orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 07:35:00 America/New_York
+Persistent=true
+RandomizedDelaySec=5min
+AccuracySec=1min
+Unit=helios-eia-930-daily-region-data.service
+
+[Install]
+WantedBy=timers.target
