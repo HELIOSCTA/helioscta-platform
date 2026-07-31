@@ -8,6 +8,7 @@ excluded from Linux VM systemd until explicitly promoted there.
 ## Folder Layout
 
 ```text
+bloomberg_dapi/             Bloomberg Desktop API historical pull
 ice_python/                 ICE Python coordinator, status, and legacy cleanup
 positions_and_trades/       NAV and Clear Street scheduled jobs and status
 wm_natgasdatafeed_import/   WoodMac/Genscape migration reference package
@@ -308,7 +309,7 @@ process environment, including variables the scheduler wrapper just set.
 `HELIOS_LOG_DIR` is a key the repo's `.env` commonly carries with the Linux VM
 value `/var/log/helioscta`. On a Windows host that resolves to
 `C:\var\log\helioscta`, so per-pull logs silently land off-host while lock and
-state files land correctly ? a split that makes a healthy host look
+state files land correctly — a split that makes a healthy host look
 misconfigured when reading `ops.api_fetch_log`.
 
 On a Windows ICE host, set the key in `backend\.env` to the host log directory

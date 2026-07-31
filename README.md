@@ -21,6 +21,7 @@ Promote one backend script or workflow at a time:
 ## Repo Layout
 
 - `backend/` - promoted Python scrapes, orchestration, and runtime helpers.
+- `dbt/` - promoted dbt projects and read-only compile boundaries.
 - `frontend/` - dashboard code when promoted into this repo.
 - `excel/` - versioned Excel workbook models and workbook-specific reference artifacts.
 - `infrastructure/` - Azure VM setup, systemd timers, local Windows Task

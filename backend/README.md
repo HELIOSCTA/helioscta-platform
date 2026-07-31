@@ -187,6 +187,17 @@ canonical timezone before renaming fields for Edi-style
 `DATE x RESPONDENT x FUELTYPE` tables. Schedule the daily orchestrator after
 the public daily refresh window, around `07:30 America/New_York`; it targets
 the prior Eastern date and polls every 15 minutes for up to 4.5 hours.
+The companion EIA-930 daily region-data source runs through
+`backend.scrapes.eia.eia_930_daily_region_data`, with orchestration at
+`backend.orchestration.eia.eia_930_daily_region_data` and manual backfills at
+`backend.backfills.eia.eia_930_daily_region_data`. It writes raw daily rows to
+`eia.eia_930_daily_region_data` at `period x respondent x type x timezone`
+grain, preserving EIA `D` demand, `DF` day-ahead demand forecast, `NG` net
+generation, and `TI` total interchange type values. The EIA dashboard consumes
+`D` and `NG` from this table for true demand and net generation; it should not
+derive demand from generation-by-fuel rows. Schedule the daily orchestrator
+around the same public daily refresh window, at `07:35 America/New_York`; it
+targets the prior Eastern date and polls every 15 minutes for up to 4.5 hours.
 Weekly natural gas underground storage runs through
 `backend.scrapes.eia.weekly_underground_storage`, with orchestration at
 `backend.orchestration.eia.weekly_underground_storage` and manual backfills at
@@ -298,10 +309,11 @@ solar/wind, WSI hourly and daily weighted forecasts, and Meteologica PJM hourly
 forecasts.
 Retention is keyed to the source issue, publication, or evaluation timestamp so
 the table keeps 90 days of forecast vintages. Historical PJM Data Miner
-`pjm.load_frcstd_hist` is no longer scheduled by default because current
-frontend and production workflows do not need the archive; keep the scrape
-module for manual recovery only. Outage forecast tables remain indefinite
-unless operators explicitly decide to truncate archive history.
+`pjm.load_frcstd_hist` has been retired from current code because current
+frontend and production workflows do not need the archive. Restore the previous
+scrape and DDL from git history only if an approved model-training or archive
+use case returns. Outage forecast tables remain indefinite unless operators
+explicitly decide to truncate archive history.
 
 PJM Data Miner Operations Summary helpers run through
 `backend.orchestration.power.pjm.ops_sum` and write

@@ -660,6 +660,8 @@ After those prerequisites are complete:
 ```bash
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-region-data.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-930-daily-region-data.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-weekly-underground-storage.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.service /etc/systemd/system/
@@ -668,6 +670,7 @@ sudo systemctl daemon-reload
 sudo systemctl start helios-eia-930-daily-generation-by-fuel.service
 sudo systemctl start helios-eia-weekly-underground-storage.service
 sudo systemctl enable --now helios-eia-930-daily-generation-by-fuel.timer
+sudo systemctl enable --now helios-eia-930-daily-region-data.timer
 sudo systemctl enable --now helios-eia-weekly-underground-storage.timer
 sudo systemctl enable --now helios-eia-nat-gas-consumption-end-use-monthly.timer
 ```
@@ -1057,6 +1060,7 @@ sudo systemctl start helios-ercot-dam-stlmnt-pnt-prices.service
 sudo systemctl start helios-caiso-da-lmps.service
 sudo systemctl start helios-caiso-rt-lmps.service
 sudo systemctl start helios-eia-930-daily-generation-by-fuel.service
+sudo systemctl start helios-eia-930-daily-region-data.service
 sudo systemctl start helios-eia-weekly-underground-storage.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-load-batch.service
@@ -1238,6 +1242,9 @@ For EIA Open Data:
 systemctl status helios-eia-930-daily-generation-by-fuel.service
 systemctl status helios-eia-930-daily-generation-by-fuel.timer
 journalctl -u helios-eia-930-daily-generation-by-fuel.service -n 200 --no-pager
+systemctl status helios-eia-930-daily-region-data.service
+systemctl status helios-eia-930-daily-region-data.timer
+journalctl -u helios-eia-930-daily-region-data.service -n 200 --no-pager
 systemctl status helios-eia-weekly-underground-storage.service
 systemctl status helios-eia-weekly-underground-storage.timer
 journalctl -u helios-eia-weekly-underground-storage.service -n 200 --no-pager

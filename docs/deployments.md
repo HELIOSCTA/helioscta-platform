@@ -45,6 +45,8 @@ boundary, or log path changes.
 - Unit files:
   - `infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.service`
   - `infrastructure/systemd/helios-eia-930-daily-generation-by-fuel.timer`
+  - `infrastructure/systemd/helios-eia-930-daily-region-data.service`
+  - `infrastructure/systemd/helios-eia-930-daily-region-data.timer`
   - `infrastructure/systemd/helios-eia-weekly-underground-storage.service`
   - `infrastructure/systemd/helios-eia-weekly-underground-storage.timer`
   - `infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.service`
@@ -53,6 +55,10 @@ boundary, or log path changes.
   - EIA-930 daily generation by fuel runs daily at
     `07:30 America/New_York`, targets the prior Eastern date, and polls every
     15 minutes for up to 4.5 hours.
+  - EIA-930 daily region data runs daily at `07:35 America/New_York`,
+    targets the prior Eastern date, and polls every 15 minutes for up to
+    4.5 hours. The table backs true demand and net generation for the EIA
+    dashboard.
   - Weekly underground storage runs Thursdays at
     `10:30 America/New_York`, targets the prior Friday week ending, and polls
     every 2 minutes for up to 90 minutes.
@@ -1600,8 +1606,9 @@ FROM isone.seven_day_solar_forecast;
   `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
   `hrl_load_prelim`, `hrl_dmd_bids`, `da_transconstraints`,
   `da_reserve_market_results`, `gen_outages_by_type`, and the four Operations
-  Summary feeds were promoted to dedicated timers. `load_frcstd_hist` is
-  intentionally excluded from the scheduled batch for storage-cost control.
+  Summary feeds were promoted to dedicated timers. `load_frcstd_hist` was
+  retired from current code for storage-cost control after its hot table was
+  dropped from `helios_prod`.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.

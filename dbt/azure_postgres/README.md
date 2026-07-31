@@ -241,9 +241,9 @@ also changes.
 
 ## PJM Meteo Baseline Price Prototype
 
-`models/pjm_da_model/meteo_baseline_price/` is a read-only dbt compile boundary
-for the temporary PJM Meteologica baseline price model. It compiles runtime SQL
-artifacts that are promoted to:
+PJM DA model input SQL lives with the source-schema wrappers that feed it.
+The temporary Meteologica baseline price prototype compiles source-specific
+runtime SQL artifacts from those input folders and promotes them to:
 
 ```text
 tmp/data/pjm_like_day_modelling/meteo_baseline_price/sql/
@@ -252,24 +252,24 @@ tmp/data/pjm_like_day_modelling/meteo_baseline_price/sql/
 Runtime Python reads those promoted SQL files and binds parameters. It should
 not read dbt `target/compiled` directly.
 
-Source-schema wrappers live under:
+Meteologica DA price forecast input SQL lives under:
 
 ```text
-models/pjm_da_model/meteologica/
-models/pjm_da_model/pjm/
+models/pjm_da_model/meteologica/da_price_forecast/
 ```
 
-Outward runtime artifacts live under:
+PJM DA LMP actual input SQL lives under:
 
 ```text
-models/pjm_da_model/meteo_baseline_price/marts/
+models/pjm_da_model/pjm/da_lmps_hourly/
 ```
 
-Runtime helper SQL, such as available forecast date discovery for horizon
-workflows, lives under:
+Each data-source folder contains its `sources.yml`, immediate source wrapper
+models, and shaped input SQL:
 
 ```text
-models/pjm_da_model/meteo_baseline_price/utils/
+models/pjm_da_model/meteologica/da_price_forecast/
+models/pjm_da_model/pjm/da_lmps_hourly/
 ```
 
 Operator reference index SQL for the exact Meteologica DA price source tables
@@ -282,6 +282,45 @@ reference_sql/ddl/power/meteologica/pjm_western_hub_da_price_forecast/
 From `dbt/azure_postgres`:
 
 ```powershell
-dbt compile --profiles-dir . --select +path:models/pjm_da_model/meteo_baseline_price
+dbt compile --profiles-dir . --select +path:models/pjm_da_model/meteologica/da_price_forecast +path:models/pjm_da_model/pjm/da_lmps_hourly
+```
+
+The default compile mode embeds runnable SQL defaults so compiled files under
+`target/compiled/.../pjm_da_model/` can be executed directly before promotion.
+Default expressions are source-input oriented:
+
+```text
+target_date = current EPT date - 3 days
+start_date = current EPT date + 1 day
+cutoff_utc = current EPT date at 10:00 EPT, converted to UTC timestamptz
+lead_days = 1
+hub = WESTERN HUB
+limit = 60
+```
+
+To produce parameterized SQL for the Python loader, compile in runtime mode and
+then promote:
+
+```powershell
+dbt compile --profiles-dir . --select +path:models/pjm_da_model/meteologica/da_price_forecast +path:models/pjm_da_model/pjm/da_lmps_hourly --vars "{pjm_da_model_param_mode: runtime}"
 python scripts/promote_pjm_meteo_baseline_price_sql.py
 ```
+
+## PJM Like-Day KNN Sunny Prototype
+
+The temporary KNN Sunny prototype reads promoted SQL from:
+
+```text
+tmp/data/pjm_like_day_modelling/like_day_model_knn_sunny/sql/
+```
+
+Compile and promote from `dbt/azure_postgres`:
+
+```powershell
+dbt compile --profiles-dir . --select +path:models/pjm_da_model/ice_python/settlements +path:models/pjm_da_model/pjm/da_lmps_hourly +path:models/pjm_da_model/pjm/rto_load_hourly +path:models/pjm_da_model/pjm/load_forecast_hourly +path:models/pjm_da_model/pjm/gen_by_fuel +path:models/pjm_da_model/pjm/gen_outages +path:models/pjm_da_model/meteologica/pjm_forecast_hourly +path:models/pjm_da_model/weather/wsi_hourly_temperature --vars "{pjm_da_model_param_mode: runtime}"
+python scripts/promote_pjm_like_day_knn_sunny_sql.py
+```
+
+The KNN Sunny dbt inputs remain source-owned. Calendar/holiday dbt migration is
+not part of this prototype pass; Python derives the basic day-of-week and
+weekend fields.
