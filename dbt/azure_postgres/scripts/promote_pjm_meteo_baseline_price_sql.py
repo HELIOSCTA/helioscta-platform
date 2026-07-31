@@ -8,12 +8,14 @@ from pathlib import Path
 SCRIPT_PATH = Path(__file__).resolve()
 DBT_PROJECT_ROOT = SCRIPT_PATH.parents[1]
 REPO_ROOT = SCRIPT_PATH.parents[3]
-DBT_MODEL_FAMILY_PATH = (
-    DBT_PROJECT_ROOT / "models" / "pjm_da_model" / "meteo_baseline_price"
+DBT_PJM_MODEL_ROOT = DBT_PROJECT_ROOT / "models" / "pjm_da_model"
+DBT_INPUT_MODEL_PATHS = (
+    DBT_PJM_MODEL_ROOT / "meteologica" / "da_price_forecast",
+    DBT_PJM_MODEL_ROOT / "pjm" / "da_lmps_hourly",
 )
 DBT_SOURCE_MODEL_ROOTS = (
-    DBT_PROJECT_ROOT / "models" / "pjm_da_model" / "meteologica",
-    DBT_PROJECT_ROOT / "models" / "pjm_da_model" / "pjm",
+    DBT_PJM_MODEL_ROOT / "meteologica" / "da_price_forecast",
+    DBT_PJM_MODEL_ROOT / "pjm" / "da_lmps_hourly",
 )
 DBT_COMPILED_ROOT = (
     DBT_PROJECT_ROOT
@@ -22,7 +24,6 @@ DBT_COMPILED_ROOT = (
     / "helioscta_platform"
     / "models"
     / "pjm_da_model"
-    / "meteo_baseline_price"
 )
 RUNTIME_SQL_ROOT = (
     REPO_ROOT
@@ -35,10 +36,9 @@ MANIFEST_PATH = RUNTIME_SQL_ROOT / "manifest.json"
 CONTRACT_ID = "pjm_da_model_meteo_baseline_price"
 CONTRACT_DISPLAY_NAME = "PJM DA Model Meteologica Baseline Price Prototype"
 DBT_MODEL_CHANGE_SUMMARY = (
-    "Adds a read-only dbt compile boundary for PJM DA Meteologica baseline "
-    "price runtime SQL consumed by the tmp modelling prototype, with source "
-    "wrappers split by database schema and index-aligned timestamp range "
-    "predicates in runtime marts."
+    "Keeps PJM DA Meteologica baseline price runtime SQL as source-specific "
+    "input artifacts under pjm_da_model/meteologica and pjm_da_model/pjm, "
+    "with index-aligned timestamp range predicates for bounded direct reads."
 )
 
 
@@ -57,25 +57,30 @@ ARTIFACTS = (
         artifact_id="available_target_dates",
         display_name="Available Target Dates",
         name="PJM Meteo baseline available target dates utility",
-        model_path=Path("utils/mbp_available_target_dates.sql"),
+        model_path=Path(
+            "meteologica/da_price_forecast/"
+            "meteologica_da_price_forecast_available_dates.sql"
+        ),
         target_path=RUNTIME_SQL_ROOT / "sql" / "available_target_dates.sql",
         required_markers=(
-            "__dbt__cte__mbp_00_src_meteologica_det_da_price_forecast_hourly",
-            "__dbt__cte__mbp_00_src_meteologica_ens_da_price_forecast_hourly",
+            "usa_pjm_western_hub_da_power_price_forecast_hourly",
+            "usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly",
             "%(start_date)s::date as start_date",
             "from FINAL",
-            "limit %(limit)s",
+            "%(limit)s::int as row_limit",
         ),
     ),
     SqlArtifact(
         artifact_id="meteo_da_price_forecast_hourly",
         display_name="Meteologica DA Price Forecast Hourly",
         name="PJM Meteo baseline hourly forecast",
-        model_path=Path("marts/mbp_meteo_da_price_forecast_hourly.sql"),
+        model_path=Path(
+            "meteologica/da_price_forecast/meteologica_da_price_forecast_hourly.sql"
+        ),
         target_path=RUNTIME_SQL_ROOT / "sql" / "meteo_da_price_forecast_hourly.sql",
         required_markers=(
-            "__dbt__cte__mbp_00_src_meteologica_det_da_price_forecast_hourly",
-            "__dbt__cte__mbp_00_src_meteologica_ens_da_price_forecast_hourly",
+            "usa_pjm_western_hub_da_power_price_forecast_hourly",
+            "usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly",
             "%(target_date)s::date as target_date",
             "%(lead_days)s::int as lead_days",
             "da_price_deterministic",
@@ -87,10 +92,10 @@ ARTIFACTS = (
         artifact_id="actual_da_lmps_hourly",
         display_name="Actual DA LMPs Hourly",
         name="PJM Meteo baseline actual DA LMPs",
-        model_path=Path("marts/mbp_actual_da_lmps_hourly.sql"),
+        model_path=Path("pjm/da_lmps_hourly/pjm_da_lmps_hourly.sql"),
         target_path=RUNTIME_SQL_ROOT / "sql" / "actual_da_lmps_hourly.sql",
         required_markers=(
-            "__dbt__cte__mbp_00_src_pjm_da_lmps_hourly",
+            "from \"helios_prod\".\"pjm\".\"da_hrl_lmps\"",
             "%(target_date)s::date as target_date",
             "%(hub)s::text as hub",
             "row_is_current = true",
@@ -143,7 +148,9 @@ def promote_artifact(artifact: SqlArtifact) -> list[str]:
             f"{artifact.name}: missing compiled dbt SQL at {relative(source_path)}. "
             "Run this first from dbt/azure_postgres: "
             "dbt compile --profiles-dir . --select "
-            "+path:models/pjm_da_model/meteo_baseline_price"
+            "+path:models/pjm_da_model/meteologica/da_price_forecast "
+            "+path:models/pjm_da_model/pjm/da_lmps_hourly "
+            "--vars \"{pjm_da_model_param_mode: runtime}\""
         ]
 
     sql_bytes = source_path.read_bytes()
@@ -152,10 +159,18 @@ def promote_artifact(artifact: SqlArtifact) -> list[str]:
 
     missing_markers = validate_sql(sql, artifact)
     if missing_markers:
-        return [
+        failures = [
             f"{artifact.name}: {relative(source_path)} is missing expected marker: {marker}"
             for marker in missing_markers
         ]
+        failures.append(
+            "Recompile promotion artifacts with runtime params from dbt/azure_postgres: "
+            "dbt compile --profiles-dir . --select "
+            "+path:models/pjm_da_model/meteologica/da_price_forecast "
+            "+path:models/pjm_da_model/pjm/da_lmps_hourly "
+            "--vars \"{pjm_da_model_param_mode: runtime}\""
+        )
+        return failures
 
     artifact.target_path.parent.mkdir(parents=True, exist_ok=True)
     artifact.target_path.write_bytes(sql_bytes)
@@ -165,7 +180,7 @@ def promote_artifact(artifact: SqlArtifact) -> list[str]:
 
 
 def manifest_entry(artifact: SqlArtifact) -> dict[str, str]:
-    dbt_model_path = DBT_MODEL_FAMILY_PATH / artifact.model_path
+    dbt_model_path = DBT_PJM_MODEL_ROOT / artifact.model_path
     dbt_compiled_path = DBT_COMPILED_ROOT / artifact.model_path
     return {
         "displayName": artifact.display_name,
@@ -179,12 +194,19 @@ def write_manifest() -> None:
     manifest = {
         "contractId": CONTRACT_ID,
         "displayName": CONTRACT_DISPLAY_NAME,
-        "dbtModelFamilyPath": relative_posix(DBT_MODEL_FAMILY_PATH),
+        "dbtModelFamilyPath": relative_posix(DBT_PJM_MODEL_ROOT),
+        "dbtInputModelPaths": [
+            relative_posix(path)
+            for path in DBT_INPUT_MODEL_PATHS
+        ],
         "dbtSourceModelRoots": [
             relative_posix(path)
             for path in DBT_SOURCE_MODEL_ROOTS
         ],
         "dbtModelChangeSummary": DBT_MODEL_CHANGE_SUMMARY,
+        "dbtRuntimeVars": {
+            "pjm_da_model_param_mode": "runtime",
+        },
         "runtimeSqlRoot": relative_posix(RUNTIME_SQL_ROOT / "sql"),
         "generatedBy": relative_posix(SCRIPT_PATH),
         "artifacts": {
@@ -202,6 +224,10 @@ def main() -> int:
     detail("dbt_project_root", DBT_PROJECT_ROOT)
     detail("compiled_root", relative(DBT_COMPILED_ROOT))
     detail("runtime_sql_root", relative(RUNTIME_SQL_ROOT / "sql"))
+    detail(
+        "input_model_paths",
+        ", ".join(relative(path) for path in DBT_INPUT_MODEL_PATHS),
+    )
     detail("artifact_count", len(ARTIFACTS))
 
     section("Validate and copy artifacts")

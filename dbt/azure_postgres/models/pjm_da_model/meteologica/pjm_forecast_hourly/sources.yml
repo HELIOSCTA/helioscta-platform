@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: meteologica
+    schema: meteologica
+    description: >
+      Meteologica regional PJM supply-demand forecast feed loaded into Azure
+      Postgres. dbt reads this source with helios_readonly.
+    tables:
+      - name: pjm_forecast_hourly
+        description: >
+          PJM regional Meteologica hourly forecasts. KNN Sunny Phase 1 uses
+          metric in load/solar/wind, region PJM, and forecast_area RTO.
+          Grain: content_id x update_id x metric x forecast_area x
+          forecast_period_start.

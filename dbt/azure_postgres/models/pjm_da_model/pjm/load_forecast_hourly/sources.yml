@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: pjm
+    schema: pjm
+    description: >
+      PJM market source tables loaded into Azure Postgres.
+    tables:
+      - name: load_frcstd_7_day
+        description: >
+          PJM seven-day hourly load forecast revisions. KNN Sunny uses this
+          live source for both historical lead-day pool features and forward
+          PJM query rows because helios_prod does not currently expose a
+          separate load_frcstd_hist relation. Grain:
+          evaluated_at_datetime_ept x forecast_area x
+          forecast_datetime_beginning_ept.

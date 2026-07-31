@@ -46,19 +46,43 @@ models:
         +enabled: true
         +schema: pjm_da_model_meteologica
         +materialized: ephemeral
+        da_price_forecast:
+          +enabled: true
+          +schema: pjm_da_model_meteologica
+          +materialized: ephemeral
+        pjm_forecast_hourly:
+          +enabled: true
+          +schema: pjm_da_model_meteologica
+          +materialized: ephemeral
       pjm:
         +enabled: true
         +schema: pjm_da_model_pjm
         +materialized: ephemeral
-      meteo_baseline_price:
-        +enabled: true
-        +schema: pjm_da_model_meteo_baseline_price
-        +materialized: ephemeral
-        marts:
+        da_lmps_hourly:
           +enabled: true
-          +schema: pjm_da_model_meteo_baseline_price
+          +schema: pjm_da_model_pjm
           +materialized: ephemeral
-        utils:
+        gen_by_fuel:
           +enabled: true
-          +schema: pjm_da_model_meteo_baseline_price
+          +schema: pjm_da_model_pjm
+          +materialized: ephemeral
+        gen_outages:
+          +enabled: true
+          +schema: pjm_da_model_pjm
+          +materialized: ephemeral
+        load_forecast_hourly:
+          +enabled: true
+          +schema: pjm_da_model_pjm
+          +materialized: ephemeral
+        rto_load_hourly:
+          +enabled: true
+          +schema: pjm_da_model_pjm
+          +materialized: ephemeral
+      weather:
+        +enabled: true
+        +schema: pjm_da_model_weather
+        +materialized: ephemeral
+        wsi_hourly_temperature:
+          +enabled: true
+          +schema: pjm_da_model_weather
           +materialized: ephemeral

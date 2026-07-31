@@ -1,0 +1,19 @@
+version: 2
+
+sources:
+  - name: weather
+    schema: weather
+    description: >
+      Weather source tables loaded into Azure Postgres.
+    tables:
+      - name: wsi_hourly_observed_temperatures
+        description: >
+          WSI hourly observed weather values. KNN Sunny Phase 1 averages PJM
+          station temperatures into historical `date x hour_ending` features.
+          Grain: station_id x region x observation_time_local.
+      - name: wsi_hourly_forecasts
+        description: >
+          WSI hourly forecast weather values. KNN Sunny Phase 1 averages the
+          latest PJM station temperatures into forward `date x hour_ending`
+          features. Grain: station_id x region x forecast_issued_at_utc x
+          forecast_time_utc.

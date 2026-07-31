@@ -1,0 +1,18 @@
+version: 2
+
+sources:
+  - name: pjm
+    schema: pjm
+    description: >
+      PJM market source tables loaded into Azure Postgres.
+    tables:
+      - name: hrl_load_metered
+        description: >
+          PJM hourly metered load. KNN Sunny Phase 1 uses the RTO rows for
+          historical pool load features, preferred over preliminary rows.
+          Grain: datetime_beginning_ept x load_area.
+      - name: hrl_load_prelim
+        description: >
+          PJM hourly preliminary load. KNN Sunny uses this only as a fallback
+          when a metered RTO hour is unavailable. Grain:
+          datetime_beginning_ept x load_area.

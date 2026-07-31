@@ -1,0 +1,40 @@
+version: 2
+
+sources:
+  - name: pjm
+    schema: pjm
+    description: >
+      PJM market source tables loaded into Azure Postgres.
+    tables:
+      - name: gen_by_fuel
+        description: >
+          PJM hourly generation by fuel. KNN Sunny Phase 1 uses Solar and
+          Wind fuel rows as a secondary fallback historical renewable feature.
+          Grain: datetime_beginning_ept x fuel_type.
+      - name: solar_gen
+        description: >
+          PJM hourly solar generation by area. KNN Sunny prefers RTO rows over
+          generic generation-by-fuel solar actuals. Grain:
+          datetime_beginning_ept x area.
+      - name: wind_gen
+        description: >
+          PJM hourly wind generation by area. KNN Sunny prefers RTO rows over
+          generic generation-by-fuel wind actuals. Grain:
+          datetime_beginning_ept x area.
+      - name: five_min_solar_generation
+        description: >
+          PJM five-minute solar generation. KNN Sunny uses hourly averages as a
+          recent fallback when hourly RTO solar generation is unavailable.
+          Grain: datetime_beginning_ept.
+      - name: hourly_solar_power_forecast
+        description: >
+          PJM hourly solar forecast feed. KNN Sunny Phase 1 uses the latest
+          forecast available by the old DA cutoff boundary as the preferred
+          historical solar feature before falling back to gen_by_fuel. Grain:
+          evaluated_at_ept x datetime_beginning_ept.
+      - name: hourly_wind_power_forecast
+        description: >
+          PJM hourly wind forecast feed. KNN Sunny Phase 1 uses the latest
+          forecast available by the old DA cutoff boundary as the preferred
+          historical wind feature before falling back to gen_by_fuel. Grain:
+          evaluated_at_ept x datetime_beginning_ept.

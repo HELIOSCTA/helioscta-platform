@@ -1,0 +1,21 @@
+version: 2
+
+sources:
+  - name: pjm
+    schema: pjm
+    description: >
+      PJM market source tables loaded into Azure Postgres.
+    tables:
+      - name: gen_outages_by_type
+        description: >
+          PJM generation outages by outage type. KNN Sunny Phase 1 uses the
+          latest raw PJM RTO total by forecast_date for historical and
+          forward daily outage features, normalizing raw region label `PJM RTO`
+          to the old-model `RTO` contract. Grain: forecast_date x
+          forecast_execution_date_ept x region.
+      - name: frcstd_gen_outages
+        description: >
+          PJM forecast generation outages. Source-wrapped for inspection;
+          KNN Sunny Phase 1 does not use this shaped input because sampled RTO
+          forecast MW values were zero in the target window. Grain:
+          forecast_date x forecast_execution_date_ept.

@@ -1,9 +1,10 @@
-{{
-  config(
-    materialized='ephemeral'
-  )
-}}
-
+-- GENERATED FILE. DO NOT EDIT.
+-- Source dbt model: dbt/azure_postgres/models/pjm_da_model/meteologica/da_price_forecast/meteologica_da_price_forecast_hourly.sql
+-- Source dbt compiled SQL: dbt\azure_postgres\target\compiled\helioscta_platform\models\pjm_da_model\meteologica\da_price_forecast\meteologica_da_price_forecast_hourly.sql
+-- Promotion script: dbt/azure_postgres/scripts/promote_pjm_da_model_backend_sql.py
+-- Rebuild from dbt/azure_postgres:
+--   dbt compile --profiles-dir . --select +path:models/pjm_da_model --vars "{pjm_da_model_param_mode: runtime}"
+--   python scripts/promote_pjm_da_model_backend_sql.py
 with params as (
     select
         %(target_date)s::date as target_date,
@@ -20,11 +21,16 @@ det_source as (
         d.forecast_period_start,
         d.day_ahead_price,
         d.updated_at
-    from {{ ref('mbp_00_src_meteologica_det_da_price_forecast_hourly') }} d
-    where d.forecast_period_start >= %(target_date)s::date::timestamp
-      and d.forecast_period_start < %(target_date)s::date::timestamp + interval '1 day'
+    from "helios_prod"."meteologica"."usa_pjm_western_hub_da_power_price_forecast_hourly" d
+    cross join params p
+    where d.forecast_period_start >= p.target_date::timestamp
+      and d.forecast_period_start < p.target_date::timestamp + interval '1 day'
       and d.issue_date is not null
-      and (%(cutoff_utc)s::timestamptz is null or d.issue_date <= %(cutoff_utc)s::timestamptz)
+      and (p.cutoff_utc is null or d.issue_date <= p.cutoff_utc)
+      and (
+          p.cutoff_utc is null
+          or d.issue_date > p.cutoff_utc - interval '48 hours'
+      )
 ),
 
 ens_source as (
@@ -89,11 +95,16 @@ ens_source as (
         e.ens_49_price,
         e.ens_50_price,
         e.updated_at
-    from {{ ref('mbp_00_src_meteologica_ens_da_price_forecast_hourly') }} e
-    where e.forecast_period_start >= %(target_date)s::date::timestamp
-      and e.forecast_period_start < %(target_date)s::date::timestamp + interval '1 day'
+    from "helios_prod"."meteologica"."usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly" e
+    cross join params p
+    where e.forecast_period_start >= p.target_date::timestamp
+      and e.forecast_period_start < p.target_date::timestamp + interval '1 day'
       and e.issue_date is not null
-      and (%(cutoff_utc)s::timestamptz is null or e.issue_date <= %(cutoff_utc)s::timestamptz)
+      and (p.cutoff_utc is null or e.issue_date <= p.cutoff_utc)
+      and (
+          p.cutoff_utc is null
+          or e.issue_date > p.cutoff_utc - interval '48 hours'
+      )
 ),
 
 det_issue as (
