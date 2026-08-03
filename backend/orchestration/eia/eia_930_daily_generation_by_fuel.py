@@ -73,6 +73,10 @@ def main(
                 target_date=target_date,
                 end_date=end_date,
             )
+            poll_start_date = start_date or (
+                resolved_target_date - timedelta(days=scrape.DEFAULT_LOOKBACK_DAYS)
+            )
+            poll_end_date = end_date or resolved_target_date
             run_logger.info(f"Target EIA-930 date: {resolved_target_date.isoformat()}")
             run_logger.info(
                 "Polling window: "
@@ -84,8 +88,8 @@ def main(
             )
             df = _poll_for_target_date(
                 target_date=resolved_target_date,
-                start_date=start_date,
-                end_date=end_date,
+                start_date=poll_start_date,
+                end_date=poll_end_date,
                 timezones=timezones,
                 run_id=run_id,
                 database=database,
