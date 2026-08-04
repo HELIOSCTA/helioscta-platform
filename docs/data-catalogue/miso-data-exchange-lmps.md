@@ -32,4 +32,6 @@ components as `locational_marginal_price`, `energy_component`,
 
 Scheduled runs poll for complete hub/date coverage, upsert idempotently, write
 poll telemetry to `ops.api_fetch_log`, and emit complete-day readiness events
-to `ops.data_availability_events`.
+to `ops.data_availability_events`. The DA workflow also queues the shared
+inline DA LMP release email after complete-day readiness for the configured
+backend recipient audience.

@@ -85,6 +85,122 @@ def test_miso_da_lmps_emits_readiness_for_complete_default_hubs(monkeypatch):
     assert event["payload"]["market_clock"] == "fixed_est"
 
 
+def test_miso_da_main_passes_release_notification_handler(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_run_lmp_workflow(**kwargs):
+        captured.update(kwargs)
+        return pd.DataFrame()
+
+    monkeypatch.setattr(_lmp_workflow, "run_lmp_workflow", fake_run_lmp_workflow)
+
+    result = da_lmps.main(
+        start_date=date(2026, 8, 5),
+        end_date=date(2026, 8, 5),
+        database="stage_db",
+        run_mode="scheduled",
+        poll_ceiling_seconds=0,
+        poll_wait_seconds=0,
+    )
+
+    assert result is not None
+    assert captured["release_notification_handler"] is (
+        da_lmps._notify_da_email_release_events
+    )
+
+
+def test_miso_da_release_email_notifications_are_idempotent_and_sent(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**kwargs):
+        calls.append(kwargs)
+        return [{"created": True, "notification_key": "email-key"}]
+
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "enqueue_miso_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "notifications_enabled",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "send_due_email_notifications",
+        lambda **kwargs: [{"status": "sent", **kwargs}],
+    )
+
+    queued = da_lmps._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": (
+                    "miso_da_lmps:data_ready:2026-08-05:"
+                    "hubs_indiana_plus_ice"
+                ),
+            }
+        ],
+        run_mode="scheduled",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 1
+    assert calls[0]["event"]["event_key"] == (
+        "miso_da_lmps:data_ready:2026-08-05:hubs_indiana_plus_ice"
+    )
+    assert calls[0]["database"] == "stage_db"
+
+
+def test_miso_da_release_email_notifications_skip_outside_scheduled(monkeypatch):
+    called = False
+
+    class DummyRunLogger:
+        def info(self, _msg: str) -> None:
+            pass
+
+        def exception(self, _msg: str) -> None:
+            pass
+
+    def fake_enqueue(**_kwargs):
+        nonlocal called
+        called = True
+        return []
+
+    monkeypatch.setattr(
+        da_lmps.email_notifications,
+        "enqueue_miso_da_lmp_release_notifications",
+        fake_enqueue,
+    )
+
+    queued = da_lmps._notify_da_email_release_events(
+        events=[
+            {
+                "id": 1,
+                "event_key": (
+                    "miso_da_lmps:data_ready:2026-08-05:"
+                    "hubs_indiana_plus_ice"
+                ),
+            }
+        ],
+        run_mode="smoke",
+        database="stage_db",
+        run_logger=DummyRunLogger(),
+    )
+
+    assert queued == 0
+    assert called is False
+
+
 def test_miso_rt_lmps_skips_readiness_when_a_hub_is_missing(monkeypatch):
     captured: list[dict[str, object]] = []
 

@@ -174,7 +174,9 @@ LMP paths are `backend.orchestration.power.miso.da_lmps`,
 `interval_start_time_utc x node_id x market_run_id` grain for
 `INDIANA.HUB` plus the additional ICE/MISO hub family. Rows store total LMP,
 energy, congestion, and loss components and use `ops.api_fetch_log` plus
-complete-day readiness events for scheduled runs.
+complete-day readiness events for scheduled runs. The scheduled MISO DA LMP
+workflow queues the shared inline DA release email after complete-day
+readiness.
 
 EIA Open Data API helpers use `EIA_API_KEY`. Promoted EIA runtime modules live
 under `backend.scrapes.eia`, with orchestration at `backend.orchestration.eia`
@@ -564,9 +566,10 @@ component tables in the email body, with a Vercel single-day report link as
 the live fallback. `Kapil.Saxena@HeliosCTA.com` is always included in backend
 email recipient lists, even when the production environment file narrows
 `HELIOS_EMAIL_RECIPIENTS` or `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`. The PJM DA
-HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, and CAISO DA LMP scheduled
-workflows enqueue one release email per configured `HELIOS_EMAIL_RECIPIENTS`
-recipient after complete-day readiness. The Clear Street source and MUFG
+HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, CAISO DA LMP, and MISO DA LMP
+scheduled workflows enqueue one release email per configured
+`HELIOS_EMAIL_RECIPIENTS` recipient after complete-day readiness. The Clear
+Street source and MUFG
 handoff paths do enqueue internal emails with CSV attachments to
 `HELIOS_EMAIL_RECIPIENTS` when email notifications are enabled.
 

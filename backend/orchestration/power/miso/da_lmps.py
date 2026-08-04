@@ -9,6 +9,7 @@ from dateutil.relativedelta import relativedelta
 from backend.orchestration.power.miso import _lmp_readiness, _lmp_workflow
 from backend.scrapes.power.miso import _lmp
 from backend.scrapes.power.miso import da_lmps as scrape
+from backend.utils import email_notifications
 
 
 API_SCRAPE_NAME = scrape.API_SCRAPE_NAME
@@ -57,6 +58,7 @@ def main(
         nodes=nodes,
         poll_ceiling_seconds=poll_ceiling_seconds,
         poll_wait_seconds=poll_wait_seconds,
+        release_notification_handler=_notify_da_email_release_events,
     )
 
 
@@ -120,6 +122,54 @@ def _expected_period_count_for_date(business_date) -> int:
         business_date,
         interval_minutes=INTERVAL_MINUTES,
     )
+
+
+def _notify_da_email_release_events(
+    *,
+    events: list[dict[str, Any]],
+    run_mode: str,
+    database: str | None,
+    run_logger: Any,
+) -> int:
+    if run_mode != "scheduled":
+        run_logger.info("Skipping MISO DA release emails outside scheduled mode.")
+        return 0
+    if not events:
+        return 0
+
+    queued = 0
+    try:
+        for event in events:
+            enqueued_rows = (
+                email_notifications.enqueue_miso_da_lmp_release_notifications(
+                    event=event,
+                    database=database,
+                )
+            )
+            queued += sum(1 for row in enqueued_rows if row.get("created"))
+
+        if not email_notifications.notifications_enabled():
+            run_logger.info(
+                "MISO DA release email notifications "
+                f"queued={queued}; sending is disabled."
+            )
+            return queued
+
+        processed = email_notifications.send_due_email_notifications(
+            limit=20,
+            database=database,
+        )
+        run_logger.info(
+            "MISO DA release email notifications "
+            f"queued={queued}, processed={len(processed)}."
+        )
+    except Exception:
+        run_logger.exception(
+            "MISO DA release email notification handling failed; "
+            "scrape data and readiness events remain committed."
+        )
+
+    return queued
 
 
 if __name__ == "__main__":

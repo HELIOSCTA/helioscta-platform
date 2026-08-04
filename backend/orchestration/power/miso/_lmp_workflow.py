@@ -43,6 +43,7 @@ def run_lmp_workflow(
     nodes: list[str] | tuple[str, ...] | None = None,
     poll_ceiling_seconds: int = 0,
     poll_wait_seconds: int = 0,
+    release_notification_handler: Callable[..., Any] | None = None,
 ) -> pd.DataFrame | None:
     """Run one MISO LMP workflow and emit readiness events."""
     if start_date is None and end_date is None and run_mode == "scheduled":
@@ -143,6 +144,15 @@ def run_lmp_workflow(
             run_logger.info(
                 "No complete MISO LMP operating date detected; "
                 "no data availability event emitted."
+            )
+
+        if release_notification_handler is not None:
+            run_logger.section("Handling release email notification(s) ...")
+            release_notification_handler(
+                events=events,
+                run_mode=run_mode,
+                database=database,
+                run_logger=run_logger,
             )
 
         run_logger.success(
