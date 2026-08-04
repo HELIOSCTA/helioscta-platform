@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "check:api": "node scripts/check-api-health.mjs",
+    "check:vercel-production": "node scripts/check-vercel-production-alias.mjs",
     "check:perf:backoffice": "node scripts/check-backoffice-perf.mjs",
     "warm:backoffice": "node scripts/warm-backoffice-routes.mjs",
     "sync:ice-gas-registry": "python scripts/sync-ice-gas-registry.py",

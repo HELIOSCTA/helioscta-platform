@@ -1193,3 +1193,22 @@ detail rows; the selected option month is loaded through
 Configure the Vercel project root as `frontend`. Production access is expected
 to be handled by Vercel Authentication, SSO, or project access, not app-level
 auth.
+
+The Vercel project production branch is `main`. The production domain
+`frontend-helioscta.vercel.app` should always resolve to the latest successful
+production deployment from `origin/main`, matching the automatic branch alias
+`frontend-git-main-helioscta.vercel.app`. Do not pin the production domain to an
+older deployment except for an explicit rollback.
+
+After a production push, verify the aliases:
+
+```bash
+npm run check:vercel-production
+```
+
+If the production domain drifts from the main branch alias, repair it by
+repointing production to the current main deployment:
+
+```bash
+npm run check:vercel-production -- --fix
+```
