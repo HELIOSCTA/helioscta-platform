@@ -32,6 +32,9 @@ from backend.scrapes.power.ercot import (
 from backend.scrapes.power.isone import da_hrl_lmps as isone_da_hrl_lmps
 from backend.scrapes.power.isone import rt_hrl_lmps_final as isone_rt_hrl_lmps_final
 from backend.scrapes.power.isone import rt_hrl_lmps_prelim as isone_rt_hrl_lmps_prelim
+from backend.scrapes.power.miso import da_lmps as miso_da_lmps
+from backend.scrapes.power.miso import rt_lmps_final as miso_rt_lmps_final
+from backend.scrapes.power.miso import rt_lmps_prelim as miso_rt_lmps_prelim
 from backend.scrapes.power.pjm import da_hrl_lmps as pjm_da_hrl_lmps
 from backend.scrapes.power.pjm import rt_fivemin_hrl_lmps as pjm_rt_fivemin_hrl_lmps
 from backend.scrapes.power.pjm import rt_hrl_lmps as pjm_rt_hrl_lmps
@@ -377,6 +380,58 @@ def _run_caiso_scrape_backfill(
     )
 
 
+def _run_miso_scrape_backfill(
+    *,
+    module: Any,
+    workflow_name: str,
+    start_date: date,
+    end_date: date,
+    dry_run: bool = False,
+    database: str | None = None,
+    request_delay_seconds: float = 2.0,
+) -> BackfillResult:
+    if dry_run:
+        return _dry_run_result(
+            pipeline_name=workflow_name,
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+    run_id = str(uuid4())
+    total_rows = 0
+    current_date = start_date
+    while current_date <= end_date:
+        metadata = _backfill_metadata(
+            start_date=start_date,
+            end_date=end_date,
+            workflow=workflow_name,
+            business_date=current_date,
+        )
+        df = module._pull(
+            operating_date=current_date,
+            nodes=module.DEFAULT_NODES,
+            run_id=run_id,
+            database=database,
+            metadata=metadata,
+        )
+        if not df.empty:
+            module._upsert(df=df, database=database)
+            total_rows += int(len(df))
+
+        current_date += timedelta(days=1)
+        if current_date <= end_date and request_delay_seconds > 0:
+            sleep(request_delay_seconds)
+
+    return BackfillResult(
+        pipeline_name=workflow_name,
+        start_date=start_date,
+        end_date=end_date,
+        days_requested=(end_date - start_date).days + 1,
+        rows_processed=total_rows,
+        status="success",
+    )
+
+
 def _run_pjm_da_hrl_lmps_backfill(**kwargs: Any) -> BackfillResult:
     return _run_pjm_main_scrape_backfill(module=pjm_da_hrl_lmps, **kwargs)
 
@@ -458,6 +513,30 @@ def _run_caiso_rt_lmps_backfill(**kwargs: Any) -> BackfillResult:
     )
 
 
+def _run_miso_da_lmps_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_miso_scrape_backfill(
+        module=miso_da_lmps,
+        workflow_name="miso_da_lmps",
+        **kwargs,
+    )
+
+
+def _run_miso_rt_lmps_prelim_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_miso_scrape_backfill(
+        module=miso_rt_lmps_prelim,
+        workflow_name="miso_rt_lmps_prelim",
+        **kwargs,
+    )
+
+
+def _run_miso_rt_lmps_final_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_miso_scrape_backfill(
+        module=miso_rt_lmps_final,
+        workflow_name="miso_rt_lmps_final",
+        **kwargs,
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="pjm_da_hrl_lmps",
@@ -523,6 +602,21 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
         name="caiso_rt_lmps",
         runner=_run_caiso_rt_lmps_backfill,
         end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="miso_da_lmps",
+        runner=_run_miso_da_lmps_backfill,
+        end_lag_days=0,
+    ),
+    PriceBackfillWorkflow(
+        name="miso_rt_lmps_prelim",
+        runner=_run_miso_rt_lmps_prelim_backfill,
+        end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="miso_rt_lmps_final",
+        runner=_run_miso_rt_lmps_final_backfill,
+        end_lag_days=5,
     ),
 )
 

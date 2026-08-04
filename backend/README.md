@@ -25,6 +25,7 @@ DBT_POSTGRES_SSLMODE=require
 
 PJM_API_KEY=
 EIA_API_KEY=
+MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY=
 
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
 HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com,Kapil.Saxena@HeliosCTA.com
@@ -164,6 +165,16 @@ credentials. The first promoted MISO runtime module is
 `backend.orchestration.power.miso.real_time_total_load`. MISO asks public users
 to avoid accessing real-time links more than once per minute, so
 scheduled jobs should use a conservative cadence.
+MISO Data Exchange Pricing API LMP helpers require
+`MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY` in the backend-only environment. Promoted
+LMP paths are `backend.orchestration.power.miso.da_lmps`,
+`backend.orchestration.power.miso.rt_lmps_prelim`, and
+`backend.orchestration.power.miso.rt_lmps_final`. They write `miso.da_lmps`,
+`miso.rt_lmps_prelim`, and `miso.rt_lmps_final` at
+`interval_start_time_utc x node_id x market_run_id` grain for
+`INDIANA.HUB` plus the additional ICE/MISO hub family. Rows store total LMP,
+energy, congestion, and loss components and use `ops.api_fetch_log` plus
+complete-day readiness events for scheduled runs.
 
 EIA Open Data API helpers use `EIA_API_KEY`. Promoted EIA runtime modules live
 under `backend.scrapes.eia`, with orchestration at `backend.orchestration.eia`
@@ -724,7 +735,7 @@ overwrite the same `security x date x data_type` rows.
 ## Scheduled LMP Price Repair
 
 `backend.backfills.power.lmp_price_backfill_7_day` runs a nightly seven-day
-repair over the promoted PJM, ISO-NE, ERCOT, and CAISO LMP price tables:
+repair over the promoted PJM, ISO-NE, ERCOT, CAISO, and MISO LMP price tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
@@ -737,14 +748,18 @@ repair over the promoted PJM, ISO-NE, ERCOT, and CAISO LMP price tables:
 - `ercot.settlement_point_prices`
 - `caiso.da_lmps`
 - `caiso.rt_lmps`
+- `miso.da_lmps`
+- `miso.rt_lmps_prelim`
+- `miso.rt_lmps_final`
 
 The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
-`22:15 UTC` after the current daily ISO-NE, ERCOT, CAISO, and PJM price timers. It
-uses feed-specific publication lags: DA feeds through the current Eastern
-market date, unverified/preliminary RT and ERCOT price-adder feeds through the
-prior market date, and verified/final RT feeds through two market dates back.
-CAISO repairs use OASIS trading dates; DA repair runs through the current date,
-while the scheduled CAISO DA poll remains responsible for next-day publication.
+`22:15 UTC` after the current daily ISO-NE, ERCOT, CAISO, MISO, and PJM price
+timers. It uses feed-specific publication lags: DA feeds through the current
+Eastern market date, unverified/preliminary RT and ERCOT price-adder feeds
+through the prior market date, most verified/final RT feeds through two market
+dates back, and MISO final RT through five calendar days back. CAISO repairs
+use OASIS trading dates; DA repair runs through the current date, while the
+scheduled CAISO DA and MISO DA pollers own next-day publication.
 It stamps API fetch
 telemetry with `run_mode=backfill`, `backfill_workflow`, backfill window
 fields, and `repair_family=lmp_price_backfill_7_day`, then relies on existing

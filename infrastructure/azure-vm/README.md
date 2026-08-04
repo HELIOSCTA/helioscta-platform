@@ -46,6 +46,12 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `RandomizedDelaySec=1min`.
   - `helios-lmp-price-backfill-7-day.timer`, daily at `22:15 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
+  - `helios-miso-da-lmps.timer`, daily at `19:00 UTC`, `Persistent=true`,
+    `RandomizedDelaySec=2min`.
+  - `helios-miso-rt-lmps-prelim.timer`, daily at `09:15 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=2min`.
+  - `helios-miso-rt-lmps-final.timer`, daily at `13:00 UTC`,
+    `Persistent=true`, `RandomizedDelaySec=2min`.
   - `helios-pjm-da-transconstraints.timer`, daily at `17:00 UTC`
     (`13:00 America/New_York` during daylight saving time), `Persistent=true`,
     `AccuracySec=1min`.
@@ -102,8 +108,8 @@ scrapes that need the same simple hourly cadence.
 `helios-pjm-transmission-outages.timer` refreshes the raw PJM eDART
 transmission outage text feed every 15 minutes while respecting the source's
 unchanged-file throttle.
-`helios-lmp-price-backfill-7-day.timer` repairs recent PJM, ISO-NE, and ERCOT
-LMP gaps every night at `22:15 UTC`.
+`helios-lmp-price-backfill-7-day.timer` repairs recent PJM, ISO-NE, ERCOT,
+CAISO, and MISO LMP gaps every night at `22:15 UTC`.
 `helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health
 digest in journald, including support-batch API and table freshness.
 
@@ -189,6 +195,7 @@ AZURE_POSTGRES_WRITER_SSLMODE=require
 HELIOS_LOG_DIR=/var/log/helioscta
 
 PJM_API_KEY=
+MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY=
 ```
 
 Do not create `backend/.env` on the VM unless you are doing an emergency manual

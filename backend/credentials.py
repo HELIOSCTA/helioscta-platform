@@ -153,6 +153,11 @@ ERCOT_USERNAME = os.getenv("ERCOT_USERNAME")
 ERCOT_PASSCODE = os.getenv("ERCOT_PASSCODE")
 ERCOT_API_KEY = os.getenv("ERCOT_API_KEY")
 
+# MISO Data Exchange Pricing API credentials
+MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY = os.getenv(
+    "MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY"
+)
+
 # Azure Blob Storage for private source-file handoff to frontend email senders.
 SFTP_FILES_STORAGE_CONNECTION_STRING = (
     os.getenv("SFTP_FILES_STORAGE_CONNECTION_STRING")

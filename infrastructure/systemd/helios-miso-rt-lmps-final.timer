@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA MISO Final Real-Time Hourly LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 13:00:00 UTC
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-miso-rt-lmps-final.service
+
+[Install]
+WantedBy=timers.target

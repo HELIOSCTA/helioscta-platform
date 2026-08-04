@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA MISO Day-Ahead Hourly LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 19:00:00 UTC
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-miso-da-lmps.service
+
+[Install]
+WantedBy=timers.target
