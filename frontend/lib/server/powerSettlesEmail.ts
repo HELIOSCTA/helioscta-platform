@@ -10,7 +10,7 @@ import type {
 export const POWER_SETTLES_EMAIL_TOPIC = "power-settles-email";
 export const POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT = "aidan.keaveny@helioscta.com";
 export const POWER_SETTLES_EMAIL_RECIPIENTS = [POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT] as const;
-export const POWER_SETTLES_EMAIL_DEFAULT_RT_SOURCE: RtLmpSource = "unverified";
+export const POWER_SETTLES_EMAIL_DEFAULT_RT_SOURCE: RtLmpSource = "verified";
 
 export interface PowerSettlesEmailQueueMessage {
   recipientEmail: string;

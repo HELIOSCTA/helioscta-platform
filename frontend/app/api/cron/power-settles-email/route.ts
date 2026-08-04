@@ -61,35 +61,6 @@ export async function GET(request: Request): Promise<Response> {
     });
     const readiness = powerSettlesEmailReadiness(reportResult.payload);
 
-    if (!readiness.ready) {
-      console.info(
-        JSON.stringify({
-          event: "power_settles_email_cron_not_ready",
-          topic: POWER_SETTLES_EMAIL_TOPIC,
-          requested_date: requestedDate,
-          rt_source: rtSource,
-          component,
-          lookback_days: lookbackDays,
-          complete_hub_count: readiness.completeHubCount,
-          hub_count: readiness.hubCount,
-          incomplete: readiness.incomplete,
-        }),
-      );
-
-      return NextResponse.json({
-        ok: true,
-        queued: false,
-        reason: "not_ready",
-        topic: POWER_SETTLES_EMAIL_TOPIC,
-        requestedDate,
-        rtSource,
-        component,
-        lookbackDays,
-        reportUrl,
-        readiness,
-      });
-    }
-
     const results: PublishResult[] = [];
     for (const recipientEmail of getPowerSettlesEmailRecipients()) {
       const idempotencyKey = buildPowerSettlesEmailIdempotencyKey({
@@ -136,6 +107,7 @@ export async function GET(request: Request): Promise<Response> {
         recipient_count: results.length,
         queued_count: results.filter((result) => result.status === "queued").length,
         duplicate_count: results.filter((result) => result.status === "duplicate").length,
+        incomplete_count: readiness.incomplete.length,
       }),
     );
 
@@ -204,10 +176,8 @@ function powerSettlesEmailReadiness(payload: PowerSettlesDashboardPayload) {
     }));
 
   return {
-    ready:
-      payload.summary.hubCount > 0 &&
-      payload.summary.completeHubCount === payload.summary.hubCount &&
-      payload.summary.completeIsoCount === payload.summary.isoCount,
+    ready: true,
+    policy: "send_after_payload_build",
     hubCount: payload.summary.hubCount,
     completeHubCount: payload.summary.completeHubCount,
     isoCount: payload.summary.isoCount,

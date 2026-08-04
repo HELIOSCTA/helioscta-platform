@@ -171,13 +171,16 @@ browser download.
 
 Vercel owns the scheduled Power Settles email workflow. `GET
 /api/cron/power-settles-email` is invoked by Vercel Cron, verifies
-`Authorization: Bearer ${CRON_SECRET}`, builds the report with unverified RT
-by default, and publishes to the `power-settles-email` Vercel Queue topic only
-when every dashboard hub is complete for the report date. The Vercel Cron
-schedule runs once daily at `11:00` UTC (`5:00 AM MDT` / `4:00 AM MST`), after
-the overnight VM RT LMP polling window has closed. The cron route queues at
-most one email for the report date; the deterministic queue idempotency key
-remains a duplicate-delivery guard.
+`Authorization: Bearer ${CRON_SECRET}`, builds the report with verified RT by
+default, and lets the Power Settles data builder fall back to unverified RT per
+hub when verified data is unavailable or less complete. The cron route always
+publishes to the `power-settles-email` Vercel Queue topic after the report
+payload builds; dashboard completeness is delivery metadata in the email and
+attachment, not a send gate. The Vercel Cron schedule runs once daily at
+`11:00` UTC (`5:00 AM MDT` / `4:00 AM MST`), after the overnight VM RT LMP
+polling window has closed. The cron route queues at most one email for the
+report date; the deterministic queue idempotency key remains a
+duplicate-delivery guard.
 `POST
 /api/queues/power-settles-email` is a private queue consumer configured through
 `vercel.json`; it renders the inline email and standalone HTML attachment, then
