@@ -28,6 +28,45 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## miso-data-exchange-lmps
+
+- Status: deployed on `helioscta-prod-vm-01` on `2026-08-04`.
+- Deployed commit: `9d29ccd`.
+- Host: `helioscta-prod-vm-01`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: `helios`.
+- Credential boundary: `/etc/helioscta/backend.env` includes
+  `MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY`; the file remains `0640 root:helios`.
+- Source system: MISO Data Exchange Pricing API.
+- Tables:
+  - `miso.da_lmps`
+  - `miso.rt_lmps_prelim`
+  - `miso.rt_lmps_final`
+- Unit files:
+  - `infrastructure/systemd/helios-miso-da-lmps.service`
+  - `infrastructure/systemd/helios-miso-da-lmps.timer`
+  - `infrastructure/systemd/helios-miso-rt-lmps-prelim.service`
+  - `infrastructure/systemd/helios-miso-rt-lmps-prelim.timer`
+  - `infrastructure/systemd/helios-miso-rt-lmps-final.service`
+  - `infrastructure/systemd/helios-miso-rt-lmps-final.timer`
+- Schedule:
+  - DA runs daily at `19:00 UTC`, targets the next operating date, and polls
+    every 10 minutes for up to 2 hours.
+  - RT preliminary runs daily at `09:15 UTC`, targets the previous operating
+    date, and polls every 10 minutes for up to 3 hours.
+  - RT final runs daily at `13:00 UTC`, targets five calendar days back, and
+    polls every 10 minutes for up to 3 hours.
+- Verification:
+  - Local focused pytest passed: `23 passed`.
+  - Local live no-write probe returned 24 DA and 24 RT preliminary rows for
+    `INDIANA.HUB`.
+  - VM DDL and indexes applied with `helios_admin`.
+  - VM smoke loads upserted 168 rows each for DA `2026-08-04`, RT preliminary
+    `2026-08-03`, and RT final `2026-07-29`.
+  - VM systemd smokes succeeded for `helios-miso-da-lmps.service` targeting
+    `2026-08-05` and `helios-miso-rt-lmps-prelim.service` targeting
+    `2026-08-03`; both wrote resolved poll telemetry to `ops.api_fetch_log`.
+
 ## eia-open-data
 
 - Status: deployed on `helioscta-prod-vm-01`; timers enabled on
