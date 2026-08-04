@@ -3,8 +3,6 @@ import {
   type ObservedRouteResult,
 } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
-import { localOnlyObservedNotFound } from "@/lib/server/localOnlyApi";
 import {
   getCachedRouteValue,
   normalizedSearchCacheKey,
@@ -53,7 +51,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60, process-cache=300",
   owner: "frontend",
-  purpose: "Local-dev EIA-930 daily generation, demand, and weather dashboard",
+  purpose: "Production EIA-930 daily generation, demand, and weather dashboard",
   p95TargetMs: 1_500,
   freshnessSource:
     "eia.eia_930_daily_generation_by_fuel + eia.eia_930_daily_region_data scrape_run_at_utc",
@@ -1813,10 +1811,6 @@ async function loadPayload(request: Request): Promise<ObservedRouteResult> {
 }
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
-  if (!isLocalOnlyFeatureEnabled()) {
-    return localOnlyObservedNotFound();
-  }
-
   const { searchParams } = new URL(request.url);
   const forceRefresh = searchParams.get("refresh") === "1";
   const key = normalizedSearchCacheKey(searchParams);
