@@ -227,6 +227,49 @@ def test_da_lmp_release_email_template_supports_caiso_components():
     assert "iso=caiso" in message["payload"]["report_url"]
 
 
+def test_da_lmp_release_email_template_supports_miso_components():
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="miso",
+        rows=_da_lmp_rows("INDIANA.HUB"),
+        target_date="2026-08-05",
+        latest_date="2026-08-05",
+        hubs=["INDIANA.HUB"],
+    )
+    assert snapshot["peak_start_he"] == 7
+    assert snapshot["peak_end_he"] == 22
+    assert snapshot["hubs"][0]["on_peak_avg"] == 44.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 38.5
+
+    message = email_notifications.build_da_lmp_release_email(
+        iso="miso",
+        event={
+            "id": 14,
+            "event_key": "miso_da_lmps:data_ready:2026-08-05:hubs_indiana_plus_ice",
+        },
+        recipient_email="ops@example.test",
+        snapshot=snapshot,
+    )
+
+    assert message["dataset"] == "miso_da_lmps"
+    assert message["subject"] == (
+        "MISO DA LMPs released for Wed Aug-05 | "
+        "HeliosCTA | MISO | DA LMPs | Posted"
+    )
+    assert "MISO DA LMPs Available" in message["body_html"]
+    assert "Open MISO DA LMP report" in message["body_html"]
+    assert "INDIANA.HUB" in message["body_html"]
+    assert "Peak HE7-22" in message["body_html"]
+    assert "OffPeak HE1-6,23-24" in message["body_html"]
+    assert "Energy" in message["body_html"]
+    assert "Congestion" in message["body_html"]
+    assert "Loss" in message["body_html"]
+    assert "Total" in message["body_html"]
+    assert message["payload"]["iso"] == "miso"
+    assert message["payload"]["hub"] == "INDIANA.HUB"
+    assert "iso=miso" in message["payload"]["report_url"]
+    assert "hub=INDIANA.HUB" in message["payload"]["report_url"]
+
+
 def test_fetch_da_lmp_email_snapshot_supports_caiso_sql(monkeypatch):
     calls: list[dict[str, object]] = []
 
@@ -277,6 +320,62 @@ def test_fetch_da_lmp_email_snapshot_supports_caiso_sql(monkeypatch):
     assert snapshot["hubs"][0]["hub"] == "TH_NP15_GEN-APND"
     assert snapshot["hubs"][0]["hours"] == 1
     assert snapshot["hubs"][0]["hourly"][0]["greenhouse_gas"] == 0.5
+
+
+def test_fetch_da_lmp_email_snapshot_supports_miso_sql(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_execute_sql(query, params=None, database=None, fetch=False):
+        calls.append(
+            {
+                "query": query,
+                "params": params,
+                "database": database,
+                "fetch": fetch,
+            }
+        )
+        if "MAX(operating_date)" in query:
+            assert "FROM miso.da_lmps" in query
+            return [{"latest_date": "2026-08-05"}]
+        assert "FROM miso.da_lmps AS lmps" in query
+        assert "lmps.energy_component AS system_energy" in query
+        assert "lmps.congestion_component AS congestion" in query
+        assert "lmps.loss_component AS marginal_loss" in query
+        assert "AT TIME ZONE 'Etc/GMT+5'" in query
+        return [
+            {
+                "hub": "INDIANA.HUB",
+                "hour_ending": 1,
+                "datetime_beginning": "2026-08-05T00:00:00",
+                "system_energy": 26.25,
+                "total": 27.5,
+                "congestion": 1.0,
+                "marginal_loss": 0.25,
+                "updated_at": "2026-08-04T19:05:00",
+            }
+        ]
+
+    monkeypatch.setattr(email_notifications.db, "execute_sql", fake_execute_sql)
+
+    snapshot = email_notifications.fetch_da_lmp_email_snapshot(
+        iso="miso",
+        business_date="2026-08-05",
+        database="stage_db",
+        hubs=["INDIANA.HUB"],
+    )
+
+    assert calls[0]["params"] == (["INDIANA.HUB"],)
+    assert calls[1]["params"] == (
+        ["INDIANA.HUB"],
+        "2026-08-05",
+        ["INDIANA.HUB"],
+    )
+    assert all(call["database"] == "stage_db" for call in calls)
+    assert snapshot["iso"] == "miso"
+    assert snapshot["latest_date"] == "2026-08-05"
+    assert snapshot["hubs"][0]["hub"] == "INDIANA.HUB"
+    assert snapshot["hubs"][0]["hours"] == 1
+    assert snapshot["hubs"][0]["hourly"][0]["marginal_loss"] == 0.25
 
 
 def test_enqueue_email_notification_is_idempotent(monkeypatch):
