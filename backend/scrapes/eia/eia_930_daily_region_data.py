@@ -64,7 +64,7 @@ REQUIRED_SOURCE_COLUMNS = ["period", "respondent", "type", "timezone", "value"]
 DEFAULT_TIMEZONES = ("Arizona", "Central", "Eastern", "Mountain", "Pacific")
 DEFAULT_TYPES = ("D", "DF", "NG", "TI")
 DEFAULT_RESPONDENTS: tuple[str, ...] | None = None
-DEFAULT_LOOKBACK_DAYS = 7
+DEFAULT_LOOKBACK_DAYS = 31
 
 logger = logging.getLogger(__name__)
 

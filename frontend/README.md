@@ -718,9 +718,10 @@ by 24, then returns the Home tab KPI fuel shares, last-15-day current/prior
 tables, full prior-year and current-year-to-date daily rows for YoY fuel
 charts, source freshness, and the selected timezone. Thermal share is defined
 as gas plus coal. Demand and net generation come from EIA-930 daily region
-`D` and `NG` rows. Weather response and weather-adjusted demand anomaly use
-WSI `electric_cdd` for summer and `electric_hdd` for winter, mapped through
-each region's explicit WSI broad entity (`US48 -> CONUS`,
+`D` and `NG` rows. Weather response and weather-adjusted demand anomaly read
+WSI `electric_cdd` for summer and `electric_hdd` for winter, rendered in the
+dashboard as Gas CDD/Gas HDD and mapped through each region's explicit WSI
+broad entity (`US48 -> CONUS`,
 PJM/ISONE/NYISO/TVA/SOCO -> EAST, MISO -> MIDWEST,
 ERCOT/SWPP -> SOUTHCENTRAL, CAISO -> PACIFIC). Only the requested season
 returns weather chart rows; the opposite season is returned as a lightweight

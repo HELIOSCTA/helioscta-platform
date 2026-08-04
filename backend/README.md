@@ -186,7 +186,9 @@ EIA daily endpoint returns multiple timezone variants for a single
 canonical timezone before renaming fields for Edi-style
 `DATE x RESPONDENT x FUELTYPE` tables. Schedule the daily orchestrator after
 the public daily refresh window, around `07:30 America/New_York`; it targets
-the prior Eastern date and polls every 15 minutes for up to 4.5 hours.
+the prior Eastern date, polls every 15 minutes for up to 4.5 hours, and
+refreshes a 31-day rolling source window so late EIA revisions overwrite prior
+raw rows.
 The companion EIA-930 daily region-data source runs through
 `backend.scrapes.eia.eia_930_daily_region_data`, with orchestration at
 `backend.orchestration.eia.eia_930_daily_region_data` and manual backfills at
@@ -194,10 +196,12 @@ The companion EIA-930 daily region-data source runs through
 `eia.eia_930_daily_region_data` at `period x respondent x type x timezone`
 grain, preserving EIA `D` demand, `DF` day-ahead demand forecast, `NG` net
 generation, and `TI` total interchange type values. The EIA dashboard consumes
-`D` and `NG` from this table for true demand and net generation; it should not
-derive demand from generation-by-fuel rows. Schedule the daily orchestrator
-around the same public daily refresh window, at `07:35 America/New_York`; it
-targets the prior Eastern date and polls every 15 minutes for up to 4.5 hours.
+`D` from this table for true demand; total generation is summed from
+generation-by-fuel rows, not derived from demand rows. Schedule the daily
+orchestrator around the same public daily refresh window, at
+`07:35 America/New_York`; it targets the prior Eastern date, polls every 15
+minutes for up to 4.5 hours, and refreshes a 31-day rolling source window so
+late EIA revisions overwrite prior raw rows.
 Weekly natural gas underground storage runs through
 `backend.scrapes.eia.weekly_underground_storage`, with orchestration at
 `backend.orchestration.eia.weekly_underground_storage` and manual backfills at

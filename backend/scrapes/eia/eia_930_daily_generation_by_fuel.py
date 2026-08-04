@@ -63,7 +63,7 @@ TARGET_DATA_TYPES = [
 ]
 REQUIRED_SOURCE_COLUMNS = ["period", "respondent", "fueltype", "timezone", "value"]
 DEFAULT_TIMEZONES = ("Arizona", "Central", "Eastern", "Mountain", "Pacific")
-DEFAULT_LOOKBACK_DAYS = 7
+DEFAULT_LOOKBACK_DAYS = 31
 
 logger = logging.getLogger(__name__)
 

@@ -285,7 +285,7 @@ def test_eia_930_daily_scheduled_run_polls_until_target_available(monkeypatch):
     assert calls[0]["metadata"]["poll_count"] == 1
     assert calls[1]["metadata"]["poll_count"] == 2
     assert calls[1]["metadata"]["target_period"] == "2026-07-29"
-    assert calls[1]["start_date"] == pd.Timestamp("2026-07-22").date()
+    assert calls[1]["start_date"] == pd.Timestamp("2026-06-28").date()
     assert calls[1]["end_date"] == pd.Timestamp("2026-07-29").date()
     assert ("poll_log", "success") in events
     assert ("upsert", 1) in events

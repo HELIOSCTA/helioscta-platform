@@ -54,11 +54,13 @@ boundary, or log path changes.
 - Schedule:
   - EIA-930 daily generation by fuel runs daily at
     `07:30 America/New_York`, targets the prior Eastern date, and polls every
-    15 minutes for up to 4.5 hours.
+    15 minutes for up to 4.5 hours. Each scheduled run refreshes a 31-day
+    rolling source window so late EIA revisions overwrite prior raw rows.
   - EIA-930 daily region data runs daily at `07:35 America/New_York`,
     targets the prior Eastern date, and polls every 15 minutes for up to
-    4.5 hours. The table backs true demand and net generation for the EIA
-    dashboard.
+    4.5 hours. Each scheduled run refreshes a 31-day rolling source window.
+    The table backs true demand for the EIA dashboard; total generation is
+    summed from the EIA-930 daily generation-by-fuel table.
   - Weekly underground storage runs Thursdays at
     `10:30 America/New_York`, targets the prior Friday week ending, and polls
     every 2 minutes for up to 90 minutes.
