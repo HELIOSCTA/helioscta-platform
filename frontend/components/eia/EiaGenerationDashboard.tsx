@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -27,10 +28,8 @@ import {
   EIA_GENERATION_PAGE_TABS,
   EIA_GENERATION_REGIONS,
   EIA_GENERATION_SEASON_OPTIONS,
-  EIA_GENERATION_SOURCE_TABLE,
   getEiaGenerationRegion,
   type EiaGenerationDailyRow,
-  type EiaGenerationMonthlyRow,
   type EiaGenerationMetricKey,
   type EiaGenerationMtdPathRow,
   type EiaGenerationPayload,
@@ -38,6 +37,9 @@ import {
   type EiaGenerationRegionalModelRow,
   type EiaGenerationRegion,
   type EiaGenerationSeason,
+  type EiaGenerationWeatherAnomalyRow,
+  type EiaGenerationWeatherBucket,
+  type EiaGenerationWeatherPoint,
   type EiaGenerationWeatherSeasonData,
   type EiaGenerationYoyMtdPayload,
   type EiaGenerationYoyStackRow,
@@ -69,8 +71,73 @@ interface MonthlyDeltaRow {
   delta: number | null;
 }
 
+interface MonthlyAverageDisplayRow {
+  month: string;
+  netGenerationMw: number | null;
+  gasMw: number | null;
+  coalMw: number | null;
+  nukeMw: number | null;
+  hydroMw: number | null;
+  windMw: number | null;
+  solarMw: number | null;
+  otherMw: number | null;
+  gasSharePct: number | null;
+  coalSharePct: number | null;
+  nukeSharePct: number | null;
+  hydroSharePct: number | null;
+  windSharePct: number | null;
+  solarSharePct: number | null;
+  otherSharePct: number | null;
+}
+
 interface LocalRegionalModelRow extends EiaGenerationRegionalModelRow {
   heatRateMmbtuPerMwh: number;
+}
+
+interface WeatherFitRow {
+  weatherValue: number;
+  demandMw: number;
+}
+
+interface ChartTooltipPayload<TPayload> {
+  name?: string | number;
+  value?: unknown;
+  color?: string;
+  payload?: TPayload;
+}
+
+interface ChartTooltipProps<TPayload> {
+  active?: boolean;
+  payload?: readonly ChartTooltipPayload<TPayload>[];
+}
+
+interface WeatherPointShapeProps {
+  cx?: number;
+  cy?: number;
+  fill?: string;
+  fillOpacity?: number;
+  payload?: EiaGenerationWeatherPoint;
+  onPointHover?: (point: EiaGenerationWeatherPoint | null) => void;
+}
+
+type WeatherResponseSeriesKey =
+  | "priorDaily"
+  | "currentDaily"
+  | "historicalBand"
+  | "historicalMedian"
+  | "historicalScatter"
+  | "fitCurves";
+
+type WeatherAnomalySeriesKey =
+  | "priorDaily"
+  | "currentDaily"
+  | "historicalBand"
+  | "historicalMedian";
+
+interface SeriesToggleItem<TKey extends string> {
+  key: TKey;
+  label: string;
+  color: string;
 }
 
 type HeatRateScope = "region" | "all";
@@ -88,7 +155,7 @@ const TABLE_COLUMNS: Array<{
 }> = [
   { key: "date", label: "Date", align: "left", kind: "date" },
   { key: "demandMw", label: "Demand", align: "right", tone: "demand", kind: "mw" },
-  { key: "netGenerationMw", label: "Net Gen", align: "right", tone: "net", kind: "mw" },
+  { key: "netGenerationMw", label: "Total Gen", align: "right", tone: "net", kind: "mw" },
   { key: "gasMw", label: "Gas", align: "right", tone: "gas", kind: "mw" },
   { key: "coalMw", label: "Coal", align: "right", tone: "coal", kind: "mw" },
   { key: "nukeMw", label: "Nuke", align: "right", tone: "nuke", kind: "mw" },
@@ -125,13 +192,13 @@ const YOY_METRICS: Array<{
 ];
 
 const MONTHLY_AVERAGE_COLUMNS: Array<{
-  key: keyof EiaGenerationMonthlyRow;
+  key: keyof MonthlyAverageDisplayRow;
   label: string;
   kind: "text" | "mw" | "pct";
   tone?: EiaGenerationMetricKey | "net";
 }> = [
   { key: "month", label: "Month", kind: "text" },
-  { key: "netGenerationMw", label: "Net Gen", kind: "mw", tone: "net" },
+  { key: "netGenerationMw", label: "Total Gen", kind: "mw", tone: "net" },
   { key: "gasMw", label: "Gas Gen", kind: "mw", tone: "gas" },
   { key: "coalMw", label: "Coal Gen", kind: "mw", tone: "coal" },
   { key: "nukeMw", label: "Nuke Gen", kind: "mw", tone: "nuke" },
@@ -171,14 +238,6 @@ function parsePageTab(value: string | null): EiaGenerationPageTab | null {
     : null;
 }
 
-function parseIsoDate(value: string | null): string | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-  const parsed = new Date(`${value}T00:00:00Z`);
-  return Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value
-    ? null
-    : value;
-}
-
 function seasonFromDate(value: string): EiaGenerationSeason {
   const month = Number.parseInt(value.slice(5, 7), 10);
   return EIA_GENERATION_SEASON_OPTIONS.find((option) => option.key === "winter")?.months.includes(month)
@@ -211,11 +270,9 @@ function seasonTickLabel(season: EiaGenerationSeason, value: number | string): s
 function buildApiUrl(
   region: EiaGenerationRegion,
   season: EiaGenerationSeason,
-  date: string | null,
   refresh: boolean,
 ): string {
   const params = new URLSearchParams({ region, season });
-  if (date) params.set("date", date);
   if (refresh) params.set("refresh", "1");
   return `/api/eia-generation?${params.toString()}`;
 }
@@ -223,9 +280,8 @@ function buildApiUrl(
 function buildCacheKey(
   region: EiaGenerationRegion,
   season: EiaGenerationSeason,
-  date: string | null,
 ): string {
-  return `api:eia-generation:v2:${region}:${season}:${date ?? "latest"}`;
+  return `api:eia-generation:v2:${region}:${season}:latest`;
 }
 
 function toNumber(value: unknown): number | null {
@@ -252,7 +308,7 @@ function fmtDeltaPct(value: number | null | undefined): string {
 
 function fmtDeltaMw(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  return `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString()}`;
+  return `${value > 0 ? "+" : ""}${Math.round(value).toLocaleString()} MW`;
 }
 
 function fmtWeather(value: number | null | undefined): string {
@@ -301,6 +357,297 @@ function round(value: number | null, digits = 1): number | null {
   if (value === null || !Number.isFinite(value)) return null;
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
+}
+
+function pctOf(numerator: number | null, denominator: number | null): number | null {
+  if (numerator === null || denominator === null || denominator === 0) return null;
+  return round((numerator / denominator) * 100, 2);
+}
+
+function weatherMetricKeyLabel(label: string): string {
+  return label;
+}
+
+function buildWeatherFitRows(points: EiaGenerationWeatherPoint[]): WeatherFitRow[] {
+  const sorted = [...points]
+    .filter((point) => Number.isFinite(point.weatherValue) && Number.isFinite(point.demandMw))
+    .sort((first, second) => first.weatherValue - second.weatherValue);
+  if (!sorted.length) return [];
+  const windowSize = Math.min(9, sorted.length);
+  return sorted.map((point, index) => {
+    const start = Math.max(0, index - Math.floor(windowSize / 2));
+    const end = Math.min(sorted.length, start + windowSize);
+    const window = sorted.slice(Math.max(0, end - windowSize), end);
+    return {
+      weatherValue: point.weatherValue,
+      demandMw: round(avg(window.map((item) => item.demandMw))) ?? point.demandMw,
+    };
+  });
+}
+
+function buildAnomalyChartRows(weather: EiaGenerationWeatherSeasonData): EiaGenerationWeatherAnomalyRow[] {
+  const monthDays = new Set(weather.anomalyRows.map((row) => row.monthDay));
+  for (const month of EIA_GENERATION_SEASON_OPTIONS.find((option) => option.key === weather.season)?.months ?? []) {
+    monthDays.add(`${String(month).padStart(2, "0")}-01`);
+  }
+  return Array.from(monthDays)
+    .map((monthDay) => {
+      const existing = weather.anomalyRows.find((row) => row.monthDay === monthDay);
+      return {
+        monthDay,
+        seasonDayIndex: seasonDayIndex(weather.season, monthDay),
+        current: existing?.current ?? null,
+        currentDate: existing?.currentDate ?? null,
+        currentDemandMw: existing?.currentDemandMw ?? null,
+        currentNormalDemandMw: existing?.currentNormalDemandMw ?? null,
+        currentWeatherValue: existing?.currentWeatherValue ?? null,
+        prior: existing?.prior ?? null,
+        priorDate: existing?.priorDate ?? null,
+        priorDemandMw: existing?.priorDemandMw ?? null,
+        priorNormalDemandMw: existing?.priorNormalDemandMw ?? null,
+        priorWeatherValue: existing?.priorWeatherValue ?? null,
+        historicalP10AnomalyMw: existing?.historicalP10AnomalyMw ?? null,
+        historicalMedianAnomalyMw: existing?.historicalMedianAnomalyMw ?? null,
+        historicalP90AnomalyMw: existing?.historicalP90AnomalyMw ?? null,
+        historicalAnomalyBand: existing?.historicalAnomalyBand ?? null,
+      };
+    })
+    .sort((first, second) => first.seasonDayIndex - second.seasonDayIndex);
+}
+
+function isWeatherPointPayload(value: unknown): value is EiaGenerationWeatherPoint {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<EiaGenerationWeatherPoint>;
+  return (
+    typeof candidate.date === "string" &&
+    typeof candidate.weatherValue === "number" &&
+    typeof candidate.demandMw === "number"
+  );
+}
+
+function isWeatherBucketPayload(value: unknown): value is EiaGenerationWeatherBucket {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<EiaGenerationWeatherBucket>;
+  return (
+    typeof candidate.weatherValue === "number" &&
+    typeof candidate.historicalMedianDemandMw === "number"
+  );
+}
+
+function TooltipGridRow({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <>
+      <span className="text-gray-500">{label}</span>
+      <span className="text-right font-semibold tabular-nums text-gray-100" style={color ? { color } : undefined}>
+        {value}
+      </span>
+    </>
+  );
+}
+
+function ChartSeriesToggles<TKey extends string>({
+  items,
+  hiddenSeries,
+  onToggle,
+}: {
+  items: Array<SeriesToggleItem<TKey>>;
+  hiddenSeries: Set<TKey>;
+  onToggle: (key: TKey) => void;
+}) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {items.map((item) => {
+        const active = !hiddenSeries.has(item.key);
+        return (
+          <label
+            key={item.key}
+            className={`inline-flex h-7 items-center gap-2 rounded-md border px-2 text-[11px] font-semibold transition-colors ${
+              active
+                ? "border-gray-700 bg-gray-950/70 text-gray-200"
+                : "border-gray-800 bg-gray-950/30 text-gray-600"
+            }`}
+          >
+            <input
+              type="checkbox"
+              checked={active}
+              onChange={() => onToggle(item.key)}
+              className="h-3 w-3 accent-blue-500"
+            />
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: item.color, opacity: active ? 1 : 0.35 }}
+            />
+            <span className="max-w-[120px] truncate">{item.label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
+function WeatherPointShape({
+  cx,
+  cy,
+  fill,
+  fillOpacity,
+  payload,
+  onPointHover,
+}: WeatherPointShapeProps) {
+  if (typeof cx !== "number" || typeof cy !== "number") return null;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={4}
+      fill={fill ?? "#22d3ee"}
+      fillOpacity={fillOpacity ?? 0.75}
+      onMouseEnter={() => onPointHover?.(payload ?? null)}
+      onMouseLeave={() => onPointHover?.(null)}
+    />
+  );
+}
+
+type WeatherResponseTooltipPayload =
+  | EiaGenerationWeatherPoint
+  | EiaGenerationWeatherBucket
+  | WeatherFitRow;
+
+function WeatherResponseTooltip({
+  active,
+  payload,
+  metricLabel,
+  hoveredPoint,
+}: ChartTooltipProps<WeatherResponseTooltipPayload> & {
+  metricLabel: string;
+  hoveredPoint?: EiaGenerationWeatherPoint | null;
+}) {
+  if (!active || !payload?.length) return null;
+
+  const point = hoveredPoint ?? payload.map((item) => item.payload).find(isWeatherPointPayload);
+  if (point) {
+    return (
+      <div className="rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-xs text-gray-200 shadow-xl shadow-black/30">
+        <div className="font-semibold tabular-nums text-gray-100">{point.date}</div>
+        <div className="mt-2 grid grid-cols-[auto_auto] gap-x-3 gap-y-1">
+          <TooltipGridRow label={metricLabel} value={fmtWeather(point.weatherValue)} color="#67e8f9" />
+          <TooltipGridRow label="Actual demand" value={fmtMw(point.demandMw, true)} />
+          <TooltipGridRow label="Weather normal demand" value={fmtMw(point.baselineDemandMw, true)} />
+          <TooltipGridRow label="Demand anomaly" value={fmtDeltaMw(point.demandAnomalyMw)} color="#facc15" />
+        </div>
+      </div>
+    );
+  }
+
+  const bucket = payload.map((item) => item.payload).find(isWeatherBucketPayload);
+  if (!bucket) return null;
+  return (
+    <div className="rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-xs text-gray-200 shadow-xl shadow-black/30">
+      <div className="font-semibold tabular-nums text-gray-100">
+        {metricLabel} bucket {fmtWeather(bucket.weatherValue)}
+      </div>
+      <div className="mt-2 grid grid-cols-[auto_auto] gap-x-3 gap-y-1">
+        <TooltipGridRow label="Historical p10 demand" value={fmtMw(bucket.historicalP10DemandMw, true)} />
+        <TooltipGridRow label="Weather normal demand" value={fmtMw(bucket.historicalMedianDemandMw, true)} />
+        <TooltipGridRow label="Historical p90 demand" value={fmtMw(bucket.historicalP90DemandMw, true)} />
+        <TooltipGridRow label="Sample days" value={bucket.sampleSize.toLocaleString()} />
+      </div>
+    </div>
+  );
+}
+
+function WeatherAnomalyTooltip({
+  active,
+  payload,
+  metricLabel,
+  currentYear,
+  priorYear,
+}: ChartTooltipProps<EiaGenerationWeatherAnomalyRow> & {
+  metricLabel: string;
+  currentYear: number | string;
+  priorYear: number | string;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload.find((item) => item.payload)?.payload;
+  if (!row) return null;
+
+  const renderPointRows = ({
+    title,
+    date,
+    weatherValue,
+    demandMw,
+    normalDemandMw,
+    anomalyMw,
+    color,
+  }: {
+    title: string;
+    date: string | null;
+    weatherValue: number | null;
+    demandMw: number | null;
+    normalDemandMw: number | null;
+    anomalyMw: number | null;
+    color: string;
+  }) => {
+    if (!date) return null;
+    return (
+      <div className="mt-3 border-t border-gray-800 pt-2">
+        <div className="mb-1 font-semibold tabular-nums" style={{ color }}>
+          {title} | {date}
+        </div>
+        <div className="grid grid-cols-[auto_auto] gap-x-3 gap-y-1">
+          <TooltipGridRow label={metricLabel} value={fmtWeather(weatherValue)} color="#67e8f9" />
+          <TooltipGridRow label="Actual demand" value={fmtMw(demandMw, true)} />
+          <TooltipGridRow label="Weather normal demand" value={fmtMw(normalDemandMw, true)} />
+          <TooltipGridRow label="Demand anomaly" value={fmtDeltaMw(anomalyMw)} color={color} />
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-xs text-gray-200 shadow-xl shadow-black/30">
+      <div className="font-semibold tabular-nums text-gray-100">{row.monthDay}</div>
+      <div className="mt-2 grid grid-cols-[auto_auto] gap-x-3 gap-y-1">
+        <TooltipGridRow
+          label="Historical anomaly p10"
+          value={fmtDeltaMw(row.historicalP10AnomalyMw)}
+        />
+        <TooltipGridRow
+          label="Historical median anomaly"
+          value={fmtDeltaMw(row.historicalMedianAnomalyMw)}
+        />
+        <TooltipGridRow
+          label="Historical anomaly p90"
+          value={fmtDeltaMw(row.historicalP90AnomalyMw)}
+        />
+      </div>
+      {renderPointRows({
+        title: String(currentYear),
+        date: row.currentDate,
+        weatherValue: row.currentWeatherValue,
+        demandMw: row.currentDemandMw,
+        normalDemandMw: row.currentNormalDemandMw,
+        anomalyMw: row.current,
+        color: "#22d3ee",
+      })}
+      {renderPointRows({
+        title: String(priorYear),
+        date: row.priorDate,
+        weatherValue: row.priorWeatherValue,
+        demandMw: row.priorDemandMw,
+        normalDemandMw: row.priorNormalDemandMw,
+        anomalyMw: row.prior,
+        color: "#60a5fa",
+      })}
+    </div>
+  );
 }
 
 function dateAgeDays(value: string | null | undefined): number | null {
@@ -417,6 +764,54 @@ function buildMonthlyDeltaRows(payload: EiaGenerationPayload, key: EiaGeneration
       delta: currentAvg === null || priorAvg === null ? null : round(currentAvg - priorAvg),
     };
   });
+}
+
+function avgDailyMetric(
+  rows: EiaGenerationDailyRow[],
+  selector: (row: EiaGenerationDailyRow) => number | null,
+): number | null {
+  return round(avg(rows.map(selector)));
+}
+
+function buildMonthlyAverageDisplayRows(payload: EiaGenerationPayload): MonthlyAverageDisplayRow[] {
+  const rowsByMonth = new Map<string, EiaGenerationDailyRow[]>();
+
+  for (const row of payload.daily) {
+    const month = `${row.year}-${String(row.month).padStart(2, "0")}`;
+    rowsByMonth.set(month, [...(rowsByMonth.get(month) ?? []), row]);
+  }
+
+  return Array.from(rowsByMonth.entries())
+    .map(([month, rows]) => {
+      const netGenerationMw = avgDailyMetric(rows, (row) => row.netGenerationMw);
+      const gasMw = avgDailyMetric(rows, (row) => row.gasMw);
+      const coalMw = avgDailyMetric(rows, (row) => row.coalMw);
+      const nukeMw = avgDailyMetric(rows, (row) => row.nukeMw);
+      const hydroMw = avgDailyMetric(rows, (row) => row.hydroMw);
+      const windMw = avgDailyMetric(rows, (row) => row.windMw);
+      const solarMw = avgDailyMetric(rows, (row) => row.solarMw);
+      const otherMw = avgDailyMetric(rows, (row) => row.otherMw);
+
+      return {
+        month,
+        netGenerationMw,
+        gasMw,
+        coalMw,
+        nukeMw,
+        hydroMw,
+        windMw,
+        solarMw,
+        otherMw,
+        gasSharePct: pctOf(gasMw, netGenerationMw),
+        coalSharePct: pctOf(coalMw, netGenerationMw),
+        nukeSharePct: pctOf(nukeMw, netGenerationMw),
+        hydroSharePct: pctOf(hydroMw, netGenerationMw),
+        windSharePct: pctOf(windMw, netGenerationMw),
+        solarSharePct: pctOf(solarMw, netGenerationMw),
+        otherSharePct: pctOf(otherMw, netGenerationMw),
+      };
+    })
+    .sort((first, second) => second.month.localeCompare(first.month));
 }
 
 function scaleBcfValue(
@@ -631,17 +1026,11 @@ function ChartCard({
 function RegionControls({
   region,
   data,
-  requestedDate,
   onRegionChange,
-  onDateChange,
-  onLatestClick,
 }: {
   region: EiaGenerationRegion;
   data: EiaGenerationPayload | null;
-  requestedDate: string | null;
   onRegionChange: (region: EiaGenerationRegion) => void;
-  onDateChange: (date: string | null) => void;
-  onLatestClick: () => void;
 }) {
   return (
     <div className="flex flex-col gap-3 border-b border-gray-800 pb-4 lg:flex-row lg:items-center lg:justify-between">
@@ -665,24 +1054,6 @@ function RegionControls({
         })}
       </div>
       <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-        <label className="flex h-8 items-center gap-2 rounded-md border border-gray-800 bg-gray-900 px-2 text-xs text-gray-500">
-          <span className="font-semibold uppercase tracking-wide">Date</span>
-          <input
-            type="date"
-            value={requestedDate ?? ""}
-            min={data?.freshness.minPeriod ?? undefined}
-            max={data?.latestDate ?? undefined}
-            onChange={(event) => onDateChange(parseIsoDate(event.target.value))}
-            className="h-6 bg-transparent text-xs font-semibold tabular-nums text-gray-200 outline-none [color-scheme:dark]"
-          />
-        </label>
-        <button
-          type="button"
-          onClick={onLatestClick}
-          className="h-8 rounded-md border border-gray-800 bg-gray-900 px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
-        >
-          Latest
-        </button>
         <div className="text-xs text-gray-500 lg:text-right">
           Latest: <span className="font-semibold tabular-nums text-gray-200">{fmtDate(data?.latestDate)}</span>
         </div>
@@ -721,29 +1092,6 @@ function HomeTabStrip({
   );
 }
 
-function SourceContractStrip({ data }: { data: EiaGenerationPayload }) {
-  const items = [
-    { label: "Fuel", value: EIA_GENERATION_SOURCE_TABLE },
-    { label: "Demand", value: data.metadata.demandSourceTable },
-    { label: "Weather", value: data.region.weatherEntityLabel ?? data.metadata.weatherSourceTable },
-    { label: "Timezone", value: data.freshness.selectedTimezone },
-    { label: "Rows", value: data.freshness.rowCount.toLocaleString() },
-  ];
-
-  return (
-    <section className="grid gap-2 rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 md:grid-cols-5">
-      {items.map((item) => (
-        <div key={item.label} className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{item.label}</p>
-          <p className="mt-1 truncate text-xs font-semibold text-gray-200" title={item.value}>
-            {item.value}
-          </p>
-        </div>
-      ))}
-    </section>
-  );
-}
-
 function SourceStatusBanner({ data }: { data: EiaGenerationPayload }) {
   const ageDays = dateAgeDays(data.latestDate);
   const stale = ageDays !== null && ageDays > 3;
@@ -773,6 +1121,8 @@ function DailyGenerationTable({
   rows: EiaGenerationDailyRow[];
   showPendingDemand: boolean;
 }) {
+  const dividerClass = "border-l border-gray-700/80";
+
   return (
     <DataTableShell
       title={title}
@@ -787,7 +1137,7 @@ function DailyGenerationTable({
                 key={String(column.key)}
                 className={`px-3 py-2 font-semibold uppercase tracking-wide ${
                   column.align === "left" ? "text-left" : "text-right"
-                }`}
+                } ${column.key === "gasSharePct" ? dividerClass : ""}`}
               >
                 {column.label}
               </th>
@@ -809,7 +1159,7 @@ function DailyGenerationTable({
                     title={pendingDemand ? "Daily ISO demand source pending" : undefined}
                     className={`px-3 py-2 tabular-nums ${
                       column.align === "left" ? "text-left font-semibold text-gray-100" : `text-right ${toneClass}`
-                    }`}
+                    } ${column.key === "gasSharePct" ? dividerClass : ""}`}
                   >
                     {cellValue(row, column)}
                   </td>
@@ -966,14 +1316,15 @@ function YoyMetricPanel({
 }
 
 function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
-  const rows = payload.monthly.rows;
-  const hasRows = rows.some((row) => row.currentDayCount > 0);
+  const pairedRows = payload.monthly.rows;
+  const rows = useMemo(() => buildMonthlyAverageDisplayRows(payload), [payload]);
+  const hasRows = rows.length > 0;
 
   return (
     <div className="space-y-4">
       <DataTableShell
         title={`${payload.region.label} - Monthly Generation Mix (Avg MW)`}
-        subtitle={`${payload.currentYear ?? "-"} rows are monthly averages of daily EIA-930 average MW. Latest incomplete month is month-to-date.`}
+        subtitle={`Rows are monthly averages of daily EIA-930 average MW by year-month. Latest incomplete month is month-to-date.`}
         bodyClassName="border-gray-800"
       >
         <table className="w-full min-w-[1760px] border-collapse bg-[#0d1119] text-xs text-gray-200">
@@ -1036,7 +1387,7 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                <BarChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
@@ -1060,7 +1411,7 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={rows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
+                <LineChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
@@ -1075,21 +1426,21 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
         </ChartCard>
 
         <ChartCard
-          title="YoY Net Generation"
+          title="YoY Total Generation"
           subtitle="Average MW delta by month"
-          help="Net generation is EIA region net generation when available, otherwise summed fuel generation."
+          help="Total generation is the summed EIA-930 fuel generation rows."
         >
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                <BarChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
                   <Tooltip contentStyle={tooltipStyle()} formatter={(value) => [fmtDeltaMw(toNumber(value)), "Net gen delta"]} />
                   <ReferenceLine y={0} stroke="#475569" />
-                  <Bar dataKey="netGenerationDeltaMw" name="Net Gen YoY" isAnimationActive={false}>
-                    {rows.map((row) => (
+                  <Bar dataKey="netGenerationDeltaMw" name="Total Gen YoY" isAnimationActive={false}>
+                    {pairedRows.map((row) => (
                       <Cell key={row.month} fill={(row.netGenerationDeltaMw ?? 0) >= 0 ? "#059669" : "#dc2626"} />
                     ))}
                   </Bar>
@@ -1102,12 +1453,12 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
         <ChartCard
           title="YoY Gas Share"
           subtitle="Gas share of total generation"
-          help="Gas share is gas average MW divided by net generation average MW."
+          help="Gas share is gas average MW divided by total generation average MW."
         >
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                <BarChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}pp`} width={58} />
@@ -1128,7 +1479,7 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
+                <BarChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 0, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`} width={58} />
@@ -1147,12 +1498,12 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
         <ChartCard
           title="Renewables Penetration Trend"
           subtitle={`${payload.currentYear ?? "-"} vs ${payload.priorYear ?? "-"}`}
-          help="Renewables penetration is hydro plus wind plus solar divided by net generation."
+          help="Renewables penetration is hydro plus wind plus solar divided by total generation."
         >
           {(focused) => (
             <div className={focused ? "h-[500px]" : "h-[300px]"}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={rows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
+                <LineChart data={pairedRows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
                   <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
                   <XAxis dataKey="month" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
@@ -1390,7 +1741,7 @@ function RegionalModelingTab({
         <table className="w-full min-w-[1280px] border-collapse bg-[#0d1119] text-xs text-gray-200">
           <thead className="bg-gray-950 text-gray-500">
             <tr>
-              {["Month", "Demand", "Net Gen", "Gas", "Coal", "Thermal", "Nuke + Hydro", "Wind + Solar", "Demand - Net Gen", "Status"].map((column) => (
+              {["Month", "Demand", "Total Gen", "Gas", "Coal", "Thermal", "Nuke + Hydro", "Wind + Solar", "Demand - Total Gen", "Status"].map((column) => (
                 <th key={column} className={`px-3 py-2 font-semibold uppercase tracking-wide ${column === "Month" || column === "Status" ? "text-left" : "text-right"}`}>{column}</th>
               ))}
             </tr>
@@ -1718,6 +2069,12 @@ function WeatherResponsePanel({
 }: {
   weather: EiaGenerationWeatherSeasonData;
 }) {
+  const [focused, setFocused] = useState(false);
+  const [hoveredPoint, setHoveredPoint] = useState<EiaGenerationWeatherPoint | null>(null);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<WeatherResponseSeriesKey>>(
+    () => new Set(),
+  );
+
   if (weather.status !== "available") {
     return (
       <PendingPanel
@@ -1729,26 +2086,73 @@ function WeatherResponsePanel({
     );
   }
 
+  const priorFitRows = buildWeatherFitRows(weather.priorPoints);
+  const currentFitRows = buildWeatherFitRows(weather.currentPoints);
+  const metricKeyLabel = weatherMetricKeyLabel(weather.metricLabel);
+  const currentYear = weather.currentYear ?? "Current";
+  const priorYear = weather.priorYear ?? "Prior";
+  const chartHeight = focused ? "h-[620px]" : "h-[410px]";
+  const toggleSeries = (key: WeatherResponseSeriesKey) => {
+    setHiddenSeries((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+  const toggleItems: Array<SeriesToggleItem<WeatherResponseSeriesKey>> = [
+    { key: "priorDaily", label: `${priorYear} Daily`, color: "#60a5fa" },
+    { key: "currentDaily", label: `${currentYear} Daily`, color: "#22d3ee" },
+    { key: "historicalBand", label: "Historical 10-90%", color: "#334155" },
+    { key: "historicalMedian", label: "Historical Median", color: "#94a3b8" },
+    { key: "historicalScatter", label: "Historical Points", color: "#64748b" },
+    { key: "fitCurves", label: "Fit Curves", color: "#38bdf8" },
+  ];
+  const showPriorDaily = !hiddenSeries.has("priorDaily");
+  const showCurrentDaily = !hiddenSeries.has("currentDaily");
+  const showHistoricalBand = !hiddenSeries.has("historicalBand");
+  const showHistoricalMedian = !hiddenSeries.has("historicalMedian");
+  const showHistoricalScatter = !hiddenSeries.has("historicalScatter");
+  const showFitCurves = !hiddenSeries.has("fitCurves");
+
   return (
-    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
+    <section className={`rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4 ${focused ? "xl:col-span-2" : ""}`}>
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-gray-100">Weather Response: Current vs Prior</h2>
+          <h2 className="text-sm font-semibold text-gray-100">
+            Weather Response: {currentYear} vs {priorYear}
+          </h2>
           <p className="mt-1 text-xs text-gray-500">
-            {weather.entityLabel ?? weather.entityId} | {weather.metricLabel}
+            Historical 10-90% band and median by {metricKeyLabel} bucket, with daily scatter and smoothed current/prior response curves.
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => setFocused((current) => !current)}
+          className="h-6 shrink-0 rounded-md border border-gray-700 px-2 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+        >
+          {focused ? "Exit" : "Focus"}
+        </button>
       </div>
-      <div className="h-[320px]">
+      <ChartSeriesToggles
+        items={toggleItems}
+        hiddenSeries={hiddenSeries}
+        onToggle={toggleSeries}
+      />
+      <div className={`mt-3 ${chartHeight}`}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart margin={{ top: 8, right: 18, bottom: 10, left: 8 }}>
-            <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+          <ComposedChart margin={{ top: 8, right: 24, bottom: 34, left: 10 }}>
+            <CartesianGrid stroke="#253041" />
             <XAxis
               type="number"
               dataKey="weatherValue"
               name={weather.metricLabel}
               tick={{ fill: "#9ca3af", fontSize: 11 }}
               tickFormatter={(value) => fmtWeather(toNumber(value))}
+              domain={[0, "dataMax"]}
             />
             <YAxis
               type="number"
@@ -1756,52 +2160,139 @@ function WeatherResponsePanel({
               name="Demand"
               tick={{ fill: "#9ca3af", fontSize: 11 }}
               tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+              domain={[
+                (dataMin: number) => Math.floor((dataMin - 25000) / 50000) * 50000,
+                (dataMax: number) => Math.ceil((dataMax + 25000) / 50000) * 50000,
+              ]}
               width={58}
             />
             <Tooltip
-              contentStyle={tooltipStyle()}
-              formatter={(value, name) => {
-                const label = String(name);
-                const numeric = toNumber(value);
-                return [
-                  label.includes("Demand") || label.includes("median")
-                    ? fmtMw(numeric, true)
-                    : fmtWeather(numeric),
-                  label,
-                ];
-              }}
+              shared={false}
+              content={(props) => (
+                <WeatherResponseTooltip
+                  {...(props as ChartTooltipProps<WeatherResponseTooltipPayload>)}
+                  metricLabel={weather.metricLabel}
+                  hoveredPoint={hoveredPoint}
+                />
+              )}
             />
-            <Scatter
-              name="Historical Demand"
-              data={weather.historicalPoints}
-              fill="#64748b"
-              fillOpacity={0.22}
-              isAnimationActive={false}
-            />
-            <Scatter
-              name={`${weather.priorYear} Demand`}
-              data={weather.priorPoints}
-              fill="#f59e0b"
-              fillOpacity={0.82}
-              isAnimationActive={false}
-            />
-            <Scatter
-              name={`${weather.currentYear} Demand`}
-              data={weather.currentPoints}
-              fill="#38bdf8"
-              fillOpacity={0.9}
-              isAnimationActive={false}
-            />
-            <Line
-              name="Historical median"
-              data={weather.bucketMedians}
-              type="monotone"
-              dataKey="historicalMedianDemandMw"
-              stroke="#e5e7eb"
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
+            {showHistoricalBand && (
+              <>
+                <Area
+                  name="Historical 10-90%"
+                  data={weather.bucketMedians}
+                  type="monotone"
+                  dataKey="historicalP90DemandMw"
+                  stroke="none"
+                  fill="#334155"
+                  fillOpacity={0.34}
+                  isAnimationActive={false}
+                />
+                <Area
+                  data={weather.bucketMedians}
+                  type="monotone"
+                  dataKey="historicalP10DemandMw"
+                  stroke="none"
+                  fill="#12141d"
+                  fillOpacity={1}
+                  legendType="none"
+                  tooltipType="none"
+                  isAnimationActive={false}
+                />
+              </>
+            )}
+            {showHistoricalMedian && (
+              <Line
+                name="Historical Median"
+                data={weather.bucketMedians}
+                type="monotone"
+                dataKey="historicalMedianDemandMw"
+                stroke="#94a3b8"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {showPriorDaily && (
+              <Scatter
+                name={`${priorYear} Daily`}
+                data={weather.priorPoints}
+                fill="#60a5fa"
+                fillOpacity={0.55}
+                shape={(props) => (
+                  <WeatherPointShape
+                    {...(props as WeatherPointShapeProps)}
+                    fill="#60a5fa"
+                    fillOpacity={0.55}
+                    onPointHover={setHoveredPoint}
+                  />
+                )}
+                isAnimationActive={false}
+              />
+            )}
+            {showCurrentDaily && (
+              <Scatter
+                name={`${currentYear} Daily`}
+                data={weather.currentPoints}
+                fill="#22d3ee"
+                fillOpacity={0.75}
+                shape={(props) => (
+                  <WeatherPointShape
+                    {...(props as WeatherPointShapeProps)}
+                    fill="#22d3ee"
+                    fillOpacity={0.75}
+                    onPointHover={setHoveredPoint}
+                  />
+                )}
+                isAnimationActive={false}
+              />
+            )}
+            {showHistoricalScatter && (
+              <Scatter
+                name="Historical Demand"
+                data={weather.historicalPoints}
+                fill="#64748b"
+                fillOpacity={0.18}
+                legendType="none"
+                shape={(props) => (
+                  <WeatherPointShape
+                    {...(props as WeatherPointShapeProps)}
+                    fill="#64748b"
+                    fillOpacity={0.18}
+                    onPointHover={setHoveredPoint}
+                  />
+                )}
+                isAnimationActive={false}
+              />
+            )}
+            {showFitCurves && showPriorDaily && (
+              <Line
+                name={`${priorYear} Fit`}
+                data={priorFitRows}
+                type="monotone"
+                dataKey="demandMw"
+                stroke="#60a5fa"
+                strokeWidth={2}
+                dot={false}
+                legendType="none"
+                tooltipType="none"
+                isAnimationActive={false}
+              />
+            )}
+            {showFitCurves && showCurrentDaily && (
+              <Line
+                name={`${currentYear} Fit`}
+                data={currentFitRows}
+                type="monotone"
+                dataKey="demandMw"
+                stroke="#22d3ee"
+                strokeWidth={2.5}
+                dot={false}
+                legendType="none"
+                tooltipType="none"
+                isAnimationActive={false}
+              />
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -1814,6 +2305,11 @@ function WeatherAnomalyPanel({
 }: {
   weather: EiaGenerationWeatherSeasonData;
 }) {
+  const [focused, setFocused] = useState(false);
+  const [hiddenSeries, setHiddenSeries] = useState<Set<WeatherAnomalySeriesKey>>(
+    () => new Set(),
+  );
+
   if (weather.status !== "available") {
     return (
       <PendingPanel
@@ -1825,30 +2321,59 @@ function WeatherAnomalyPanel({
     );
   }
 
+  const rows = buildAnomalyChartRows(weather);
+  const currentYear = weather.currentYear ?? "Current";
+  const priorYear = weather.priorYear ?? "Prior";
+  const metricKeyLabel = weatherMetricKeyLabel(weather.metricLabel);
+  const chartHeight = focused ? "h-[540px]" : "h-[340px]";
+  const toggleSeries = (key: WeatherAnomalySeriesKey) => {
+    setHiddenSeries((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+  const toggleItems: Array<SeriesToggleItem<WeatherAnomalySeriesKey>> = [
+    { key: "priorDaily", label: `${priorYear} Daily`, color: "#60a5fa" },
+    { key: "currentDaily", label: `${currentYear} Daily`, color: "#22d3ee" },
+    { key: "historicalBand", label: "Historical 10-90%", color: "#334155" },
+    { key: "historicalMedian", label: "Historical Median", color: "#94a3b8" },
+  ];
+  const showPriorDaily = !hiddenSeries.has("priorDaily");
+  const showCurrentDaily = !hiddenSeries.has("currentDaily");
+  const showHistoricalBand = !hiddenSeries.has("historicalBand");
+  const showHistoricalMedian = !hiddenSeries.has("historicalMedian");
+
   return (
-    <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <section className={`rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4 ${focused ? "xl:col-span-2" : ""}`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-gray-100">Weather-Adjusted Demand Anomaly</h2>
           <p className="mt-1 text-xs text-gray-500">
-            Actual demand minus historical median by {weather.metricLabel} bucket
+            Residual demand strength by calendar day after subtracting weather normal demand for the same {metricKeyLabel} bucket.
           </p>
         </div>
-        <div className="grid grid-cols-2 gap-2 text-right text-xs">
-          <div className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-1">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">{weather.currentYear}</p>
-            <p className="font-semibold tabular-nums text-sky-300">{fmtDeltaMw(weather.currentAvgAnomalyMw)}</p>
-          </div>
-          <div className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-1">
-            <p className="text-[10px] uppercase tracking-wide text-gray-500">{weather.priorYear}</p>
-            <p className="font-semibold tabular-nums text-amber-300">{fmtDeltaMw(weather.priorAvgAnomalyMw)}</p>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={() => setFocused((current) => !current)}
+          className="h-6 shrink-0 rounded-md border border-gray-700 px-2 text-[11px] font-semibold text-gray-400 transition-colors hover:border-gray-600 hover:text-gray-200"
+        >
+          {focused ? "Exit" : "Focus"}
+        </button>
       </div>
-      <div className="h-[320px]">
+      <ChartSeriesToggles
+        items={toggleItems}
+        hiddenSeries={hiddenSeries}
+        onToggle={toggleSeries}
+      />
+      <div className={`mt-3 ${chartHeight}`}>
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={weather.anomalyRows} margin={{ top: 8, right: 18, bottom: 6, left: 6 }}>
-            <CartesianGrid stroke="#253041" strokeDasharray="3 3" />
+          <ComposedChart data={rows} margin={{ top: 8, right: 18, bottom: 30, left: 6 }}>
+            <CartesianGrid stroke="#253041" />
             <XAxis
               type="number"
               dataKey="seasonDayIndex"
@@ -1860,40 +2385,87 @@ function WeatherAnomalyPanel({
             <YAxis
               tick={{ fill: "#9ca3af", fontSize: 11 }}
               tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+              domain={[
+                (dataMin: number) => Math.floor((Math.min(dataMin, 0) - 10000) / 25000) * 25000,
+                (dataMax: number) => Math.ceil((Math.max(dataMax, 0) + 10000) / 25000) * 25000,
+              ]}
               width={58}
             />
-            <ReferenceLine y={0} stroke="#64748b" />
+            <ReferenceLine y={0} stroke="#64748b" strokeOpacity={0.4} />
             <Tooltip
-              contentStyle={tooltipStyle()}
-              labelFormatter={(_, payload) => {
-                const monthDay = payload?.[0]?.payload?.monthDay;
-                return typeof monthDay === "string" ? monthDay : "";
-              }}
-              formatter={(value, name) => [fmtDeltaMw(toNumber(value)), String(name)]}
+              content={(props) => (
+                <WeatherAnomalyTooltip
+                  {...(props as ChartTooltipProps<EiaGenerationWeatherAnomalyRow>)}
+                  metricLabel={weather.metricLabel}
+                  currentYear={currentYear}
+                  priorYear={priorYear}
+                />
+              )}
             />
-            <Line
-              type="monotone"
-              dataKey="current"
-              name={String(weather.currentYear)}
-              stroke="#38bdf8"
-              strokeWidth={2}
-              dot={false}
-              connectNulls
-              isAnimationActive={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="prior"
-              name={String(weather.priorYear)}
-              stroke="#f59e0b"
-              strokeWidth={1.6}
-              strokeDasharray="4 4"
-              dot={false}
-              connectNulls
-              isAnimationActive={false}
-            />
-          </LineChart>
+            {showHistoricalBand && (
+              <Area
+                type="monotone"
+                dataKey="historicalAnomalyBand"
+                name="Historical 10-90%"
+                stroke="none"
+                fill="#334155"
+                fillOpacity={0.34}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+            {showHistoricalMedian && (
+              <Line
+                type="monotone"
+                dataKey="historicalMedianAnomalyMw"
+                name="Historical Median"
+                stroke="#94a3b8"
+                strokeWidth={2}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {showPriorDaily && (
+              <Line
+                type="monotone"
+                dataKey="prior"
+                name={`${priorYear} Daily`}
+                stroke="#60a5fa"
+                strokeWidth={1.6}
+                strokeDasharray="4 4"
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+            {showCurrentDaily && (
+              <Line
+                type="monotone"
+                dataKey="current"
+                name={`${currentYear} Daily`}
+                stroke="#22d3ee"
+                strokeWidth={2}
+                dot={false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            )}
+          </ComposedChart>
         </ResponsiveContainer>
+      </div>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="rounded-md border border-gray-800 bg-gray-950/50 px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Current Avg Anomaly</p>
+          <p className="mt-2 text-lg font-semibold tabular-nums text-gray-100">
+            {fmtDeltaMw(weather.currentAvgAnomalyMw)}
+          </p>
+        </div>
+        <div className="rounded-md border border-gray-800 bg-gray-950/50 px-4 py-3">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Prior Avg Anomaly</p>
+          <p className="mt-2 text-lg font-semibold tabular-nums text-gray-100">
+            {fmtDeltaMw(weather.priorAvgAnomalyMw)}
+          </p>
+        </div>
       </div>
     </section>
   );
@@ -1926,7 +2498,6 @@ export default function EiaGenerationDashboard({
 }: EiaGenerationDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const initialRequestedDate = parseIsoDate(searchParams.get("date") ?? searchParams.get("endDate"));
   const [region, setRegion] = useState<EiaGenerationRegion>(
     () => getEiaGenerationRegion(searchParams.get("region")).key,
   );
@@ -1934,9 +2505,7 @@ export default function EiaGenerationDashboard({
     () => parsePageTab(searchParams.get("tab")) ?? "home",
   );
   const [season, setSeason] = useState<EiaGenerationSeason>(
-    () =>
-      parseSeason(searchParams.get("season")) ??
-      (initialRequestedDate ? seasonFromDate(initialRequestedDate) : DEFAULT_SEASON),
+    () => parseSeason(searchParams.get("season")) ?? DEFAULT_SEASON,
   );
   const [heatRateMmbtuPerMwh, setHeatRateMmbtuPerMwh] = useState(
     EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
@@ -1944,27 +2513,32 @@ export default function EiaGenerationDashboard({
   const [data, setData] = useState<EiaGenerationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const requestedDate = useMemo(
-    () => parseIsoDate(searchParams.get("date") ?? searchParams.get("endDate")),
-    [searchParams],
-  );
 
   useEffect(() => {
     const routedRegion = getEiaGenerationRegion(searchParams.get("region")).key;
     const routedSeason = parseSeason(searchParams.get("season"));
-    const routedDate = parseIsoDate(searchParams.get("date") ?? searchParams.get("endDate"));
     const routedTab = parsePageTab(searchParams.get("tab"));
     setRegion((current) => (current === routedRegion ? current : routedRegion));
     if (routedSeason) {
       setSeason((current) => (current === routedSeason ? current : routedSeason));
-    } else if (routedDate) {
-      const dateSeason = seasonFromDate(routedDate);
-      setSeason((current) => (current === dateSeason ? current : dateSeason));
     }
     if (routedTab) {
       setActiveTab((current) => (current === routedTab ? current : routedTab));
     }
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!searchParams.has("date") && !searchParams.has("endDate")) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", "eia-generation");
+    params.set("region", region);
+    params.set("season", season);
+    params.set("tab", activeTab);
+    params.delete("date");
+    params.delete("endDate");
+    params.delete("section");
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  }, [activeTab, region, router, searchParams, season]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1975,8 +2549,8 @@ export default function EiaGenerationDashboard({
 
     const forceRefresh = refreshToken > 0;
     fetchJsonWithCache<EiaGenerationPayload>({
-      key: buildCacheKey(region, season, requestedDate),
-      url: buildApiUrl(region, season, requestedDate, forceRefresh),
+      key: buildCacheKey(region, season),
+      url: buildApiUrl(region, season, forceRefresh),
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
       cacheMode: forceRefresh ? "no-store" : "default",
@@ -2008,10 +2582,10 @@ export default function EiaGenerationDashboard({
       active = false;
       controller.abort();
     };
-  }, [onFreshnessChange, refreshToken, region, requestedDate, season]);
+  }, [onFreshnessChange, refreshToken, region, season]);
 
   useEffect(() => {
-    if (!data?.selectedDate || requestedDate || parseSeason(searchParams.get("season"))) return;
+    if (!data?.selectedDate || parseSeason(searchParams.get("season"))) return;
     const selectedDateSeason = seasonFromDate(data.selectedDate);
     if (selectedDateSeason === season) return;
     setSeason(selectedDateSeason);
@@ -2020,9 +2594,11 @@ export default function EiaGenerationDashboard({
     params.set("region", region);
     params.set("season", selectedDateSeason);
     params.set("tab", activeTab);
+    params.delete("date");
+    params.delete("endDate");
     params.delete("section");
     router.replace(`/?${params.toString()}`, { scroll: false });
-  }, [activeTab, data?.selectedDate, region, requestedDate, router, searchParams, season]);
+  }, [activeTab, data?.selectedDate, region, router, searchParams, season]);
 
   const handleRegionChange = (nextRegion: EiaGenerationRegion) => {
     setRegion(nextRegion);
@@ -2031,6 +2607,8 @@ export default function EiaGenerationDashboard({
     params.set("region", nextRegion);
     params.set("season", season);
     params.set("tab", activeTab);
+    params.delete("date");
+    params.delete("endDate");
     params.delete("section");
     router.replace(`/?${params.toString()}`, { scroll: false });
   };
@@ -2042,31 +2620,10 @@ export default function EiaGenerationDashboard({
     params.set("region", region);
     params.set("season", nextSeason);
     params.set("tab", activeTab);
+    params.delete("date");
+    params.delete("endDate");
     params.delete("section");
     router.replace(`/?${params.toString()}`, { scroll: false });
-  };
-
-  const handleDateChange = (nextDate: string | null) => {
-    const nextSeason = nextDate ? seasonFromDate(nextDate) : season;
-    setSeason(nextSeason);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("view", "eia-generation");
-    params.set("region", region);
-    params.set("season", nextSeason);
-    params.set("tab", activeTab);
-    params.delete("section");
-    if (nextDate) {
-      params.set("date", nextDate);
-      params.delete("endDate");
-    } else {
-      params.delete("date");
-      params.delete("endDate");
-    }
-    router.replace(`/?${params.toString()}`, { scroll: false });
-  };
-
-  const handleLatestClick = () => {
-    handleDateChange(null);
   };
 
   const handleTabChange = (nextTab: EiaGenerationPageTab) => {
@@ -2076,6 +2633,8 @@ export default function EiaGenerationDashboard({
     params.set("region", region);
     params.set("season", season);
     params.set("tab", nextTab);
+    params.delete("date");
+    params.delete("endDate");
     params.delete("section");
     router.replace(`/?${params.toString()}`, { scroll: false });
   };
@@ -2095,10 +2654,7 @@ export default function EiaGenerationDashboard({
       <RegionControls
         region={region}
         data={data}
-        requestedDate={requestedDate}
         onRegionChange={handleRegionChange}
-        onDateChange={handleDateChange}
-        onLatestClick={handleLatestClick}
       />
       <HomeTabStrip activeTab={activeTab} onTabChange={handleTabChange} />
 
@@ -2107,11 +2663,7 @@ export default function EiaGenerationDashboard({
 
       {!loading && !error && data && (
         <>
-          <SourceContractStrip data={data} />
-
           <SourceStatusBanner data={data} />
-
-          <SeasonToggle season={season} onSeasonChange={handleSeasonChange} />
 
           {activeTab === "home" && (
             <>
@@ -2139,6 +2691,8 @@ export default function EiaGenerationDashboard({
                   <YoyMetricPanel key={metric.key} payload={data} metric={metric} />
                 ))}
               </div>
+
+              <SeasonToggle season={season} onSeasonChange={handleSeasonChange} />
 
               <div className="grid gap-4 xl:grid-cols-2">
                 <WeatherResponsePanel weather={data.weatherBySeason[season]} />

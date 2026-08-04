@@ -29,6 +29,7 @@ import {
   type EiaGenerationSeason,
   type EiaGenerationYoyMtdPayload,
   type EiaGenerationYoyStackRow,
+  type EiaGenerationWeatherAnomalyRow,
   type EiaGenerationWeatherBucket,
   type EiaGenerationWeatherPoint,
   type EiaGenerationWeatherSeasonData,
@@ -213,8 +214,8 @@ function bucketForFuel(fueltype: string): keyof Pick<
   if (fueltype === "COL") return "coalMw";
   if (fueltype === "NUC") return "nukeMw";
   if (fueltype === "WAT") return "hydroMw";
-  if (fueltype === "WND" || fueltype === "WNB") return "windMw";
-  if (fueltype === "SUN" || fueltype === "SNB") return "solarMw";
+  if (fueltype === "WND") return "windMw";
+  if (fueltype === "SUN") return "solarMw";
   return "otherMw";
 }
 
@@ -223,8 +224,8 @@ function metricForSeason(season: EiaGenerationSeason): {
   metricLabel: string;
 } {
   return season === "summer"
-    ? { metricName: "electric_cdd", metricLabel: "Electric CDD" }
-    : { metricName: "electric_hdd", metricLabel: "Electric HDD" };
+    ? { metricName: "electric_cdd", metricLabel: "Gas CDD" }
+    : { metricName: "electric_hdd", metricLabel: "Gas HDD" };
 }
 
 function parseSeason(value: string | null): EiaGenerationSeason | null {
@@ -496,7 +497,7 @@ function buildRegionalModelingPayload({
       value: regionMissingInputs,
       unit: "count",
       status: regionMissingInputs > 0 ? "warning" : "ok",
-      detail: "Current-year rows missing EIA demand or net generation.",
+      detail: "Current-year rows missing EIA demand or total generation.",
     },
     {
       key: "region_critical_missing",
@@ -782,7 +783,7 @@ function buildYoyMtdPayload({
       },
       {
         section: "Supply",
-        metric: "Net Gen MW",
+        metric: "Total Gen MW",
         ...stackValue((row) => row.netGenerationMw, "mw"),
       },
       {
@@ -890,7 +891,7 @@ function buildEmptyPayload({
       conversion: "daily_mwh_divided_by_24",
       thermalDefinition: "gas_plus_coal",
       sourceContract:
-        "EIA-930 daily generation by fuel is joined to EIA-930 daily region demand/net generation by preferred timezone.",
+        "EIA-930 daily generation by fuel is summed for total generation and joined to EIA-930 daily region demand by preferred timezone.",
       demandSourceTable: EIA_REGION_DATA_SOURCE_TABLE,
       weatherSourceTable: EIA_WEATHER_DEGREE_DAY_SOURCE_TABLE,
       weatherMappingContract:
@@ -965,7 +966,7 @@ function aggregateDaily(
       const thermalMw = addValue(row.gasMw, row.coalMw);
       const regionValues = regionMetrics.get(row.date);
       const demandMw = round(regionValues?.demandMw ?? null);
-      const netGenerationMw = round(regionValues?.netGenerationMw ?? row.netGenerationMw);
+      const netGenerationMw = round(row.netGenerationMw);
       const gasMw = round(row.gasMw);
       const coalMw = round(row.coalMw);
       const nukeMw = round(row.nukeMw);
@@ -1047,6 +1048,17 @@ function median(values: number[]): number | null {
   return sorted.length % 2 === 0
     ? (sorted[midpoint - 1] + sorted[midpoint]) / 2
     : sorted[midpoint];
+}
+
+function percentile(values: number[], percentileValue: number): number | null {
+  if (!values.length) return null;
+  const sorted = [...values].sort((first, second) => first - second);
+  const rank = (percentileValue / 100) * (sorted.length - 1);
+  const lowerIndex = Math.floor(rank);
+  const upperIndex = Math.ceil(rank);
+  if (lowerIndex === upperIndex) return sorted[lowerIndex];
+  const weight = rank - lowerIndex;
+  return sorted[lowerIndex] + (sorted[upperIndex] - sorted[lowerIndex]) * weight;
 }
 
 function avg(values: Array<number | null>): number | null {
@@ -1218,13 +1230,17 @@ function buildWeatherSeason({
 
   const bucketMedians = Array.from(grouped.entries())
     .map(([weatherBucket, values]) => {
+      const historicalP10DemandMw = percentile(values, 10);
       const historicalMedianDemandMw = median(values);
-      return historicalMedianDemandMw === null
+      const historicalP90DemandMw = percentile(values, 90);
+      return historicalP10DemandMw === null || historicalMedianDemandMw === null || historicalP90DemandMw === null
         ? null
         : {
             weatherBucket,
             weatherValue: weatherBucket,
+            historicalP10DemandMw: round(historicalP10DemandMw) ?? historicalP10DemandMw,
             historicalMedianDemandMw: round(historicalMedianDemandMw) ?? historicalMedianDemandMw,
+            historicalP90DemandMw: round(historicalP90DemandMw) ?? historicalP90DemandMw,
             sampleSize: values.length,
           };
     })
@@ -1262,13 +1278,70 @@ function buildWeatherSeason({
     .map(attachBaseline);
   const currentByDay = new Map(currentPoints.map((point) => [point.monthDay, point]));
   const priorByDay = new Map(priorPoints.map((point) => [point.monthDay, point]));
-  const anomalyRows = Array.from(new Set([...currentByDay.keys(), ...priorByDay.keys()]))
-    .map((monthDay) => ({
-      monthDay,
-      seasonDayIndex: seasonDayIndex(season, monthDay),
-      current: currentByDay.get(monthDay)?.demandAnomalyMw ?? null,
-      prior: priorByDay.get(monthDay)?.demandAnomalyMw ?? null,
-    }))
+
+  const historicalAnomaliesByDay = new Map<string, number[]>();
+  for (const point of historicalPoints) {
+    if (point.demandAnomalyMw === null) continue;
+    const values = historicalAnomaliesByDay.get(point.monthDay) ?? [];
+    values.push(point.demandAnomalyMw);
+    historicalAnomaliesByDay.set(point.monthDay, values);
+  }
+  const historicalAnomalyStatsByDay = new Map<
+    string,
+    {
+      historicalP10AnomalyMw: number | null;
+      historicalMedianAnomalyMw: number | null;
+      historicalP90AnomalyMw: number | null;
+      historicalAnomalyBand: [number, number] | null;
+    }
+  >();
+  for (const [monthDay, values] of historicalAnomaliesByDay) {
+    const historicalP10AnomalyMw = round(percentile(values, 10));
+    const historicalMedianAnomalyMw = round(median(values));
+    const historicalP90AnomalyMw = round(percentile(values, 90));
+    historicalAnomalyStatsByDay.set(monthDay, {
+      historicalP10AnomalyMw,
+      historicalMedianAnomalyMw,
+      historicalP90AnomalyMw,
+      historicalAnomalyBand:
+        historicalP10AnomalyMw === null || historicalP90AnomalyMw === null
+          ? null
+          : [historicalP10AnomalyMw, historicalP90AnomalyMw],
+    });
+  }
+
+  const anomalyRows: EiaGenerationWeatherAnomalyRow[] = Array.from(
+    new Set([
+      ...historicalAnomalyStatsByDay.keys(),
+      ...currentByDay.keys(),
+      ...priorByDay.keys(),
+    ]),
+  )
+    .map((monthDay) => {
+      const current = currentByDay.get(monthDay);
+      const prior = priorByDay.get(monthDay);
+      const historicalStats = historicalAnomalyStatsByDay.get(monthDay) ?? {
+        historicalP10AnomalyMw: null,
+        historicalMedianAnomalyMw: null,
+        historicalP90AnomalyMw: null,
+        historicalAnomalyBand: null,
+      };
+      return {
+        monthDay,
+        seasonDayIndex: seasonDayIndex(season, monthDay),
+        ...historicalStats,
+        current: current?.demandAnomalyMw ?? null,
+        currentDate: current?.date ?? null,
+        currentDemandMw: current?.demandMw ?? null,
+        currentNormalDemandMw: current?.baselineDemandMw ?? null,
+        currentWeatherValue: current?.weatherValue ?? null,
+        prior: prior?.demandAnomalyMw ?? null,
+        priorDate: prior?.date ?? null,
+        priorDemandMw: prior?.demandMw ?? null,
+        priorNormalDemandMw: prior?.baselineDemandMw ?? null,
+        priorWeatherValue: prior?.weatherValue ?? null,
+      };
+    })
     .sort((first, second) => first.seasonDayIndex - second.seasonDayIndex);
 
   if (!currentPoints.length && !priorPoints.length) {
@@ -1484,7 +1557,7 @@ async function loadPayload(request: Request): Promise<ObservedRouteResult> {
           region.respondent,
           fuelStartDate,
           selectedDate,
-          ["D", "NG"],
+          ["D"],
           region.preferredTimezone,
         ],
       )
@@ -1718,7 +1791,7 @@ async function loadPayload(request: Request): Promise<ObservedRouteResult> {
       conversion: "daily_mwh_divided_by_24",
       thermalDefinition: "gas_plus_coal",
       sourceContract:
-        "EIA-930 daily generation by fuel is joined to EIA-930 daily region demand/net generation by preferred timezone.",
+        "EIA-930 daily generation by fuel is summed for total generation and joined to EIA-930 daily region demand by preferred timezone.",
       demandSourceTable: EIA_REGION_DATA_SOURCE_TABLE,
       weatherSourceTable: EIA_WEATHER_DEGREE_DAY_SOURCE_TABLE,
       weatherMappingContract:

@@ -178,15 +178,29 @@ export interface EiaGenerationWeatherPoint {
 export interface EiaGenerationWeatherBucket {
   weatherBucket: number;
   weatherValue: number;
+  historicalP10DemandMw: number;
   historicalMedianDemandMw: number;
+  historicalP90DemandMw: number;
   sampleSize: number;
 }
 
 export interface EiaGenerationWeatherAnomalyRow {
   monthDay: string;
   seasonDayIndex: number;
+  historicalP10AnomalyMw: number | null;
+  historicalMedianAnomalyMw: number | null;
+  historicalP90AnomalyMw: number | null;
+  historicalAnomalyBand: [number, number] | null;
   current: number | null;
+  currentDate: string | null;
+  currentDemandMw: number | null;
+  currentNormalDemandMw: number | null;
+  currentWeatherValue: number | null;
   prior: number | null;
+  priorDate: string | null;
+  priorDemandMw: number | null;
+  priorNormalDemandMw: number | null;
+  priorWeatherValue: number | null;
 }
 
 export interface EiaGenerationWeatherSeasonData {

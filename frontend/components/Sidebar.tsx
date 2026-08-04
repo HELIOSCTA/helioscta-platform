@@ -93,6 +93,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "pjm-outages", label: "Outages" },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
+      { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
     ],
   });
 
@@ -123,7 +124,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },
         { id: "salts", label: "Salt Model" },
-        { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
         { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "weather-short-term", label: "Short-Term Weather" },

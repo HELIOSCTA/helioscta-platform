@@ -358,7 +358,7 @@ function parseInitialSection(
   if (showLocalDevFeatures && (value === "salts" || parseSaltsTabFromView(viewValue))) {
     return "salts";
   }
-  if (showLocalDevFeatures && (value === "eia-generation" || viewValue === "eia-generation")) {
+  if (value === "eia-generation" || viewValue === "eia-generation") {
     return "eia-generation";
   }
   if (showLocalDevFeatures && value === "pjm-generation") {
@@ -813,7 +813,7 @@ export default function HomePageClient({
     if (showLocalDevFeatures && activeSection === "salts") {
       return saltsChromeForTab(saltsActiveTab);
     }
-    if (showLocalDevFeatures && activeSection === "eia-generation") {
+    if (activeSection === "eia-generation") {
       return {
         title: "EIA Generation Dashboard",
         subtitle:
@@ -936,7 +936,7 @@ export default function HomePageClient({
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isSaltModelSection = showLocalDevFeatures && activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
-  const isEiaGenerationSection = showLocalDevFeatures && activeSection === "eia-generation";
+  const isEiaGenerationSection = activeSection === "eia-generation";
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
@@ -1323,7 +1323,7 @@ export default function HomePageClient({
               />
             )}
 
-            {showLocalDevFeatures && activeSection === "eia-generation" && (
+            {activeSection === "eia-generation" && (
               <FreshnessCard
                 statusLabel={eiaGenerationFreshness.status}
                 statusClass={eiaGenerationFreshness.statusClass}
@@ -1607,7 +1607,7 @@ export default function HomePageClient({
               onFreshnessChange={setPjmGenerationFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "eia-generation" && (
+          {activeSection === "eia-generation" && (
             <EiaGenerationDashboard
               refreshToken={eiaGenerationRefreshToken}
               onFreshnessChange={setEiaGenerationFreshness}
