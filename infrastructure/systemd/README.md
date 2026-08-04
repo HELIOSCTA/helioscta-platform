@@ -911,7 +911,7 @@ Environment values in `/etc/helioscta/backend.env` when email is re-enabled:
 ```text
 HELIOS_EMAIL_NOTIFICATIONS_ENABLED=false
 HELIOS_EMAIL_RECIPIENTS=aidan.keaveny@helioscta.com
-HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
+HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-git-main-helioscta.vercel.app
 AZURE_OUTLOOK_CLIENT_ID=
 AZURE_OUTLOOK_TENANT_ID=
 AZURE_OUTLOOK_CLIENT_SECRET=

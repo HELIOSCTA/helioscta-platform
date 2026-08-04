@@ -4,33 +4,29 @@ import { execFileSync, execSync } from "node:child_process";
 
 const DEFAULT_SCOPE = "helioscta";
 const DEFAULT_PROJECT = "frontend";
-const DEFAULT_PRODUCTION_ALIAS = "frontend-helioscta.vercel.app";
-const DEFAULT_MAIN_ALIAS = "frontend-git-main-helioscta.vercel.app";
+const DEFAULT_GIT_PRODUCTION_ALIAS = "frontend-git-main-helioscta.vercel.app";
 
 function parseArgs(argv) {
   const options = {
-    fix: false,
     scope: process.env.VERCEL_SCOPE ?? DEFAULT_SCOPE,
     project: process.env.VERCEL_PROJECT ?? DEFAULT_PROJECT,
-    productionAlias: process.env.HELIOS_PRODUCTION_ALIAS ?? DEFAULT_PRODUCTION_ALIAS,
-    mainAlias: process.env.HELIOS_MAIN_ALIAS ?? DEFAULT_MAIN_ALIAS,
+    gitProductionAlias: process.env.HELIOS_GIT_PRODUCTION_ALIAS ?? DEFAULT_GIT_PRODUCTION_ALIAS,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--fix") {
-      options.fix = true;
+      throw new Error(
+        "Manual Vercel alias repair is not supported. Push or redeploy from the GitHub production branch instead.",
+      );
     } else if (arg === "--scope") {
       options.scope = requiredValue(argv, index, arg);
       index += 1;
     } else if (arg === "--project") {
       options.project = requiredValue(argv, index, arg);
       index += 1;
-    } else if (arg === "--production-alias") {
-      options.productionAlias = requiredValue(argv, index, arg);
-      index += 1;
-    } else if (arg === "--main-alias") {
-      options.mainAlias = requiredValue(argv, index, arg);
+    } else if (arg === "--git-production-alias" || arg === "--main-alias") {
+      options.gitProductionAlias = requiredValue(argv, index, arg);
       index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -53,18 +49,15 @@ function requiredValue(argv, index, flag) {
 
 function printHelp() {
   console.log(`
-Check that the production Vercel domain tracks the latest main deployment.
+Check that Vercel's Git-managed production URL tracks the latest main deployment.
 
 Usage:
   npm run check:vercel-production
-  npm run check:vercel-production -- --fix
 
 Options:
-  --fix                       Repoint the production alias to the main alias deployment.
-  --scope <scope>             Vercel scope. Default: ${DEFAULT_SCOPE}
-  --project <project>         Vercel project. Default: ${DEFAULT_PROJECT}
-  --production-alias <alias>  Production domain. Default: ${DEFAULT_PRODUCTION_ALIAS}
-  --main-alias <alias>        Main branch alias. Default: ${DEFAULT_MAIN_ALIAS}
+  --scope <scope>                   Vercel scope. Default: ${DEFAULT_SCOPE}
+  --project <project>               Vercel project. Default: ${DEFAULT_PROJECT}
+  --git-production-alias <alias>    Git-managed production URL. Default: ${DEFAULT_GIT_PRODUCTION_ALIAS}
 `);
 }
 
@@ -158,8 +151,7 @@ function fail(message) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const latest = latestProductionDeployment(options);
-  const production = inspectDeployment(options.productionAlias, options);
-  const mainAlias = inspectDeployment(options.mainAlias, options);
+  const gitProduction = inspectDeployment(options.gitProductionAlias, options);
   const latestByUrl = inspectDeployment(latest.url, options);
 
   summarizeDeployment("Latest READY production", {
@@ -168,8 +160,7 @@ async function main() {
     target: latest.target,
     readyState: latest.state,
   });
-  summarizeDeployment("Production alias", production);
-  summarizeDeployment("Main branch alias", mainAlias);
+  summarizeDeployment("Git production URL", gitProduction);
 
   const latestBranch = latest.meta?.githubCommitRef ?? null;
   if (latestBranch !== "main") {
@@ -184,44 +175,16 @@ async function main() {
     fail(`Latest READY production SHA ${deployedSha} does not match origin/main ${gitRemoteMainSha}.`);
   }
 
-  if (mainAlias.id !== latestByUrl.id) {
+  if (gitProduction.id !== latestByUrl.id) {
     fail(
-      `${options.mainAlias} points to ${mainAlias.id}, but latest READY production is ${latestByUrl.id}.`,
+      `${options.gitProductionAlias} points to ${gitProduction.id}, but latest READY production is ${latestByUrl.id}. ` +
+        "Wait for the GitHub production deployment to finish or redeploy from GitHub; do not repair with vercel alias set.",
     );
-  }
-
-  if (production.id !== mainAlias.id) {
-    if (!options.fix) {
-      fail(
-        `${options.productionAlias} points to ${production.id}, while ${options.mainAlias} points to ` +
-          `${mainAlias.id}. Run npm run check:vercel-production -- --fix to repoint production to main.`,
-      );
-      return;
-    }
-
-    console.log(
-      `\nRepointing ${options.productionAlias} to ${mainAlias.url} because main alias is the latest main production deployment.`,
-    );
-    runVercel([
-      "alias",
-      "set",
-      mainAlias.url,
-      options.productionAlias,
-      "--scope",
-      options.scope,
-    ], { inherit: true });
-
-    const repaired = inspectDeployment(options.productionAlias, options);
-    if (repaired.id !== mainAlias.id) {
-      fail(`Repair did not converge: ${options.productionAlias} now points to ${repaired.id}.`);
-      return;
-    }
-    console.log(`Repair complete: ${options.productionAlias} now points to ${repaired.id}.`);
   }
 
   if (process.exitCode) return;
   console.log(
-    `\nOK: ${options.productionAlias} tracks latest origin/main production deployment ` +
+    `\nOK: ${options.gitProductionAlias} tracks latest origin/main production deployment ` +
       `${latestByUrl.id}${deployedSha ? ` (${deployedSha})` : ""}.`,
   );
 }
