@@ -223,17 +223,16 @@ helios-pjm-hourly-bucket.service
 helios-pjm-hourly-bucket.timer
 ```
 
-It runs `backend.orchestration.power.pjm.hourly_bucket`. Bucket members are
-`rt_unverified_hrl_lmps`, which upserts current hub, zone, and interface rows
-into `pjm.rt_unverified_hrl_lmps`, and `gen_by_fuel`, which upserts hourly
-fuel mix rows into `pjm.gen_by_fuel`. Both write API telemetry to
-`ops.api_fetch_log`. The timer runs hourly at minute `15` UTC with
+It runs `backend.orchestration.power.pjm.hourly_bucket`. The bucket member is
+`gen_by_fuel`, which upserts hourly fuel mix rows into `pjm.gen_by_fuel` and
+writes API telemetry to `ops.api_fetch_log`. The timer runs hourly at minute
+`15` UTC with
 `Persistent=false` and `RandomizedDelaySec=2min`; bucket members should pull a
 rolling recent window or current snapshot so missed hourly starts do not need
 replay on VM boot. The nightly
 `helios-lmp-price-backfill-7-day.timer` remains the repair path for
-recent posted LMP market dates, while `gen_by_fuel` uses its rolling
-generation-by-fuel window as the repair path.
+recent posted LMP market dates. PJM unverified RT LMPs are owned by the
+dedicated overnight `helios-pjm-rt-unverified-hrl-lmps.timer`.
 
 The service uses `flock` with `/tmp/helios-pjm-hourly-bucket.lock`.
 
@@ -337,6 +336,22 @@ sudo systemctl start helios-pjm-meteologica-forecast-hourly.service
 sudo systemctl enable --now helios-pjm-meteologica-forecast-hourly.timer
 ```
 
+## RT Unverified Hourly LMPs
+
+The overnight unverified hourly RT price workflow has its own timer:
+
+```text
+helios-pjm-rt-unverified-hrl-lmps.service
+helios-pjm-rt-unverified-hrl-lmps.timer
+```
+
+It runs `backend.orchestration.power.pjm.rt_unverified_hrl_lmps`, upserts
+`pjm.rt_unverified_hrl_lmps`, and writes Data Miner fetch telemetry to
+`ops.api_fetch_log`. The timer runs at `00:15`, `01:15`, `02:15`, and
+`03:15 America/New_York` so the Power Settles report has four overnight
+attempts after the prior Eastern operating day closes. The service uses
+`flock` with `/tmp/helios-pjm-rt-unverified-hrl-lmps.lock`.
+
 ## RT Verified Five-Minute HRL LMPs
 
 The priority verified five-minute RT price workflow has its own timer:
@@ -385,9 +400,9 @@ daily at `11:15 America/Chicago`, polls every two minutes for up to four hours
 until the next-delivery-date hub settlement point prices are complete, upserts
 the complete day, and emits complete delivery-date readiness events. The RT
 workflow runs `backend.orchestration.power.ercot.settlement_point_prices`
-every 15 minutes, upserts published hub intervals, and emits readiness only
-when a full delivery date is present. Both services use `flock` to avoid
-overlap.
+at `00:15`, `01:15`, `02:15`, and `03:15 America/Chicago`, upserts published
+hub intervals, and emits readiness only when a full delivery date is present.
+Both services use `flock` to avoid overlap.
 
 ## CAISO LMPs
 
@@ -414,9 +429,10 @@ The RT service runs `backend.orchestration.power.caiso.rt_lmps`, which pulls
 CAISO OASIS `PRC_INTVL_LMP` real-time five-minute prices for the same trading
 hubs, upserts `caiso.rt_lmps`, writes OASIS fetch telemetry to
 `ops.api_fetch_log`, and emits complete-day readiness events to
-`ops.data_availability_events`. The timer runs daily at
-`09:20 America/Los_Angeles` for the previous complete Pacific trading date.
-The service uses `flock` with `/tmp/helios-caiso-rt-lmps.lock`.
+`ops.data_availability_events`. The timer runs at `00:15`, `01:15`, `02:15`,
+and `03:15 America/Los_Angeles` so the Power Settles report has four
+overnight attempts after the prior Pacific trading day closes. The service
+uses `flock` with `/tmp/helios-caiso-rt-lmps.lock`.
 
 ## ISO-NE ISO Express Feeds
 
@@ -460,8 +476,9 @@ to avoid ISO-NE's finalization lag. The timer runs daily at `20:10 UTC` with
 The preliminary RT workflow runs
 `backend.orchestration.power.isone.rt_hrl_lmps_prelim`, upserts preliminary
 hourly real-time `.H.INTERNAL_HUB` LMP CSV rows into `isone.rt_hrl_lmps_prelim`,
-and emits the same complete-date readiness signal. The timer runs daily at `01:10 UTC` with
-`Persistent=true` and `RandomizedDelaySec=5min`.
+and emits the same complete-date readiness signal. The timer runs at `00:15`,
+`01:15`, `02:15`, and `03:15 America/New_York` with `Persistent=false` and
+`RandomizedDelaySec=5min`.
 
 The hourly system demand workflow runs
 `backend.orchestration.power.isone.hourly_system_demand`, upserts previous
@@ -929,6 +946,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-fivemin-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-hrl-lmps.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-unverified-hrl-lmps.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hourly-bucket.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-lmp-price-backfill-7-day.service /etc/systemd/system/
@@ -1001,6 +1020,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now helios-pjm-da-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-fivemin-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-rt-hrl-lmps.timer
+sudo systemctl enable --now helios-pjm-rt-unverified-hrl-lmps.timer
 sudo systemctl enable --now helios-pjm-hourly-bucket.timer
 sudo systemctl disable --now helios-pjm-hourly-price-backfill-7-day.timer || true
 sudo systemctl enable --now helios-lmp-price-backfill-7-day.timer

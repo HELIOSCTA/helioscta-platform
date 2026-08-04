@@ -1403,6 +1403,8 @@ export default function PjmDaLmps({
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmDaLmpsFreshnessSummary) => void;
 }) {
+  const initialSettlesComponent: ComponentKey =
+    initialComponent && initialComponent !== "all" ? initialComponent : "total";
   const [activeIso, setActiveIso] = useState<PowerIso>(initialIso ?? "pjm");
   const [activeProduct, setActiveProduct] = useState<LmpProduct>(initialProduct ?? "da");
   const [rtSource, setRtSource] = useState<RtLmpSource>(initialRtSource ?? "unverified");
@@ -1414,9 +1416,9 @@ export default function PjmDaLmps({
   // Empty until seeded from the latest available date (see the seeding effect below).
   // The settles fetch is gated on these being set, so we never issue a wasted query
   // for a guessed "today" window.
-  const [settlesStartDate, setSettlesStartDate] = useState("");
-  const [settlesEndDate, setSettlesEndDate] = useState("");
-  const [settlesComponent, setSettlesComponent] = useState<ComponentKey>("total");
+  const [settlesStartDate, setSettlesStartDate] = useState(initialDate ?? "");
+  const [settlesEndDate, setSettlesEndDate] = useState(initialDate ?? "");
+  const [settlesComponent, setSettlesComponent] = useState<ComponentKey>(initialSettlesComponent);
   const [settlesData, setSettlesData] = useState<PjmLmpSettlesPayload | null>(null);
   const [settlesLoading, setSettlesLoading] = useState(false);
   const [settlesError, setSettlesError] = useState<string | null>(null);
@@ -1432,7 +1434,7 @@ export default function PjmDaLmps({
   const [lastSelectedMetricCell, setLastSelectedMetricCell] = useState<LastMetricCell | null>(null);
   // Seed the settles range to the latest available date once, the first time PJM data
   // loads — so we don't land on an empty "today" window before settles are posted.
-  const settlesRangeSeededRef = useRef(false);
+  const settlesRangeSeededRef = useRef(Boolean(initialDate));
   const isoInitializedRef = useRef(false);
   const [singleComponent, setSingleComponent] = useState<ComponentSelection>(
     initialComponent ?? "all",

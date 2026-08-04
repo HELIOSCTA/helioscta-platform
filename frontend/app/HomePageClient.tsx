@@ -309,8 +309,11 @@ function parseInitialSection(
   if (backOfficeSection) {
     return backOfficeSection;
   }
-  if (showLocalDevFeatures && value === "power-settles-dashboard") {
+  if (value === "power-settles-dashboard") {
     return "power-settles-dashboard";
+  }
+  if (value === "pjm-da-lmps") {
+    return "pjm-da-lmps";
   }
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
@@ -650,9 +653,9 @@ export default function HomePageClient({
   };
 
   const meta = useMemo(() => {
-    if (showLocalDevFeatures && activeSection === "power-settles-dashboard") {
+    if (activeSection === "power-settles-dashboard") {
       return {
-        title: "DEV / Power Settles",
+        title: "Power Settles",
         subtitle:
           "Cross-ISO total LMP settles summary for DA, RT, and DART default hubs.",
         footer:
@@ -943,7 +946,7 @@ export default function HomePageClient({
     activeSection === "gas-outright" ||
     isSaltModelSection;
   const usesPowerMarketEyebrow =
-    (showLocalDevFeatures && activeSection === "power-settles-dashboard") ||
+    activeSection === "power-settles-dashboard" ||
     isPjmDaModelSection ||
     isEiaGenerationSection ||
     isHistoricalSettlements ||
@@ -1493,7 +1496,7 @@ export default function HomePageClient({
               onFreshnessChange={setPjmDaLmpsFreshness}
             />
           )}
-          {showLocalDevFeatures && activeSection === "power-settles-dashboard" && (
+          {activeSection === "power-settles-dashboard" && (
             <PowerSettlesDashboard />
           )}
           {isPjmDaModelSection && (

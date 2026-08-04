@@ -1,8 +1,11 @@
 [Unit]
-Description=Intraday HeliosCTA ERCOT Real-Time Settlement Point Prices orchestration timer
+Description=Overnight HeliosCTA ERCOT Real-Time Settlement Point Prices orchestration timer
 
 [Timer]
-OnCalendar=*:0/15
+OnCalendar=*-*-* 00:15:00 America/Chicago
+OnCalendar=*-*-* 01:15:00 America/Chicago
+OnCalendar=*-*-* 02:15:00 America/Chicago
+OnCalendar=*-*-* 03:15:00 America/Chicago
 Persistent=false
 RandomizedDelaySec=2min
 AccuracySec=30s

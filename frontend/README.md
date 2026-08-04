@@ -129,29 +129,70 @@ preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
 SP15/NP15 trading hubs; CAISO RT is hourly-averaged from promoted five-minute
 OASIS intervals.
 
-## Local DEV Power Settles Dashboard Source Contract
+## Power Settles Dashboard Source Contract
 
-The Power Settles dashboard (`/?section=power-settles-dashboard`) is local-dev
-only while the consolidated dashboard pattern is still being designed. It is
-hidden from Vercel navigation, direct section routing is disabled on Vercel,
-and `GET /api/power-settles-dashboard` returns `404` outside local Next.js
-runs. It summarizes total LMP only for DA, RT, and DART at each ISO's default
-hub: PJM `WESTERN HUB`, ERCOT `HB_NORTH`, ISO-NE `.H.INTERNAL_HUB`, and CAISO
-`TH_SP15_GEN-APND`.
+The Power Settles dashboard (`/?section=power-settles-dashboard`) is production
+visible in Vercel. It summarizes DA, RT, and DART OnPk/OffPeak values for the
+selected `total`, `energy`, `congestion`, or `loss` LMP component across
+dashboard hub sets: all promoted PJM hubs (`WESTERN HUB`, `EASTERN HUB`,
+`AEP-DAYTON HUB`, `DOMINION HUB`, `NEW JERSEY HUB`, `CHICAGO HUB`, `OHIO HUB`,
+`N ILLINOIS HUB`, `AEP GEN HUB`, `ATSI GEN HUB`, `CHICAGO GEN HUB`,
+`WEST INT HUB`); ERCOT `HB_NORTH`, `HB_SOUTH`, `HB_WEST`, `HB_HOUSTON`; ISO-NE
+`.H.INTERNAL_HUB`; and CAISO `TH_SP15_GEN-APND`, `TH_NP15_GEN-APND`. ERCOT
+settlement point prices currently expose Total only, so ERCOT falls back to
+Total when a component leg is selected.
 
 The route `GET /api/power-settles-dashboard` accepts bounded params
-`date=YYYY-MM-DD`, `rtSource=verified|unverified`, `lookbackDays=1..14`, and
-`refresh=1`. Without `date`, each ISO resolves its own latest complete DA/RT
-date from the existing LMP source contract and exposes that date per row.
-DART is derived as matched hourly `DA - RT` before flat, on-peak, off-peak,
-and peak-hour summaries are calculated. The payload includes one compact row
-per ISO, latest DA/RT source dates, source-table names, as-of timestamps,
-status, detail links into the full LMP page, and recent daily flat values.
+`date=YYYY-MM-DD`, `rtSource=verified|unverified`,
+`component=total|energy|congestion|loss`, `lookbackDays=1..14`, and `refresh=1`.
+Without `date`, the route defaults to the previous UTC calendar date. Without
+`rtSource`, Power Settles defaults to verified RT. For PJM and ISO-NE, a hub
+falls back to unverified RT when verified RT is unavailable or less complete
+for the selected date; ERCOT and CAISO display their single promoted RT source.
+DART is derived as matched hourly `DA - RT` before OnPk, OffPeak, flat, and
+peak-hour summaries are calculated. The payload includes one compact row per
+dashboard hub, latest DA/RT source dates, source-table names, effective RT
+source metadata, as-of timestamps, status, and detail links into the Power LMP
+Daily Settles view with `iso`, `date`, `hub`, RT source, and effective
+component in the URL. The dashboard renders compact ISO summary cards with hub
+rows and LMP links, preceded by a one-main-hub-per-ISO summary for PJM
+`WESTERN HUB`, ERCOT `HB_NORTH`, ISO-NE `.H.INTERNAL_HUB`, and CAISO
+`TH_SP15_GEN-APND`. Hourly profiles and hub exploration stay in the LMP page,
+and the dashboard intentionally does not render a Recent Daily Flat surface.
 
-The route uses `observedJsonRoute`, process-local route caching, and local
+The route uses `observedJsonRoute`, process-local route caching, and
 `Cache-Control: public, s-maxage=300, stale-while-revalidate=60`. It does not
 read protected Back Office data, create cache tables, add credentials, or
 mount the full LMP dashboard multiple times.
+
+`GET /api/power-settles-dashboard/email-html` accepts the same bounded report
+params and returns standalone `text/html` suitable for an HTML attachment or
+browser download.
+
+Vercel owns the scheduled Power Settles email workflow. `GET
+/api/cron/power-settles-email` is invoked by Vercel Cron, verifies
+`Authorization: Bearer ${CRON_SECRET}`, builds the report with unverified RT
+by default, and publishes to the `power-settles-email` Vercel Queue topic only
+when every dashboard hub is complete for the report date. The Vercel Cron
+schedule runs once daily at `11:00` UTC (`5:00 AM MDT` / `4:00 AM MST`), after
+the overnight VM RT LMP polling window has closed. The cron route queues at
+most one email for the report date; the deterministic queue idempotency key
+remains a duplicate-delivery guard.
+`POST
+/api/queues/power-settles-email` is a private queue consumer configured through
+`vercel.json`; it renders the inline email and standalone HTML attachment, then
+sends through Microsoft Graph. The inline email body uses the one-main-hub-per-ISO
+summary; the standalone HTML attachment includes a Main Hubs summary followed
+by separate PJM, ERCOT, ISO-NE, and CAISO hub tables, with the same `OnPk`
+`DA | RT | DART` then `OffPeak` `DA | RT | DART` column grouping as the
+frontend dashboard. This workflow does not use
+`ops.email_notification_outbox`.
+
+The current Power Settles email recipient is intentionally pinned to
+`aidan.keaveny@helioscta.com`; `HELIOS_EMAIL_RECIPIENTS` is not used for this
+Vercel workflow until the audience is deliberately widened. The deterministic
+queue idempotency key is
+`power-settles:<date-or-latest>:<rtSource>:<component>:<lookbackDays>:<recipient>`.
 
 ## Local DEV PJM DA Model Runtime
 
@@ -202,7 +243,6 @@ Local development also exposes a clearly separated `DEV` sidebar section:
 GET /api/spark-spread-evolution?sparkProduct=PJM_WH_RT_TETCO_M3_7X&strip=H
 GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
-GET /api/power-settles-dashboard?lookbackDays=7&rtSource=unverified
 GET /api/pjm-da-meteo-baseline-price?horizon=tomorrow
 GET /api/gas-daily-prices?tradeDate=YYYY-MM-DD
 GET /api/salts/wx-adj-scrapes?season=summer&month=7&weatherMetric=southcentral_population_cdd&saltsMetric=salts_total
@@ -1212,3 +1252,18 @@ repointing production to the current main deployment:
 ```bash
 npm run check:vercel-production -- --fix
 ```
+
+Power Settles Vercel email delivery requires these server-only Vercel
+environment variables:
+
+```text
+CRON_SECRET=
+AZURE_OUTLOOK_CLIENT_ID=
+AZURE_OUTLOOK_TENANT_ID=
+AZURE_OUTLOOK_CLIENT_SECRET=
+AZURE_OUTLOOK_SENDER=aidan.keaveny@helioscta.com
+HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
+```
+
+The Power Settles Vercel queue recipient is pinned in code to
+`aidan.keaveny@helioscta.com` for the current deployment.

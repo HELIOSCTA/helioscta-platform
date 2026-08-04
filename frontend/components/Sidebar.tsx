@@ -113,13 +113,20 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     ],
   });
 
+  sections.push({
+    key: "reports",
+    label: "Reports",
+    navItems: [
+      { id: "power-settles-dashboard", label: "Power Settles", description: "DA / RT / DART by ISO" },
+    ],
+  });
+
   if (showLocalDevFeatures) {
     sections.push({
       key: "dev",
       label: "DEV",
       navItems: [
         { id: "pjm-da-model", label: "PJM DA Model", description: "Meteo baseline DA forecast staging" },
-        { id: "power-settles-dashboard", label: "Power Settles", description: "DA / RT / DART by ISO" },
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
         { id: "gtn-balance", label: "GTN Balance" },

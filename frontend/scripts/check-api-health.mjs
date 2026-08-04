@@ -27,11 +27,10 @@ const endpoints = [
   },
   {
     name: "Power Settles dashboard",
-    path: "/api/power-settles-dashboard?lookbackDays=3&rtSource=unverified",
+    path: "/api/power-settles-dashboard?lookbackDays=3",
     targetMs: 1_500,
-    devOnly: true,
     minRows: 1,
-    rowCount: (body) => body?.summary?.isoCount,
+    rowCount: (body) => body?.summary?.hubCount,
   },
   {
     name: "PJM DA Model",

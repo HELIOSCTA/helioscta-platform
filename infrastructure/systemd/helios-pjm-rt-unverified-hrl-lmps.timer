@@ -1,5 +1,5 @@
 [Unit]
-Description=Overnight HeliosCTA ISO-NE Preliminary Real-Time Hourly LMP orchestration timer
+Description=Overnight HeliosCTA PJM unverified RT hourly LMP refresh timer
 
 [Timer]
 OnCalendar=*-*-* 00:15:00 America/New_York
@@ -7,9 +7,9 @@ OnCalendar=*-*-* 01:15:00 America/New_York
 OnCalendar=*-*-* 02:15:00 America/New_York
 OnCalendar=*-*-* 03:15:00 America/New_York
 Persistent=false
-RandomizedDelaySec=5min
+RandomizedDelaySec=2min
 AccuracySec=1min
-Unit=helios-isone-rt-hrl-lmps-prelim.service
+Unit=helios-pjm-rt-unverified-hrl-lmps.service
 
 [Install]
 WantedBy=timers.target

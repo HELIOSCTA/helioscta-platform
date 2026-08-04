@@ -16,6 +16,29 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/power-settles-dashboard/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/power-settles-dashboard/email-html/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/cron/power-settles-email/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/queues/power-settles-email/route.ts": {
+      "maxDuration": 60,
+      "regions": ["sfo1"],
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "power-settles-email",
+          "retryAfterSeconds": 300
+        }
+      ]
+    },
     "app/api/pjm-term-bible/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
@@ -141,6 +164,10 @@
     {
       "path": "/api/cache/warm-forecasts",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/power-settles-email",
+      "schedule": "0 11 * * *"
     }
   ]
 }

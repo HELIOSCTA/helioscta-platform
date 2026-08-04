@@ -1,16 +1,16 @@
 "use client";
 
-import type React from "react";
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { useSearchParams } from "next/navigation";
 
-import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
-import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
 type RtLmpSource = "verified" | "unverified";
+type PowerSettlesComponent = "total" | "energy" | "congestion" | "loss";
 type DashboardStatus = "ok" | "partial" | "missing";
+type RtSourceStatus = "requested" | "fallback" | "single-source";
 
 interface ProductSummary {
   flatAvg: number | null;
@@ -21,17 +21,13 @@ interface ProductSummary {
   observationCount: number;
 }
 
-interface LookbackDay {
-  date: string;
-  daFlatAvg: number | null;
-  rtFlatAvg: number | null;
-  dartFlatAvg: number | null;
-}
-
 interface DashboardIsoRow {
   iso: PowerIso;
   isoLabel: string;
   hub: string;
+  effectiveComponent: PowerSettlesComponent;
+  effectiveRtSource: RtLmpSource;
+  rtSourceStatus: RtSourceStatus;
   targetDate: string | null;
   latestDaDate: string | null;
   latestRtDate: string | null;
@@ -50,63 +46,62 @@ interface DashboardIsoRow {
     rt: ProductSummary;
     dart: ProductSummary;
   };
-  lookback: LookbackDay[];
 }
 
 interface PowerSettlesDashboardPayload {
-  component: "total";
+  component: PowerSettlesComponent;
   rtSource: RtLmpSource;
   lookbackDays: number;
   requestedDate: string | null;
-  datePolicy: "requested" | "per-iso-latest-complete";
+  defaultDate: string;
+  datePolicy: "requested" | "default-yesterday";
   rows: DashboardIsoRow[];
   summary: {
     isoCount: number;
     completeIsoCount: number;
     partialIsoCount: number;
     missingIsoCount: number;
+    hubCount: number;
+    completeHubCount: number;
+    partialHubCount: number;
+    missingHubCount: number;
+    unverifiedFallbackHubCount: number;
     latestAsOf: string | null;
   };
 }
 
-interface LookbackTableRow {
-  key: string;
-  iso: PowerIso;
-  isoLabel: string;
-  date: string;
-  hub: string;
-  daFlatAvg: number | null;
-  rtFlatAvg: number | null;
-  dartFlatAvg: number | null;
-}
-
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const LOOKBACK_OPTIONS = [3, 5, 7, 10, 14] as const;
-const ISO_ORDER: Record<PowerIso, number> = {
-  pjm: 0,
-  ercot: 1,
-  isone: 2,
-  caiso: 3,
-};
-const RT_SOURCE_TABS: Array<DashboardTabOption<RtLmpSource>> = [
-  { value: "unverified", label: "Unverified RT" },
-  { value: "verified", label: "Verified RT" },
+const COMPONENT_TABS: Array<{ value: PowerSettlesComponent; label: string }> = [
+  { value: "total", label: "Total" },
+  { value: "energy", label: "Energy" },
+  { value: "congestion", label: "Congestion" },
+  { value: "loss", label: "Loss" },
 ];
+const MAIN_HUB_ORDER: PowerIso[] = ["pjm", "ercot", "isone", "caiso"];
+const MAIN_HUB_BY_ISO: Record<PowerIso, string> = {
+  pjm: "WESTERN HUB",
+  ercot: "HB_NORTH",
+  isone: ".H.INTERNAL_HUB",
+  caiso: "TH_SP15_GEN-APND",
+};
 
 function buildApiUrl({
   date,
   lookbackDays,
   rtSource,
+  component,
   refresh,
 }: {
   date: string | null;
   lookbackDays: number;
   rtSource: RtLmpSource;
+  component: PowerSettlesComponent;
   refresh: boolean;
 }): string {
   const params = new URLSearchParams({
     lookbackDays: String(lookbackDays),
     rtSource,
+    component,
   });
   if (date) params.set("date", date);
   if (refresh) params.set("refresh", "1");
@@ -117,12 +112,39 @@ function buildCacheKey({
   date,
   lookbackDays,
   rtSource,
+  component,
 }: {
   date: string | null;
   lookbackDays: number;
   rtSource: RtLmpSource;
+  component: PowerSettlesComponent;
 }): string {
-  return `api:power-settles-dashboard:${date ?? "latest"}:${lookbackDays}:${rtSource}`;
+  return [
+    "api:power-settles-dashboard",
+    date ?? "default-yesterday",
+    lookbackDays,
+    rtSource,
+    component,
+  ].join(":");
+}
+
+function parseInitialRtSource(value: string | null): RtLmpSource {
+  return value === "unverified" ? "unverified" : "verified";
+}
+
+function parseInitialLookbackDays(value: string | null): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) return 7;
+  return Math.min(Math.max(parsed, 1), 14);
+}
+
+function parseInitialComponent(value: string | null): PowerSettlesComponent {
+  if (value === "energy" || value === "congestion" || value === "loss") return value;
+  return "total";
+}
+
+function parseInitialDate(value: string | null): string | null {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
 function fmtPrice(value: number | null, signed = false): string {
@@ -138,12 +160,6 @@ function fmtStamp(value: string | null): string {
 
 function fmtDate(value: string | null): string {
   return value ?? "-";
-}
-
-function avg(values: Array<number | null>): number | null {
-  const nums = values.filter((value): value is number => value !== null);
-  if (nums.length === 0) return null;
-  return nums.reduce((sum, value) => sum + value, 0) / nums.length;
 }
 
 function statusClass(status: DashboardStatus): string {
@@ -165,7 +181,7 @@ function dartClass(value: number | null): string {
   return "text-gray-200";
 }
 
-function metricCell(value: number | null, signed = false): React.ReactNode {
+function metricCell(value: number | null, signed = false) {
   return (
     <span className={`tabular-nums ${signed ? dartClass(value) : "text-gray-200"}`}>
       {fmtPrice(value, signed)}
@@ -173,30 +189,324 @@ function metricCell(value: number | null, signed = false): React.ReactNode {
   );
 }
 
-function KpiCard({
+function ControlCard({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+function FilterPills<T extends string>({
   label,
+  options,
   value,
-  detail,
+  onChange,
 }: {
   label: string;
-  value: string;
-  detail: string;
+  options: Array<{ value: T; label: string }>;
+  value: T;
+  onChange: (value: T) => void;
 }) {
   return (
-    <div className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
-      <p className="mt-2 text-xl font-semibold text-gray-100">{value}</p>
-      <p className="mt-1 text-xs text-gray-500">{detail}</p>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        {label}
+      </span>
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(option.value)}
+            className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+              active
+                ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
+function metricTriplet(
+  row: DashboardIsoRow,
+  period: "onPeak" | "offPeak",
+  withDivider = false,
+) {
+  const da = period === "onPeak" ? row.products.da.onPeakAvg : row.products.da.offPeakAvg;
+  const rt = period === "onPeak" ? row.products.rt.onPeakAvg : row.products.rt.offPeakAvg;
+  const dart =
+    period === "onPeak" ? row.products.dart.onPeakAvg : row.products.dart.offPeakAvg;
+  const label = period === "onPeak" ? "OnPk" : "OffPeak";
+
+  return (
+    <span
+      className={`inline-grid w-full grid-cols-3 items-center gap-1 tabular-nums ${
+        withDivider ? "border-l border-gray-800 pl-2" : ""
+      }`}
+      title={`${label} DA ${fmtPrice(da)} | RT ${fmtPrice(rt)} | DART ${fmtPrice(dart, true)}`}
+    >
+      <span className="text-right">{metricCell(da)}</span>
+      <span className="text-right">{metricCell(rt)}</span>
+      <span className="text-right">{metricCell(dart, true)}</span>
+    </span>
+  );
+}
+
+function metricTripletHeader(label: string, withDivider = false) {
+  return (
+    <span
+      className={`inline-grid w-full grid-cols-3 items-center gap-1 ${
+        withDivider ? "border-l border-gray-800 pl-2" : ""
+      }`}
+    >
+      <span className="col-span-3 text-center text-[10px] normal-case">{label}</span>
+      <span className="text-right text-[9px] text-gray-700">DA</span>
+      <span className="text-right text-[9px] text-gray-700">RT</span>
+      <span className="text-right text-[9px] text-gray-700">DART</span>
+    </span>
+  );
+}
+
+function sourceBadge(row: DashboardIsoRow) {
+  if (row.rtSourceStatus === "fallback") {
+    return {
+      label: "Unverified RT",
+      className: "border-amber-500/35 bg-amber-500/10 text-amber-200",
+      title: "Verified RT was unavailable or less complete, so this hub uses unverified RT.",
+    };
+  }
+  if (row.rtSourceStatus === "single-source") {
+    return {
+      label: row.iso === "ercot" ? "Settlement RT" : "Five-Min RT",
+      className: "border-cyan-500/30 bg-cyan-500/10 text-cyan-200",
+      title: "This ISO uses the single promoted RT source available in the LMP page.",
+    };
+  }
+  if (row.effectiveRtSource === "verified") {
+    return {
+      label: "Verified RT",
+      className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
+      title: "This hub uses verified RT data.",
+    };
+  }
+  return {
+    label: "Unverified RT",
+    className: "border-sky-500/30 bg-sky-500/10 text-sky-200",
+    title: "This hub uses unverified RT data.",
+  };
+}
+
+function isoStatus(rows: DashboardIsoRow[]): DashboardStatus {
+  if (rows.length > 0 && rows.every((row) => row.status === "ok")) return "ok";
+  if (rows.some((row) => row.status !== "missing")) return "partial";
+  return "missing";
+}
+
+function IsoSummaryCard({
+  isoLabel,
+  rows,
+  requestedComponent,
+}: {
+  isoLabel: string;
+  rows: DashboardIsoRow[];
+  requestedComponent: PowerSettlesComponent;
+}) {
+  const status = isoStatus(rows);
+  const fallbackComponent = rows.some((row) => row.effectiveComponent !== requestedComponent);
+  const fallbackSourceCount = rows.filter((row) => row.rtSourceStatus === "fallback").length;
+  const latestAsOf = fmtStamp(
+    rows
+      .map((row) => row.dataAsOf)
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null,
+  );
+  const targetDate = fmtDate(rows[0]?.targetDate ?? null);
+
+  return (
+    <article className="w-full max-w-[620px] overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-1.5">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-100">{isoLabel}</h3>
+            <span className="text-[11px] text-gray-600">
+              {rows.length} {rows.length === 1 ? "hub" : "hubs"}
+            </span>
+          </div>
+          <div className="mt-0.5 text-[11px] tabular-nums text-gray-500">
+            {targetDate} / as of {latestAsOf}
+          </div>
+        </div>
+        <div className="flex flex-wrap justify-end gap-1.5">
+          <span
+            className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(status)}`}
+          >
+            {statusLabel(status)}
+          </span>
+          {fallbackSourceCount > 0 && (
+            <span
+              className="inline-flex rounded-md border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200"
+              title={`${fallbackSourceCount} hub${fallbackSourceCount === 1 ? "" : "s"} use unverified RT fallback.`}
+            >
+              {fallbackSourceCount} Fallback
+            </span>
+          )}
+          {fallbackComponent && (
+            <span className="inline-flex rounded-md border border-gray-700 bg-gray-950/70 px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+              Total
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[598px] px-2.5 py-1.5 text-xs">
+          <div className="grid grid-cols-[118px_94px_42px_160px_160px] items-center gap-1.5 border-b border-gray-800/80 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <span>Hub</span>
+            <span>Source</span>
+            <span className="text-right">LMPs</span>
+            {metricTripletHeader("OnPk", true)}
+            {metricTripletHeader("OffPeak", true)}
+          </div>
+          <div className="divide-y divide-gray-800/70">
+            {rows.map((row) => {
+              const badge = sourceBadge(row);
+              return (
+                <div
+                  key={`${row.iso}-${row.hub}`}
+                  className="grid grid-cols-[118px_94px_42px_160px_160px] items-center gap-1.5 py-1"
+                  title={row.statusDetail}
+                >
+                  <span className="truncate font-semibold text-gray-300" title={row.hub}>
+                    {row.hub}
+                  </span>
+                  <span
+                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                    title={badge.title}
+                  >
+                    {badge.label}
+                  </span>
+                  <span className="text-right">
+                    {row.detailUrl ? (
+                      <a
+                        href={row.detailUrl}
+                        className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[10px] font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+                      >
+                        LMPs
+                      </a>
+                    ) : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </span>
+                  <span className="text-right">{metricTriplet(row, "onPeak", true)}</span>
+                  <span className="text-right">{metricTriplet(row, "offPeak", true)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function MainHubSummary({ rows }: { rows: DashboardIsoRow[] }) {
+  return (
+    <section className="overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
+      <div className="flex items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-1.5">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-100">Main Hubs</h3>
+          <div className="mt-0.5 text-[11px] text-gray-500">One hub per ISO</div>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto">
+        <div className="min-w-[828px] px-2.5 py-1.5 text-xs">
+          <div className="grid grid-cols-[58px_138px_96px_72px_42px_160px_160px] items-center gap-1.5 border-b border-gray-800/80 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <span>ISO</span>
+            <span>Hub</span>
+            <span>Source</span>
+            <span>Status</span>
+            <span className="text-right">LMPs</span>
+            {metricTripletHeader("OnPk", true)}
+            {metricTripletHeader("OffPeak", true)}
+          </div>
+          <div className="divide-y divide-gray-800/70">
+            {rows.map((row) => {
+              const badge = sourceBadge(row);
+              return (
+                <div
+                  key={`main-${row.iso}-${row.hub}`}
+                  className="grid grid-cols-[58px_138px_96px_72px_42px_160px_160px] items-center gap-1.5 py-1"
+                  title={row.statusDetail}
+                >
+                  <span className="font-semibold text-gray-100">{row.isoLabel}</span>
+                  <span className="truncate font-semibold text-gray-300" title={row.hub}>
+                    {row.hub}
+                  </span>
+                  <span
+                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                    title={badge.title}
+                  >
+                    {badge.label}
+                  </span>
+                  <span
+                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(row.status)}`}
+                  >
+                    {statusLabel(row.status)}
+                  </span>
+                  <span className="text-right">
+                    {row.detailUrl ? (
+                      <a
+                        href={row.detailUrl}
+                        className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[10px] font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+                      >
+                        LMPs
+                      </a>
+                    ) : (
+                      <span className="text-gray-600">-</span>
+                    )}
+                  </span>
+                  <span className="text-right">{metricTriplet(row, "onPeak", true)}</span>
+                  <span className="text-right">{metricTriplet(row, "offPeak", true)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function PowerSettlesDashboard() {
-  const [rtSource, setRtSource] = useState<RtLmpSource>("unverified");
-  const [lookbackDays, setLookbackDays] = useState(7);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [dateInput, setDateInput] = useState("");
-  const [refreshToken, setRefreshToken] = useState(0);
+  const searchParams = useSearchParams();
+  const initialDate = parseInitialDate(searchParams.get("date"));
+  const [rtSource] = useState<RtLmpSource>(() =>
+    parseInitialRtSource(searchParams.get("rtSource")),
+  );
+  const [component, setComponent] = useState<PowerSettlesComponent>(() =>
+    parseInitialComponent(searchParams.get("component")),
+  );
+  const [lookbackDays] = useState(() =>
+    parseInitialLookbackDays(searchParams.get("lookbackDays")),
+  );
+  const [selectedDate, setSelectedDate] = useState<string | null>(() => initialDate);
+  const [dateInput, setDateInput] = useState(() => initialDate ?? "");
+  const [refreshToken, setRefreshToken] = useState(() =>
+    searchParams.get("refresh") === "1" ? 1 : 0,
+  );
   const [data, setData] = useState<PowerSettlesDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -208,13 +518,20 @@ export default function PowerSettlesDashboard() {
         date: selectedDate,
         lookbackDays,
         rtSource,
+        component,
         refresh: forceRefresh,
       }),
-    [forceRefresh, lookbackDays, rtSource, selectedDate],
+    [component, forceRefresh, lookbackDays, rtSource, selectedDate],
   );
   const cacheKey = useMemo(
-    () => buildCacheKey({ date: selectedDate, lookbackDays, rtSource }),
-    [lookbackDays, rtSource, selectedDate],
+    () =>
+      buildCacheKey({
+        date: selectedDate,
+        lookbackDays,
+        rtSource,
+        component,
+      }),
+    [component, lookbackDays, rtSource, selectedDate],
   );
 
   useEffect(() => {
@@ -248,95 +565,77 @@ export default function PowerSettlesDashboard() {
       cancelled = true;
       controller.abort();
     };
-  }, [apiUrl, cacheKey, forceRefresh]);
+  }, [apiUrl, cacheKey, forceRefresh, refreshToken]);
 
-  const lookbackRows = useMemo<LookbackTableRow[]>(() => {
+  const componentFallbackApplies =
+    data?.rows.some((row) => row.effectiveComponent !== data.component) ?? false;
+  const isoCards = useMemo(() => {
     if (!data) return [];
-    return data.rows
-      .flatMap((row) =>
-        row.lookback.map((day) => ({
-          key: `${row.iso}-${day.date}`,
-          iso: row.iso,
-          isoLabel: row.isoLabel,
-          date: day.date,
-          hub: row.hub,
-          daFlatAvg: day.daFlatAvg,
-          rtFlatAvg: day.rtFlatAvg,
-          dartFlatAvg: day.dartFlatAvg,
-        })),
-      )
-      .sort((left, right) => {
-        const dateSort = right.date.localeCompare(left.date);
-        return dateSort || ISO_ORDER[left.iso] - ISO_ORDER[right.iso];
-      });
+    const groups: Array<{ iso: PowerIso; isoLabel: string; rows: DashboardIsoRow[] }> = [];
+    const byIso = new Map<PowerIso, { iso: PowerIso; isoLabel: string; rows: DashboardIsoRow[] }>();
+    for (const row of data.rows) {
+      let group = byIso.get(row.iso);
+      if (!group) {
+        group = { iso: row.iso, isoLabel: row.isoLabel, rows: [] };
+        byIso.set(row.iso, group);
+        groups.push(group);
+      }
+      group.rows.push(row);
+    }
+    return groups;
   }, [data]);
-
-  const avgDartFlat = useMemo(
-    () => avg(data?.rows.map((row) => row.products.dart.flatAvg) ?? []),
-    [data],
-  );
+  const mainHubRows = useMemo(() => {
+    if (!data) return [];
+    return MAIN_HUB_ORDER.map((iso) => {
+      const mainHub = MAIN_HUB_BY_ISO[iso];
+      return (
+        data.rows.find((row) => row.iso === iso && row.hub === mainHub) ??
+        data.rows.find((row) => row.iso === iso)
+      );
+    }).filter((row): row is DashboardIsoRow => Boolean(row));
+  }, [data]);
 
   const handleDateSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSelectedDate(dateInput || null);
+    setRefreshToken((value) => value + 1);
   };
 
   const ready = !loading;
 
   return (
     <div
-      className="space-y-4"
+      className="mx-auto w-full max-w-[1252px] space-y-4"
       data-perf-ready={ready ? "power-settles-dashboard" : undefined}
     >
-      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Total LMP
-            </p>
-            <p className="mt-1 text-sm text-gray-300">
-              DA, RT, and DART across default hub settles.
-            </p>
+      <ControlCard title="Power Settles">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Filters
+            </span>
+            <span className="h-px flex-1 bg-gray-800" />
+            <span className="text-xs text-gray-500">
+              {data
+                ? `${data.summary.completeHubCount}/${data.summary.hubCount} hubs complete`
+                : "DA / RT / DART OnPk-OffPeak"}
+            </span>
           </div>
-          <div className="flex min-w-0 flex-wrap items-end gap-2">
-            <DashboardTabs
-              tabs={RT_SOURCE_TABS}
-              activeValue={rtSource}
-              onChange={setRtSource}
-              ariaLabel="RT source"
-              variant="secondary"
-            />
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Lookback
+
+          <div className="space-y-2">
+            <form onSubmit={handleDateSubmit} className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Date
               </span>
-              <select
-                value={lookbackDays}
-                onChange={(event) => setLookbackDays(Number(event.target.value))}
-                className="h-9 rounded-md border border-gray-700 bg-gray-900 px-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-              >
-                {LOOKBACK_OPTIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {value}d
-                  </option>
-                ))}
-              </select>
-            </label>
-            <form onSubmit={handleDateSubmit} className="flex flex-wrap items-end gap-2">
-              <label className="block">
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Date
-                </span>
-                <input
-                  type="date"
-                  value={dateInput}
-                  onChange={(event) => setDateInput(event.target.value)}
-                  className="h-9 rounded-md border border-gray-700 bg-gray-900 px-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-                />
-              </label>
+              <input
+                type="date"
+                value={dateInput}
+                onChange={(event) => setDateInput(event.target.value)}
+                className="h-8 rounded-md border border-gray-700 bg-gray-900 px-2 text-xs text-gray-200 focus:border-gray-500 focus:outline-none"
+              />
               <button
                 type="submit"
-                className="h-9 rounded-md border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
               >
                 Load
               </button>
@@ -345,22 +644,48 @@ export default function PowerSettlesDashboard() {
                 onClick={() => {
                   setDateInput("");
                   setSelectedDate(null);
+                  setRefreshToken((value) => value + 1);
                 }}
-                className="h-9 rounded-md border border-gray-800 bg-gray-950/40 px-3 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
+                className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-1.5 text-xs font-semibold text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
               >
-                Latest
+                Yesterday
               </button>
             </form>
-            <button
-              type="button"
-              onClick={() => setRefreshToken((value) => value + 1)}
-              className="h-9 rounded-md border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-            >
-              Refresh
-            </button>
+            <FilterPills
+              label="Component"
+              options={COMPONENT_TABS}
+              value={component}
+              onChange={setComponent}
+            />
           </div>
+
+          {data && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+              <span>
+                Date <span className="font-semibold tabular-nums text-gray-300">{data.requestedDate ?? data.defaultDate}</span>
+              </span>
+              <span className="text-gray-700">/</span>
+              <span>
+                As of <span className="font-semibold tabular-nums text-gray-300">{fmtStamp(data.summary.latestAsOf)}</span>
+              </span>
+              {componentFallbackApplies && (
+                <>
+                  <span className="text-gray-700">/</span>
+                  <span>ERCOT uses Total</span>
+                </>
+              )}
+              {data.summary.unverifiedFallbackHubCount > 0 && (
+                <>
+                  <span className="text-gray-700">/</span>
+                  <span>
+                    {data.summary.unverifiedFallbackHubCount} unverified RT fallback
+                  </span>
+                </>
+              )}
+            </div>
+          )}
         </div>
-      </section>
+      </ControlCard>
 
       {loading && (
         <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500">
@@ -376,166 +701,20 @@ export default function PowerSettlesDashboard() {
 
       {data && (
         <>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <KpiCard
-              label="ISO Coverage"
-              value={`${data.summary.completeIsoCount}/${data.summary.isoCount}`}
-              detail={`${data.summary.partialIsoCount} partial, ${data.summary.missingIsoCount} missing`}
-            />
-            <KpiCard
-              label="RT Source"
-              value={data.rtSource === "verified" ? "Verified" : "Unverified"}
-              detail="Applied where the ISO has separate RT feeds"
-            />
-            <KpiCard
-              label="Date Policy"
-              value={data.datePolicy === "requested" ? "Selected" : "Per ISO"}
-              detail={data.requestedDate ?? "Latest complete DA/RT date by ISO"}
-            />
-            <KpiCard
-              label="Avg DART Flat"
-              value={fmtPrice(avgDartFlat, true)}
-              detail={`Default hubs, ${data.component.toUpperCase()} component`}
-            />
-          </div>
-
-          <DataTableShell
-            title="Power Settles Summary"
-            subtitle={`Default hubs, ${data.lookbackDays}-day bounded context`}
+          <MainHubSummary rows={mainHubRows} />
+          <section
+            className="grid w-full grid-cols-[minmax(0,620px)] justify-center gap-3 2xl:grid-cols-[repeat(2,minmax(0,620px))]"
+            aria-label="Power Settles ISO summaries"
           >
-            <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
-              <thead className="bg-gray-950 text-gray-500">
-                <tr>
-                  <th className="sticky left-0 z-20 bg-gray-950 px-3 py-2 text-left font-semibold uppercase tracking-wide">
-                    ISO
-                  </th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Date</th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Hub</th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
-                    Status
-                  </th>
-                  <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DA Flat
-                  </th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DA OnPk
-                  </th>
-                  <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    RT Flat
-                  </th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    RT OnPk
-                  </th>
-                  <th className="border-l border-gray-700 px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DART Flat
-                  </th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DART OnPk
-                  </th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
-                    As Of
-                  </th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">
-                    Detail
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {data.rows.map((row) => (
-                  <tr key={row.iso} className="hover:bg-gray-900/60">
-                    <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-semibold text-gray-100">
-                      {row.isoLabel}
-                    </td>
-                    <td className="px-3 py-2 tabular-nums text-gray-300">
-                      {fmtDate(row.targetDate)}
-                    </td>
-                    <td className="px-3 py-2 font-medium text-gray-300">{row.hub}</td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(row.status)}`}
-                        title={row.statusDetail}
-                      >
-                        {statusLabel(row.status)}
-                      </span>
-                    </td>
-                    <td className="border-l border-gray-700 px-3 py-2 text-right">
-                      {metricCell(row.products.da.flatAvg)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {metricCell(row.products.da.onPeakAvg)}
-                    </td>
-                    <td className="border-l border-gray-700 px-3 py-2 text-right">
-                      {metricCell(row.products.rt.flatAvg)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {metricCell(row.products.rt.onPeakAvg)}
-                    </td>
-                    <td className="border-l border-gray-700 px-3 py-2 text-right">
-                      {metricCell(row.products.dart.flatAvg, true)}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {metricCell(row.products.dart.onPeakAvg, true)}
-                    </td>
-                    <td className="px-3 py-2 text-gray-400">
-                      <span title={`DA: ${row.sourceTables.da}; RT: ${row.sourceTables.rt}`}>
-                        {fmtStamp(row.dataAsOf)}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2">
-                      {row.detailUrl ? (
-                        <a
-                          href={row.detailUrl}
-                          className="rounded-md border border-gray-700 bg-gray-800 px-2 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-                        >
-                          Open
-                        </a>
-                      ) : (
-                        <span className="text-gray-600">-</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DataTableShell>
-
-          <DataTableShell
-            title="Recent Daily Flat"
-            subtitle="Flat averages by ISO and default hub"
-          >
-            <table className="w-full min-w-[760px] border-collapse text-xs text-gray-200">
-              <thead className="bg-gray-950 text-gray-500">
-                <tr>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Date</th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">ISO</th>
-                  <th className="px-3 py-2 text-left font-semibold uppercase tracking-wide">Hub</th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DA Flat
-                  </th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    RT Flat
-                  </th>
-                  <th className="px-3 py-2 text-right font-semibold uppercase tracking-wide">
-                    DART Flat
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {lookbackRows.map((row) => (
-                  <tr key={row.key} className="hover:bg-gray-900/60">
-                    <td className="px-3 py-2 tabular-nums text-gray-300">{row.date}</td>
-                    <td className="px-3 py-2 font-semibold text-gray-100">{row.isoLabel}</td>
-                    <td className="px-3 py-2 text-gray-400">{row.hub}</td>
-                    <td className="px-3 py-2 text-right">{metricCell(row.daFlatAvg)}</td>
-                    <td className="px-3 py-2 text-right">{metricCell(row.rtFlatAvg)}</td>
-                    <td className="px-3 py-2 text-right">
-                      {metricCell(row.dartFlatAvg, true)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </DataTableShell>
+            {isoCards.map((card) => (
+              <IsoSummaryCard
+                key={card.iso}
+                isoLabel={card.isoLabel}
+                rows={card.rows}
+                requestedComponent={data.component}
+              />
+            ))}
+          </section>
         </>
       )}
     </div>
