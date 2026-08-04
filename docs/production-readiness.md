@@ -47,6 +47,9 @@ A backend workflow is production-ready when it has:
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago` and polls for complete next-day DAM hub prices. |
 | CAISO DA LMP schedule | In place | `helios-caiso-da-lmps.timer` runs daily at `12:00 America/Los_Angeles` and polls for CAISO's day-ahead OASIS publication. |
 | CAISO RT LMP schedule | In place | `helios-caiso-rt-lmps.timer` runs daily at `09:20 America/Los_Angeles` for the previous complete Pacific trading date. |
+| MISO DA LMP schedule | Promoted for VM install | `helios-miso-da-lmps.timer` runs daily at `19:00 UTC`, targets the next operating date, and polls for MISO Data Exchange publication. |
+| MISO RT preliminary LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-prelim.timer` runs daily at `09:15 UTC`, targets the previous operating date, and polls for next-day RT ex-post publication. |
+| MISO RT final LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-final.timer` runs daily at `13:00 UTC`, targets five calendar days back, and polls for final RT ex-post publication. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `11:55 America/New_York` and polls for the complete next Eastern operating date. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
@@ -54,11 +57,11 @@ A backend workflow is production-ready when it has:
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 23 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
-| LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, and CAISO LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
+| LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, CAISO, and MISO LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, and CAISO API scrapes write `ops.api_fetch_log`. |
-| Data readiness | In place | Critical PJM, ERCOT, ISO-NE, and CAISO price orchestration write `ops.data_availability_events`. |
+| API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, CAISO, and MISO API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | Critical PJM, ERCOT, ISO-NE, CAISO, and MISO price orchestration write `ops.data_availability_events`. |
 | Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, and CAISO DA LMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results rely on readiness events, API telemetry, and the health digest. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
@@ -149,7 +152,7 @@ Current criticality decision:
   PJM feeds to this bucket only when they share the same simple hourly cadence
   and safe rerun behavior.
 - Nightly repair timer: `lmp_price_backfill_7_day` reruns recent promoted
-  PJM, ISO-NE, ERCOT, and CAISO LMP/price-adder scrape repairs with
+  PJM, ISO-NE, ERCOT, CAISO, and MISO LMP/price-adder scrape repairs with
   feed-specific publication lags and logs backfill telemetry in
   `ops.api_fetch_log`.
 - Dedicated dashboard-context timer: `ops_sum` runs at 05:05, 06:05, 07:05,

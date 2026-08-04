@@ -200,8 +200,8 @@ helios-lmp-price-backfill-7-day.timer
 ```
 
 It runs `backend.backfills.power.lmp_price_backfill_7_day`, which executes
-seven-day repairs for promoted PJM, ISO-NE, ERCOT, and CAISO LMP price sources
-plus the ERCOT real-time price-adder companion feeds. The job writes to
+seven-day repairs for promoted PJM, ISO-NE, ERCOT, CAISO, and MISO LMP price
+sources plus the ERCOT real-time price-adder companion feeds. The job writes to
 canonical price tables through existing idempotent upsert keys and stamps API
 telemetry with `run_mode=backfill` metadata in `ops.api_fetch_log`.
 
@@ -209,8 +209,9 @@ The timer runs daily at `22:15 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
 DA feeds through the current Eastern market date, unverified/preliminary RT,
 CAISO RT, and ERCOT price-adder feeds through the prior market date, and
-verified/final RT feeds through two market dates back. CAISO DA repair runs
-through the current OASIS trading date while the scheduled CAISO DA poll owns
+verified/final RT feeds through two market dates back, and MISO final RT
+through five calendar days back. CAISO DA repair runs through the current
+OASIS trading date while the scheduled CAISO DA and MISO DA pollers own
 next-day publication. The service uses `flock` with
 `/tmp/helios-lmp-price-backfill-7-day.lock`.
 
@@ -433,6 +434,40 @@ hubs, upserts `caiso.rt_lmps`, writes OASIS fetch telemetry to
 and `03:15 America/Los_Angeles` so the Power Settles report has four
 overnight attempts after the prior Pacific trading day closes. The service
 uses `flock` with `/tmp/helios-caiso-rt-lmps.lock`.
+
+## MISO LMPs
+
+The MISO LMP workflows have dedicated daily timers:
+
+```text
+helios-miso-da-lmps.service
+helios-miso-da-lmps.timer
+helios-miso-rt-lmps-prelim.service
+helios-miso-rt-lmps-prelim.timer
+helios-miso-rt-lmps-final.service
+helios-miso-rt-lmps-final.timer
+```
+
+The services run `backend.orchestration.power.miso.da_lmps`,
+`backend.orchestration.power.miso.rt_lmps_prelim`, and
+`backend.orchestration.power.miso.rt_lmps_final`. They use the MISO Data
+Exchange Pricing API with `MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY`, upsert hourly
+hub LMPs into `miso.da_lmps`, `miso.rt_lmps_prelim`, and
+`miso.rt_lmps_final`, write one resolved polling telemetry row to
+`ops.api_fetch_log`, and emit complete-day readiness events to
+`ops.data_availability_events`.
+
+The DA timer runs daily at `19:00 UTC`, targets the next operating date, and
+polls every 10 minutes for up to two hours. The RT preliminary timer runs daily
+at `09:15 UTC`, targets the previous operating date, and polls every 10
+minutes for up to three hours. The RT final timer runs daily at `13:00 UTC`,
+targets five calendar days back, and polls every 10 minutes for up to three
+hours because MISO finalization can land later in the documented 3-5 day
+window. Services use `flock` locks under `/tmp/helios-miso-*.lock`.
+
+Before enabling these timers, apply the MISO LMP table and index DDL under
+`dbt/azure_postgres/reference_sql/ddl/power/miso/` and add
+`MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY` to `/etc/helioscta/backend.env`.
 
 ## ISO-NE ISO Express Feeds
 
@@ -1254,6 +1289,20 @@ journalctl -u helios-caiso-da-lmps.service -n 200 --no-pager
 systemctl status helios-caiso-rt-lmps.service
 systemctl status helios-caiso-rt-lmps.timer
 journalctl -u helios-caiso-rt-lmps.service -n 200 --no-pager
+```
+
+For MISO LMPs:
+
+```bash
+systemctl status helios-miso-da-lmps.service
+systemctl status helios-miso-da-lmps.timer
+journalctl -u helios-miso-da-lmps.service -n 200 --no-pager
+systemctl status helios-miso-rt-lmps-prelim.service
+systemctl status helios-miso-rt-lmps-prelim.timer
+journalctl -u helios-miso-rt-lmps-prelim.service -n 200 --no-pager
+systemctl status helios-miso-rt-lmps-final.service
+systemctl status helios-miso-rt-lmps-final.timer
+journalctl -u helios-miso-rt-lmps-final.service -n 200 --no-pager
 ```
 
 For EIA Open Data:
