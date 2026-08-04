@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pandas as pd
@@ -78,6 +79,66 @@ def test_miso_data_exchange_uses_subscription_key_header_and_paginates(monkeypat
     assert logs[0]["database"] == "stage_db"
     assert logs[0]["metadata"]["api_family"] == "data_exchange_pricing"
     assert logs[0]["metadata"]["page_number"] == 1
+
+
+def test_miso_data_exchange_logs_retryable_503_as_http_error(monkeypatch):
+    calls: list[dict[str, object]] = []
+    logs: list[dict[str, object]] = []
+
+    class EmptyServiceUnavailable:
+        status_code = 503
+        headers = {}
+        text = ""
+
+        def json(self):
+            raise json.JSONDecodeError("Expecting value", "", 0)
+
+    def fake_get(url, **kwargs):
+        calls.append({"url": url, **kwargs})
+        if len(calls) == 1:
+            return EmptyServiceUnavailable()
+        return FakeResponse(
+            {
+                "data": [{"node": "INDIANA.HUB"}],
+                "page": {"pageNumber": 1, "lastPage": True},
+            }
+        )
+
+    monkeypatch.setattr(data_exchange_client.requests, "get", fake_get)
+    monkeypatch.setattr(data_exchange_client.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        data_exchange_client.credentials,
+        "MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY",
+        "test-secret",
+    )
+    monkeypatch.setattr(
+        data_exchange_client,
+        "log_api_fetch",
+        lambda **kwargs: logs.append(kwargs),
+    )
+
+    rows = data_exchange_client.fetch_pricing_data(
+        "real-time/2026-08-03/lmp-expost",
+        params={
+            "node": "INDIANA.HUB",
+            "preliminaryFinal": "Preliminary",
+            "timeResolution": "hourly",
+        },
+        pipeline_name="miso_rt_lmps_prelim",
+        feed_name="miso_rt_lmps_prelim",
+        target_table="miso.rt_lmps_prelim",
+        retry_delay_seconds=0,
+    )
+
+    assert rows == [{"node": "INDIANA.HUB"}]
+    assert len(calls) == 2
+    assert logs[0]["status"] == "failure"
+    assert logs[0]["http_status"] == 503
+    assert logs[0]["error_type"] == "HTTPError"
+    assert "MISO Data Exchange HTTP 503" in logs[0]["error_message"]
+    assert logs[0]["attempt"] == 1
+    assert logs[1]["status"] == "success"
+    assert logs[1]["attempt"] == 2
 
 
 def test_miso_lmp_format_maps_components_and_fixed_est_timestamps():

@@ -161,8 +161,8 @@ def _get_json_page(
                 timeout=timeout_seconds,
             )
             elapsed_ms = round((time.perf_counter() - started) * 1000)
-            payload = _parse_json_response(response)
             if 200 <= response.status_code < 300:
+                payload = _parse_json_response(response)
                 if log_fetch:
                     _log_fetch_attempt(
                         parsed_url=parsed_url,
@@ -179,9 +179,10 @@ def _get_json_page(
                         rows_returned=_rows_returned_from_payload(payload),
                         metadata=metadata,
                         database=database,
-                    )
+                )
                 return payload
 
+            payload = _safe_json_response(response)
             message = _error_message(response=response, payload=payload)
             if log_fetch:
                 _log_fetch_attempt(
@@ -252,6 +253,16 @@ def _parse_json_response(response: requests.Response) -> dict:
     if not isinstance(payload, dict):
         raise MISODataExchangeError("MISO Data Exchange response was not a JSON object")
     return payload
+
+
+def _safe_json_response(response: requests.Response) -> dict:
+    try:
+        payload = response.json()
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
 
 
 def _error_message(*, response: requests.Response, payload: dict) -> str:
