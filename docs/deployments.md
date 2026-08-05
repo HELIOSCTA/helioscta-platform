@@ -2905,10 +2905,18 @@ LIMIT 20;
 - Source grain:
   `source_issue_key x model x forecast_type x request_region x entity_id x
   forecast_date x metric_name`.
-- Defaults: North America, WSI model, daily resolution, uncorrected bias,
-  Fahrenheit weighted temperatures for all 25 configured NA forecast regions
-  returned by WSI `allregions=true`, and all nine weighted degree-day regions
-  accepted by the forecast endpoint.
+- WDD raw model-run metadata:
+  `source_model`, `source_init_at_utc`, `source_init_cycle`,
+  `model_run_cycle`, and `forecast_day`; these columns are nullable so existing
+  hot rows remain valid during the operator-applied DDL update.
+- Defaults: North America and daily resolution. Weighted temperatures use WSI
+  model, Fahrenheit units, uncorrected bias, and all 25 configured NA forecast
+  regions returned by WSI `allregions=true`. The combined baseline timer also
+  refreshes raw WSI weighted degree days for all nine WDD regions. Model-driven
+  WDD forecasts for GFS_OP, GFS_ENS, ECMWF_OP, ECMWF_ENS, AIFS, and AIFS_ENS
+  are owned by per-model/per-cycle pollers. WSI weighted degree-day forecasts
+  use the original 32 metrics; model-driven degree-day forecasts use the 72
+  metrics returned by WSI, including 6-hour difference columns.
 - API telemetry: `ops.api_fetch_log`.
 - Data freshness output: `ops.data_availability_events`.
 - Telemetry hardening: malformed forecast CSV after a successful HTTP response
@@ -3132,7 +3140,10 @@ LIMIT 20;
   `2026-07-22 00:56:06 UTC`, respectively.
 - Multi-model WDD repo update: implemented on `2026-08-05`; a manual local
   production load refreshed all seven WDD models on `2026-08-05 15:06 UTC`.
-  VM deployment and VM-timer smoke remain pending.
+  VM deployment and VM-timer smoke completed on `2026-08-05 16:05 UTC`:
+  local, GitHub, and `/opt/helioscta-platform` were synced at `4ab5043` with
+  WSI commit `e70f930` included; the WDD ALTER and index SQL verified; and all
+  13 WSI daily weighted forecast timers were active.
 - WDD model-run coverage update: implemented in repo on `2026-08-05`. It adds
   nullable raw model-run metadata columns, model/cycle comparison indexes, a
   strict per-model/per-cycle poller that upserts only complete snapshots, and
