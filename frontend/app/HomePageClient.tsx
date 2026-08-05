@@ -926,7 +926,7 @@ export default function HomePageClient({
       return {
         title: "LMP Adders & Reserves",
         subtitle:
-          "ISO-specific price adders, reserve market results, and source contracts alongside LMPs.",
+          "PJM reserve and ancillary metrics plus ERCOT RT price adders, with source contracts alongside LMPs.",
         footer: "LMP Adders | Source: promoted reserve/adders tables and source contracts",
       };
     }

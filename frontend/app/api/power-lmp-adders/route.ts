@@ -25,11 +25,12 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const forceRefresh = searchParams.get("refresh") === "1";
   const iso = parsePowerLmpAdderIso(searchParams.get("iso"));
   const dataset = parsePowerLmpAdderDataset(searchParams.get("dataset"), iso);
+  const date = parseDate(searchParams.get("date"));
   const result = await buildPowerLmpAddersPayload({
     iso,
     dataset,
-    start: parseDate(searchParams.get("start")),
-    end: parseDate(searchParams.get("end")),
+    start: date ?? parseDate(searchParams.get("start")),
+    end: date ?? parseDate(searchParams.get("end")),
   });
 
   return {

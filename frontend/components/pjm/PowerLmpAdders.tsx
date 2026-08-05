@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
 import DataTableShell from "@/components/dashboard/DataTableShell";
@@ -13,11 +14,13 @@ import LmpColumnFilterMenu, {
 } from "@/components/pjm/LmpColumnFilterMenu";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
-type PowerIso = "pjm" | "ercot";
+export type PowerIso = "pjm" | "ercot";
 type DatasetStatus = "live" | "pending" | "reference";
+type MetricValueUnit = "price" | "mw" | "ratio";
 type LmpAdderDataset =
   | "pjm-da-reserve-mcp"
   | "pjm-rt-reserve-mcp"
+  | "pjm-rt-ancillary-services"
   | "ercot-rt-price-adders-sced"
   | "ercot-rt-price-adders-15min";
 type LmpAdderView = "daily-settles";
@@ -44,6 +47,7 @@ interface MetricColumn {
   key: string;
   label: string;
   sourceField: string | null;
+  unit: MetricValueUnit;
 }
 
 export interface PowerLmpAddersFreshnessSummary {
@@ -144,6 +148,7 @@ const DATASET_TABS_BY_ISO: Record<PowerIso, Array<DashboardTabOption<LmpAdderDat
   pjm: [
     { value: "pjm-da-reserve-mcp", label: "DA Reserves" },
     { value: "pjm-rt-reserve-mcp", label: "RT Reserves" },
+    { value: "pjm-rt-ancillary-services", label: "RT Ancillary" },
   ],
   ercot: [
     { value: "ercot-rt-price-adders-sced", label: "RT Adders SCED" },
@@ -156,6 +161,14 @@ const DEFAULT_DATASET_BY_ISO: Record<PowerIso, LmpAdderDataset> = {
   ercot: "ercot-rt-price-adders-sced",
 };
 
+const DATASET_ISO: Record<LmpAdderDataset, PowerIso> = {
+  "pjm-da-reserve-mcp": "pjm",
+  "pjm-rt-reserve-mcp": "pjm",
+  "pjm-rt-ancillary-services": "pjm",
+  "ercot-rt-price-adders-sced": "ercot",
+  "ercot-rt-price-adders-15min": "ercot",
+};
+
 const VIEW_TABS: Array<DashboardTabOption<LmpAdderView>> = [
   { value: "daily-settles", label: "Daily Settles" },
 ];
@@ -166,8 +179,14 @@ const ADDER_DAY_TYPE_LABELS = {
   holiday: "Holiday",
 } as const;
 
-function fmtPrice(value: number | null): string {
+function fmtMetricValue(value: number | null, unit: MetricValueUnit): string {
   if (value === null || !Number.isFinite(value)) return "-";
+  if (unit === "mw") {
+    return `${value.toLocaleString("en-US", { maximumFractionDigits: 2 })} MW`;
+  }
+  if (unit === "ratio") {
+    return value.toLocaleString("en-US", { maximumFractionDigits: 4 });
+  }
   return `$${value.toFixed(2)}`;
 }
 
@@ -209,16 +228,28 @@ function adderHourFilterKey(hour: number): AdderHourKey {
   return `he${hour}` as AdderHourKey;
 }
 
-function adderFilterValue(row: DailySettleRow, key: AdderFilterKey): string {
+function metricUnitForRow(
+  row: DailySettleRow,
+  metricUnitByLabel: Map<string, MetricValueUnit>,
+): MetricValueUnit {
+  return metricUnitByLabel.get(row.dimensions.metric ?? "") ?? "price";
+}
+
+function adderFilterValue(
+  row: DailySettleRow,
+  key: AdderFilterKey,
+  metricUnitByLabel: Map<string, MetricValueUnit>,
+): string {
+  const unit = metricUnitForRow(row, metricUnitByLabel);
   if (key === "dayType") return adderDayTypeLabel(row);
   if (key === "date") return row.date;
-  if (key === "onPeakAvg") return fmtPrice(row.onPeakAvg);
-  if (key === "offPeakAvg") return fmtPrice(row.offPeakAvg);
+  if (key === "onPeakAvg") return fmtMetricValue(row.onPeakAvg, unit);
+  if (key === "offPeakAvg") return fmtMetricValue(row.offPeakAvg, unit);
   if (key.startsWith("dimension:")) {
     return row.dimensions[key.slice("dimension:".length)] ?? "-";
   }
   const hour = Number(key.slice(2));
-  return fmtPrice(Number.isFinite(hour) ? row.hourly[hour - 1] ?? null : null);
+  return fmtMetricValue(Number.isFinite(hour) ? row.hourly[hour - 1] ?? null : null, unit);
 }
 
 function isWeekendDate(value: string): boolean {
@@ -266,18 +297,18 @@ function compareAdderRows(
   return JSON.stringify(left.dimensions).localeCompare(JSON.stringify(right.dimensions));
 }
 
-function todayDate(): string {
-  const date = new Date();
-  const month = `${date.getMonth() + 1}`.padStart(2, "0");
-  const day = `${date.getDate()}`.padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
+function parseDateParam(value: string | null): string | null {
+  return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-function offsetDate(value: string, days: number): string {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return value;
-  date.setDate(date.getDate() + days);
-  return date.toISOString().slice(0, 10);
+function parseIsoParam(value: string | null): PowerIso | null {
+  return value === "pjm" || value === "ercot" ? value : null;
+}
+
+function parseDatasetParam(value: string | null, iso: PowerIso): LmpAdderDataset | null {
+  if (!value) return null;
+  const datasetValue = value as LmpAdderDataset;
+  return DATASET_ISO[datasetValue] === iso ? datasetValue : null;
 }
 
 function statusClass(status: DatasetStatus, loading: boolean, hasRows: boolean): string {
@@ -299,24 +330,32 @@ function statusLabel(status: DatasetStatus, loading: boolean, hasRows: boolean):
 function buildApiUrl({
   iso,
   dataset,
-  startDate,
-  endDate,
+  date,
   refresh = false,
 }: {
   iso: PowerIso;
   dataset: LmpAdderDataset;
-  startDate: string;
-  endDate: string;
+  date: string | null;
   refresh?: boolean;
 }): string {
   const params = new URLSearchParams({
     iso,
     dataset,
-    start: startDate,
-    end: endDate,
   });
+  if (date) params.set("date", date);
   if (refresh) params.set("refresh", "1");
   return `/api/power-lmp-adders?${params.toString()}`;
+}
+
+function defaultAdderColumnFilters(
+  defaults: Record<string, string[]> | undefined,
+): ColumnFilters<AdderFilterKey> {
+  return Object.fromEntries(
+    Object.entries(defaults ?? {}).map(([key, values]) => [
+      adderDimensionFilterKey(key),
+      values,
+    ]),
+  ) as ColumnFilters<AdderFilterKey>;
 }
 
 function SectionCard({
@@ -684,17 +723,33 @@ function FilteredAdderHeader({
 }
 
 export default function PowerLmpAdders({
+  initialIso = null,
+  showIsoTabs = true,
   refreshToken = 0,
   onFreshnessChange,
+  routeSection = "power-lmp-adders",
+  routeView = null,
 }: {
+  initialIso?: PowerIso | null;
+  showIsoTabs?: boolean;
   refreshToken?: number;
   onFreshnessChange?: (freshness: PowerLmpAddersFreshnessSummary) => void;
+  routeSection?: string;
+  routeView?: string | null;
 }) {
-  const [activeIso, setActiveIso] = useState<PowerIso>("pjm");
-  const [dataset, setDataset] = useState<LmpAdderDataset>("pjm-da-reserve-mcp");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const routeIso = initialIso ?? parseIsoParam(searchParams.get("iso")) ?? "pjm";
+  const routeDataset =
+    parseDatasetParam(searchParams.get("dataset"), routeIso) ?? DEFAULT_DATASET_BY_ISO[routeIso];
+  const routeDate = parseDateParam(searchParams.get("date"));
+
+  const [activeIso, setActiveIso] = useState<PowerIso>(routeIso);
+  const [dataset, setDataset] = useState<LmpAdderDataset>(routeDataset);
   const [activeView, setActiveView] = useState<LmpAdderView>("daily-settles");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const [selectedDate, setSelectedDate] = useState<string | null>(routeDate);
+  const [dateInput, setDateInput] = useState(routeDate ?? "");
   const [data, setData] = useState<AddersPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -707,20 +762,38 @@ export default function PowerLmpAdders({
     direction: "desc",
   });
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
-  const rangeSeededRef = useRef(false);
+  const shouldApplyDefaultFiltersRef = useRef(true);
   const effectiveRefreshToken = refreshToken + latestRefreshToken;
 
-  useEffect(() => {
-    setDataset(DEFAULT_DATASET_BY_ISO[activeIso]);
-    setStartDate("");
-    setEndDate("");
-    setData(null);
-    setColumnFilters({});
-    rangeSeededRef.current = false;
-  }, [activeIso]);
+  const replaceAdderRouteState = ({
+    iso,
+    nextDataset,
+    date,
+  }: {
+    iso: PowerIso;
+    nextDataset: LmpAdderDataset;
+    date: string | null;
+  }) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("section", routeSection);
+    params.set("iso", iso);
+    params.set("dataset", nextDataset);
+    params.delete("start");
+    params.delete("end");
+    if (routeView) {
+      params.set("view", routeView);
+    } else {
+      params.delete("view");
+    }
+    if (date) {
+      params.set("date", date);
+    } else {
+      params.delete("date");
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
 
-  const fetchStartDate = startDate || todayDate();
-  const fetchEndDate = endDate || fetchStartDate;
+  const selectedDateLabel = selectedDate ?? "latest";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -729,12 +802,11 @@ export default function PowerLmpAdders({
     setError(null);
 
     fetchJsonWithCache<AddersPayload>({
-      key: `power-lmp-adders:${activeIso}:${dataset}:${fetchStartDate}:${fetchEndDate}`,
+      key: `power-lmp-adders:${activeIso}:${dataset}:${selectedDateLabel}`,
       url: buildApiUrl({
         iso: activeIso,
         dataset,
-        startDate: fetchStartDate,
-        endDate: fetchEndDate,
+        date: selectedDate,
         refresh: effectiveRefreshToken > 0,
       }),
       ttlMs: API_CACHE_TTL_MS,
@@ -745,23 +817,10 @@ export default function PowerLmpAdders({
       .then((payload) => {
         if (!active) return;
         setData(payload);
-        setColumnFilters((filters) => {
-          const hasFilters = Object.values(filters).some((values) => values && values.length > 0);
-          if (hasFilters) return filters;
-          return Object.fromEntries(
-            Object.entries(payload.defaultColumnFilters ?? {}).map(([key, values]) => [
-              adderDimensionFilterKey(key),
-              values,
-            ]),
-          ) as ColumnFilters<AdderFilterKey>;
-        });
-        if (!rangeSeededRef.current && payload.latestDate) {
-          rangeSeededRef.current = true;
-          setStartDate(offsetDate(payload.latestDate, -6));
-          setEndDate(payload.latestDate);
-        } else if (!startDate && !endDate) {
-          setStartDate(payload.startDate);
-          setEndDate(payload.endDate);
+        setDateInput(selectedDate ?? payload.startDate);
+        if (shouldApplyDefaultFiltersRef.current) {
+          shouldApplyDefaultFiltersRef.current = false;
+          setColumnFilters(defaultAdderColumnFilters(payload.defaultColumnFilters));
         }
       })
       .catch((err: Error) => {
@@ -780,20 +839,20 @@ export default function PowerLmpAdders({
     activeIso,
     dataset,
     effectiveRefreshToken,
-    endDate,
-    fetchEndDate,
-    fetchStartDate,
-    startDate,
+    selectedDate,
+    selectedDateLabel,
   ]);
 
   const hasRows = Boolean(data?.rows.some((row) => row.sourceRowCount > 0));
   const freshness = useMemo<PowerLmpAddersFreshnessSummary | null>(() => {
     if (!data) return null;
+    const targetDateLabel =
+      data.startDate === data.endDate ? data.startDate : `${data.startDate} to ${data.endDate}`;
     return {
       status: statusLabel(data.status, loading, hasRows),
       statusClass: statusClass(data.status, loading, hasRows),
       summary: `${data.isoLabel} | ${data.datasetLabel}`,
-      targetDateLabel: `${data.startDate} to ${data.endDate}`,
+      targetDateLabel,
       latestDateLabel: data.latestDate ?? "--",
       latestUpdateLabel: fmtStamp(data.latestAsOf),
     };
@@ -808,6 +867,11 @@ export default function PowerLmpAdders({
   const tablePeakWindow = data ? PEAK_WINDOW_BY_ISO[data.iso] : PEAK_WINDOW_BY_ISO[activeIso];
   const tableColumnCount = data ? 2 + data.dimensionColumns.length + 2 + HOURS.length : 28;
   const hasColumnFilters = Object.values(columnFilters).some((values) => values && values.length > 0);
+  const metricUnitByLabel = useMemo(() => {
+    return new Map<string, MetricValueUnit>(
+      (data?.metricColumns ?? []).map((metric) => [metric.label, metric.unit]),
+    );
+  }, [data]);
   const updateAdderColumnFilter = (key: AdderFilterKey, values: string[]) => {
     setColumnFilters((filters) => updateColumnFilter(filters, key, values));
   };
@@ -820,8 +884,14 @@ export default function PowerLmpAdders({
         ADDER_DAY_TYPE_LABELS.holiday,
       ],
       date: uniqueColumnOptions(data.rows.map((row) => row.date), "desc"),
-      onPeakAvg: uniqueColumnOptions(data.rows.map((row) => fmtPrice(row.onPeakAvg))),
-      offPeakAvg: uniqueColumnOptions(data.rows.map((row) => fmtPrice(row.offPeakAvg))),
+      onPeakAvg: uniqueColumnOptions(
+        data.rows.map((row) => fmtMetricValue(row.onPeakAvg, metricUnitForRow(row, metricUnitByLabel))),
+      ),
+      offPeakAvg: uniqueColumnOptions(
+        data.rows.map((row) =>
+          fmtMetricValue(row.offPeakAvg, metricUnitForRow(row, metricUnitByLabel)),
+        ),
+      ),
     };
     data.dimensionColumns.forEach((column) => {
       options[adderDimensionFilterKey(column.key)] = uniqueColumnOptions(
@@ -830,11 +900,13 @@ export default function PowerLmpAdders({
     });
     HOURS.forEach((hour) => {
       options[adderHourFilterKey(hour)] = uniqueColumnOptions(
-        data.rows.map((row) => fmtPrice(row.hourly[hour - 1] ?? null)),
+        data.rows.map((row) =>
+          fmtMetricValue(row.hourly[hour - 1] ?? null, metricUnitForRow(row, metricUnitByLabel)),
+        ),
       );
     });
     return options as Record<AdderFilterKey, string[]>;
-  }, [data]);
+  }, [data, metricUnitByLabel]);
   const filteredRows = useMemo(() => {
     if (!data) return [];
     const activeFilters = Object.entries(columnFilters).filter(
@@ -844,30 +916,71 @@ export default function PowerLmpAdders({
     if (activeFilters.length === 0) return data.rows;
     return data.rows.filter((row) =>
       activeFilters.every(([key, selected]) =>
-        matchesColumnFilter(adderFilterValue(row, key), selected)
+        matchesColumnFilter(adderFilterValue(row, key, metricUnitByLabel), selected)
       )
     );
-  }, [columnFilters, data]);
+  }, [columnFilters, data, metricUnitByLabel]);
   const displayedRows = useMemo(() => {
     const rows = [...filteredRows];
     rows.sort((left, right) => compareAdderRows(left, right, adderSort));
     return rows;
   }, [adderSort, filteredRows]);
-  const heatRange = useMemo(() => {
-    const values = displayedRows
-      .flatMap((row) => [row.onPeakAvg, row.offPeakAvg, ...row.hourly])
-      .filter((value): value is number => value !== null && Number.isFinite(value));
-    return {
-      min: values.length > 0 ? Math.min(...values) : 0,
-      max: values.length > 0 ? Math.max(...values) : 0,
+  const heatRangeByUnit = useMemo(() => {
+    const valuesByUnit: Record<MetricValueUnit, number[]> = {
+      price: [],
+      mw: [],
+      ratio: [],
     };
-  }, [displayedRows]);
+    displayedRows.forEach((row) => {
+      const unit = metricUnitForRow(row, metricUnitByLabel);
+      valuesByUnit[unit].push(
+        ...[row.onPeakAvg, row.offPeakAvg, ...row.hourly].filter(
+          (value): value is number => value !== null && Number.isFinite(value),
+        ),
+      );
+    });
+    return {
+      price: {
+        min: valuesByUnit.price.length > 0 ? Math.min(...valuesByUnit.price) : 0,
+        max: valuesByUnit.price.length > 0 ? Math.max(...valuesByUnit.price) : 0,
+      },
+      mw: {
+        min: valuesByUnit.mw.length > 0 ? Math.min(...valuesByUnit.mw) : 0,
+        max: valuesByUnit.mw.length > 0 ? Math.max(...valuesByUnit.mw) : 0,
+      },
+      ratio: {
+        min: valuesByUnit.ratio.length > 0 ? Math.min(...valuesByUnit.ratio) : 0,
+        max: valuesByUnit.ratio.length > 0 ? Math.max(...valuesByUnit.ratio) : 0,
+      },
+    };
+  }, [displayedRows, metricUnitByLabel]);
   const toggleAdderSort = (key: AdderSortKey) => {
     setAdderSort((prev) =>
       prev.key === key
         ? { key, direction: prev.direction === "asc" ? "desc" : "asc" }
         : { key, direction: "desc" }
     );
+  };
+  const handleDateSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const nextDate = parseDateParam(dateInput);
+    shouldApplyDefaultFiltersRef.current = true;
+    setSelectedDate(nextDate);
+    setData(null);
+    setColumnFilters({});
+    replaceAdderRouteState({ iso: activeIso, nextDataset: dataset, date: nextDate });
+  };
+  const handleLatestDate = () => {
+    shouldApplyDefaultFiltersRef.current = true;
+    setSelectedDate(null);
+    setDateInput("");
+    setData(null);
+    setColumnFilters({});
+    setLatestRefreshToken((value) => value + 1);
+    replaceAdderRouteState({ iso: activeIso, nextDataset: dataset, date: null });
+  };
+  const handleRefresh = () => {
+    setLatestRefreshToken((value) => value + 1);
   };
 
   return (
@@ -890,32 +1003,37 @@ export default function PowerLmpAdders({
       )}
 
       <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
-        <div className="border-b border-gray-800 pb-2">
-          <DashboardTabs
-            tabs={ISO_TABS}
-            activeValue={activeIso}
-            onChange={(value) => {
-              setActiveIso(value);
-              setDataset(DEFAULT_DATASET_BY_ISO[value]);
-              setStartDate("");
-              setEndDate("");
-              setData(null);
-              setColumnFilters({});
-              rangeSeededRef.current = false;
-            }}
-            ariaLabel="LMP adder ISO"
-          />
-        </div>
+        {showIsoTabs && (
+          <div className="border-b border-gray-800 pb-2">
+            <DashboardTabs
+              tabs={ISO_TABS}
+              activeValue={activeIso}
+              onChange={(value) => {
+                const nextDataset = DEFAULT_DATASET_BY_ISO[value];
+                setActiveIso(value);
+                setDataset(nextDataset);
+                setSelectedDate(null);
+                setDateInput("");
+                setData(null);
+                shouldApplyDefaultFiltersRef.current = true;
+                setColumnFilters({});
+                replaceAdderRouteState({ iso: value, nextDataset, date: null });
+              }}
+              ariaLabel="LMP adder ISO"
+            />
+          </div>
+        )}
         <DashboardTabs
           tabs={datasetTabs}
           activeValue={dataset}
           onChange={(value) => {
             setDataset(value);
-            setStartDate("");
-            setEndDate("");
+            setSelectedDate(null);
+            setDateInput("");
             setData(null);
+            shouldApplyDefaultFiltersRef.current = true;
             setColumnFilters({});
-            rangeSeededRef.current = false;
+            replaceAdderRouteState({ iso: activeIso, nextDataset: value, date: null });
           }}
           ariaLabel="LMP adder datasets"
           variant="secondary"
@@ -938,37 +1056,47 @@ export default function PowerLmpAdders({
       />
 
       <SectionCard
-        title="Date Range"
+        title="Selected Day"
         subtitle={
           activeDataset
             ? `${activeDataset.valueLabel} | ${activeDataset.sourceTable ?? "pending promoted table"}`
-            : "Daily settle range"
+            : "Daily settle day"
         }
       >
-        <div className="flex flex-wrap items-center gap-2">
+        <form onSubmit={handleDateSubmit} className="flex flex-wrap items-center gap-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+            Date
+          </span>
           <input
             type="date"
-            value={startDate}
-            max={endDate}
-            onChange={(event) => setStartDate(event.target.value)}
-            className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-          />
-          <span className="text-xs text-gray-500">to</span>
-          <input
-            type="date"
-            value={endDate}
-            min={startDate}
-            onChange={(event) => setEndDate(event.target.value)}
+            value={dateInput}
+            onChange={(event) => setDateInput(event.target.value)}
             className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
           />
           <button
+            type="submit"
+            className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
+          >
+            Load
+          </button>
+          <button
             type="button"
-            onClick={() => setLatestRefreshToken((value) => value + 1)}
+            onClick={handleLatestDate}
+            className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-2 text-sm font-medium text-gray-400 transition-colors hover:border-gray-700 hover:text-gray-200"
+          >
+            Latest
+          </button>
+          <button
+            type="button"
+            onClick={handleRefresh}
             className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm font-medium text-gray-300 transition-colors hover:bg-gray-800 hover:text-white"
           >
             Refresh
           </button>
-        </div>
+          {data?.latestDate && (
+            <span className="text-xs text-gray-500">Latest available: {data.latestDate}</span>
+          )}
+        </form>
       </SectionCard>
 
       {data && activeView === "daily-settles" && (
@@ -1096,81 +1224,85 @@ export default function PowerLmpAdders({
                 <tr>
                   <td colSpan={tableColumnCount} className="px-3 py-8 text-center text-sm text-gray-500">
                     {data.rows.length === 0
-                      ? "No promoted rows for this source and range."
+                      ? "No promoted rows for this source and date."
                       : "No rows match the selected column filters."}
                   </td>
                 </tr>
               )}
-              {displayedRows.map((row) => (
-                <tr
-                  key={`${row.date}|${data.dimensionColumns
-                    .map((column) => row.dimensions[column.key] ?? "")
-                    .join("|")}`}
-                  className="hover:bg-gray-900/60"
-                >
-                  <td className="sticky left-0 z-10 w-20 bg-[#0d1119] px-2 py-2 text-center">
-                    {isWeekendDate(row.date) ? (
-                      <span
-                        title="Weekend"
-                        className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-500/40 bg-slate-500/10 text-[10px] font-bold text-slate-300"
-                      >
-                        W
-                      </span>
-                    ) : (
-                      <span className="text-gray-700" aria-hidden="true">
-                        .
-                      </span>
-                    )}
-                  </td>
-                  <td className="sticky left-20 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-100">
-                    {row.date}
-                  </td>
-                  {data.dimensionColumns.map((column) => (
-                    <td key={column.key} className="px-3 py-2 text-gray-300">
-                      {row.dimensions[column.key] ?? "-"}
+              {displayedRows.map((row) => {
+                const rowUnit = metricUnitForRow(row, metricUnitByLabel);
+                const rowHeatRange = heatRangeByUnit[rowUnit];
+                return (
+                  <tr
+                    key={`${row.date}|${data.dimensionColumns
+                      .map((column) => row.dimensions[column.key] ?? "")
+                      .join("|")}`}
+                    className="hover:bg-gray-900/60"
+                  >
+                    <td className="sticky left-0 z-10 w-20 bg-[#0d1119] px-2 py-2 text-center">
+                      {isWeekendDate(row.date) ? (
+                        <span
+                          title="Weekend"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-md border border-slate-500/40 bg-slate-500/10 text-[10px] font-bold text-slate-300"
+                        >
+                          W
+                        </span>
+                      ) : (
+                        <span className="text-gray-700" aria-hidden="true">
+                          .
+                        </span>
+                      )}
                     </td>
-                  ))}
-                  <td
-                    className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                    style={
-                      tableHeatmapEnabled
-                        ? heatStyle(row.onPeakAvg, heatRange.min, heatRange.max)
-                        : undefined
-                    }
-                  >
-                    {fmtPrice(row.onPeakAvg)}
-                  </td>
-                  <td
-                    className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
-                    style={
-                      tableHeatmapEnabled
-                        ? heatStyle(row.offPeakAvg, heatRange.min, heatRange.max)
-                        : undefined
-                    }
-                  >
-                    {fmtPrice(row.offPeakAvg)}
-                  </td>
-                  {HOURS.map((hour) => (
+                    <td className="sticky left-20 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-100">
+                      {row.date}
+                    </td>
+                    {data.dimensionColumns.map((column) => (
+                      <td key={column.key} className="px-3 py-2 text-gray-300">
+                        {row.dimensions[column.key] ?? "-"}
+                      </td>
+                    ))}
                     <td
-                      key={hour}
-                      className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
-                        hour === 1 ? "border-l border-gray-700" : ""
-                      } ${
-                        hour === tablePeakWindow.start ? "border-l border-dotted border-sky-700/70" : ""
-                      } ${
-                        hour === tablePeakWindow.end ? "border-r border-dotted border-sky-700/70" : ""
-                      }`}
+                      className="border-l border-gray-700 bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
                       style={
                         tableHeatmapEnabled
-                          ? heatStyle(row.hourly[hour - 1] ?? null, heatRange.min, heatRange.max)
+                          ? heatStyle(row.onPeakAvg, rowHeatRange.min, rowHeatRange.max)
                           : undefined
                       }
                     >
-                      {fmtPrice(row.hourly[hour - 1] ?? null)}
+                      {fmtMetricValue(row.onPeakAvg, rowUnit)}
                     </td>
-                  ))}
-                </tr>
-              ))}
+                    <td
+                      className="bg-gray-950/70 px-3 py-2 text-right font-semibold tabular-nums text-gray-100"
+                      style={
+                        tableHeatmapEnabled
+                          ? heatStyle(row.offPeakAvg, rowHeatRange.min, rowHeatRange.max)
+                          : undefined
+                      }
+                    >
+                      {fmtMetricValue(row.offPeakAvg, rowUnit)}
+                    </td>
+                    {HOURS.map((hour) => (
+                      <td
+                        key={hour}
+                        className={`px-2 py-2 text-right tabular-nums text-gray-300 ${
+                          hour === 1 ? "border-l border-gray-700" : ""
+                        } ${
+                          hour === tablePeakWindow.start ? "border-l border-dotted border-sky-700/70" : ""
+                        } ${
+                          hour === tablePeakWindow.end ? "border-r border-dotted border-sky-700/70" : ""
+                        }`}
+                        style={
+                          tableHeatmapEnabled
+                            ? heatStyle(row.hourly[hour - 1] ?? null, rowHeatRange.min, rowHeatRange.max)
+                            : undefined
+                        }
+                      >
+                        {fmtMetricValue(row.hourly[hour - 1] ?? null, rowUnit)}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </DataTableShell>

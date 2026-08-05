@@ -6,10 +6,13 @@ export type PowerLmpAdderIso = "pjm" | "ercot";
 export type PowerLmpAdderDataset =
   | "pjm-da-reserve-mcp"
   | "pjm-rt-reserve-mcp"
+  | "pjm-rt-ancillary-services"
   | "ercot-rt-price-adders-sced"
   | "ercot-rt-price-adders-15min";
 
 type DatasetStatus = "live" | "pending" | "reference";
+type MetricValueUnit = "price" | "mw" | "ratio";
+type ReportRowStatus = "ok" | "partial" | "missing";
 
 interface DimensionColumn {
   key: string;
@@ -21,6 +24,7 @@ interface MetricColumn {
   key: string;
   label: string;
   sourceField: string | null;
+  unit: MetricValueUnit;
 }
 
 interface DatasetContract {
@@ -38,7 +42,7 @@ interface DatasetContract {
 interface DatasetConfig {
   dataset: PowerLmpAdderDataset;
   iso: PowerLmpAdderIso;
-  sourceMode: "pjm-reserve" | "ercot-sced" | "ercot-15min";
+  sourceMode: "pjm-reserve" | "pjm-ancillary" | "ercot-sced" | "ercot-15min";
   isoLabel: string;
   market: "da" | "rt" | "reference";
   label: string;
@@ -61,6 +65,42 @@ interface HourValueRow {
   as_of: string | null;
   source_row_count: number | string | null;
   [key: string]: string | number | null;
+}
+
+export interface PowerLmpAddersReportRow {
+  iso: PowerLmpAdderIso;
+  isoLabel: string;
+  dataset: PowerLmpAdderDataset;
+  datasetLabel: string;
+  market: "da" | "rt";
+  metricKey: string;
+  metricLabel: string;
+  sourceLabel: string;
+  sourceTable: string | null;
+  targetDate: string;
+  onPeakAvg: number | null;
+  offPeakAvg: number | null;
+  flatAvg: number | null;
+  peakHour: number | null;
+  peakValue: number | null;
+  observationCount: number;
+  expectedObservationCount: number;
+  seriesCount: number;
+  sourceRowCount: number;
+  latestAsOf: string | null;
+  status: ReportRowStatus;
+  statusDetail: string;
+  detailUrl: string;
+}
+
+export interface PowerLmpAddersReportSummary {
+  targetDate: string;
+  latestAsOf: string | null;
+  rowCount: number;
+  completeRowCount: number;
+  partialRowCount: number;
+  missingRowCount: number;
+  rows: PowerLmpAddersReportRow[];
 }
 
 const METRIC_DIMENSION_COLUMN: DimensionColumn = {
@@ -95,18 +135,85 @@ const PJM_RT_RESERVE_FIELDS = [
   "total_mw",
 ] as const;
 
+const PJM_ANCILLARY_SERVICE_FIELDS = [
+  "ancillary_service",
+  "datetime_beginning_ept",
+  "datetime_beginning_utc",
+  "row_is_current",
+  "unit",
+  "value",
+  "version_nbr",
+] as const;
+
 const PJM_DA_RESERVE_METRICS: MetricColumn[] = [
-  { key: "mcp", label: "MCP", sourceField: "mcp" },
-  { key: "mcp_capped", label: "MCP Capped", sourceField: "mcp_capped" },
-  { key: "as_mw", label: "AS MW", sourceField: "as_mw" },
-  { key: "as_req_mw", label: "AS Req MW", sourceField: "as_req_mw" },
-  { key: "total_mw", label: "Total MW", sourceField: "total_mw" },
+  { key: "mcp", label: "MCP", sourceField: "mcp", unit: "price" },
+  { key: "mcp_capped", label: "MCP Capped", sourceField: "mcp_capped", unit: "price" },
+  { key: "as_mw", label: "AS MW", sourceField: "as_mw", unit: "mw" },
+  { key: "as_req_mw", label: "AS Req MW", sourceField: "as_req_mw", unit: "mw" },
+  { key: "total_mw", label: "Total MW", sourceField: "total_mw", unit: "mw" },
 ];
 
 const PJM_RT_RESERVE_METRICS: MetricColumn[] = [
   ...PJM_DA_RESERVE_METRICS,
-  { key: "reg_ccp", label: "Reg CCP", sourceField: "reg_ccp" },
-  { key: "reg_pcp", label: "Reg PCP", sourceField: "reg_pcp" },
+  { key: "reg_ccp", label: "Reg CCP", sourceField: "reg_ccp", unit: "price" },
+  { key: "reg_pcp", label: "Reg PCP", sourceField: "reg_pcp", unit: "price" },
+];
+
+const PJM_ANCILLARY_SERVICE_METRICS: MetricColumn[] = [
+  {
+    key: "mad-non-synchronized-reserve-price",
+    label: "MAD Non-Synchronized Reserve Price",
+    sourceField: "MAD Non-Synchronized Reserve",
+    unit: "price",
+  },
+  {
+    key: "mad-secondary-reserve-price",
+    label: "MAD Secondary Reserve Price",
+    sourceField: "MAD Secondary Reserve",
+    unit: "price",
+  },
+  {
+    key: "mad-synchronized-reserve-price",
+    label: "MAD Synchronized Reserve Price",
+    sourceField: "MAD Synchronized Reserve",
+    unit: "price",
+  },
+  {
+    key: "rto-non-synchronized-reserve-price",
+    label: "RTO Non-Synchronized Reserve Price",
+    sourceField: "RTO Non-Synchronized Reserve",
+    unit: "price",
+  },
+  {
+    key: "rto-regulation-capability-price",
+    label: "RTO Regulation Capability Price",
+    sourceField: "RTO Regulation Capability",
+    unit: "price",
+  },
+  {
+    key: "rto-regulation-mileage-price",
+    label: "RTO Regulation Mileage Price",
+    sourceField: "RTO Regulation Mileage",
+    unit: "price",
+  },
+  {
+    key: "rto-secondary-reserve-price",
+    label: "RTO Secondary Reserve Price",
+    sourceField: "RTO Secondary Reserve",
+    unit: "price",
+  },
+  {
+    key: "rto-synchronized-reserve-price",
+    label: "RTO Synchronized Reserve Price",
+    sourceField: "RTO Synchronized Reserve",
+    unit: "price",
+  },
+  {
+    key: "rto-mileage-ratio",
+    label: "RTO Mileage Ratio",
+    sourceField: "RTO Mileage Ratio",
+    unit: "ratio",
+  },
 ];
 
 const ERCOT_SCED_PRICE_ADDER_FIELDS = [
@@ -145,24 +252,24 @@ const ERCOT_15MIN_PRICE_ADDER_FIELDS = [
 ] as const;
 
 const ERCOT_SCED_PRICE_ADDER_METRICS: MetricColumn[] = [
-  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa" },
-  { key: "rtrdparus", label: "RTRDPA RUS", sourceField: "rtrdparus" },
-  { key: "rtrdpards", label: "RTRDPA RDS", sourceField: "rtrdpards" },
-  { key: "rtrdparrs", label: "RTRDPA RRS", sourceField: "rtrdparrs" },
-  { key: "rtrdpaecrs", label: "RTRDPA ECRS", sourceField: "rtrdpaecrs" },
-  { key: "rtrdpanss", label: "RTRDPA NSS", sourceField: "rtrdpanss" },
-  { key: "rtrruc", label: "RTRRUC", sourceField: "rtrruc" },
-  { key: "rtrrmr", label: "RTRRMR", sourceField: "rtrrmr" },
-  { key: "systemlambda", label: "System Lambda", sourceField: "systemlambda" },
+  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa", unit: "price" },
+  { key: "rtrdparus", label: "RTRDPA RUS", sourceField: "rtrdparus", unit: "price" },
+  { key: "rtrdpards", label: "RTRDPA RDS", sourceField: "rtrdpards", unit: "price" },
+  { key: "rtrdparrs", label: "RTRDPA RRS", sourceField: "rtrdparrs", unit: "price" },
+  { key: "rtrdpaecrs", label: "RTRDPA ECRS", sourceField: "rtrdpaecrs", unit: "price" },
+  { key: "rtrdpanss", label: "RTRDPA NSS", sourceField: "rtrdpanss", unit: "price" },
+  { key: "rtrruc", label: "RTRRUC", sourceField: "rtrruc", unit: "price" },
+  { key: "rtrrmr", label: "RTRRMR", sourceField: "rtrrmr", unit: "price" },
+  { key: "systemlambda", label: "System Lambda", sourceField: "systemlambda", unit: "price" },
 ];
 
 const ERCOT_15MIN_PRICE_ADDER_METRICS: MetricColumn[] = [
-  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa" },
-  { key: "rtrdpru", label: "RTRDPRU", sourceField: "rtrdpru" },
-  { key: "rtrdprd", label: "RTRDPRD", sourceField: "rtrdprd" },
-  { key: "rtrdprrs", label: "RTRDPRRS", sourceField: "rtrdprrs" },
-  { key: "rtrdpecrs", label: "RTRDPECRS", sourceField: "rtrdpecrs" },
-  { key: "rtrdpns", label: "RTRDPNS", sourceField: "rtrdpns" },
+  { key: "rtrdpa", label: "RTRDPA", sourceField: "rtrdpa", unit: "price" },
+  { key: "rtrdpru", label: "RTRDPRU", sourceField: "rtrdpru", unit: "price" },
+  { key: "rtrdprd", label: "RTRDPRD", sourceField: "rtrdprd", unit: "price" },
+  { key: "rtrdprrs", label: "RTRDPRRS", sourceField: "rtrdprrs", unit: "price" },
+  { key: "rtrdpecrs", label: "RTRDPECRS", sourceField: "rtrdpecrs", unit: "price" },
+  { key: "rtrdpns", label: "RTRDPNS", sourceField: "rtrdpns", unit: "price" },
 ];
 
 const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
@@ -172,18 +279,18 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     sourceMode: "pjm-reserve",
     isoLabel: "PJM",
     market: "da",
-    label: "DA Reserve MCP",
-    valueLabel: "Reserve MCP",
+    label: "DA Reserve Metrics",
+    valueLabel: "Reserve Metrics",
     sourceLabel: "PJM Data Miner da_reserve_market_results",
     sourceUrl: "https://dataminer2.pjm.com/feed/da_reserve_market_results/definition",
     sourceTable: "pjm.da_reserve_market_results",
     status: "live",
     description:
-      "One row per date, locale, service, and metric; the Metric column defaults to MCP.",
+      "One row per date, locale, service, and metric; MCP rows are prices and MW rows are reserve quantities.",
     contract: {
       grain: "market hour x locale x reserve service",
       timeBasis: "PJM Eastern Prevailing Time, hourly",
-      valueField: "selectable reserve result metric; default mcp",
+      valueField: "selectable reserve result metric; MCP metrics are prices and MW metrics are quantities",
       aggregation: "one row per date, locale, service, and metric; daily blocks average that row's hourly values",
       peakBlock: "PJM block: HE8-HE23",
       refresh: "Published daily after DA ancillary service market results; promoted table is live",
@@ -192,7 +299,7 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
       notes: [
         "This is not an LMP component. It is a reserve market clearing price by PJM reserve product and zone.",
         "Multiple rows per date are expected because PJM publishes separate locale/service/metric series.",
-        "Use the Metric column filter to include MCP Capped, MW quantities, or return to the MCP default.",
+        "Use the Metric column filter to isolate MCP, MCP Capped, or MW quantities.",
       ],
     },
     dimensionColumns: [
@@ -200,7 +307,6 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
       { key: "service", label: "Service", sourceField: "service" },
     ],
     metricColumns: PJM_DA_RESERVE_METRICS,
-    defaultColumnFilters: { metric: ["MCP"] },
   },
   "pjm-rt-reserve-mcp": {
     dataset: "pjm-rt-reserve-mcp",
@@ -208,18 +314,18 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     sourceMode: "pjm-reserve",
     isoLabel: "PJM",
     market: "rt",
-    label: "RT Reserve MCP",
-    valueLabel: "Reserve MCP",
+    label: "RT Reserve Metrics",
+    valueLabel: "Reserve Metrics",
     sourceLabel: "PJM Data Miner reserve_market_results",
     sourceUrl: "https://dataminer2.pjm.com/feed/reserve_market_results/definition",
     sourceTable: "pjm.reserve_market_results",
     status: "live",
     description:
-      "One row per date, locale, service, and metric; the Metric column defaults to MCP.",
+      "One row per date, locale, service, and metric; MCP and regulation rows are prices and MW rows are reserve quantities.",
     contract: {
       grain: "market hour x locale x reserve service",
       timeBasis: "PJM Eastern Prevailing Time, hourly",
-      valueField: "selectable reserve result metric; default mcp",
+      valueField: "selectable reserve result metric; MCP/regulation metrics are prices and MW metrics are quantities",
       aggregation: "one row per date, locale, service, and metric; daily blocks average that row's hourly values",
       peakBlock: "PJM block: HE8-HE23",
       refresh: "Daily business-day PJM Data Miner feed; promoted table is live",
@@ -235,7 +341,38 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
       { key: "service", label: "Service", sourceField: "service" },
     ],
     metricColumns: PJM_RT_RESERVE_METRICS,
-    defaultColumnFilters: { metric: ["MCP"] },
+  },
+  "pjm-rt-ancillary-services": {
+    dataset: "pjm-rt-ancillary-services",
+    iso: "pjm",
+    sourceMode: "pjm-ancillary",
+    isoLabel: "PJM",
+    market: "rt",
+    label: "RT Ancillary",
+    valueLabel: "Ancillary Service",
+    sourceLabel: "PJM Data Miner ancillary_services",
+    sourceUrl: "https://dataminer2.pjm.com/feed/ancillary_services/definition",
+    sourceTable: "pjm.ancillary_services",
+    status: "live",
+    description:
+      "One row per date and ancillary service metric; price rows are RT ancillary prices and RTO Mileage Ratio is a ratio.",
+    contract: {
+      grain: "market hour x ancillary service x current-row flag x version",
+      timeBasis: "PJM Eastern Prevailing Time, hourly",
+      valueField: "row-shaped ancillary service value; price services are prices and RTO Mileage Ratio is a ratio",
+      aggregation: "current rows are averaged to HE1-HE24 by market date and ancillary service",
+      peakBlock: "PJM block: HE8-HE23",
+      refresh: "Daily business-day PJM Data Miner feed with 14-day hot retention; promoted table is live",
+      dimensions: ["ancillary_service"],
+      fields: [...PJM_ANCILLARY_SERVICE_FIELDS],
+      notes: [
+        "This is not an LMP component. It is a real-time ancillary service price and ratio feed.",
+        "Only current PJM rows are included by filtering row_is_current = true.",
+        "RTO Mileage Ratio is exposed in the Metric column filter but hidden by default because it is not a price metric.",
+      ],
+    },
+    dimensionColumns: [],
+    metricColumns: PJM_ANCILLARY_SERVICE_METRICS,
   },
   "ercot-rt-price-adders-sced": {
     dataset: "ercot-rt-price-adders-sced",
@@ -254,7 +391,7 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     contract: {
       grain: "SCED timestamp x repeat-hour flag",
       timeBasis: "ERCOT market time, SCED interval",
-      valueField: "selectable real-time price adder metric; default rtrdpa",
+      valueField: "selectable real-time price adder metric",
       aggregation: "SCED interval values are averaged to HE1-HE24 by market date and metric",
       peakBlock: "ERCOT block: HE7-HE22",
       refresh: "Daily ERCOT price adders batch; promoted table is live",
@@ -267,7 +404,6 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     },
     dimensionColumns: [],
     metricColumns: ERCOT_SCED_PRICE_ADDER_METRICS,
-    defaultColumnFilters: { metric: ["RTRDPA"] },
   },
   "ercot-rt-price-adders-15min": {
     dataset: "ercot-rt-price-adders-15min",
@@ -286,7 +422,7 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     contract: {
       grain: "delivery date x delivery hour x delivery interval x repeat-hour flag",
       timeBasis: "ERCOT market time, 15-minute settlement interval",
-      valueField: "selectable real-time price adder metric; default rtrdpa",
+      valueField: "selectable real-time price adder metric",
       aggregation: "15-minute interval values are averaged to HE1-HE24 by market date and metric",
       peakBlock: "ERCOT block: HE7-HE22",
       refresh: "Daily ERCOT price adders batch; promoted table is live",
@@ -299,14 +435,20 @@ const DATASETS: Record<PowerLmpAdderDataset, DatasetConfig> = {
     },
     dimensionColumns: [],
     metricColumns: ERCOT_15MIN_PRICE_ADDER_METRICS,
-    defaultColumnFilters: { metric: ["RTRDPA"] },
   },
 };
 
 const DATASETS_BY_ISO: Record<PowerLmpAdderIso, PowerLmpAdderDataset[]> = {
-  pjm: ["pjm-da-reserve-mcp", "pjm-rt-reserve-mcp"],
+  pjm: ["pjm-da-reserve-mcp", "pjm-rt-reserve-mcp", "pjm-rt-ancillary-services"],
   ercot: ["ercot-rt-price-adders-sced", "ercot-rt-price-adders-15min"],
 };
+const REPORT_DATASETS: PowerLmpAdderDataset[] = [
+  "pjm-da-reserve-mcp",
+  "pjm-rt-reserve-mcp",
+  "pjm-rt-ancillary-services",
+  "ercot-rt-price-adders-sced",
+  "ercot-rt-price-adders-15min",
+];
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
 const PEAK_WINDOW_BY_ISO: Record<PowerLmpAdderIso, { start: number; end: number }> = {
@@ -369,6 +511,19 @@ function maxStamp(values: Array<string | null>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
+function maxHourlyValue(values: Array<number | null>): { hour: number | null; value: number | null } {
+  let peakHour: number | null = null;
+  let peakValue: number | null = null;
+  values.forEach((value, index) => {
+    if (value === null || !Number.isFinite(value)) return;
+    if (peakValue === null || value > peakValue) {
+      peakHour = index + 1;
+      peakValue = value;
+    }
+  });
+  return { hour: peakHour, value: peakValue };
+}
+
 function inclusiveDayCount(start: string, end: string): number {
   const startTime = new Date(`${start}T00:00:00Z`).getTime();
   const endTime = new Date(`${end}T00:00:00Z`).getTime();
@@ -396,6 +551,16 @@ async function latestLiveDate(config: DatasetConfig): Promise<string | null> {
     );
     return rows[0]?.target_date ?? null;
   }
+  if (config.sourceMode === "pjm-ancillary") {
+    const rows = await query<{ target_date: string | null }>(
+      `
+        select max(datetime_beginning_ept::date)::text as target_date
+        from ${config.sourceTable}
+        where row_is_current = true
+      `,
+    );
+    return rows[0]?.target_date ?? null;
+  }
   const rows = await query<{ target_date: string | null }>(
     `
       select max(datetime_beginning_ept::date)::text as target_date
@@ -415,6 +580,19 @@ function datasetDimensionColumns(config: DatasetConfig): DimensionColumn[] {
     : config.dimensionColumns;
 }
 
+function defaultColumnFilters(config: DatasetConfig): Record<string, string[]> {
+  const priceMetrics = config.metricColumns
+    .filter((metric) => metric.unit === "price")
+    .map((metric) => metric.label);
+  if (priceMetrics.length === 0 || priceMetrics.length === config.metricColumns.length) {
+    return config.defaultColumnFilters ?? {};
+  }
+  return {
+    ...(config.defaultColumnFilters ?? {}),
+    metric: priceMetrics,
+  };
+}
+
 async function hourlyRows({
   config,
   metrics,
@@ -428,6 +606,46 @@ async function hourlyRows({
 }): Promise<HourValueRow[]> {
   if (!config.sourceTable) {
     throw new Error(`No live source table configured for ${config.dataset}`);
+  }
+  if (config.sourceMode === "pjm-ancillary") {
+    const metricValuesSql = metrics
+      .map(
+        (metric) =>
+          `(${sqlText(metric.key)}, ${sqlText(metric.label)}, ${sqlText(metric.sourceField ?? metric.label)})`,
+      )
+      .join(",\n          ");
+    if (metrics.length === 0) {
+      throw new Error(`No ancillary services configured for ${config.sourceTable}`);
+    }
+    return query<HourValueRow>(
+      `
+        select
+          datetime_beginning_ept::date::text as market_date,
+          metric.metric_label as metric,
+          (extract(hour from datetime_beginning_ept)::int + 1) as hour_ending,
+          avg(value)::float8 as value,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of,
+          count(*)::int as source_row_count
+        from ${config.sourceTable}
+        join (
+          values
+            ${metricValuesSql}
+        ) as metric(metric_key, metric_label, source_service)
+          on ancillary_service = metric.source_service
+        where datetime_beginning_ept::date between $1::date and $2::date
+          and row_is_current = true
+        group by
+          datetime_beginning_ept::date,
+          metric.metric_key,
+          metric.metric_label,
+          extract(hour from datetime_beginning_ept)
+        order by
+          datetime_beginning_ept::date,
+          metric.metric_key,
+          extract(hour from datetime_beginning_ept)
+      `,
+      [startDate, endDate],
+    );
   }
   const liveMetrics = metrics.filter(
     (metric): metric is MetricColumn & { sourceField: string } => Boolean(metric.sourceField),
@@ -603,6 +821,210 @@ function datasetOptions(iso: PowerLmpAdderIso): DatasetConfig[] {
   return DATASETS_BY_ISO[iso].map((dataset) => DATASETS[dataset]);
 }
 
+function powerLmpAdderDetailUrl({
+  config,
+  targetDate,
+}: {
+  config: DatasetConfig;
+  targetDate: string;
+}): string {
+  const params = new URLSearchParams({
+    section: "power-lmp-adders",
+    iso: config.iso,
+    dataset: config.dataset,
+    date: targetDate,
+    refresh: "1",
+  });
+  return `/?${params.toString()}`;
+}
+
+function emptyReportRow({
+  config,
+  metric,
+  targetDate,
+  statusDetail,
+}: {
+  config: DatasetConfig;
+  metric: MetricColumn;
+  targetDate: string;
+  statusDetail: string;
+}): PowerLmpAddersReportRow {
+  return {
+    iso: config.iso,
+    isoLabel: config.isoLabel,
+    dataset: config.dataset,
+    datasetLabel: config.label,
+    market: config.market === "da" ? "da" : "rt",
+    metricKey: metric.key,
+    metricLabel: metric.label,
+    sourceLabel: config.sourceLabel,
+    sourceTable: config.sourceTable,
+    targetDate,
+    onPeakAvg: null,
+    offPeakAvg: null,
+    flatAvg: null,
+    peakHour: null,
+    peakValue: null,
+    observationCount: 0,
+    expectedObservationCount: 24,
+    seriesCount: 0,
+    sourceRowCount: 0,
+    latestAsOf: null,
+    status: "missing",
+    statusDetail,
+    detailUrl: powerLmpAdderDetailUrl({ config, targetDate }),
+  };
+}
+
+function buildReportRow({
+  config,
+  metric,
+  targetDate,
+  rows,
+}: {
+  config: DatasetConfig;
+  metric: MetricColumn;
+  targetDate: string;
+  rows: HourValueRow[];
+}): PowerLmpAddersReportRow {
+  const metricRows = rows.filter((row) => row.metric === metric.label);
+  if (metricRows.length === 0) {
+    return emptyReportRow({
+      config,
+      metric,
+      targetDate,
+      statusDetail: "No hourly values returned for this price metric.",
+    });
+  }
+
+  const hourlyValues = HOURS.map((hour) =>
+    round(
+      avg(
+        metricRows
+          .filter((row) => Number(row.hour_ending) === hour)
+          .map((row) => toNumber(row.value)),
+      ),
+    ),
+  );
+  const observationCount = hourlyValues.filter((value) => value !== null).length;
+  const status: ReportRowStatus =
+    observationCount >= HOURS.length ? "ok" : observationCount > 0 ? "partial" : "missing";
+  const seriesKeys = new Set(
+    metricRows.map((row) =>
+      config.dimensionColumns.length === 0
+        ? metric.key
+        : config.dimensionColumns.map((column) => String(row[column.key] ?? "-")).join("|"),
+    ),
+  );
+  const peak = maxHourlyValue(hourlyValues);
+  const statusDetail =
+    status === "ok"
+      ? "All 24 hourly buckets returned values."
+      : status === "partial"
+        ? `${observationCount}/24 hourly buckets returned values.`
+        : "No hourly values returned for this price metric.";
+
+  return {
+    iso: config.iso,
+    isoLabel: config.isoLabel,
+    dataset: config.dataset,
+    datasetLabel: config.label,
+    market: config.market === "da" ? "da" : "rt",
+    metricKey: metric.key,
+    metricLabel: metric.label,
+    sourceLabel: config.sourceLabel,
+    sourceTable: config.sourceTable,
+    targetDate,
+    onPeakAvg: round(avg(onPeakHoursForIso(config.iso).map((hour) => hourlyValues[hour - 1] ?? null))),
+    offPeakAvg: round(avg(offPeakHoursForIso(config.iso).map((hour) => hourlyValues[hour - 1] ?? null))),
+    flatAvg: round(avg(hourlyValues)),
+    peakHour: peak.hour,
+    peakValue: round(peak.value),
+    observationCount,
+    expectedObservationCount: HOURS.length,
+    seriesCount: metricRows.length > 0 ? seriesKeys.size : 0,
+    sourceRowCount: metricRows.reduce(
+      (sum, row) => sum + Number(row.source_row_count ?? 0),
+      0,
+    ),
+    latestAsOf: maxStamp(metricRows.map((row) => row.as_of)),
+    status,
+    statusDetail,
+    detailUrl: powerLmpAdderDetailUrl({ config, targetDate }),
+  };
+}
+
+async function buildDatasetReportRows({
+  config,
+  targetDate,
+}: {
+  config: DatasetConfig;
+  targetDate: string;
+}): Promise<PowerLmpAddersReportRow[]> {
+  const priceMetrics = config.metricColumns.filter((metric) => metric.unit === "price");
+  if (priceMetrics.length === 0) return [];
+  if (config.status !== "live" || !config.sourceTable) {
+    return priceMetrics.map((metric) =>
+      emptyReportRow({
+        config,
+        metric,
+        targetDate,
+        statusDetail: "Dataset is not backed by a live promoted table.",
+      }),
+    );
+  }
+
+  try {
+    const rows = await hourlyRows({
+      config,
+      metrics: priceMetrics,
+      startDate: targetDate,
+      endDate: targetDate,
+    });
+    return priceMetrics.map((metric) => buildReportRow({ config, metric, targetDate, rows }));
+  } catch (error) {
+    const detail =
+      error instanceof Error
+        ? `Failed to summarize dataset: ${error.message}`
+        : "Failed to summarize dataset.";
+    return priceMetrics.map((metric) =>
+      emptyReportRow({
+        config,
+        metric,
+        targetDate,
+        statusDetail: detail,
+      }),
+    );
+  }
+}
+
+export async function buildPowerLmpAddersReportSummary({
+  targetDate,
+}: {
+  targetDate: string;
+}): Promise<PowerLmpAddersReportSummary> {
+  const rows = (
+    await Promise.all(
+      REPORT_DATASETS.map((dataset) =>
+        buildDatasetReportRows({
+          config: DATASETS[dataset],
+          targetDate,
+        }),
+      ),
+    )
+  ).flat();
+
+  return {
+    targetDate,
+    latestAsOf: maxStamp(rows.map((row) => row.latestAsOf)),
+    rowCount: rows.length,
+    completeRowCount: rows.filter((row) => row.status === "ok").length,
+    partialRowCount: rows.filter((row) => row.status === "partial").length,
+    missingRowCount: rows.filter((row) => row.status === "missing").length,
+    rows,
+  };
+}
+
 function nonLivePayload({
   config,
   startDate,
@@ -623,7 +1045,7 @@ function nonLivePayload({
     contract: config.contract,
     dimensionColumns: datasetDimensionColumns(config),
     metricColumns: config.metricColumns,
-    defaultColumnFilters: config.defaultColumnFilters ?? {},
+    defaultColumnFilters: defaultColumnFilters(config),
     sourceLabel: config.sourceLabel,
     sourceUrl: config.sourceUrl,
     sourceTable: config.sourceTable,
@@ -711,7 +1133,7 @@ export async function buildPowerLmpAddersPayload({
       contract: config.contract,
       dimensionColumns,
       metricColumns: config.metricColumns,
-      defaultColumnFilters: config.defaultColumnFilters ?? {},
+      defaultColumnFilters: defaultColumnFilters(config),
       sourceLabel: config.sourceLabel,
       sourceUrl: config.sourceUrl,
       sourceTable: config.sourceTable,

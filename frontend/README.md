@@ -81,6 +81,7 @@ GET /api/power-lmps?iso=ercot&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmps?iso=isone&product=rt&date=YYYY-MM-DD&source=verified
 GET /api/power-lmps?iso=caiso&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
+GET /api/power-lmp-adders?iso=pjm&dataset=pjm-rt-ancillary-services&date=YYYY-MM-DD
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
@@ -128,6 +129,10 @@ maps `source=verified` to final hourly LMPs and `source=unverified` to
 preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
 SP15/NP15 trading hubs; CAISO RT is hourly-averaged from promoted five-minute
 OASIS intervals.
+
+The LMP Adders page (`/?section=power-lmp-adders`) accepts `iso=pjm|ercot` and dataset params. PJM exposes `DA Reserves`, `RT Reserves`, and `RT Ancillary`; `RT Ancillary` reads current rows from `pjm.ancillary_services`, defaults the Metric filter to price rows, and leaves `RTO Mileage Ratio` opt-in because it is a ratio rather than a dollar price.
+
+`buildPowerLmpAddersReportSummary` keeps Power Settles-facing adders and reserve rows price-only, so reserve MW fields and `RTO Mileage Ratio` remain available on the Adders page but excluded from that summary.
 
 ## Power Settles Dashboard Source Contract
 
