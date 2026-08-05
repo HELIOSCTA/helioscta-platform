@@ -901,10 +901,12 @@ WSI observed and hourly forecast timers. The service uses `flock` with
 The model-run poller service runs
 `daily_weighted_forecasts.run_degree_day_model_run_instance("<model>-<cycle>")`.
 Each timer starts near the expected upstream availability window and the Python
-poller checks every three minutes for up to 45 minutes. It validates the
-expected source init cycle, all nine configured WDD regions, model-specific
-expected metrics, and 15 consecutive forecast days before upserting. Timeout,
-wrong-cycle, or incomplete responses log one resolved poll row to
+poller checks every three minutes for up to two hours, with a 150-minute
+systemd service timeout for headroom. Complete snapshots upsert immediately
+once detected. It validates the expected source init cycle, all nine configured
+WDD regions, model-specific expected metrics, and 15 consecutive forecast days
+before upserting. Timeout, wrong-cycle, or incomplete responses log one resolved
+poll row to
 `ops.api_fetch_log`, emit a `partial` freshness event when the WSI response has
 source context, and do not upsert partial rows. The seeded UTC schedules are:
 

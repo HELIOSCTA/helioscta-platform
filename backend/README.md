@@ -307,9 +307,10 @@ the source rows: `source_model`, `source_init_at_utc`, `source_init_cycle`,
 `model_run_cycle`, and `forecast_day`. The combined orchestration remains the
 temperature plus WSI-baseline refresh path. Model-driven weighted degree-day
 forecasts run through per-model/per-cycle pollers that check every three
-minutes until the expected 00Z or 12Z source init cycle has all configured
-entities, model-specific expected metrics, and 15 consecutive daily forecast
-dates; only complete snapshots are upserted. Timeout or wrong-cycle responses
+minutes for up to two hours until the expected 00Z or 12Z source init cycle has
+all configured entities, model-specific expected metrics, and 15 consecutive
+daily forecast dates; complete snapshots upsert immediately once detected.
+Timeout or wrong-cycle responses
 write resolved poll telemetry to `ops.api_fetch_log`, emit a partial freshness
 event when source context is available, and leave partial rows out of the raw
 table. Scheduled runs retain 90 days of weighted-temperature source issues and

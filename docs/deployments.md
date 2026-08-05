@@ -2952,6 +2952,9 @@ LIMIT 20;
   `07:30` and `18:15` UTC; ECMWF_OP at `06:00` and `18:00` UTC; ECMWF_ENS at
   `08:30` and `18:30` UTC; AIFS at `06:00` and `18:00` UTC; AIFS_ENS at
   `07:45` and `19:45` UTC.
+- Model-run polling policy: every `3` minutes for up to `2` hours, with a
+  `150min` systemd service timeout for headroom. A complete expected-cycle
+  snapshot exits and upserts immediately once detected.
 - Timer behavior: `Persistent=false`; the baseline scheduled run stores the
   latest WSI temperature and WSI-baseline WDD issue, while model-run timers
   store only complete expected model/cycle snapshots.

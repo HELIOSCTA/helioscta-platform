@@ -389,6 +389,14 @@ def test_degree_day_model_run_poller_upserts_complete_first_attempt(monkeypatch)
     assert emitted[0]["run_id"] is not None
 
 
+def test_degree_day_model_run_default_poll_window_is_two_hours():
+    assert (
+        daily_weighted_forecasts.DEFAULT_MODEL_RUN_POLL_CEILING_SECONDS
+        == 2 * 60 * 60
+    )
+    assert daily_weighted_forecasts.DEFAULT_MODEL_RUN_POLL_WAIT_SECONDS == 3 * 60
+
+
 def test_degree_day_model_run_poller_retries_until_complete(monkeypatch):
     _patch_model_run_logging(monkeypatch)
     incomplete = _model_run_rows(day_count=14)
