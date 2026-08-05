@@ -86,6 +86,8 @@ def test_short_term_system_adequacy_config_contract():
     assert config.date_from_param == "deliveryDateFrom"
     assert config.date_to_param == "deliveryDateTo"
     assert config.default_lookahead_days == -1
+    assert config.hot_retention_days == 14
+    assert config.hot_retention_column == "deliverydate"
     assert short_term_system_adequacy.API_SCRAPE_NAME == (
         "short_term_system_adequacy"
     )

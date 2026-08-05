@@ -81,6 +81,7 @@ def test_upsert_public_report_frame_uses_configured_contract(monkeypatch):
 def test_run_public_report_passes_metadata_to_pull(monkeypatch):
     config = FEED_CONFIGS["rt_price_adders_15min"]
     captured: dict[str, object] = {}
+    purge_captured: dict[str, object] = {}
 
     class FakeLogger:
         def header(self, *_args):
@@ -125,8 +126,17 @@ def test_run_public_report_passes_metadata_to_pull(monkeypatch):
             ]
         )
 
+    def fake_purge_rows_older_than(**kwargs):
+        purge_captured.update(kwargs)
+        return 1
+
     monkeypatch.setattr(public_report_feed, "pull_public_report", fake_pull_public_report)
     monkeypatch.setattr(public_report_feed, "upsert_public_report_frame", lambda *_, **__: None)
+    monkeypatch.setattr(
+        public_report_feed.retention,
+        "purge_rows_older_than",
+        fake_purge_rows_older_than,
+    )
     monkeypatch.setattr(public_report_feed.script_logging, "init_logging", lambda **_: FakeLogger())
     monkeypatch.setattr(public_report_feed.script_logging, "close_logging", lambda: None)
 
@@ -147,4 +157,11 @@ def test_run_public_report_passes_metadata_to_pull(monkeypatch):
     }
     assert captured["database"] == "stage_db"
     assert captured["metadata"] == {"run_mode": "backfill"}
+    assert purge_captured == {
+        "schema": "ercot",
+        "table_name": "rt_price_adders_15min",
+        "timestamp_column": "deliverydate",
+        "retention_days": 14,
+        "database": "stage_db",
+    }
 

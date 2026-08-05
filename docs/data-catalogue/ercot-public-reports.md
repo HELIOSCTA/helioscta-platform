@@ -150,6 +150,7 @@ workspace.
 - Primary grain: SCED timestamp x repeat-hour flag.
 - Primary key: `scedtimestamp`, `repeathourflag`.
 - Safe rerun story: upsert on the primary key.
+- Hot DB retention: 14 days, purged on successful scrape by `scedtimestamp`.
 - Source cadence: event per SCED run. ERCOT public-report samples on
   `2026-07-17` exposed `SCEDTimestampFrom` and `SCEDTimestampTo` filters and
   current-day rows.
@@ -175,6 +176,7 @@ workspace.
 - Primary key: `deliverydate`, `deliveryhour`, `deliveryinterval`,
   `repeathourflag`.
 - Safe rerun story: upsert on the primary key.
+- Hot DB retention: 14 days, purged on successful scrape by `deliverydate`.
 - Source cadence: chron - 15 minutes. ERCOT public-report samples on
   `2026-07-17` exposed `deliveryDateFrom` and `deliveryDateTo` filters and
   current-day rows.
@@ -310,6 +312,7 @@ workspace.
 - Primary key: `posteddatetime`, `deliverydate`, `hourending`,
   `repeathourflag`.
 - Safe rerun story: upsert on the primary key.
+- Hot DB retention: 14 days, purged on successful scrape by `deliverydate`.
 - Production schedule: through `helios-ercot-outage-capacity-batch.timer`,
   daily at `08:35 America/Chicago` with `Persistent=true` and
   `RandomizedDelaySec=10min`; the scheduled default pulls the prior complete

@@ -358,6 +358,8 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_to_format="%Y-%m-%dT23:59:59",
         default_lookback_days=1,
         default_lookahead_days=-1,
+        hot_retention_days=14,
+        hot_retention_column="scedtimestamp",
     ),
     "rt_price_adders_15min": ErcotPublicReportConfig(
         feed_name="rt_price_adders_15min",
@@ -407,6 +409,8 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_to_param="deliveryDateTo",
         default_lookback_days=1,
         default_lookahead_days=-1,
+        hot_retention_days=14,
+        hot_retention_column="deliverydate",
     ),
     "wind_power_production_hourly": ErcotPublicReportConfig(
         feed_name="wind_power_production_hourly",
@@ -797,6 +801,8 @@ FEED_CONFIGS: dict[str, ErcotPublicReportConfig] = {
         date_to_param="deliveryDateTo",
         default_lookback_days=1,
         default_lookahead_days=-1,
+        hot_retention_days=14,
+        hot_retention_column="deliverydate",
     ),
     "seven_day_load_forecast": ErcotPublicReportConfig(
         feed_name="seven_day_load_forecast",

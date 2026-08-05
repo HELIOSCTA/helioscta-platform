@@ -19,6 +19,8 @@ def test_rt_price_adders_sced_config_contract():
     assert config.date_from_format == "%Y-%m-%dT00:00:00"
     assert config.date_to_format == "%Y-%m-%dT23:59:59"
     assert config.default_lookahead_days == -1
+    assert config.hot_retention_days == 14
+    assert config.hot_retention_column == "scedtimestamp"
     assert rt_price_adders_sced.API_SCRAPE_NAME == "rt_price_adders_sced"
 
 
@@ -92,6 +94,8 @@ def test_rt_price_adders_15min_config_contract():
     assert config.date_from_param == "deliveryDateFrom"
     assert config.date_to_param == "deliveryDateTo"
     assert config.default_lookahead_days == -1
+    assert config.hot_retention_days == 14
+    assert config.hot_retention_column == "deliverydate"
     assert rt_price_adders_15min.API_SCRAPE_NAME == "rt_price_adders_15min"
 
 
