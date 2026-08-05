@@ -8,13 +8,14 @@
 - RT endpoint: `public/csv/realtime/YYYYMMDDrealtime_zone.csv`.
 - Default load-zone set: `WEST`, `GENESE`, `CENTRL`, `NORTH`, `MHK VL`,
   `CAPITL`, `HUD VL`, `MILLWD`, `DUNWOD`, `N.Y.C.`, and `LONGIL`.
+- DA interface extension: NYISO source node `PJM` from the same zonal LBMP CSV.
 - Primary grain: `operating_date x interval_start_time_utc x node_id/PTID x
   market_run_id`.
 - Upsert key: `interval_start_time_utc, node_id, market_run_id`.
 
 ## Destination Tables
 
-- `nyiso.da_lmps`: day-ahead hourly zonal LBMPs.
+- `nyiso.da_lmps`: day-ahead hourly zonal and PJM interface LBMPs.
 - `nyiso.rt_lmps_prelim`: preliminary real-time five-minute zonal LBMPs.
 
 Each table stores total LBMP plus derived energy, congestion, and loss
@@ -25,7 +26,7 @@ congestion. The public PTID is retained in `ptid`.
 
 ## Runtime
 
-- DA: `helios-nyiso-da-lmps.timer`, daily `09:00 America/New_York`, next
+- DA: `helios-nyiso-da-lmps.timer`, daily `08:30 America/New_York`, next
   operating date.
 - RT preliminary: `helios-nyiso-rt-lmps-prelim.timer`, daily
   `00:15 America/New_York`, previous operating date.

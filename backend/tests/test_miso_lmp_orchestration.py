@@ -17,7 +17,10 @@ from backend.scrapes.power.miso import _lmp
 def test_miso_lmp_event_key_and_expected_periods():
     assert (
         da_lmps._data_availability_event_key(date(2026, 8, 4))
-        == "miso_da_lmps:data_ready:2026-08-04:hubs_indiana_plus_ice"
+        == (
+            "miso_da_lmps:data_ready:2026-08-04:"
+            "hubs_indiana_plus_ice_pjm_interface"
+        )
     )
     assert da_lmps._expected_period_count_for_date(date(2026, 8, 4)) == 24
     assert da_lmps._expected_period_count_for_date(date(2026, 3, 8)) == 24
@@ -61,7 +64,7 @@ def test_miso_da_lmps_emits_readiness_for_complete_default_hubs(monkeypatch):
             "id": 1,
             "event_key": (
                 "miso_da_lmps:data_ready:2026-08-04:"
-                "hubs_indiana_plus_ice"
+                "hubs_indiana_plus_ice_pjm_interface"
             ),
             "created": True,
         }
@@ -71,16 +74,16 @@ def test_miso_da_lmps_emits_readiness_for_complete_default_hubs(monkeypatch):
     assert event["source_system"] == "miso"
     assert event["availability_type"] == "data_ready"
     assert event["business_date"] == date(2026, 8, 4)
-    assert event["scope"] == "hubs_indiana_plus_ice"
+    assert event["scope"] == "hubs_indiana_plus_ice_pjm_interface"
     assert event["grain"] == "operating_date_hour_node"
     assert event["source_table"] == "miso.da_lmps"
-    assert event["row_count"] == 168
-    assert event["entity_count"] == 7
+    assert event["row_count"] == 192
+    assert event["entity_count"] == 8
     assert event["period_count"] == 24
     assert event["completeness_status"] == "complete"
     assert event["run_id"] == "run-1"
     assert event["database"] == "stage_db"
-    assert event["payload"]["expected_row_count"] == 168
+    assert event["payload"]["expected_row_count"] == 192
     assert event["payload"]["expected_nodes"] == sorted(da_lmps.DEFAULT_NODES)
     assert event["payload"]["market_clock"] == "fixed_est"
 
@@ -145,7 +148,7 @@ def test_miso_da_release_email_notifications_are_idempotent_and_sent(monkeypatch
                 "id": 1,
                 "event_key": (
                     "miso_da_lmps:data_ready:2026-08-05:"
-                    "hubs_indiana_plus_ice"
+                    "hubs_indiana_plus_ice_pjm_interface"
                 ),
             }
         ],
@@ -156,7 +159,8 @@ def test_miso_da_release_email_notifications_are_idempotent_and_sent(monkeypatch
 
     assert queued == 1
     assert calls[0]["event"]["event_key"] == (
-        "miso_da_lmps:data_ready:2026-08-05:hubs_indiana_plus_ice"
+        "miso_da_lmps:data_ready:2026-08-05:"
+        "hubs_indiana_plus_ice_pjm_interface"
     )
     assert calls[0]["database"] == "stage_db"
 
@@ -188,7 +192,7 @@ def test_miso_da_release_email_notifications_skip_outside_scheduled(monkeypatch)
                 "id": 1,
                 "event_key": (
                     "miso_da_lmps:data_ready:2026-08-05:"
-                    "hubs_indiana_plus_ice"
+                    "hubs_indiana_plus_ice_pjm_interface"
                 ),
             }
         ],
@@ -249,7 +253,7 @@ def test_miso_da_lmps_fetch_complete_market_day_suppresses_per_attempt_logs(
         metadata={"run_mode": "scheduled"},
     )
 
-    assert len(df) == 168
+    assert len(df) == 192
     assert captured["operating_date"] == date(2026, 8, 5)
     assert captured["nodes"] == da_lmps.DEFAULT_NODES
     assert captured["run_id"] == "run-1"
@@ -295,7 +299,7 @@ def test_miso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
         poll_wait_seconds=1,
     )
 
-    assert len(df) == 168
+    assert len(df) == 192
     assert attempts["count"] == 2
     assert len(logs) == 1
     log = logs[0]
@@ -304,7 +308,7 @@ def test_miso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
     assert log["operation_name"] == "miso_da_lmps_poll"
     assert log["target_table"] == "miso.da_lmps"
     assert log["status"] == "success"
-    assert log["rows_returned"] == 168
+    assert log["rows_returned"] == 192
     assert log["attempt"] == 2
     assert log["database"] == "stage_db"
     assert log["metadata"]["run_mode"] == "scheduled"
@@ -313,7 +317,7 @@ def test_miso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
     assert log["metadata"]["api_family"] == "data_exchange_pricing"
     assert log["metadata"]["expected_period_count"] == 24
     assert log["metadata"]["period_count"] == 24
-    assert log["metadata"]["entity_count"] == 7
+    assert log["metadata"]["entity_count"] == 8
 
 
 def test_miso_rt_final_fetch_complete_market_day_treats_404_as_not_available(

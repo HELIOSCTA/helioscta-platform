@@ -1,4 +1,4 @@
-"""NYISO day-ahead hourly zonal LBMPs."""
+"""NYISO day-ahead hourly zonal and PJM interface LBMPs."""
 from __future__ import annotations
 
 import logging
@@ -27,7 +27,7 @@ TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 PRIMARY_KEY = _lmp.PRIMARY_KEY
 TARGET_COLUMNS = _lmp.TARGET_COLUMNS
 TARGET_DATA_TYPES = _lmp.TARGET_DATA_TYPES
-DEFAULT_NODES = _lmp.DEFAULT_LOAD_ZONE_NODES
+DEFAULT_NODES = _lmp.DEFAULT_DA_NODES
 DEFAULT_DELTA = relativedelta(days=1)
 DEFAULT_LOOKAHEAD_DAYS = 1
 LOCAL_MARKET_TIMEZONE = _lmp.LOCAL_MARKET_TIMEZONE
@@ -84,6 +84,7 @@ def _format(df: pd.DataFrame, *, operating_date) -> pd.DataFrame:
         market_run_id=MARKET_RUN_ID,
         price_status=PRICE_STATUS,
         time_resolution=TIME_RESOLUTION,
+        nodes=DEFAULT_NODES,
     )
 
 

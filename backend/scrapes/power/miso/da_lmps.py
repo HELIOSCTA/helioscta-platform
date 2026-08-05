@@ -1,4 +1,4 @@
-"""MISO day-ahead hourly LMPs for Indiana Hub and ICE-traded hub family."""
+"""MISO day-ahead hourly LMPs for hubs and the PJM interface."""
 from __future__ import annotations
 
 import logging
@@ -25,7 +25,7 @@ TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 PRIMARY_KEY = _lmp.PRIMARY_KEY
 TARGET_COLUMNS = _lmp.TARGET_COLUMNS
 TARGET_DATA_TYPES = _lmp.TARGET_DATA_TYPES
-DEFAULT_NODES = _lmp.DEFAULT_HUB_NODES
+DEFAULT_NODES = _lmp.DEFAULT_DA_NODES
 DEFAULT_DELTA = relativedelta(days=1)
 DEFAULT_LOOKAHEAD_DAYS = 1
 LOCAL_MARKET_TIMEZONE = _lmp.LOCAL_MARKET_TIMEZONE

@@ -1,6 +1,6 @@
 -- Read-only validation SQL for promoted NYISO MIS LBMP source tables.
 
-WITH expected_zones AS (
+WITH expected_nodes AS (
     SELECT *
     FROM (
         VALUES
@@ -14,8 +14,9 @@ WITH expected_zones AS (
             ('MILLWD', 61759),
             ('DUNWOD', 61760),
             ('N.Y.C.', 61761),
-            ('LONGIL', 61762)
-    ) AS zones(node_id, ptid)
+            ('LONGIL', 61762),
+            ('PJM', 61847)
+    ) AS nodes(node_id, ptid)
 ),
 
 coverage AS (
@@ -49,9 +50,9 @@ coverage AS (
 latest_coverage AS (
     SELECT coverage.*
     FROM coverage
-    INNER JOIN expected_zones
-        ON coverage.node_id = expected_zones.node_id
-        AND coverage.ptid = expected_zones.ptid
+    INNER JOIN expected_nodes
+        ON coverage.node_id = expected_nodes.node_id
+        AND coverage.ptid = expected_nodes.ptid
     WHERE coverage.operating_date >= CURRENT_DATE - INTERVAL '14 days'
 ),
 

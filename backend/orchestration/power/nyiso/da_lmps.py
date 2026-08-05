@@ -1,4 +1,4 @@
-"""Orchestrate NYISO day-ahead hourly zonal LBMPs."""
+"""Orchestrate NYISO day-ahead hourly zonal and PJM interface LBMPs."""
 from __future__ import annotations
 
 from typing import Any
@@ -19,8 +19,8 @@ TARGET_SCHEMA = scrape.TARGET_SCHEMA
 TARGET_TABLE = scrape.TARGET_TABLE
 TARGET_TABLE_FQN = scrape.TARGET_TABLE_FQN
 DATASET_NAME = "nyiso_da_lmps"
-DATA_SCOPE = "load_zones_all"
-DATA_GRAIN = "operating_date_hour_zone"
+DATA_SCOPE = "load_zones_plus_pjm_interface"
+DATA_GRAIN = "operating_date_hour_node"
 INTERVAL_MINUTES = 60
 DEFAULT_NODES = scrape.DEFAULT_NODES
 DEFAULT_DELTA = relativedelta(days=1)

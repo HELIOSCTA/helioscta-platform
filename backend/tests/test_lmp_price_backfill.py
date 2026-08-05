@@ -437,19 +437,7 @@ def test_nyiso_scrape_backfill_calls_pull_and_upsert_with_metadata(monkeypatch):
     )
     assert calls[0]["method"] == "pull"
     assert calls[0]["operating_date"] == date(2026, 8, 4)
-    assert calls[0]["nodes"] == (
-        "WEST",
-        "GENESE",
-        "CENTRL",
-        "NORTH",
-        "MHK VL",
-        "CAPITL",
-        "HUD VL",
-        "MILLWD",
-        "DUNWOD",
-        "N.Y.C.",
-        "LONGIL",
-    )
+    assert calls[0]["nodes"] == lmp_price_backfill_7_day.nyiso_da_lmps.DEFAULT_NODES
     assert calls[0]["database"] == "stage_db"
     assert calls[0]["metadata"] == {
         "run_mode": "backfill",

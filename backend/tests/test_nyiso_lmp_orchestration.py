@@ -16,7 +16,10 @@ from backend.scrapes.power.nyiso import _lmp
 def test_nyiso_lmp_event_key_and_expected_periods():
     assert (
         da_lmps._data_availability_event_key(date(2026, 8, 6))
-        == "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all"
+        == (
+            "nyiso_da_lmps:data_ready:2026-08-06:"
+            "load_zones_plus_pjm_interface"
+        )
     )
     assert da_lmps._expected_period_count_for_date(date(2026, 8, 6)) == 24
     assert da_lmps._expected_period_count_for_date(date(2026, 3, 8)) == 23
@@ -33,7 +36,7 @@ def test_nyiso_lmp_scheduled_target_dates_use_eastern_market_date():
     assert rt_lmps_prelim._target_operating_date(now=now) == date(2026, 8, 4)
 
 
-def test_nyiso_da_lmps_emits_readiness_for_complete_default_zones(monkeypatch):
+def test_nyiso_da_lmps_emits_readiness_for_complete_default_nodes(monkeypatch):
     captured: list[dict[str, object]] = []
 
     def fake_emit_data_availability_event(**kwargs):
@@ -60,7 +63,10 @@ def test_nyiso_da_lmps_emits_readiness_for_complete_default_zones(monkeypatch):
     assert events == [
         {
             "id": 1,
-            "event_key": "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all",
+            "event_key": (
+                "nyiso_da_lmps:data_ready:2026-08-06:"
+                "load_zones_plus_pjm_interface"
+            ),
             "created": True,
         }
     ]
@@ -69,16 +75,16 @@ def test_nyiso_da_lmps_emits_readiness_for_complete_default_zones(monkeypatch):
     assert event["source_system"] == "nyiso"
     assert event["availability_type"] == "data_ready"
     assert event["business_date"] == date(2026, 8, 6)
-    assert event["scope"] == "load_zones_all"
-    assert event["grain"] == "operating_date_hour_zone"
+    assert event["scope"] == "load_zones_plus_pjm_interface"
+    assert event["grain"] == "operating_date_hour_node"
     assert event["source_table"] == "nyiso.da_lmps"
-    assert event["row_count"] == 264
-    assert event["entity_count"] == 11
+    assert event["row_count"] == 288
+    assert event["entity_count"] == 12
     assert event["period_count"] == 24
     assert event["completeness_status"] == "complete"
     assert event["run_id"] == "run-1"
     assert event["database"] == "stage_db"
-    assert event["payload"]["expected_row_count"] == 264
+    assert event["payload"]["expected_row_count"] == 288
     assert event["payload"]["expected_nodes"] == sorted(da_lmps.DEFAULT_NODES)
     assert event["payload"]["market_clock"] == "America/New_York"
 
@@ -141,7 +147,10 @@ def test_nyiso_da_release_email_notifications_are_idempotent_and_sent(monkeypatc
         events=[
             {
                 "id": 1,
-                "event_key": "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all",
+                "event_key": (
+                    "nyiso_da_lmps:data_ready:2026-08-06:"
+                    "load_zones_plus_pjm_interface"
+                ),
             }
         ],
         run_mode="scheduled",
@@ -151,7 +160,8 @@ def test_nyiso_da_release_email_notifications_are_idempotent_and_sent(monkeypatc
 
     assert queued == 1
     assert calls[0]["event"]["event_key"] == (
-        "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all"
+        "nyiso_da_lmps:data_ready:2026-08-06:"
+        "load_zones_plus_pjm_interface"
     )
     assert calls[0]["database"] == "stage_db"
 
@@ -181,7 +191,10 @@ def test_nyiso_da_release_email_notifications_skip_outside_scheduled(monkeypatch
         events=[
             {
                 "id": 1,
-                "event_key": "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all",
+                "event_key": (
+                    "nyiso_da_lmps:data_ready:2026-08-06:"
+                    "load_zones_plus_pjm_interface"
+                ),
             }
         ],
         run_mode="smoke",
@@ -241,7 +254,7 @@ def test_nyiso_da_lmps_fetch_complete_market_day_suppresses_per_attempt_logs(
         metadata={"run_mode": "scheduled"},
     )
 
-    assert len(df) == 264
+    assert len(df) == 288
     assert captured["operating_date"] == date(2026, 8, 6)
     assert captured["nodes"] == da_lmps.DEFAULT_NODES
     assert captured["run_id"] == "run-1"
@@ -287,7 +300,7 @@ def test_nyiso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
         poll_wait_seconds=1,
     )
 
-    assert len(df) == 264
+    assert len(df) == 288
     assert attempts["count"] == 2
     assert len(logs) == 1
     log = logs[0]
@@ -298,7 +311,7 @@ def test_nyiso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
     assert log["target_host"] == "mis.nyiso.com"
     assert log["target_path"] == "/public/csv/damlbmp/20260806damlbmp_zone.csv"
     assert log["status"] == "success"
-    assert log["rows_returned"] == 264
+    assert log["rows_returned"] == 288
     assert log["attempt"] == 2
     assert log["database"] == "stage_db"
     assert log["metadata"]["run_mode"] == "scheduled"
@@ -307,7 +320,7 @@ def test_nyiso_da_lmps_wait_logs_one_resolved_poll_row(monkeypatch):
     assert log["metadata"]["api_family"] == "nyiso_mis_csv"
     assert log["metadata"]["expected_period_count"] == 24
     assert log["metadata"]["period_count"] == 24
-    assert log["metadata"]["entity_count"] == 11
+    assert log["metadata"]["entity_count"] == 12
 
 
 def test_nyiso_rt_fetch_complete_market_day_treats_404_as_not_available(

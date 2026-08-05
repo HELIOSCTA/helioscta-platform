@@ -244,7 +244,10 @@ def test_da_lmp_release_email_template_supports_miso_components():
         iso="miso",
         event={
             "id": 14,
-            "event_key": "miso_da_lmps:data_ready:2026-08-05:hubs_indiana_plus_ice",
+            "event_key": (
+                "miso_da_lmps:data_ready:2026-08-05:"
+                "hubs_indiana_plus_ice_pjm_interface"
+            ),
         },
         recipient_email="ops@example.test",
         snapshot=snapshot,
@@ -330,7 +333,10 @@ def test_da_lmp_release_email_template_supports_nyiso_components():
         iso="nyiso",
         event={
             "id": 16,
-            "event_key": "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all",
+            "event_key": (
+                "nyiso_da_lmps:data_ready:2026-08-06:"
+                "load_zones_plus_pjm_interface"
+            ),
         },
         recipient_email="ops@example.test",
         snapshot=snapshot,
@@ -354,6 +360,11 @@ def test_da_lmp_release_email_template_supports_nyiso_components():
     assert message["payload"]["hub"] == "N.Y.C."
     assert "iso=nyiso" in message["payload"]["report_url"]
     assert "hub=N.Y.C." in message["payload"]["report_url"]
+
+
+def test_da_lmp_email_configs_include_pjm_interfaces():
+    assert "PJMC" in email_notifications.DA_LMP_EMAIL_CONFIGS["miso"]["hubs"]
+    assert "PJM" in email_notifications.DA_LMP_EMAIL_CONFIGS["nyiso"]["hubs"]
 
 
 def test_fetch_da_lmp_email_snapshot_supports_caiso_sql(monkeypatch):

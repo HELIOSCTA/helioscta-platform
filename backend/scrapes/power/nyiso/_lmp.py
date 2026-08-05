@@ -4,7 +4,7 @@ Source contract:
 - Source system: NYISO public MIS CSV.
 - DA endpoint: damlbmp daily zonal CSV files.
 - RT endpoint: realtime daily zonal CSV files.
-- Primary grain: operating date x interval start UTC x load zone/PTID x market.
+- Primary grain: operating date x interval start UTC x node/PTID x market.
 """
 from __future__ import annotations
 
@@ -44,6 +44,8 @@ DEFAULT_LOAD_ZONE_NODES = (
     "N.Y.C.",
     "LONGIL",
 )
+DEFAULT_PJM_INTERFACE_NODES = ("PJM",)
+DEFAULT_DA_NODES = DEFAULT_LOAD_ZONE_NODES + DEFAULT_PJM_INTERFACE_NODES
 
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_ATTEMPTS = 3

@@ -70,6 +70,14 @@ def test_nyiso_da_lmp_format_maps_components_and_filters_load_zones():
             },
             {
                 "Time Stamp": "08/06/2026 00:00",
+                "Name": "PJM",
+                "PTID": "61847",
+                "LBMP ($/MWHr)": "52.00",
+                "Marginal Cost Losses ($/MWHr)": "2.00",
+                "Marginal Cost Congestion ($/MWHr)": "3.00",
+            },
+            {
+                "Time Stamp": "08/06/2026 00:00",
                 "Name": "Not A Load Zone",
                 "PTID": "99999",
                 "LBMP ($/MWHr)": "99.00",
@@ -81,8 +89,8 @@ def test_nyiso_da_lmp_format_maps_components_and_filters_load_zones():
 
     df = da_lmps._format(raw, operating_date=date(2026, 8, 6))
 
-    assert len(df) == 1
-    row = df.iloc[0]
+    assert len(df) == 2
+    row = df.loc[df["node_id"].eq("N.Y.C.")].iloc[0]
     assert row["interval_start_time_utc"] == pd.Timestamp("2026-08-06T04:00:00Z")
     assert row["interval_end_time_utc"] == pd.Timestamp("2026-08-06T05:00:00Z")
     assert row["operating_date"] == date(2026, 8, 6)
@@ -98,6 +106,18 @@ def test_nyiso_da_lmp_format_maps_components_and_filters_load_zones():
     assert row["energy_component"] == 50.0
     assert row["congestion_component"] == 1.0
     assert row["loss_component"] == 3.0
+    interface_row = df.loc[df["node_id"].eq("PJM")].iloc[0]
+    assert interface_row["ptid"] == 61847
+    assert interface_row["energy_component"] == 47.0
+
+
+def test_nyiso_da_default_nodes_include_pjm_interface_and_rt_defaults_do_not():
+    assert "PJM" in da_lmps.DEFAULT_NODES
+    assert "PJM" not in rt_lmps_prelim.DEFAULT_NODES
+    assert da_lmps.DEFAULT_NODES == (
+        _lmp.DEFAULT_LOAD_ZONE_NODES + _lmp.DEFAULT_PJM_INTERFACE_NODES
+    )
+    assert rt_lmps_prelim.DEFAULT_NODES == _lmp.DEFAULT_LOAD_ZONE_NODES
 
 
 def test_nyiso_rt_lmp_format_maps_five_minute_interval():

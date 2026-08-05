@@ -194,6 +194,15 @@ def test_miso_lmp_format_maps_components_and_fixed_est_timestamps():
     assert row["loss_component"] == 0.25
 
 
+def test_miso_da_default_nodes_include_pjm_interface_and_rt_defaults_do_not():
+    assert "PJMC" in da_lmps.DEFAULT_NODES
+    assert "PJMC" not in rt_lmps_prelim.DEFAULT_NODES
+    assert da_lmps.DEFAULT_NODES == (
+        _lmp.DEFAULT_HUB_NODES + _lmp.DEFAULT_PJM_INTERFACE_NODES
+    )
+    assert rt_lmps_prelim.DEFAULT_NODES == _lmp.DEFAULT_HUB_NODES
+
+
 def test_miso_lmp_pull_shapes_day_ahead_and_rt_requests(monkeypatch):
     calls: list[dict[str, object]] = []
 

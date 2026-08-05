@@ -1,6 +1,6 @@
 -- Read-only validation SQL for promoted MISO LMP source tables.
 
-WITH expected_hubs AS (
+WITH expected_nodes AS (
     SELECT *
     FROM (
         VALUES
@@ -10,8 +10,9 @@ WITH expected_hubs AS (
             ('LOUISIANA.HUB'),
             ('MICHIGAN.HUB'),
             ('MINN.HUB'),
-            ('TEXAS.HUB')
-    ) AS hubs(node_id)
+            ('TEXAS.HUB'),
+            ('PJMC')
+    ) AS nodes(node_id)
 ),
 
 coverage AS (
@@ -135,7 +136,7 @@ final AS (
         NULL::VARCHAR AS pipeline_name,
         NULL::VARCHAR AS fetch_status
     FROM latest_coverage
-    WHERE node_id IN (SELECT node_id FROM expected_hubs)
+    WHERE node_id IN (SELECT node_id FROM expected_nodes)
 
     UNION ALL
 

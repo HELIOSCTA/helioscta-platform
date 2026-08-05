@@ -172,10 +172,11 @@ LMP paths are `backend.orchestration.power.miso.da_lmps`,
 `backend.orchestration.power.miso.rt_lmps_final`. They write `miso.da_lmps`,
 `miso.rt_lmps_prelim`, and `miso.rt_lmps_final` at
 `interval_start_time_utc x node_id x market_run_id` grain for
-`INDIANA.HUB` plus the additional ICE/MISO hub family. Rows store total LMP,
-energy, congestion, and loss components and use `ops.api_fetch_log` plus
-complete-day readiness events for scheduled runs. The scheduled MISO DA LMP
-workflow queues the shared inline DA release email after complete-day
+`INDIANA.HUB` plus the additional ICE/MISO hub family; the DA workflow also
+includes the PJM interface node `PJMC` for release email coverage. Rows store
+total LMP, energy, congestion, and loss components and use `ops.api_fetch_log`
+plus complete-day readiness events for scheduled runs. The scheduled MISO DA
+LMP workflow queues the shared inline DA release email after complete-day
 readiness.
 
 SPP Portal LMP helpers use public file-browser CSV downloads and do not require
@@ -195,10 +196,12 @@ NYISO-specific credentials. Promoted NYISO LBMP paths are
 `backend.orchestration.power.nyiso.rt_lmps_prelim`. They write
 `nyiso.da_lmps` and `nyiso.rt_lmps_prelim` at
 `interval_start_time_utc x node_id x market_run_id` grain for the 11 public
-NYISO load zones. Rows retain `ptid`, store total LBMP, derive energy as total
-minus loss minus congestion, and use `ops.api_fetch_log` plus complete-day
-readiness events for scheduled runs. The scheduled NYISO DA LBMP workflow
-queues the shared inline DA release email after complete-day readiness.
+NYISO load zones; the DA workflow also includes the PJM interface node `PJM`
+for release email coverage. Rows retain `ptid`, store total LBMP, derive
+energy as total minus loss minus congestion, and use `ops.api_fetch_log` plus
+complete-day readiness events for scheduled runs. The scheduled NYISO DA LBMP
+workflow queues the shared inline DA release email after complete-day
+readiness.
 
 EIA Open Data API helpers use `EIA_API_KEY`. Promoted EIA runtime modules live
 under `backend.scrapes.eia`, with orchestration at `backend.orchestration.eia`

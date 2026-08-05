@@ -21,6 +21,8 @@ DEFAULT_HUB_NODES = (
     "MINN.HUB",
     "TEXAS.HUB",
 )
+DEFAULT_PJM_INTERFACE_NODES = ("PJMC",)
+DEFAULT_DA_NODES = DEFAULT_HUB_NODES + DEFAULT_PJM_INTERFACE_NODES
 
 PRIMARY_KEY = ["interval_start_time_utc", "node_id", "market_run_id"]
 TARGET_COLUMNS = [
