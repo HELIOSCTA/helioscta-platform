@@ -91,6 +91,8 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         static_params={"row_is_current": "1"},
         default_lookback_days=10,
         default_end_time="23:00",
+        hot_retention_days=14,
+        hot_retention_column="datetime_beginning_utc",
     ),
     "da_interface_flows_and_limits": DataMinerFeedConfig(
         feed_name="da_interface_flows_and_limits",
@@ -244,6 +246,8 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         text_columns=("area", "reserve_type"),
         datetime_filter_field="datetime_beginning_ept",
         default_lookback_days=2,
+        hot_retention_days=14,
+        hot_retention_column="datetime_beginning_utc",
     ),
     "five_min_solar_generation": DataMinerFeedConfig(
         feed_name="five_min_solar_generation",
@@ -449,6 +453,8 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         text_columns=("area", "reserve_type"),
         datetime_filter_field="datetime_beginning_ept",
         default_lookback_days=10,
+        hot_retention_days=14,
+        hot_retention_column="datetime_beginning_utc",
     ),
     "da_reserve_market_results": DataMinerFeedConfig(
         feed_name="da_reserve_market_results",
@@ -489,6 +495,8 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         default_lookback_days=10,
         default_lookahead_days=1,
         default_end_time="23:00",
+        hot_retention_days=14,
+        hot_retention_column="datetime_beginning_utc",
     ),
     "reserve_market_results": DataMinerFeedConfig(
         feed_name="reserve_market_results",
@@ -535,6 +543,8 @@ FEED_CONFIGS: dict[str, DataMinerFeedConfig] = {
         text_columns=("locale", "service"),
         datetime_filter_field="datetime_beginning_ept",
         default_lookback_days=10,
+        hot_retention_days=14,
+        hot_retention_column="datetime_beginning_utc",
     ),
     "rt_default_mv_override": DataMinerFeedConfig(
         feed_name="rt_default_mv_override",

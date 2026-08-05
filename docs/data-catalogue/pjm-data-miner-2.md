@@ -235,6 +235,8 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, datetime_beginning_ept, ancillary_service, row_is_current, version_nbr`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.ancillary_services`.
+- Hot DB retention: 14 days, purged on successful scrape by
+  `datetime_beginning_utc`.
 
 ### da_interface_flows_and_limits
 
@@ -270,6 +272,8 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, locale, service`.
 - Uniqueness key: `datetime_beginning_utc, locale, service`.
 - Freshness field: `datetime_beginning_ept`.
+- Hot DB retention: 14 days, purged on successful scrape by
+  `datetime_beginning_utc`.
 - Runtime: `backend.orchestration.power.pjm.da_reserve_market_results` for the
   scheduled publication-aware refresh; `backend.scrapes.power.pjm.da_reserve_market_results`
   remains the lower-level scrape module.
@@ -309,6 +313,8 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, datetime_beginning_ept, area, reserve_type`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.dispatched_reserves`.
+- Hot DB retention: 14 days, purged on successful scrape by
+  `datetime_beginning_utc`.
 
 ### five_min_solar_generation
 
@@ -402,6 +408,8 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `mkt_day, datetime_beginning_utc, datetime_beginning_ept, area, reserve_type`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.rt_dispatch_reserves`.
+- Hot DB retention: 14 days, purged on successful scrape by
+  `datetime_beginning_utc`.
 
 ### reserve_market_results
 
@@ -411,6 +419,8 @@ Feed selection and promotion priority are documented in
 - Uniqueness key: `datetime_beginning_utc, locale, service`.
 - Freshness field: `datetime_beginning_ept`.
 - Runtime: `backend.scrapes.power.pjm.reserve_market_results`.
+- Hot DB retention: 14 days, purged on successful scrape by
+  `datetime_beginning_utc`.
 
 ### rt_default_mv_override
 

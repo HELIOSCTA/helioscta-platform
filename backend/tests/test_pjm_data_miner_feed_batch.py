@@ -102,6 +102,20 @@ def test_forecast_feed_configs_have_90_day_hot_retention():
         assert config.hot_retention_column == retention_column
 
 
+def test_reserve_feed_configs_have_14_day_hot_retention():
+    expected = {
+        "ancillary_services": "datetime_beginning_utc",
+        "da_reserve_market_results": "datetime_beginning_utc",
+        "dispatched_reserves": "datetime_beginning_utc",
+        "reserve_market_results": "datetime_beginning_utc",
+        "rt_dispatch_reserves": "datetime_beginning_utc",
+    }
+    for feed_name, retention_column in expected.items():
+        config = FEED_CONFIGS[feed_name]
+        assert config.hot_retention_days == 14
+        assert config.hot_retention_column == retention_column
+
+
 def test_data_miner_retention_purge_uses_config(monkeypatch):
     config = FEED_CONFIGS["hourly_solar_power_forecast"]
     captured: dict[str, object] = {}
