@@ -498,6 +498,35 @@ Before enabling these timers, apply the SPP schema, table, and index DDL under
 `dbt/azure_postgres/reference_sql/ddl/setup/` and
 `dbt/azure_postgres/reference_sql/ddl/power/spp/`.
 
+## NYISO LBMPs
+
+The NYISO LBMP workflows have dedicated daily timers:
+
+```text
+helios-nyiso-da-lmps.service
+helios-nyiso-da-lmps.timer
+helios-nyiso-rt-lmps-prelim.service
+helios-nyiso-rt-lmps-prelim.timer
+```
+
+The services run `backend.orchestration.power.nyiso.da_lmps` and
+`backend.orchestration.power.nyiso.rt_lmps_prelim`. They use public NYISO MIS
+zonal CSV files, upsert all 11 public load zones into `nyiso.da_lmps` and
+`nyiso.rt_lmps_prelim`, write one resolved polling telemetry row to
+`ops.api_fetch_log`, and emit complete-day readiness events to
+`ops.data_availability_events`.
+
+The DA timer runs daily at `09:00 America/New_York`, targets the next
+operating date, and polls every 5 minutes for up to two hours. The RT
+preliminary timer runs daily at `00:15 America/New_York`, targets the previous
+operating date, and polls every 5 minutes for up to two hours. Services use
+`flock` locks under `/tmp/helios-nyiso-*.lock`.
+
+Before enabling these timers, apply the NYISO schema, table, and index DDL
+under `dbt/azure_postgres/reference_sql/ddl/setup/` and
+`dbt/azure_postgres/reference_sql/ddl/power/nyiso/`. No NYISO-specific
+credential is required.
+
 ## ISO-NE ISO Express Feeds
 
 The ISO-NE ISO Express workflows have dedicated daily timers:

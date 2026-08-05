@@ -67,6 +67,37 @@ boundary, or log path changes.
     `2026-08-05` and `helios-miso-rt-lmps-prelim.service` targeting
     `2026-08-03`; both wrote resolved poll telemetry to `ops.api_fetch_log`.
 
+## nyiso-mis-lmps
+
+- Status: prepared for deployment; update after VM DDL, timer install, and
+  smoke verification.
+- Host: `helioscta-prod-vm-01`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: `helios`.
+- Credential boundary: public NYISO MIS CSV, no new backend environment
+  variable or secret.
+- Source system: NYISO public MIS zonal LBMP CSV files.
+- Tables:
+  - `nyiso.da_lmps`
+  - `nyiso.rt_lmps_prelim`
+- Unit files:
+  - `infrastructure/systemd/helios-nyiso-da-lmps.service`
+  - `infrastructure/systemd/helios-nyiso-da-lmps.timer`
+  - `infrastructure/systemd/helios-nyiso-rt-lmps-prelim.service`
+  - `infrastructure/systemd/helios-nyiso-rt-lmps-prelim.timer`
+- Schedule:
+  - DA runs daily at `09:00 America/New_York`, targets the next operating
+    date, and polls every 5 minutes for up to 2 hours.
+  - RT preliminary runs daily at `00:15 America/New_York`, targets the
+    previous operating date, and polls every 5 minutes for up to 2 hours.
+- Verification:
+  - Local focused backend pytest required before deployment.
+  - Apply DDL under `dbt/azure_postgres/reference_sql/ddl/power/nyiso/`.
+  - Run DA/RT manual smokes without release email side effects.
+  - Confirm `ops.api_fetch_log` success telemetry,
+    `ops.data_availability_events` complete-day readiness, and enabled
+    `helios-nyiso-*` timers.
+
 ## eia-open-data
 
 - Status: deployed on `helioscta-prod-vm-01`; timers enabled on

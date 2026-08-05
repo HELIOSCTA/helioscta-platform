@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA NYISO Day-Ahead Hourly LBMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 09:00:00 America/New_York
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-nyiso-da-lmps.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA NYISO Preliminary Real-Time Five-Minute LBMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 America/New_York
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-nyiso-rt-lmps-prelim.service
+
+[Install]
+WantedBy=timers.target

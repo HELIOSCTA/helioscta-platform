@@ -35,6 +35,8 @@ from backend.scrapes.power.isone import rt_hrl_lmps_prelim as isone_rt_hrl_lmps_
 from backend.scrapes.power.miso import da_lmps as miso_da_lmps
 from backend.scrapes.power.miso import rt_lmps_final as miso_rt_lmps_final
 from backend.scrapes.power.miso import rt_lmps_prelim as miso_rt_lmps_prelim
+from backend.scrapes.power.nyiso import da_lmps as nyiso_da_lmps
+from backend.scrapes.power.nyiso import rt_lmps_prelim as nyiso_rt_lmps_prelim
 from backend.scrapes.power.pjm import da_hrl_lmps as pjm_da_hrl_lmps
 from backend.scrapes.power.pjm import rt_fivemin_hrl_lmps as pjm_rt_fivemin_hrl_lmps
 from backend.scrapes.power.pjm import rt_hrl_lmps as pjm_rt_hrl_lmps
@@ -556,6 +558,23 @@ def _run_spp_rt_lmps_prelim_backfill(**kwargs: Any) -> BackfillResult:
     )
 
 
+def _run_nyiso_da_lmps_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_miso_scrape_backfill(
+        module=nyiso_da_lmps,
+        workflow_name="nyiso_da_lmps",
+        **kwargs,
+    )
+
+
+def _run_nyiso_rt_lmps_prelim_backfill(**kwargs: Any) -> BackfillResult:
+    kwargs.setdefault("request_delay_seconds", 5.0)
+    return _run_miso_scrape_backfill(
+        module=nyiso_rt_lmps_prelim,
+        workflow_name="nyiso_rt_lmps_prelim",
+        **kwargs,
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="pjm_da_hrl_lmps",
@@ -645,6 +664,16 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="spp_rt_lmps_prelim",
         runner=_run_spp_rt_lmps_prelim_backfill,
+        end_lag_days=1,
+    ),
+    PriceBackfillWorkflow(
+        name="nyiso_da_lmps",
+        runner=_run_nyiso_da_lmps_backfill,
+        end_lag_days=0,
+    ),
+    PriceBackfillWorkflow(
+        name="nyiso_rt_lmps_prelim",
+        runner=_run_nyiso_rt_lmps_prelim_backfill,
         end_lag_days=1,
     ),
 )

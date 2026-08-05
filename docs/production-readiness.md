@@ -52,6 +52,8 @@ A backend workflow is production-ready when it has:
 | MISO RT final LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-final.timer` runs daily at `13:00 UTC`, targets five calendar days back, and polls for final RT ex-post publication. |
 | SPP DA LMP schedule | Promoted for VM install | `helios-spp-da-lmps.timer` runs daily at `16:00 America/Chicago`, targets the next operating date, and polls for SPP Portal DA publication. |
 | SPP RT preliminary LMP schedule | Promoted for VM install | `helios-spp-rt-lmps-prelim.timer` runs daily at `00:15 America/Chicago`, targets the previous operating date, and polls for complete five-minute RTBM publication. |
+| NYISO DA LBMP schedule | Promoted for VM install | `helios-nyiso-da-lmps.timer` runs daily at `09:00 America/New_York`, targets the next operating date, and polls for NYISO MIS DA publication. |
+| NYISO RT preliminary LBMP schedule | Promoted for VM install | `helios-nyiso-rt-lmps-prelim.timer` runs daily at `00:15 America/New_York`, targets the previous operating date, and polls for complete five-minute realtime publication. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `11:55 America/New_York` and polls for the complete next Eastern operating date. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
@@ -59,12 +61,12 @@ A backend workflow is production-ready when it has:
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
 | PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 23 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
-| LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, CAISO, MISO, and SPP LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
+| LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, CAISO, MISO, SPP, and NYISO LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
 | Secrets | In place | Production jobs consume `/etc/helioscta/backend.env`. |
-| API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, CAISO, MISO, and SPP API scrapes write `ops.api_fetch_log`. |
-| Data readiness | In place | Critical PJM, ERCOT, ISO-NE, CAISO, MISO, and SPP price orchestration write `ops.data_availability_events`. |
-| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, CAISO DA LMPs, MISO DA LMPs, and SPP DA LMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results rely on readiness events, API telemetry, and the health digest. |
+| API telemetry | In place | Scheduled PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO API scrapes write `ops.api_fetch_log`. |
+| Data readiness | In place | Critical PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO price orchestration write `ops.data_availability_events`. |
+| Release notifications | In place | PJM DA HRL LMPs, NEPOOL DA HRL LMPs, ERCOT DAM SPPs, CAISO DA LMPs, MISO DA LMPs, SPP DA LMPs, and NYISO DA LBMPs queue backend HTML email release notices with inline hub/hour tables and Vercel report links. Verified RT HRL LMPs, verified RT five-minute HRL LMPs, and DA reserve market results rely on readiness events, API telemetry, and the health digest. |
 | Production health digest | In place | `backend.orchestration.health.prod_health_check` prints a read-only operator summary for critical PJM/ERCOT readiness and PJM/ERCOT support-batch freshness. |
 | Manual backfills | In place | `docs/operations/manual-backfills.md` documents controlled date-window replays into the canonical production tables. |
 | CI validation | In place | GitHub Actions runs backend tests on pushes and pull requests. |

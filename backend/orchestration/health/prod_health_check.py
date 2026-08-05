@@ -40,6 +40,8 @@ SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-email-notification-outbox.service",
     "helios-spp-da-lmps.service",
     "helios-spp-rt-lmps-prelim.service",
+    "helios-nyiso-da-lmps.service",
+    "helios-nyiso-rt-lmps-prelim.service",
     "helios-ercot-load-batch.service",
     "helios-ercot-congestion-batch.service",
     "helios-ercot-renewables-batch.service",
@@ -79,6 +81,8 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-isone-external-interface-metered-data.timer",
     "helios-spp-da-lmps.timer",
     "helios-spp-rt-lmps-prelim.timer",
+    "helios-nyiso-da-lmps.timer",
+    "helios-nyiso-rt-lmps-prelim.timer",
 )
 
 
@@ -218,6 +222,8 @@ LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
     "miso.rt_lmps_final",
     "spp.da_lmps",
     "spp.rt_lmps_prelim",
+    "nyiso.da_lmps",
+    "nyiso.rt_lmps_prelim",
 )
 
 

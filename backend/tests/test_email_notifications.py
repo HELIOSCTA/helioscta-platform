@@ -313,6 +313,49 @@ def test_da_lmp_release_email_template_supports_spp_components():
     assert "hub=SPPNORTH_HUB" in message["payload"]["report_url"]
 
 
+def test_da_lmp_release_email_template_supports_nyiso_components():
+    snapshot = email_notifications._build_da_lmp_snapshot(
+        iso="nyiso",
+        rows=_da_lmp_rows("N.Y.C."),
+        target_date="2026-08-06",
+        latest_date="2026-08-06",
+        hubs=["N.Y.C."],
+    )
+    assert snapshot["peak_start_he"] == 7
+    assert snapshot["peak_end_he"] == 22
+    assert snapshot["hubs"][0]["on_peak_avg"] == 44.5
+    assert snapshot["hubs"][0]["off_peak_avg"] == 38.5
+
+    message = email_notifications.build_da_lmp_release_email(
+        iso="nyiso",
+        event={
+            "id": 16,
+            "event_key": "nyiso_da_lmps:data_ready:2026-08-06:load_zones_all",
+        },
+        recipient_email="ops@example.test",
+        snapshot=snapshot,
+    )
+
+    assert message["dataset"] == "nyiso_da_lmps"
+    assert message["subject"] == (
+        "NYISO DA LMPs released for Thu Aug-06 | "
+        "HeliosCTA | NYISO | DA LMPs | Posted"
+    )
+    assert "NYISO DA LMPs Available" in message["body_html"]
+    assert "Open NYISO DA LMP report" in message["body_html"]
+    assert "N.Y.C." in message["body_html"]
+    assert "Peak HE7-22" in message["body_html"]
+    assert "OffPeak HE1-6,23-24" in message["body_html"]
+    assert "Energy" in message["body_html"]
+    assert "Congestion" in message["body_html"]
+    assert "Loss" in message["body_html"]
+    assert "Total" in message["body_html"]
+    assert message["payload"]["iso"] == "nyiso"
+    assert message["payload"]["hub"] == "N.Y.C."
+    assert "iso=nyiso" in message["payload"]["report_url"]
+    assert "hub=N.Y.C." in message["payload"]["report_url"]
+
+
 def test_fetch_da_lmp_email_snapshot_supports_caiso_sql(monkeypatch):
     calls: list[dict[str, object]] = []
 
@@ -475,6 +518,62 @@ def test_fetch_da_lmp_email_snapshot_supports_spp_sql(monkeypatch):
     assert snapshot["hubs"][0]["hub"] == "SPPNORTH_HUB"
     assert snapshot["hubs"][0]["hours"] == 1
     assert snapshot["hubs"][0]["hourly"][0]["marginal_loss"] == 0.0185
+
+
+def test_fetch_da_lmp_email_snapshot_supports_nyiso_sql(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_execute_sql(query, params=None, database=None, fetch=False):
+        calls.append(
+            {
+                "query": query,
+                "params": params,
+                "database": database,
+                "fetch": fetch,
+            }
+        )
+        if "MAX(operating_date)" in query:
+            assert "FROM nyiso.da_lmps" in query
+            return [{"latest_date": "2026-08-06"}]
+        assert "FROM nyiso.da_lmps AS lmps" in query
+        assert "lmps.energy_component AS system_energy" in query
+        assert "lmps.congestion_component AS congestion" in query
+        assert "lmps.loss_component AS marginal_loss" in query
+        assert "AT TIME ZONE 'America/New_York'" in query
+        return [
+            {
+                "hub": "N.Y.C.",
+                "hour_ending": 1,
+                "datetime_beginning": "2026-08-06T00:00:00",
+                "system_energy": 50.0,
+                "total": 54.0,
+                "congestion": 1.0,
+                "marginal_loss": 3.0,
+                "updated_at": "2026-08-05T09:33:00",
+            }
+        ]
+
+    monkeypatch.setattr(email_notifications.db, "execute_sql", fake_execute_sql)
+
+    snapshot = email_notifications.fetch_da_lmp_email_snapshot(
+        iso="nyiso",
+        business_date="2026-08-06",
+        database="stage_db",
+        hubs=["N.Y.C."],
+    )
+
+    assert calls[0]["params"] == (["N.Y.C."],)
+    assert calls[1]["params"] == (
+        ["N.Y.C."],
+        "2026-08-06",
+        ["N.Y.C."],
+    )
+    assert all(call["database"] == "stage_db" for call in calls)
+    assert snapshot["iso"] == "nyiso"
+    assert snapshot["latest_date"] == "2026-08-06"
+    assert snapshot["hubs"][0]["hub"] == "N.Y.C."
+    assert snapshot["hubs"][0]["hours"] == 1
+    assert snapshot["hubs"][0]["hourly"][0]["marginal_loss"] == 3.0
 
 
 def test_enqueue_email_notification_is_idempotent(monkeypatch):
