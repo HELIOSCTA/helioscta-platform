@@ -48,8 +48,8 @@ A backend workflow is production-ready when it has:
 | CAISO DA LMP schedule | In place | `helios-caiso-da-lmps.timer` runs daily at `12:00 America/Los_Angeles` and polls for CAISO's day-ahead OASIS publication. |
 | CAISO RT LMP schedule | In place | `helios-caiso-rt-lmps.timer` runs daily at `09:20 America/Los_Angeles` for the previous complete Pacific trading date. |
 | MISO DA LMP schedule | Promoted for VM install | `helios-miso-da-lmps.timer` runs daily at `19:00 UTC`, targets the next operating date, and polls for MISO Data Exchange publication. |
-| MISO RT preliminary LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-prelim.timer` runs daily at `09:15 UTC`, targets the previous operating date, and polls for next-day RT ex-post publication. |
-| MISO RT final LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-final.timer` runs daily at `13:00 UTC`, targets five calendar days back, and polls for final RT ex-post publication. |
+| MISO RT preliminary LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-prelim.timer` runs daily at `09:15`, `13:15`, and `17:15 UTC`, targets the previous operating date, and polls for next-day RT ex-post publication. |
+| MISO RT final LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-final.timer` runs daily at `13:00 UTC`, targets seven calendar days back, and polls for final RT ex-post publication. |
 | SPP DA LMP schedule | Promoted for VM install | `helios-spp-da-lmps.timer` runs daily at `16:00 America/Chicago`, targets the next operating date, and polls for SPP Portal DA publication. |
 | SPP RT preliminary LMP schedule | Promoted for VM install | `helios-spp-rt-lmps-prelim.timer` runs daily at `00:15 America/Chicago`, targets the previous operating date, and polls for complete five-minute RTBM publication. |
 | NYISO DA LBMP schedule | In place | `helios-nyiso-da-lmps.timer` runs daily at `08:30 America/New_York`, targets the next operating date, and polls for NYISO MIS DA publication. |

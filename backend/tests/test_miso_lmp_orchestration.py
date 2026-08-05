@@ -32,7 +32,7 @@ def test_miso_lmp_scheduled_target_dates():
 
     assert da_lmps._target_operating_date(now=now) == date(2026, 8, 5)
     assert rt_lmps_prelim._target_operating_date(now=now) == date(2026, 8, 3)
-    assert rt_lmps_final._target_operating_date(now=now) == date(2026, 7, 30)
+    assert rt_lmps_final._target_operating_date(now=now) == date(2026, 7, 28)
 
 
 def test_miso_da_lmps_emits_readiness_for_complete_default_hubs(monkeypatch):
@@ -341,6 +341,31 @@ def test_miso_rt_final_fetch_complete_market_day_treats_404_as_not_available(
         )
     except rt_lmps_final.DataNotYetAvailable as exc:
         assert "not found" in str(exc)
+    else:
+        raise AssertionError("expected DataNotYetAvailable")
+
+
+def test_miso_lmp_fetch_complete_market_day_treats_5xx_as_retryable_not_ready(
+    monkeypatch,
+):
+    def fake_pull(**_kwargs):
+        raise _lmp.data_exchange_client.MISODataExchangeError(
+            "temporary upstream failure",
+            status_code=500,
+        )
+
+    monkeypatch.setattr(rt_lmps_prelim.scrape, "_pull", fake_pull)
+
+    try:
+        rt_lmps_prelim._fetch_complete_market_day(
+            operating_date=date(2026, 8, 4),
+            nodes=rt_lmps_prelim.DEFAULT_NODES,
+            run_id="run-1",
+            database="stage_db",
+            metadata={"run_mode": "scheduled"},
+        )
+    except rt_lmps_prelim.DataNotYetAvailable as exc:
+        assert "temporary upstream failure" in str(exc)
     else:
         raise AssertionError("expected DataNotYetAvailable")
 

@@ -817,7 +817,7 @@ The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
 and PJM price timers. It uses feed-specific publication lags: DA feeds through the current
 Eastern market date, unverified/preliminary RT and ERCOT price-adder feeds
 through the prior market date, most verified/final RT feeds through two market
-dates back, and MISO final RT through five calendar days back. CAISO repairs
+dates back, and MISO final RT through seven calendar days back. CAISO repairs
 use OASIS trading dates; SPP repairs use Central operating dates; NYISO
 repairs use Eastern operating dates; DA repair runs through the current date,
 while the scheduled CAISO DA, MISO DA, SPP DA, and NYISO DA pollers own

@@ -1,6 +1,7 @@
 """Shared MISO Data Exchange LMP normalization."""
 from __future__ import annotations
 
+import time
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -23,6 +24,9 @@ DEFAULT_HUB_NODES = (
 )
 DEFAULT_PJM_INTERFACE_NODES = ("PJMC",)
 DEFAULT_DA_NODES = DEFAULT_HUB_NODES + DEFAULT_PJM_INTERFACE_NODES
+NODE_FETCH_MAX_ATTEMPTS = 2
+NODE_FETCH_RETRY_DELAY_SECONDS = 15.0
+RETRYABLE_NODE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 PRIMARY_KEY = ["interval_start_time_utc", "node_id", "market_run_id"]
 TARGET_COLUMNS = [
@@ -78,40 +82,55 @@ def pull_lmps(
     database: str | None = None,
     metadata: dict | None = None,
     log_fetch: bool = True,
+    node_max_attempts: int = NODE_FETCH_MAX_ATTEMPTS,
+    node_retry_delay_seconds: float = NODE_FETCH_RETRY_DELAY_SECONDS,
 ) -> pd.DataFrame:
     """Pull and normalize MISO Data Exchange LMP rows for one operating date."""
     business_date = coerce_operating_date(operating_date)
     selected_nodes = tuple(nodes or DEFAULT_HUB_NODES)
     endpoint = endpoint_template.format(operating_date=business_date.isoformat())
     raw_records: list[dict] = []
+    failed_nodes: dict[str, data_exchange_client.MISODataExchangeError] = {}
+    pending_nodes = list(selected_nodes)
+    max_node_attempts = max(1, int(node_max_attempts))
 
-    for node in selected_nodes:
-        params = {"node": node}
-        if price_status in {"Preliminary", "Final"}:
-            params["preliminaryFinal"] = price_status
-        if time_resolution:
-            params["timeResolution"] = time_resolution
+    for node_attempt in range(1, max_node_attempts + 1):
+        next_pending_nodes: list[str] = []
+        for node in pending_nodes:
+            try:
+                raw_records.extend(
+                    fetch_lmp_node_records(
+                        endpoint=endpoint,
+                        business_date=business_date,
+                        node=node,
+                        price_status=price_status,
+                        time_resolution=time_resolution,
+                        subscription_key=subscription_key,
+                        pipeline_name=pipeline_name,
+                        target_table=target_table,
+                        run_id=run_id,
+                        database=database,
+                        metadata=metadata,
+                        log_fetch=log_fetch,
+                        node_attempt=node_attempt,
+                    )
+                )
+                failed_nodes.pop(node, None)
+            except data_exchange_client.MISODataExchangeError as exc:
+                failed_nodes[node] = exc
+                next_pending_nodes.append(node)
 
-        raw_records.extend(
-            data_exchange_client.fetch_pricing_data(
-                endpoint,
-                params=params,
-                subscription_key=subscription_key,
-                pipeline_name=pipeline_name,
-                run_id=run_id,
-                feed_name=pipeline_name,
-                target_table=target_table,
-                operation_name=pipeline_name,
-                metadata={
-                    "operating_date": business_date.isoformat(),
-                    "node": node,
-                    "price_status": price_status,
-                    "time_resolution": time_resolution,
-                    **(metadata or {}),
-                },
-                database=database,
-                log_fetch=log_fetch,
-            )
+        if not next_pending_nodes:
+            break
+        if node_attempt < max_node_attempts and node_retry_delay_seconds > 0:
+            time.sleep(node_retry_delay_seconds)
+        pending_nodes = next_pending_nodes
+
+    if failed_nodes:
+        raise_lmp_node_fetch_error(
+            failed_nodes=failed_nodes,
+            endpoint=endpoint,
+            attempts=max_node_attempts,
         )
 
     return format_lmp_records(
@@ -122,6 +141,101 @@ def pull_lmps(
         price_status=price_status,
         fallback_time_resolution=time_resolution,
     )
+
+
+def fetch_lmp_node_records(
+    *,
+    endpoint: str,
+    business_date: date,
+    node: str,
+    price_status: str,
+    time_resolution: str | None,
+    subscription_key: str | None,
+    pipeline_name: str,
+    target_table: str,
+    run_id: str | None,
+    database: str | None,
+    metadata: dict | None,
+    log_fetch: bool,
+    node_attempt: int,
+) -> list[dict]:
+    """Fetch MISO LMP records for one node."""
+    params = {"node": node}
+    if price_status in {"Preliminary", "Final"}:
+        params["preliminaryFinal"] = price_status
+    if time_resolution:
+        params["timeResolution"] = time_resolution
+
+    return data_exchange_client.fetch_pricing_data(
+        endpoint,
+        params=params,
+        subscription_key=subscription_key,
+        pipeline_name=pipeline_name,
+        run_id=run_id,
+        feed_name=pipeline_name,
+        target_table=target_table,
+        operation_name=pipeline_name,
+        metadata={
+            "operating_date": business_date.isoformat(),
+            "node": node,
+            "node_fetch_attempt": node_attempt,
+            "price_status": price_status,
+            "time_resolution": time_resolution,
+            **(metadata or {}),
+        },
+        database=database,
+        log_fetch=log_fetch,
+    )
+
+
+def raise_lmp_node_fetch_error(
+    *,
+    failed_nodes: dict[str, data_exchange_client.MISODataExchangeError],
+    endpoint: str,
+    attempts: int,
+) -> None:
+    """Raise a source exception after isolated node retries are exhausted."""
+    details = "; ".join(
+        f"{node}: {type(error).__name__}: {error}"
+        for node, error in sorted(failed_nodes.items())
+    )
+    message = (
+        f"MISO LMP node fetches failed after {attempts} isolated attempt(s) "
+        f"for {endpoint}: {details}"
+    )
+    status_code = preferred_failed_node_status(failed_nodes.values())
+    if all(
+        isinstance(error, data_exchange_client.MISODataNotAvailable)
+        for error in failed_nodes.values()
+    ):
+        raise data_exchange_client.MISODataNotAvailable(
+            message,
+            status_code=status_code,
+        )
+    raise data_exchange_client.MISODataExchangeError(
+        message,
+        status_code=status_code,
+    )
+
+
+def preferred_failed_node_status(
+    errors,
+) -> int | None:
+    """Choose a representative status code for aggregate node failures."""
+    statuses = [error.status_code for error in errors]
+    retryable_status = next(
+        (
+            status
+            for status in statuses
+            if status in RETRYABLE_NODE_STATUS_CODES
+        ),
+        None,
+    )
+    if retryable_status is not None:
+        return retryable_status
+    if any(status is None for status in statuses):
+        return None
+    return next((status for status in statuses if status is not None), None)
 
 
 def format_lmp_records(

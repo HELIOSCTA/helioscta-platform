@@ -32,6 +32,16 @@ def test_default_workflows_cover_promoted_lmp_sources():
     ]
 
 
+def test_miso_final_repair_uses_seven_day_lag():
+    workflow = next(
+        workflow
+        for workflow in lmp_price_backfill_7_day.DEFAULT_WORKFLOWS
+        if workflow.name == "miso_rt_lmps_final"
+    )
+
+    assert workflow.end_lag_days == 7
+
+
 def test_window_for_workflow_uses_lagged_seven_day_window():
     start_date, end_date = lmp_price_backfill_7_day._window_for_workflow(
         market_today=date(2026, 7, 17),

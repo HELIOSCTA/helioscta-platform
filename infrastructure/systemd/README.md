@@ -210,7 +210,7 @@ The timer runs daily at `22:15 UTC` with `Persistent=true` and
 DA feeds through the current Eastern market date, unverified/preliminary RT,
 CAISO RT, SPP RT preliminary, and ERCOT price-adder feeds through the prior market date, and
 verified/final RT feeds through two market dates back, and MISO final RT
-through five calendar days back. CAISO DA repair runs through the current
+through seven calendar days back. CAISO DA repair runs through the current
 OASIS trading date while the scheduled CAISO DA, MISO DA, and SPP DA pollers
 own next-day publication. The service uses `flock` with
 `/tmp/helios-lmp-price-backfill-7-day.lock`.
@@ -459,11 +459,12 @@ events to `ops.data_availability_events`.
 
 The DA timer runs daily at `19:00 UTC`, targets the next operating date, and
 polls every 10 minutes for up to two hours. The RT preliminary timer runs daily
-at `09:15 UTC`, targets the previous operating date, and polls every 10
-minutes for up to three hours. The RT final timer runs daily at `13:00 UTC`,
-targets five calendar days back, and polls every 10 minutes for up to three
-hours because MISO finalization can land later in the documented 3-5 day
-window. Services use `flock` locks under `/tmp/helios-miso-*.lock`.
+at `09:15 UTC`, `13:15 UTC`, and `17:15 UTC`, targets the previous operating
+date, and polls every 10 minutes for up to three hours. The RT final timer runs
+daily at `13:00 UTC`, targets seven calendar days back, and polls every 10
+minutes for up to three hours because MISO finalization can land later than the
+documented 3-5 day window. Services use `flock` locks under
+`/tmp/helios-miso-*.lock`.
 
 Before enabling these timers, apply the MISO LMP table and index DDL under
 `dbt/azure_postgres/reference_sql/ddl/power/miso/` and add

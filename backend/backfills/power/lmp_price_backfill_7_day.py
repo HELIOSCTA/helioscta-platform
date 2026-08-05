@@ -654,7 +654,7 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="miso_rt_lmps_final",
         runner=_run_miso_rt_lmps_final_backfill,
-        end_lag_days=5,
+        end_lag_days=7,
     ),
     PriceBackfillWorkflow(
         name="spp_da_lmps",

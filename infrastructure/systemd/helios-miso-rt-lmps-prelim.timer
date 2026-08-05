@@ -3,6 +3,8 @@ Description=Daily HeliosCTA MISO Preliminary Real-Time Hourly LMP orchestration 
 
 [Timer]
 OnCalendar=*-*-* 09:15:00 UTC
+OnCalendar=*-*-* 13:15:00 UTC
+OnCalendar=*-*-* 17:15:00 UTC
 Persistent=true
 RandomizedDelaySec=2min
 AccuracySec=1min

@@ -78,6 +78,7 @@ replays seven market dates per promoted LMP feed:
   market date.
 - CAISO DA hourly LMPs through the current OASIS trading date.
 - CAISO RT five-minute LMPs through the prior OASIS trading date.
+- MISO RT final hourly LMPs through seven calendar days back.
 
 This scheduled repair writes to the same canonical tables and uses
 `ops.api_fetch_log.metadata` backfill fields. It intentionally leaves

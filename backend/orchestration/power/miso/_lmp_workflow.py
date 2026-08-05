@@ -20,6 +20,7 @@ from backend.utils.ops_logging import log_api_fetch, redact_secrets
 
 
 logger = logging.getLogger(__name__)
+RETRYABLE_SOURCE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 class DataNotYetAvailable(Exception):
@@ -283,6 +284,10 @@ def fetch_complete_market_day(
         )
     except data_exchange_client.MISODataNotAvailable as exc:
         raise DataNotYetAvailable(str(exc)) from exc
+    except data_exchange_client.MISODataExchangeError as exc:
+        if is_retryable_source_error(exc):
+            raise DataNotYetAvailable(str(exc)) from exc
+        raise
 
     shape = market_day_shape(df, business_date, nodes, interval_minutes)
     if not shape["is_complete"]:
@@ -296,6 +301,16 @@ def fetch_complete_market_day(
             f"null_lmp_rows={shape['null_lmp_rows']})"
         )
     return df
+
+
+def is_retryable_source_error(
+    exc: data_exchange_client.MISODataExchangeError,
+) -> bool:
+    """Return whether a MISO source failure should keep the poller alive."""
+    return (
+        exc.status_code is None
+        or exc.status_code in RETRYABLE_SOURCE_STATUS_CODES
+    )
 
 
 def market_day_shape(

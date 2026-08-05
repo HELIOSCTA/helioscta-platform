@@ -267,6 +267,85 @@ def test_miso_lmp_pull_shapes_day_ahead_and_rt_requests(monkeypatch):
     assert calls[1]["target_table"] == "miso.rt_lmps_prelim"
 
 
+def test_miso_lmp_pull_retries_failed_nodes_without_refetching_successes(
+    monkeypatch,
+):
+    calls: list[dict[str, object]] = []
+
+    def fake_fetch(endpoint, **kwargs):
+        calls.append({"endpoint": endpoint, **kwargs})
+        node = kwargs["params"]["node"]
+        node_attempt = kwargs["metadata"]["node_fetch_attempt"]
+        if node == "ARKANSAS.HUB" and node_attempt == 1:
+            raise data_exchange_client.MISODataExchangeError(
+                "temporary upstream error",
+                status_code=500,
+            )
+        return [
+            {
+                "interval": "1",
+                "node": node,
+                "lmp": "27.50",
+                "mec": "26.25",
+                "mcc": "1.00",
+                "mlc": "0.25",
+                "timeInterval": {
+                    "resolution": "hourly",
+                    "start": "2026-08-04T00:00:00",
+                    "end": "2026-08-04T01:00:00",
+                    "value": "1",
+                },
+            }
+        ]
+
+    monkeypatch.setattr(
+        _lmp.data_exchange_client,
+        "fetch_pricing_data",
+        fake_fetch,
+    )
+    monkeypatch.setattr(_lmp.time, "sleep", lambda _seconds: None)
+
+    df = rt_lmps_prelim._pull(
+        operating_date=date(2026, 8, 4),
+        nodes=("INDIANA.HUB", "ARKANSAS.HUB"),
+        run_id="run-1",
+        database="stage_db",
+        metadata={"run_mode": "test"},
+        log_fetch=False,
+    )
+
+    assert sorted(df["node_id"].tolist()) == ["ARKANSAS.HUB", "INDIANA.HUB"]
+    assert [(call["params"]["node"], call["metadata"]["node_fetch_attempt"]) for call in calls] == [
+        ("INDIANA.HUB", 1),
+        ("ARKANSAS.HUB", 1),
+        ("ARKANSAS.HUB", 2),
+    ]
+
+
+def test_miso_lmp_aggregate_node_error_prefers_retryable_status():
+    try:
+        _lmp.raise_lmp_node_fetch_error(
+            failed_nodes={
+                "ARKANSAS.HUB": data_exchange_client.MISODataNotAvailable(
+                    "not published",
+                    status_code=404,
+                ),
+                "INDIANA.HUB": data_exchange_client.MISODataExchangeError(
+                    "temporary upstream error",
+                    status_code=500,
+                ),
+            },
+            endpoint="real-time/2026-08-04/lmp-expost",
+            attempts=2,
+        )
+    except data_exchange_client.MISODataExchangeError as exc:
+        assert exc.status_code == 500
+        assert "ARKANSAS.HUB" in str(exc)
+        assert "INDIANA.HUB" in str(exc)
+    else:
+        raise AssertionError("expected MISODataExchangeError")
+
+
 def test_miso_lmp_upsert_uses_contract_columns(monkeypatch):
     captured: dict[str, object] = {}
     df = da_lmps._format(

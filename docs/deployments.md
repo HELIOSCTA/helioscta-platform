@@ -54,9 +54,9 @@ boundary, or log path changes.
 - Schedule:
   - DA runs daily at `19:00 UTC`, targets the next operating date, and polls
     every 10 minutes for up to 2 hours.
-  - RT preliminary runs daily at `09:15 UTC`, targets the previous operating
-    date, and polls every 10 minutes for up to 3 hours.
-  - RT final runs daily at `13:00 UTC`, targets five calendar days back, and
+  - RT preliminary runs daily at `09:15`, `13:15`, and `17:15 UTC`, targets
+    the previous operating date, and polls every 10 minutes for up to 3 hours.
+  - RT final runs daily at `13:00 UTC`, targets seven calendar days back, and
     polls every 10 minutes for up to 3 hours.
 - Verification:
   - Local focused pytest passed: `23 passed`.
