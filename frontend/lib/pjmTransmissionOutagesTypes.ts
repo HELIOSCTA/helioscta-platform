@@ -1,3 +1,9 @@
+import type {
+  PjmConstraintBranchMatchStatus,
+  PjmConstraintShiftDirection,
+  PjmConstraintShiftFactorModelSummary,
+} from "@/lib/pjmConstraintShiftFactorsTypes";
+
 export type TransmissionOutageChangeType =
   | "new"
   | "status"
@@ -20,7 +26,11 @@ export interface TransmissionOutageSnapshotSummary {
 export interface TransmissionOutagePriorValues {
   facilityName: string;
   startAtText: string;
+  startDate: string | null;
+  startTime: string | null;
   endAtText: string;
+  endDate: string | null;
+  endTime: string | null;
   currentStatus: string;
   statusTimestampText: string;
   availability: string;
@@ -40,6 +50,8 @@ export interface TransmissionOutageRow extends TransmissionOutagePriorValues {
   sourceReportTimestamp: string;
   zoneCompany: string;
   openClosed: string;
+  relatedEquipmentText: string;
+  detailSearchText: string;
   changeTypes: TransmissionOutageChangeType[];
   changed: boolean;
   prior: TransmissionOutagePriorValues | null;
@@ -82,6 +94,78 @@ export interface TransmissionOutageTablePayload {
   summary: TransmissionOutageSummary;
   metadata: TransmissionOutageMetadata;
   rows: TransmissionOutageRow[];
+  limit: number;
+  truncated: boolean;
+}
+
+export type TransmissionOutageConstraintRelation =
+  | "Same branch"
+  | "Shared bus"
+  | "Nearby RAW"
+  | "Text evidence";
+
+export interface TransmissionOutageConstraintLink {
+  relation: TransmissionOutageConstraintRelation;
+  score: number;
+  hopDistance: number | null;
+  evidenceText: string;
+}
+
+export interface TransmissionOutageZoneImpactTicket {
+  ticketId: string;
+  facilityName: string;
+  shiftFactor: number;
+}
+
+export interface TransmissionOutageZoneImpact {
+  zoneCompany: string;
+  ticketCount: number;
+  matchedCount: number;
+  whubPositiveCount: number;
+  whubNegativeCount: number;
+  maxAbsShiftFactor: number;
+  topBullish: TransmissionOutageZoneImpactTicket | null;
+  topBearish: TransmissionOutageZoneImpactTicket | null;
+}
+
+export interface TransmissionOutageImpactRow extends TransmissionOutageRow {
+  modelFacilityText: string | null;
+  shiftFactor: number | null;
+  absoluteShiftFactor: number | null;
+  whubDirection: PjmConstraintShiftDirection;
+  matchStatus: PjmConstraintBranchMatchStatus;
+  matchConfidence: number;
+  matchedBranchKey: string | null;
+  matchedBranchName: string | null;
+  fromBusNumber: number | null;
+  fromBusName: string | null;
+  toBusNumber: number | null;
+  toBusName: string | null;
+  circuitId: string | null;
+  constraintLink?: TransmissionOutageConstraintLink | null;
+}
+
+export interface TransmissionOutageImpactSummary extends TransmissionOutageSummary {
+  latestTicketCount: number;
+  candidateTicketCount: number;
+  modeledTicketCount: number;
+  returnedTicketCount: number;
+  matchedTicketCount: number;
+  ambiguousTicketCount: number;
+  unmatchedTicketCount: number;
+  maxAbsShiftFactor: number;
+  zoneImpacts: TransmissionOutageZoneImpact[];
+  model: PjmConstraintShiftFactorModelSummary;
+}
+
+export interface TransmissionOutageImpactPayload {
+  mode: "impact";
+  snapshots: TransmissionOutageSnapshotSummary[];
+  selectedSnapshot: TransmissionOutageSnapshotSummary | null;
+  priorSnapshot: TransmissionOutageSnapshotSummary | null;
+  summary: TransmissionOutageImpactSummary;
+  metadata: TransmissionOutageMetadata;
+  rows: TransmissionOutageImpactRow[];
   limit: number;
   truncated: boolean;
 }

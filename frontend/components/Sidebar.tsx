@@ -35,6 +35,7 @@ export type ActiveSection =
   | "pjm-load-growth"
   | "pjm-forecasts"
   | "pjm-outages"
+  | "pjm-constraints"
   | "pjm-weather"
   | "pjm-da-model"
   | "weather-short-term";
@@ -91,6 +92,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
       { id: "pjm-ops-summary", label: "Ops Sum" },
       { id: "pjm-outages", label: "Outages" },
+      { id: "pjm-constraints", label: "Constraints", description: "Constraints + transmission outages" },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
       { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },

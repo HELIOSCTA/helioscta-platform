@@ -59,6 +59,9 @@ import PjmLoadGrowth, {
   type PjmLoadGrowthFreshnessSummary,
 } from "@/components/pjm/PjmLoadGrowth";
 import PjmOutages, { type PjmOutagesFreshnessSummary } from "@/components/pjm/PjmOutages";
+import PjmConstraints, {
+  type PjmConstraintsFreshnessSummary,
+} from "@/components/pjm/PjmConstraints";
 import PjmOpsSummary, {
   type PjmOpsSummaryFreshnessSummary,
 } from "@/components/pjm/PjmOpsSummary";
@@ -109,6 +112,15 @@ const DEFAULT_PJM_OUTAGES_FRESHNESS: PjmOutagesFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Outages --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_CONSTRAINTS_FRESHNESS: PjmConstraintsFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Constraints --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -391,6 +403,7 @@ function parseInitialSection(
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
+  if (value === "pjm-constraints") return "pjm-constraints";
   return "ice-settlements";
 }
 
@@ -491,6 +504,7 @@ export default function HomePageClient({
   const [pjmLoadGrowthRefreshToken, setPjmLoadGrowthRefreshToken] = useState(0);
   const [pjmForecastsRefreshToken, setPjmForecastsRefreshToken] = useState(0);
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
+  const [pjmConstraintsRefreshToken, setPjmConstraintsRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
   const [positionsHomeRefreshToken, setPositionsHomeRefreshToken] = useState(0);
   const [navPositionsRefreshToken, setNavPositionsRefreshToken] = useState(0);
@@ -513,6 +527,7 @@ export default function HomePageClient({
   const [pjmLoadGrowthFreshnessOpen, setPjmLoadGrowthFreshnessOpen] = useState(false);
   const [pjmForecastsFreshnessOpen, setPjmForecastsFreshnessOpen] = useState(false);
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
+  const [pjmConstraintsFreshnessOpen, setPjmConstraintsFreshnessOpen] = useState(false);
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
   const [positionsHomeFreshnessOpen, setPositionsHomeFreshnessOpen] = useState(false);
   const [navPositionsFreshnessOpen, setNavPositionsFreshnessOpen] = useState(false);
@@ -555,6 +570,8 @@ export default function HomePageClient({
     useState<PjmForecastsFreshnessSummary>(DEFAULT_PJM_FORECASTS_FRESHNESS);
   const [pjmOutagesFreshness, setPjmOutagesFreshness] =
     useState<PjmOutagesFreshnessSummary>(DEFAULT_PJM_OUTAGES_FRESHNESS);
+  const [pjmConstraintsFreshness, setPjmConstraintsFreshness] =
+    useState<PjmConstraintsFreshnessSummary>(DEFAULT_PJM_CONSTRAINTS_FRESHNESS);
   const [pjmWeatherFreshness, setPjmWeatherFreshness] =
     useState<WeatherDashboardFreshnessSummary>(DEFAULT_PJM_WEATHER_FRESHNESS);
   const [positionsHomeFreshness, setPositionsHomeFreshness] =
@@ -899,6 +916,14 @@ export default function HomePageClient({
         footer: "Outages | Source: PJM Data Miner / Azure PostgreSQL",
       };
     }
+    if (activeSection === "pjm-constraints") {
+      return {
+        title: "Constraints",
+        subtitle:
+          "PJM RT and DA constraints by daily HE profile, with transmission outage tickets and RAW-model WHUB shift factors.",
+        footer: "Constraints | Source: PJM Data Miner constraint feeds / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "pjm-load-growth") {
       return {
         title: "Load Growth",
@@ -956,7 +981,8 @@ export default function HomePageClient({
     isPjmDaModelSection ||
     isEiaGenerationSection ||
     isHistoricalSettlements ||
-    isIceSettlements;
+    isIceSettlements ||
+    activeSection === "pjm-constraints";
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
     activeSection === "gas-outright" ||
@@ -1102,6 +1128,28 @@ export default function HomePageClient({
                 onToggle={() => setPjmOutagesFreshnessOpen((open) => !open)}
                 actionLabel="Refresh"
                 onAction={() => setPjmOutagesRefreshToken((value) => value + 1)}
+              />
+            )}
+
+            {activeSection === "pjm-constraints" && (
+              <FreshnessCard
+                statusLabel={pjmConstraintsFreshness.status}
+                statusClass={pjmConstraintsFreshness.statusClass}
+                summary={pjmConstraintsFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmConstraintsFreshness.status,
+                    className: pjmConstraintsFreshness.statusClass,
+                  },
+                  { label: "Selection", value: pjmConstraintsFreshness.targetDateLabel },
+                  { label: "Latest Date", value: pjmConstraintsFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmConstraintsFreshness.latestUpdateLabel },
+                ]}
+                open={pjmConstraintsFreshnessOpen}
+                onToggle={() => setPjmConstraintsFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmConstraintsRefreshToken((value) => value + 1)}
               />
             )}
 
@@ -1663,6 +1711,12 @@ export default function HomePageClient({
             <PjmOutages
               refreshToken={pjmOutagesRefreshToken}
               onFreshnessChange={setPjmOutagesFreshness}
+            />
+          )}
+          {activeSection === "pjm-constraints" && (
+            <PjmConstraints
+              refreshToken={pjmConstraintsRefreshToken}
+              onFreshnessChange={setPjmConstraintsFreshness}
             />
           )}
           {activeSection === "pjm-weather" && (

@@ -44,6 +44,20 @@ const HEADER_PATTERN = /^\s*\d+\s+\d+\s+\S+/;
 const DATE_LOG_PATTERN = /^\(\d{2}-[A-Z]{3}-\d{4}/;
 const HISTORY_LOG_PATTERN = /^\([A-Za-z]+\s+\d{2}\/\d{2}\/\d{4}/;
 const DEFAULT_LIMIT = 10_000;
+const MONTH_INDEX_BY_LABEL: Record<string, number> = {
+  JAN: 1,
+  FEB: 2,
+  MAR: 3,
+  APR: 4,
+  MAY: 5,
+  JUN: 6,
+  JUL: 7,
+  AUG: 8,
+  SEP: 9,
+  OCT: 10,
+  NOV: 11,
+  DEC: 12,
+};
 const EMPTY_SUMMARY: TransmissionOutageSummary = {
   latestTicketCount: 0,
   priorTicketCount: 0,
@@ -75,6 +89,72 @@ function normalizeTimestamp(value: string | Date | null | undefined): string {
   if (!value) return "";
   if (value instanceof Date) return value.toISOString();
   return String(value);
+}
+
+function normalizedDateKey(year: number, month: number, day: number): string | null {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function fullYear(rawYear: string): number {
+  const yearNumber = Number(rawYear);
+  return rawYear.length === 2
+    ? yearNumber >= 70
+      ? 1900 + yearNumber
+      : 2000 + yearNumber
+    : yearNumber;
+}
+
+function normalizedTime(rawHour: string, rawMinute: string, meridiem?: string): string | null {
+  let hour = Number(rawHour);
+  const minute = Number(rawMinute);
+  const normalizedMeridiem = meridiem?.toUpperCase();
+  if (!Number.isFinite(hour) || !Number.isFinite(minute) || minute < 0 || minute > 59) {
+    return null;
+  }
+  if (normalizedMeridiem === "AM" && hour === 12) hour = 0;
+  if (normalizedMeridiem === "PM" && hour < 12) hour += 12;
+  if (hour < 0 || hour > 24) return null;
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+}
+
+function outageTimestampParts(value: string | null | undefined): {
+  date: string | null;
+  time: string | null;
+} {
+  const text = value?.trim() ?? "";
+  if (!text) return { date: null, time: null };
+
+  const pjmMatch = text.match(/^(\d{1,2})-([A-Z]{3})-(\d{2,4})\s+(\d{3,4})$/i);
+  if (pjmMatch) {
+    const [, rawDay, rawMonthLabel, rawYear, rawTime] = pjmMatch;
+    const month = MONTH_INDEX_BY_LABEL[rawMonthLabel.toUpperCase()];
+    const year = fullYear(rawYear);
+    const day = Number(rawDay);
+    const paddedTime = rawTime.padStart(4, "0");
+    return {
+      date: month ? normalizedDateKey(year, month, day) : null,
+      time: normalizedTime(paddedTime.slice(0, 2), paddedTime.slice(2, 4)),
+    };
+  }
+
+  const usMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):?(\d{2})(?:\s*([AP]M))?$/i);
+  if (usMatch) {
+    const [, rawMonth, rawDay, rawYear, rawHour, rawMinute, meridiem] = usMatch;
+    return {
+      date: normalizedDateKey(fullYear(rawYear), Number(rawMonth), Number(rawDay)),
+      time: normalizedTime(rawHour, rawMinute, meridiem),
+    };
+  }
+
+  return { date: null, time: null };
 }
 
 function snapshotSummary(
@@ -133,6 +213,11 @@ function parseRecord(
     detailLines.push(text);
   }
 
+  const startAtText = fixed(headerLine, 74, 90);
+  const endAtText = fixed(headerLine, 92, 108);
+  const startAt = outageTimestampParts(startAtText);
+  const endAt = outageTimestampParts(endAtText);
+
   return {
     ticketId,
     itemNumber: fixed(headerLine, 0, 6),
@@ -140,8 +225,12 @@ function parseRecord(
     sourceReportTimestamp,
     zoneCompany: fixed(headerLine, 16, 24),
     facilityName: fixed(headerLine, 25, 72),
-    startAtText: fixed(headerLine, 74, 90),
-    endAtText: fixed(headerLine, 92, 108),
+    startAtText,
+    startDate: startAt.date,
+    startTime: startAt.time,
+    endAtText,
+    endDate: endAt.date,
+    endTime: endAt.time,
     openClosed: fixed(headerLine, 110, 111),
     currentStatus: fixed(headerLine, 113, 122),
     statusTimestampText: fixed(headerLine, 122, 138),
@@ -199,7 +288,11 @@ function toPrior(record: ParsedOutageRecord): TransmissionOutagePriorValues {
   return {
     facilityName: record.facilityName,
     startAtText: record.startAtText,
+    startDate: record.startDate,
+    startTime: record.startTime,
     endAtText: record.endAtText,
+    endDate: record.endDate,
+    endTime: record.endTime,
     currentStatus: record.currentStatus,
     statusTimestampText: record.statusTimestampText,
     availability: record.availability,
@@ -211,6 +304,26 @@ function toPrior(record: ParsedOutageRecord): TransmissionOutagePriorValues {
     historyLogCount: record.historyLogCount,
     detailLineCount: record.detailLineCount,
   };
+}
+
+function normalizedLineText(lines: string[]): string {
+  return lines
+    .map((line) => line.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function relatedEquipmentLine(line: string): string {
+  const normalized = line.replace(/\s+/g, " ").trim();
+  const dateStart = normalized.search(/\b\d{2}-[A-Z]{3}-\d{4}\s+\d{4}\b/i);
+  return (dateStart >= 0 ? normalized.slice(0, dateStart) : normalized).trim();
+}
+
+function relatedEquipmentText(record: ParsedOutageRecord): string {
+  const values = record.detailLines
+    .map(relatedEquipmentLine)
+    .filter((line) => line && line !== record.facilityName);
+  return optionList(values).join(" | ");
 }
 
 function arraysEqual(left: string[], right: string[]): boolean {
@@ -255,6 +368,13 @@ function toRow(
     sourceReportTimestamp: current.sourceReportTimestamp,
     zoneCompany: current.zoneCompany,
     openClosed: current.openClosed,
+    relatedEquipmentText: relatedEquipmentText(current),
+    detailSearchText: normalizedLineText([
+      current.rawHeaderLine,
+      ...current.detailLines,
+      ...current.dateLogLines,
+      ...current.historyLogLines,
+    ]),
     changeTypes: changes,
     changed: changes.some((change) => change !== "unchanged"),
     prior: prior ? toPrior(prior) : null,
