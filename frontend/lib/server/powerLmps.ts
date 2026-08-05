@@ -2,7 +2,7 @@ import "server-only";
 
 import { query } from "@/lib/server/db";
 
-export type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
+export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "spp";
 export type PowerLmpProduct = "da" | "rt";
 export type RtLmpSource = "verified" | "unverified";
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
@@ -26,10 +26,12 @@ const PJM_HUBS = [
 const ERCOT_HUBS = ["HB_NORTH", "HB_SOUTH", "HB_WEST", "HB_HOUSTON"] as const;
 const ISONE_HUBS = [".H.INTERNAL_HUB"] as const;
 const CAISO_HUBS = ["TH_SP15_GEN-APND", "TH_NP15_GEN-APND"] as const;
+const SPP_HUBS = ["SPPNORTH_HUB", "SPPSOUTH_HUB"] as const;
 const PJM_DASHBOARD_HUBS = PJM_HUBS;
 const ERCOT_DASHBOARD_HUBS = ERCOT_HUBS;
 const ISONE_DASHBOARD_HUBS = ISONE_HUBS;
 const CAISO_DASHBOARD_HUBS = CAISO_HUBS;
+const SPP_DASHBOARD_HUBS = SPP_HUBS;
 export const POWER_SETTLES_DASHBOARD_DEFAULT_RT_SOURCE: RtLmpSource = "verified";
 
 interface IsoConfig {
@@ -74,6 +76,14 @@ const ISO_CONFIGS: Record<PowerIso, IsoConfig> = {
     dashboardHubs: CAISO_DASHBOARD_HUBS,
     supportsComponents: true,
   },
+  spp: {
+    iso: "spp",
+    label: "SPP",
+    defaultHub: "SPPNORTH_HUB",
+    hubs: SPP_HUBS,
+    dashboardHubs: SPP_DASHBOARD_HUBS,
+    supportsComponents: true,
+  },
 };
 
 const POWER_SETTLES_DASHBOARD_ISOS: PowerIso[] = ["pjm", "ercot", "isone", "caiso"];
@@ -83,6 +93,7 @@ const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   ercot: { start: 7, end: 22 },
   isone: { start: 8, end: 23 },
   caiso: { start: 7, end: 22 },
+  spp: { start: 7, end: 22 },
 };
 
 interface LmpRow {
@@ -170,7 +181,9 @@ export interface PowerSettlesDashboardPayload {
 }
 
 export function parsePowerIso(raw: string | null): PowerIso {
-  if (raw === "ercot" || raw === "isone" || raw === "caiso") return raw;
+  if (raw === "ercot" || raw === "isone" || raw === "caiso" || raw === "spp") {
+    return raw;
+  }
   return "pjm";
 }
 
@@ -318,6 +331,14 @@ function isoneRtTable(rtSource: RtLmpSource) {
       };
 }
 
+function sppRtTable(rtSource: RtLmpSource) {
+  void rtSource;
+  return {
+    sourceTable: "spp.rt_lmps_prelim",
+    marketRunId: "RTBM",
+  };
+}
+
 function sourceTableFor({
   iso,
   product,
@@ -331,12 +352,14 @@ function sourceTableFor({
     if (iso === "pjm") return "pjm.da_hrl_lmps";
     if (iso === "ercot") return "ercot.dam_stlmnt_pnt_prices";
     if (iso === "caiso") return "caiso.da_lmps";
+    if (iso === "spp") return "spp.da_lmps";
     return "isone.da_hrl_lmps";
   }
 
   if (iso === "pjm") return pjmRtTable(rtSource).sourceTable;
   if (iso === "ercot") return "ercot.settlement_point_prices";
   if (iso === "caiso") return "caiso.rt_lmps";
+  if (iso === "spp") return sppRtTable(rtSource).sourceTable;
   return isoneRtTable(rtSource).sourceTable;
 }
 
@@ -401,6 +424,21 @@ async function latestDate({
   if (iso === "caiso") {
     const sourceTable = product === "da" ? "caiso.da_lmps" : "caiso.rt_lmps";
     const marketRunId = product === "da" ? "DAM" : "RTM";
+    const rows = await query<{ target_date: string | null }>(
+      `
+        select max(operating_date)::text as target_date
+        from ${sourceTable}
+        where node_id = any($1::text[])
+          and market_run_id = $2
+      `,
+      [hubs, marketRunId],
+    );
+    return rows[0]?.target_date ?? null;
+  }
+  if (iso === "spp") {
+    const rt = sppRtTable(rtSource);
+    const sourceTable = product === "da" ? "spp.da_lmps" : rt.sourceTable;
+    const marketRunId = product === "da" ? "DAM" : rt.marketRunId;
     const rows = await query<{ target_date: string | null }>(
       `
         select max(operating_date)::text as target_date
@@ -590,6 +628,56 @@ async function lmpRows({
       [targetDate, hubs],
     );
   }
+  if (iso === "spp" && product === "da") {
+    return query<LmpRow>(
+      `
+        select
+          to_char(
+            operating_date::timestamp + ((operating_hour - 1) * interval '1 hour'),
+            'YYYY-MM-DD"T"HH24:MI:SS'
+          ) as datetime_beginning_ept,
+          node_id as hub,
+          operating_hour as hour_ending,
+          energy_component as system_energy,
+          locational_marginal_price as total,
+          congestion_component as congestion,
+          loss_component as marginal_loss,
+          to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from spp.da_lmps
+        where operating_date = $1::date
+          and node_id = any($2::text[])
+          and market_run_id = 'DAM'
+        order by array_position($2::text[], node_id), operating_hour
+      `,
+      [targetDate, hubs],
+    );
+  }
+  if (iso === "spp") {
+    const rt = sppRtTable(rtSource);
+    return query<LmpRow>(
+      `
+        select
+          to_char(
+            operating_date::timestamp + ((operating_hour - 1) * interval '1 hour'),
+            'YYYY-MM-DD"T"HH24:MI:SS'
+          ) as datetime_beginning_ept,
+          node_id as hub,
+          operating_hour as hour_ending,
+          avg(energy_component)::float8 as system_energy,
+          avg(locational_marginal_price)::float8 as total,
+          avg(congestion_component)::float8 as congestion,
+          avg(loss_component)::float8 as marginal_loss,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from ${rt.sourceTable}
+        where operating_date = $1::date
+          and node_id = any($2::text[])
+          and market_run_id = $3
+        group by operating_date, operating_hour, node_id
+        order by array_position($2::text[], node_id), operating_hour
+      `,
+      [targetDate, hubs, rt.marketRunId],
+    );
+  }
   if (product === "da") {
     return query<LmpRow>(
       `
@@ -706,7 +794,7 @@ function componentExpr({
   rtSource: RtLmpSource;
 }): string {
   if (iso === "ercot") return `${prefix}.price`;
-  if (iso === "caiso") {
+  if (iso === "caiso" || iso === "spp") {
     if (component === "energy") return `${prefix}.energy_component`;
     if (component === "congestion") return `${prefix}.congestion_component`;
     if (component === "loss") return `${prefix}.loss_component`;
@@ -858,6 +946,44 @@ async function settleRows({
         order by operating_date, operating_hour
       `,
       [hub, startDate, endDate],
+    );
+  }
+  if (iso === "spp" && market === "da") {
+    const value = componentExpr({ iso, market, component, prefix: "lmps", rtSource });
+    return query<HourRow>(
+      `
+        select
+          operating_date::text as market_date,
+          operating_hour as hour_ending,
+          ${value}::float8 as value,
+          to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from spp.da_lmps as lmps
+        where node_id = $1
+          and operating_date between $2::date and $3::date
+          and market_run_id = 'DAM'
+        order by operating_date, operating_hour
+      `,
+      [hub, startDate, endDate],
+    );
+  }
+  if (iso === "spp") {
+    const rt = sppRtTable(rtSource);
+    const value = componentExpr({ iso, market, component, prefix: "lmps", rtSource });
+    return query<HourRow>(
+      `
+        select
+          operating_date::text as market_date,
+          operating_hour as hour_ending,
+          avg(${value})::float8 as value,
+          to_char(max(updated_at), 'YYYY-MM-DD"T"HH24:MI:SS') as as_of
+        from ${rt.sourceTable} as lmps
+        where node_id = $1
+          and operating_date between $2::date and $3::date
+          and market_run_id = $4
+        group by operating_date, operating_hour
+        order by operating_date, operating_hour
+      `,
+      [hub, startDate, endDate, rt.marketRunId],
     );
   }
   if (market === "da") {
@@ -1052,7 +1178,7 @@ function dashboardRtSourceStatus({
   requestedRtSource: RtLmpSource;
   effectiveRtSource: RtLmpSource;
 }): PowerSettlesDashboardRtSourceStatus {
-  if (iso === "ercot" || iso === "caiso") return "single-source";
+  if (iso === "ercot" || iso === "caiso" || iso === "spp") return "single-source";
   if (requestedRtSource === "verified" && effectiveRtSource === "unverified") return "fallback";
   return "requested";
 }
@@ -1085,11 +1211,11 @@ async function buildPowerSettlesDashboardIsoRows({
       isoLabel: config.label,
       hub,
       effectiveComponent,
-      effectiveRtSource: iso === "ercot" || iso === "caiso" ? "unverified" : rtSource,
+      effectiveRtSource: iso === "ercot" || iso === "caiso" || iso === "spp" ? "unverified" : rtSource,
       rtSourceStatus: dashboardRtSourceStatus({
         iso,
         requestedRtSource: rtSource,
-        effectiveRtSource: iso === "ercot" || iso === "caiso" ? "unverified" : rtSource,
+        effectiveRtSource: iso === "ercot" || iso === "caiso" || iso === "spp" ? "unverified" : rtSource,
       }),
       targetDate: null,
       latestDaDate,
@@ -1181,7 +1307,9 @@ async function buildPowerSettlesDashboardIsoRows({
       fallbackRtSummary.observationCount > requestedRtSummary.observationCount;
     const targetRt: HourlyValueSet = useFallback && fallbackRt ? fallbackRt : requestedRt;
     const effectiveRtSource: RtLmpSource =
-      iso === "ercot" || iso === "caiso" || useFallback ? "unverified" : rtSource;
+      iso === "ercot" || iso === "caiso" || iso === "spp" || useFallback
+        ? "unverified"
+        : rtSource;
     const rt = useFallback && fallbackRtSummary ? fallbackRtSummary : requestedRtSummary;
     const da = productSummary(iso, targetDa.values);
     const dart = productSummary(iso, subtractHourlyValues(targetDa.values, targetRt.values));

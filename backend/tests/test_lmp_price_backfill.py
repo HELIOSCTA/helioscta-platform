@@ -25,6 +25,8 @@ def test_default_workflows_cover_promoted_lmp_sources():
         "miso_da_lmps",
         "miso_rt_lmps_prelim",
         "miso_rt_lmps_final",
+        "spp_da_lmps",
+        "spp_rt_lmps_prelim",
     ]
 
 
@@ -353,6 +355,53 @@ def test_miso_scrape_backfill_calls_pull_and_upsert_with_metadata():
     assert calls[1]["database"] == "stage_db"
     assert calls[2]["operating_date"] == date(2026, 8, 4)
     assert calls[2]["metadata"]["backfill_business_date"] == "2026-08-04"
+    assert calls[3]["method"] == "upsert"
+
+
+def test_spp_scrape_backfill_calls_pull_and_upsert_with_metadata(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_pull(**kwargs):
+        calls.append({"method": "pull", **kwargs})
+        return pd.DataFrame({"row_id": [1, 2]})
+
+    def fake_upsert(df, database=None):
+        calls.append({"method": "upsert", "df": df, "database": database})
+
+    monkeypatch.setattr(lmp_price_backfill_7_day.spp_da_lmps, "_pull", fake_pull)
+    monkeypatch.setattr(lmp_price_backfill_7_day.spp_da_lmps, "_upsert", fake_upsert)
+
+    result = lmp_price_backfill_7_day._run_spp_da_lmps_backfill(
+        start_date=date(2026, 8, 4),
+        end_date=date(2026, 8, 5),
+        database="stage_db",
+        request_delay_seconds=0,
+    )
+
+    assert result == lmp_price_backfill_7_day.BackfillResult(
+        pipeline_name="spp_da_lmps",
+        start_date=date(2026, 8, 4),
+        end_date=date(2026, 8, 5),
+        days_requested=2,
+        rows_processed=4,
+        status="success",
+    )
+    assert calls[0]["method"] == "pull"
+    assert calls[0]["operating_date"] == date(2026, 8, 4)
+    assert calls[0]["nodes"] == ("SPPNORTH_HUB", "SPPSOUTH_HUB")
+    assert calls[0]["database"] == "stage_db"
+    assert calls[0]["metadata"] == {
+        "run_mode": "backfill",
+        "backfill_workflow": "spp_da_lmps",
+        "backfill_start_date": "2026-08-04",
+        "backfill_end_date": "2026-08-05",
+        "repair_family": "lmp_price_backfill_7_day",
+        "backfill_business_date": "2026-08-04",
+    }
+    assert calls[1]["method"] == "upsert"
+    assert calls[1]["database"] == "stage_db"
+    assert calls[2]["operating_date"] == date(2026, 8, 5)
+    assert calls[2]["metadata"]["backfill_business_date"] == "2026-08-05"
     assert calls[3]["method"] == "upsert"
 
 

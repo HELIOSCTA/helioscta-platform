@@ -38,6 +38,8 @@ SUPPORT_SERVICES: tuple[str, ...] = (
     "helios-pjm-gen-outages-by-type.service",
     "helios-pjm-ops-sum.service",
     "helios-email-notification-outbox.service",
+    "helios-spp-da-lmps.service",
+    "helios-spp-rt-lmps-prelim.service",
     "helios-ercot-load-batch.service",
     "helios-ercot-congestion-batch.service",
     "helios-ercot-renewables-batch.service",
@@ -75,6 +77,8 @@ KNOWN_TIMERS: tuple[str, ...] = (
     "helios-isone-forecast-batch.timer",
     "helios-isone-rt-hrl-scheduled-interchange.timer",
     "helios-isone-external-interface-metered-data.timer",
+    "helios-spp-da-lmps.timer",
+    "helios-spp-rt-lmps-prelim.timer",
 )
 
 
@@ -209,6 +213,11 @@ LMP_REPAIR_TARGET_TABLES: tuple[str, ...] = (
     "ercot.rt_price_adders_15min",
     "caiso.da_lmps",
     "caiso.rt_lmps",
+    "miso.da_lmps",
+    "miso.rt_lmps_prelim",
+    "miso.rt_lmps_final",
+    "spp.da_lmps",
+    "spp.rt_lmps_prelim",
 )
 
 

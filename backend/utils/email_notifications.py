@@ -25,6 +25,7 @@ GRAPH_SCOPE = "https://graph.microsoft.com/.default"
 DEFAULT_PJM_DA_HRL_LMP_HUB = "WESTERN HUB"
 DEFAULT_CAISO_DA_LMP_HUB = "TH_SP15_GEN-APND"
 DEFAULT_MISO_DA_LMP_HUB = "INDIANA.HUB"
+DEFAULT_SPP_DA_LMP_HUB = "SPPNORTH_HUB"
 DEFAULT_PJM_DA_HRL_LMP_COMPONENT = "all"
 DA_LMP_COMPONENTS = [
     ("energy", "Energy", "system_energy"),
@@ -117,6 +118,15 @@ DA_LMP_EMAIL_CONFIGS: dict[str, dict[str, Any]] = {
             "MINN.HUB",
             "TEXAS.HUB",
         ],
+        "components": DA_LMP_COMPONENTS,
+        **DA_LMP_PEAK_HE_7_22,
+    },
+    "spp": {
+        "label": "SPP",
+        "dataset": "spp_da_lmps",
+        "source": "spp.da_lmps",
+        "default_hub": DEFAULT_SPP_DA_LMP_HUB,
+        "hubs": ["SPPNORTH_HUB", "SPPSOUTH_HUB"],
         "components": DA_LMP_COMPONENTS,
         **DA_LMP_PEAK_HE_7_22,
     },
@@ -860,6 +870,18 @@ def enqueue_miso_da_lmp_release_notifications(
     )
 
 
+def enqueue_spp_da_lmp_release_notifications(
+    *,
+    event: dict[str, Any],
+    database: str | None = None,
+) -> list[dict[str, Any]]:
+    return enqueue_da_lmp_release_notifications(
+        iso="spp",
+        event=event,
+        database=database,
+    )
+
+
 def enqueue_da_lmp_release_notifications(
     *,
     iso: str,
@@ -1237,6 +1259,16 @@ def _da_lmp_latest_query(
             """,
             (hubs,),
         )
+    if iso == "spp":
+        return (
+            """
+            SELECT MAX(operating_date)::text AS latest_date
+            FROM spp.da_lmps
+            WHERE node_id = ANY(%s::text[])
+              AND market_run_id = 'DAM';
+            """,
+            (hubs,),
+        )
     raise ValueError(f"Unsupported DA LMP email ISO: {iso}")
 
 
@@ -1365,6 +1397,31 @@ def _da_lmp_rows_query(
                 lmps.loss_component AS marginal_loss,
                 to_char(lmps.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
             FROM miso.da_lmps AS lmps
+            WHERE lmps.node_id = ANY(%s::text[])
+              AND lmps.operating_date = %s::date
+              AND lmps.market_run_id = 'DAM'
+            ORDER BY array_position(%s::text[], lmps.node_id),
+                lmps.operating_hour,
+                lmps.interval_start_time_utc;
+            """,
+            (hubs, business_date, hubs),
+        )
+    if iso == "spp":
+        return (
+            """
+            SELECT
+                to_char(
+                    lmps.interval_start_time_utc AT TIME ZONE 'America/Chicago',
+                    'YYYY-MM-DD"T"HH24:MI:SS'
+                ) AS datetime_beginning,
+                lmps.node_id AS hub,
+                lmps.operating_hour AS hour_ending,
+                lmps.energy_component AS system_energy,
+                lmps.locational_marginal_price AS total,
+                lmps.congestion_component AS congestion,
+                lmps.loss_component AS marginal_loss,
+                to_char(lmps.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') AS updated_at
+            FROM spp.da_lmps AS lmps
             WHERE lmps.node_id = ANY(%s::text[])
               AND lmps.operating_date = %s::date
               AND lmps.market_run_id = 'DAM'

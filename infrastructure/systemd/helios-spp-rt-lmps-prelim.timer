@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA SPP Preliminary Real-Time Five-Minute LMP orchestration timer
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 America/Chicago
+Persistent=true
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-spp-rt-lmps-prelim.service
+
+[Install]
+WantedBy=timers.target

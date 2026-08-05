@@ -68,7 +68,7 @@ const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type ComponentSelection = ComponentKey | "all";
-export type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
+export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "spp";
 export type LmpProduct = "da" | "rt" | "dart";
 export type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
 export type RtLmpSource = "verified" | "unverified";
@@ -78,6 +78,7 @@ const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   ercot: { start: 7, end: 22 },
   isone: { start: 8, end: 23 },
   caiso: { start: 7, end: 22 },
+  spp: { start: 7, end: 22 },
 };
 
 function onPeakHoursForIso(iso: PowerIso): number[] {
@@ -229,6 +230,7 @@ const ISO_LABELS: Record<PowerIso, string> = {
   ercot: "ERCOT",
   isone: "ISO-NE",
   caiso: "CAISO",
+  spp: "SPP",
 };
 
 const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
@@ -236,6 +238,7 @@ const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
   ercot: "HB_NORTH",
   isone: ".H.INTERNAL_HUB",
   caiso: "TH_SP15_GEN-APND",
+  spp: "SPPNORTH_HUB",
 };
 
 const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
@@ -243,6 +246,7 @@ const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
   { value: "ercot", label: "ERCOT" },
   { value: "isone", label: "ISO-NE" },
   { value: "caiso", label: "CAISO" },
+  { value: "spp", label: "SPP" },
 ];
 
 const TOTAL_COMPONENT = COMPONENTS.find((component) => component.key === "total") ?? COMPONENTS[3];
@@ -263,6 +267,10 @@ const RT_SOURCE_LABELS_BY_ISO: Record<PowerIso, Record<RtLmpSource, string>> = {
   caiso: {
     verified: "Five-Min Avg",
     unverified: "Five-Min Avg",
+  },
+  spp: {
+    verified: "Prelim Five-Min Avg",
+    unverified: "Prelim Five-Min Avg",
   },
 };
 
@@ -330,6 +338,18 @@ const LMP_SOURCE_FEEDS: LmpSourceFeed[] = [
     sourceLabel: "CAISO OASIS PRC_INTVL_LMP",
     sourceUrl:
       "https://www.caiso.com/systems-applications/portals-applications/open-access-same-time-information-system-oasis",
+  },
+  {
+    iso: "spp",
+    market: "DA hourly",
+    sourceLabel: "SPP Portal DA LMP by Settlement Location",
+    sourceUrl: "https://portal.spp.org/pages/lmp-by-location",
+  },
+  {
+    iso: "spp",
+    market: "RT preliminary five-minute",
+    sourceLabel: "SPP Portal RTBM LMP by Location",
+    sourceUrl: "https://portal.spp.org/pages/lmp-by-location",
   },
 ];
 
@@ -470,6 +490,7 @@ function selectedLmpSourceFeeds({
     ercot: "DAM settlement point",
     isone: "DA hourly",
     caiso: "DA hourly",
+    spp: "DA hourly",
   };
   const rtMarketByIso: Record<PowerIso, Record<RtLmpSource, string>> = {
     pjm: {
@@ -487,6 +508,10 @@ function selectedLmpSourceFeeds({
     caiso: {
       verified: "RT five-minute",
       unverified: "RT five-minute",
+    },
+    spp: {
+      verified: "RT preliminary five-minute",
+      unverified: "RT preliminary five-minute",
     },
   };
   const findFeed = (market: string) =>
@@ -1487,7 +1512,7 @@ export default function PjmDaLmps({
     setSelectedHub(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubA(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubB(ISO_DEFAULT_HUBS[activeIso]);
-    if (activeIso === "ercot" || activeIso === "caiso") {
+    if (activeIso === "ercot" || activeIso === "caiso" || activeIso === "spp") {
       setRtSource("unverified");
     }
   }, [activeIso]);

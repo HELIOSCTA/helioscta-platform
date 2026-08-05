@@ -52,6 +52,10 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=2min`.
   - `helios-miso-rt-lmps-final.timer`, daily at `13:00 UTC`,
     `Persistent=true`, `RandomizedDelaySec=2min`.
+  - `helios-spp-da-lmps.timer`, daily at `16:00 America/Chicago`,
+    `Persistent=true`, `RandomizedDelaySec=2min`.
+  - `helios-spp-rt-lmps-prelim.timer`, daily at `00:15 America/Chicago`,
+    `Persistent=true`, `RandomizedDelaySec=2min`.
   - `helios-pjm-da-transconstraints.timer`, daily at `17:00 UTC`
     (`13:00 America/New_York` during daylight saving time), `Persistent=true`,
     `AccuracySec=1min`.
@@ -109,7 +113,7 @@ scrapes that need the same simple hourly cadence.
 transmission outage text feed every 15 minutes while respecting the source's
 unchanged-file throttle.
 `helios-lmp-price-backfill-7-day.timer` repairs recent PJM, ISO-NE, ERCOT,
-CAISO, and MISO LMP gaps every night at `22:15 UTC`.
+CAISO, MISO, and SPP LMP gaps every night at `22:15 UTC`.
 `helios-prod-health-check.timer` keeps a post-RT and post-DA read-only health
 digest in journald, including support-batch API and table freshness.
 

@@ -421,7 +421,11 @@ function parsePjmLmpProductParam(value: string | null): PjmLmpProduct | undefine
 }
 
 function parsePjmLmpIsoParam(value: string | null): PjmLmpIso | undefined {
-  return value === "pjm" || value === "ercot" || value === "isone" || value === "caiso"
+  return value === "pjm" ||
+    value === "ercot" ||
+    value === "isone" ||
+    value === "caiso" ||
+    value === "spp"
     ? value
     : undefined;
 }

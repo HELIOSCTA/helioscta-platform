@@ -178,6 +178,17 @@ complete-day readiness events for scheduled runs. The scheduled MISO DA LMP
 workflow queues the shared inline DA release email after complete-day
 readiness.
 
+SPP Portal LMP helpers use public file-browser CSV downloads and do not require
+SPP-specific credentials. Promoted SPP LMP paths are
+`backend.orchestration.power.spp.da_lmps` and
+`backend.orchestration.power.spp.rt_lmps_prelim`. They write `spp.da_lmps`
+and `spp.rt_lmps_prelim` at
+`interval_start_time_utc x node_id x market_run_id` grain for `SPPNORTH_HUB`
+and `SPPSOUTH_HUB`. Rows store total LMP, energy, congestion, and loss
+components and use `ops.api_fetch_log` plus complete-day readiness events for
+scheduled runs. The scheduled SPP DA LMP workflow queues the shared inline DA
+release email after complete-day readiness.
+
 EIA Open Data API helpers use `EIA_API_KEY`. Promoted EIA runtime modules live
 under `backend.scrapes.eia`, with orchestration at `backend.orchestration.eia`
 and manual backfills at `backend.backfills.eia`.
@@ -561,12 +572,12 @@ human-readable message first, format visible subject dates as `DDD MMM-DD`, and
 append Outlook organization tags with pipe separators, for example
 `Clear Street MUFG upload complete for Wed Jul-08 | HeliosCTA | Clear Street |
 MUFG Upload | Warning`. DA LMP release emails use one inline snapshot template
-for PJM, NEPOOL, ERCOT, and CAISO hub reports: hub summary rows plus hourly
-component tables in the email body, with a Vercel single-day report link as
-the live fallback. `Kapil.Saxena@HeliosCTA.com` is always included in backend
+for PJM, NEPOOL, ERCOT, CAISO, MISO, and SPP hub reports: hub summary rows plus
+hourly component tables in the email body, with a Vercel single-day report link
+as the live fallback. `Kapil.Saxena@HeliosCTA.com` is always included in backend
 email recipient lists, even when the production environment file narrows
 `HELIOS_EMAIL_RECIPIENTS` or `CLEAR_STREET_NAV_EMAIL_RECIPIENTS`. The PJM DA
-HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, CAISO DA LMP, and MISO DA LMP
+HRL LMP, ISO-NE DA HRL LMP, ERCOT DAM SPP, CAISO DA LMP, MISO DA LMP, and SPP DA LMP
 scheduled workflows enqueue one release email per configured
 `HELIOS_EMAIL_RECIPIENTS` recipient after complete-day readiness. The Clear
 Street source and MUFG
@@ -738,7 +749,7 @@ overwrite the same `security x date x data_type` rows.
 ## Scheduled LMP Price Repair
 
 `backend.backfills.power.lmp_price_backfill_7_day` runs a nightly seven-day
-repair over the promoted PJM, ISO-NE, ERCOT, CAISO, and MISO LMP price tables:
+repair over the promoted PJM, ISO-NE, ERCOT, CAISO, MISO, and SPP LMP price tables:
 
 - `pjm.da_hrl_lmps`
 - `pjm.rt_hrl_lmps`
@@ -754,15 +765,18 @@ repair over the promoted PJM, ISO-NE, ERCOT, CAISO, and MISO LMP price tables:
 - `miso.da_lmps`
 - `miso.rt_lmps_prelim`
 - `miso.rt_lmps_final`
+- `spp.da_lmps`
+- `spp.rt_lmps_prelim`
 
 The VM timer is `helios-lmp-price-backfill-7-day.timer`, scheduled at
-`22:15 UTC` after the current daily ISO-NE, ERCOT, CAISO, MISO, and PJM price
+`22:15 UTC` after the current daily ISO-NE, ERCOT, CAISO, MISO, SPP, and PJM price
 timers. It uses feed-specific publication lags: DA feeds through the current
 Eastern market date, unverified/preliminary RT and ERCOT price-adder feeds
 through the prior market date, most verified/final RT feeds through two market
 dates back, and MISO final RT through five calendar days back. CAISO repairs
-use OASIS trading dates; DA repair runs through the current date, while the
-scheduled CAISO DA and MISO DA pollers own next-day publication.
+use OASIS trading dates; SPP repairs use Central operating dates; DA repair
+runs through the current date, while the scheduled CAISO DA, MISO DA, and SPP
+DA pollers own next-day publication.
 It stamps API fetch
 telemetry with `run_mode=backfill`, `backfill_workflow`, backfill window
 fields, and `repair_family=lmp_price_backfill_7_day`, then relies on existing

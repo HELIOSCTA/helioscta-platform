@@ -1,0 +1,20 @@
+[Unit]
+Description=HeliosCTA SPP Preliminary Real-Time Five-Minute LMP orchestration
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-spp-rt-lmps-prelim.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.power.spp.rt_lmps_prelim
+TimeoutStartSec=5h
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-spp-rt-lmps-prelim
+
+[Install]
+WantedBy=multi-user.target
+

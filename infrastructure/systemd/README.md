@@ -200,7 +200,7 @@ helios-lmp-price-backfill-7-day.timer
 ```
 
 It runs `backend.backfills.power.lmp_price_backfill_7_day`, which executes
-seven-day repairs for promoted PJM, ISO-NE, ERCOT, CAISO, and MISO LMP price
+seven-day repairs for promoted PJM, ISO-NE, ERCOT, CAISO, MISO, and SPP LMP price
 sources plus the ERCOT real-time price-adder companion feeds. The job writes to
 canonical price tables through existing idempotent upsert keys and stamps API
 telemetry with `run_mode=backfill` metadata in `ops.api_fetch_log`.
@@ -208,11 +208,11 @@ telemetry with `run_mode=backfill` metadata in `ops.api_fetch_log`.
 The timer runs daily at `22:15 UTC` with `Persistent=true` and
 `RandomizedDelaySec=10min`. The workflow uses feed-specific publication lags:
 DA feeds through the current Eastern market date, unverified/preliminary RT,
-CAISO RT, and ERCOT price-adder feeds through the prior market date, and
+CAISO RT, SPP RT preliminary, and ERCOT price-adder feeds through the prior market date, and
 verified/final RT feeds through two market dates back, and MISO final RT
 through five calendar days back. CAISO DA repair runs through the current
-OASIS trading date while the scheduled CAISO DA and MISO DA pollers own
-next-day publication. The service uses `flock` with
+OASIS trading date while the scheduled CAISO DA, MISO DA, and SPP DA pollers
+own next-day publication. The service uses `flock` with
 `/tmp/helios-lmp-price-backfill-7-day.lock`.
 
 ## PJM Hourly Bucket
@@ -468,6 +468,35 @@ window. Services use `flock` locks under `/tmp/helios-miso-*.lock`.
 Before enabling these timers, apply the MISO LMP table and index DDL under
 `dbt/azure_postgres/reference_sql/ddl/power/miso/` and add
 `MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY` to `/etc/helioscta/backend.env`.
+
+## SPP LMPs
+
+The SPP LMP workflows have dedicated daily timers:
+
+```text
+helios-spp-da-lmps.service
+helios-spp-da-lmps.timer
+helios-spp-rt-lmps-prelim.service
+helios-spp-rt-lmps-prelim.timer
+```
+
+The services run `backend.orchestration.power.spp.da_lmps` and
+`backend.orchestration.power.spp.rt_lmps_prelim`. They use public SPP Portal
+file-browser CSV downloads, upsert `SPPNORTH_HUB` and `SPPSOUTH_HUB` prices
+into `spp.da_lmps` and `spp.rt_lmps_prelim`, write one resolved polling
+telemetry row to `ops.api_fetch_log`, and emit complete-day readiness events
+to `ops.data_availability_events`.
+
+The DA timer runs daily at `16:00 America/Chicago`, targets the next operating
+date, and polls every 10 minutes for up to two hours. The RT preliminary timer
+runs daily at `00:15 America/Chicago`, targets the previous operating date,
+checks the final expected interval before downloading all five-minute files,
+and polls every 15 minutes for up to 4.5 hours. Services use `flock` locks
+under `/tmp/helios-spp-*.lock`.
+
+Before enabling these timers, apply the SPP schema, table, and index DDL under
+`dbt/azure_postgres/reference_sql/ddl/setup/` and
+`dbt/azure_postgres/reference_sql/ddl/power/spp/`.
 
 ## ISO-NE ISO Express Feeds
 
@@ -1303,6 +1332,17 @@ journalctl -u helios-miso-rt-lmps-prelim.service -n 200 --no-pager
 systemctl status helios-miso-rt-lmps-final.service
 systemctl status helios-miso-rt-lmps-final.timer
 journalctl -u helios-miso-rt-lmps-final.service -n 200 --no-pager
+```
+
+For SPP LMPs:
+
+```bash
+systemctl status helios-spp-da-lmps.service
+systemctl status helios-spp-da-lmps.timer
+journalctl -u helios-spp-da-lmps.service -n 200 --no-pager
+systemctl status helios-spp-rt-lmps-prelim.service
+systemctl status helios-spp-rt-lmps-prelim.timer
+journalctl -u helios-spp-rt-lmps-prelim.service -n 200 --no-pager
 ```
 
 For EIA Open Data:

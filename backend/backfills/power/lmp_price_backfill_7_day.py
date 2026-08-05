@@ -41,6 +41,8 @@ from backend.scrapes.power.pjm import rt_hrl_lmps as pjm_rt_hrl_lmps
 from backend.scrapes.power.pjm import (
     rt_unverified_hrl_lmps as pjm_rt_unverified_hrl_lmps,
 )
+from backend.scrapes.power.spp import da_lmps as spp_da_lmps
+from backend.scrapes.power.spp import rt_lmps_prelim as spp_rt_lmps_prelim
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 DEFAULT_LOOKBACK_DAYS = 7
@@ -537,6 +539,23 @@ def _run_miso_rt_lmps_final_backfill(**kwargs: Any) -> BackfillResult:
     )
 
 
+def _run_spp_da_lmps_backfill(**kwargs: Any) -> BackfillResult:
+    return _run_miso_scrape_backfill(
+        module=spp_da_lmps,
+        workflow_name="spp_da_lmps",
+        **kwargs,
+    )
+
+
+def _run_spp_rt_lmps_prelim_backfill(**kwargs: Any) -> BackfillResult:
+    kwargs.setdefault("request_delay_seconds", 5.0)
+    return _run_miso_scrape_backfill(
+        module=spp_rt_lmps_prelim,
+        workflow_name="spp_rt_lmps_prelim",
+        **kwargs,
+    )
+
+
 DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
     PriceBackfillWorkflow(
         name="pjm_da_hrl_lmps",
@@ -617,6 +636,16 @@ DEFAULT_WORKFLOWS: tuple[PriceBackfillWorkflow, ...] = (
         name="miso_rt_lmps_final",
         runner=_run_miso_rt_lmps_final_backfill,
         end_lag_days=5,
+    ),
+    PriceBackfillWorkflow(
+        name="spp_da_lmps",
+        runner=_run_spp_da_lmps_backfill,
+        end_lag_days=0,
+    ),
+    PriceBackfillWorkflow(
+        name="spp_rt_lmps_prelim",
+        runner=_run_spp_rt_lmps_prelim_backfill,
+        end_lag_days=1,
     ),
 )
 
