@@ -38,6 +38,8 @@ boundary, or log path changes.
 - Credential boundary: `/etc/helioscta/backend.env` includes
   `MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY`; the file remains `0640 root:helios`.
 - Source system: MISO Data Exchange Pricing API.
+- DA node coverage: ICE/MISO hub family plus the `PJMC` PJM interface node.
+- RT node coverage: ICE/MISO hub family.
 - Tables:
   - `miso.da_lmps`
   - `miso.rt_lmps_prelim`
@@ -77,6 +79,8 @@ boundary, or log path changes.
 - Credential boundary: public NYISO MIS CSV, no new backend environment
   variable or secret.
 - Source system: NYISO public MIS zonal LBMP CSV files.
+- DA node coverage: all 11 public load zones plus the `PJM` interface node.
+- RT preliminary node coverage: all 11 public load zones.
 - Tables:
   - `nyiso.da_lmps`
   - `nyiso.rt_lmps_prelim`
@@ -86,7 +90,7 @@ boundary, or log path changes.
   - `infrastructure/systemd/helios-nyiso-rt-lmps-prelim.service`
   - `infrastructure/systemd/helios-nyiso-rt-lmps-prelim.timer`
 - Schedule:
-  - DA runs daily at `09:00 America/New_York`, targets the next operating
+  - DA runs daily at `08:30 America/New_York`, targets the next operating
     date, and polls every 5 minutes for up to 2 hours.
   - RT preliminary runs daily at `00:15 America/New_York`, targets the
     previous operating date, and polls every 5 minutes for up to 2 hours.
