@@ -343,7 +343,7 @@ function SeasonalTooltip({ active, payload, series, hiddenSeries }: SeasonalTool
       {
         key: item.key,
         color: item.color,
-        label: typeof date === "string" ? `${fmtSeasonalHoverDate(date)} |` : item.label,
+        label: typeof date === "string" ? fmtSeasonalHoverDate(date) : item.label,
         value: fmtOutageValue(value),
       },
     ];
