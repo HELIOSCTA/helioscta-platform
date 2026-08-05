@@ -46,7 +46,7 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `RandomizedDelaySec=1min`.
   - `helios-lmp-price-backfill-7-day.timer`, daily at `22:15 UTC`,
     `Persistent=true`, `RandomizedDelaySec=10min`.
-  - `helios-miso-da-lmps.timer`, daily at `19:00 UTC`, `Persistent=true`,
+  - `helios-miso-da-lmps.timer`, daily at `18:00 UTC`, `Persistent=true`,
     `RandomizedDelaySec=2min`.
   - `helios-miso-rt-lmps-prelim.timer`, daily at `09:15`, `13:15`, and
     `17:15 UTC`,

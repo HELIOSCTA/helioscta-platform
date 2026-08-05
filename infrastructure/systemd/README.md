@@ -457,7 +457,7 @@ into `miso.rt_lmps_prelim` and `miso.rt_lmps_final`, write one resolved
 polling telemetry row to `ops.api_fetch_log`, and emit complete-day readiness
 events to `ops.data_availability_events`.
 
-The DA timer runs daily at `19:00 UTC`, targets the next operating date, and
+The DA timer runs daily at `18:00 UTC`, targets the next operating date, and
 polls every 10 minutes for up to two hours. The RT preliminary timer runs daily
 at `09:15 UTC`, `13:15 UTC`, and `17:15 UTC`, targets the previous operating
 date, and polls every 10 minutes for up to three hours. The RT final timer runs

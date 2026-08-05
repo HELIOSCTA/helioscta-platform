@@ -25,7 +25,7 @@ components as `locational_marginal_price`, `energy_component`,
 
 ## Runtime
 
-- DA: `helios-miso-da-lmps.timer`, daily `19:00 UTC`, next operating date.
+- DA: `helios-miso-da-lmps.timer`, daily `18:00 UTC`, next operating date.
 - RT preliminary: `helios-miso-rt-lmps-prelim.timer`, daily `09:15 UTC`,
   `13:15 UTC`, and `17:15 UTC`, previous operating date.
 - RT final: `helios-miso-rt-lmps-final.timer`, daily `13:00 UTC`, operating
