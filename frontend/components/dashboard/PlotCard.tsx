@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type React from "react";
 
 export interface PlotSeries {
   key: string;
@@ -134,7 +135,7 @@ export default function PlotCard({
                   className={`inline-block transition-transform ${collapsed ? "" : "rotate-90"}`}
                   aria-hidden="true"
                 >
-                  ▶
+                  {">"}
                 </span>
               </button>
             )}
@@ -159,9 +160,9 @@ export default function PlotCard({
                 type="button"
                 onClick={() => setFocused(true)}
                 className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-[11px] font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
-                aria-label={`Expand ${title}`}
+                aria-label={`Focus ${title}`}
               >
-                Expand
+                Focus
               </button>
             </div>
           )}

@@ -3,6 +3,7 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import {
+  Area,
   CartesianGrid,
   ComposedChart,
   Line,
@@ -63,16 +64,36 @@ const REGION_LABELS: Record<string, string> = {
   MIDATL_DOM: "Mid-Atlantic / Dominion",
   WEST: "West",
 };
-const YEAR_COLORS = [
-  "#22c55e",
-  "#38bdf8",
-  "#f97316",
+
+const YEAR_SERIES_COLORS: Record<number, string> = {
+  2024: "#94a3b8",
+  2025: "#60a5fa",
+  2026: "#f8fafc",
+  2027: "#fb923c",
+  2028: "#a78bfa",
+  2029: "#34d399",
+  2030: "#facc15",
+  2031: "#f472b6",
+  2032: "#22d3ee",
+};
+const FALLBACK_YEAR_COLORS = [
+  "#60a5fa",
+  "#fb923c",
   "#a78bfa",
+  "#34d399",
   "#facc15",
-  "#2dd4bf",
-  "#fb7185",
-  "#818cf8",
+  "#f472b6",
+  "#22d3ee",
+  "#94a3b8",
 ];
+const FIVE_YEAR_RANGE_KEY = "five_year_range";
+const FIVE_YEAR_AVG_KEY = "five_year_avg";
+const FIVE_YEAR_MIN_KEY = "fiveYearMin";
+const FIVE_YEAR_MAX_KEY = "fiveYearMax";
+const FIVE_YEAR_AVG_DATA_KEY = "fiveYearAvg";
+const FIVE_YEAR_RANGE_DATA_KEY = "fiveYearRange";
+const FIVE_YEAR_RANGE_COLOR = "#64748b";
+const FIVE_YEAR_AVG_COLOR = "#cbd5e1";
 
 const OUTAGE_METRICS: Array<{ key: OutageMetricKey; label: string; color: string }> = [
   { key: "total_outages_mw", label: "Total", color: "#e5e7eb" },
@@ -163,6 +184,17 @@ interface SeasonalChartPoint {
   [series: string]: number | string | [number, number] | null;
 }
 
+interface SeasonalTooltipPayloadItem {
+  payload?: SeasonalChartPoint;
+}
+
+interface SeasonalTooltipProps {
+  active?: boolean;
+  payload?: SeasonalTooltipPayloadItem[];
+  series: PlotSeries[];
+  hiddenSeries: Set<string>;
+}
+
 interface OutagesData {
   forecast: PjmOutagesPayload;
   seasonal: PjmOutagesPayload;
@@ -208,15 +240,137 @@ function monthLabel(day: number): string {
   return labels.findLast(([start]) => day >= start)?.[1] ?? "";
 }
 
-function renderTooltipValue(value: unknown) {
-  if (Array.isArray(value) && value.length === 2) {
-    const [min, max] = value;
-    if (typeof min === "number" && typeof max === "number") {
-      return `${Math.round(min).toLocaleString()} - ${Math.round(max).toLocaleString()} MW`;
-    }
-  }
-  if (typeof value !== "number") return "-";
+function yearSeriesColor(year: number, sortedYears: number[]): string {
+  return (
+    YEAR_SERIES_COLORS[year] ??
+    FALLBACK_YEAR_COLORS[Math.max(sortedYears.indexOf(year), 0) % FALLBACK_YEAR_COLORS.length]
+  );
+}
+
+function latestSeasonalYear(years: number[]): number | null {
+  return years.length ? Math.max(...years) : null;
+}
+
+function previousSeasonalYear(years: number[], latestYear: number | null): number | null {
+  if (latestYear === null) return null;
+  if (years.includes(latestYear - 1)) return latestYear - 1;
+  return [...years].filter((year) => year < latestYear).sort((left, right) => right - left)[0] ?? null;
+}
+
+function defaultVisibleSeasonalYears(years: number[]): Set<number> {
+  const latestYear = latestSeasonalYear(years);
+  const previousYear = previousSeasonalYear(years, latestYear);
+  return new Set([latestYear, previousYear].filter((year): year is number => year !== null));
+}
+
+function historicalFiveYearWindow(years: number[]): number[] {
+  const latestYear = latestSeasonalYear(years);
+  const previousYear = previousSeasonalYear(years, latestYear);
+  const newestHistoricalYear = previousYear ?? latestYear;
+  if (newestHistoricalYear === null) return [];
+  return [...years]
+    .filter((year) => year < newestHistoricalYear)
+    .sort((left, right) => right - left)
+    .slice(0, 5)
+    .sort((left, right) => left - right);
+}
+
+function defaultHiddenSeries(series: PlotSeries[]): Set<string> {
+  return new Set(
+    series
+      .filter((item) => item.defaultVisible === false)
+      .map((item) => item.key),
+  );
+}
+
+function dateFromYearDay(year: number, dayOfYear: number): string {
+  const date = new Date(Date.UTC(year, 0, dayOfYear));
+  return date.toISOString().slice(0, 10);
+}
+
+function fmtSeasonalHoverDate(value: string | null | undefined): string {
+  if (!value) return "-";
+  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(date.getTime())) return fmtDate(value);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    day: "2-digit",
+    month: "short",
+    timeZone: "UTC",
+    weekday: "short",
+    year: "numeric",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("weekday")} ${part("month")}-${part("day")} ${part("year")}`;
+}
+
+function fmtOutageValue(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${Math.round(value).toLocaleString()} MW`;
+}
+
+function SeasonalTooltip({ active, payload, series, hiddenSeries }: SeasonalTooltipProps) {
+  if (!active || !payload?.length) return null;
+  const point = payload.find((item) => item.payload)?.payload;
+  if (!point) return null;
+
+  const visibleSeries = series.filter((item) => !hiddenSeries.has(item.key));
+  const rows = visibleSeries.flatMap((item) => {
+    if (item.key === FIVE_YEAR_RANGE_KEY) {
+      const min = point[FIVE_YEAR_MIN_KEY];
+      const max = point[FIVE_YEAR_MAX_KEY];
+      return [
+        typeof min === "number"
+          ? { key: `${item.key}:min`, color: item.color, label: "5Y Min", value: fmtOutageValue(min) }
+          : null,
+        typeof max === "number"
+          ? { key: `${item.key}:max`, color: item.color, label: "5Y Max", value: fmtOutageValue(max) }
+          : null,
+      ].filter((row): row is { key: string; color: string; label: string; value: string } => row !== null);
+    }
+
+    if (item.key === FIVE_YEAR_AVG_KEY) {
+      const value = point[FIVE_YEAR_AVG_DATA_KEY];
+      return typeof value === "number"
+        ? [{ key: item.key, color: item.color, label: "5Y Avg", value: fmtOutageValue(value) }]
+        : [];
+    }
+
+    const value = point[item.key];
+    const date = point[`${item.key}_date`];
+    if (typeof value !== "number") return [];
+    return [
+      {
+        key: item.key,
+        color: item.color,
+        label: typeof date === "string" ? `${fmtSeasonalHoverDate(date)} |` : item.label,
+        value: fmtOutageValue(value),
+      },
+    ];
+  });
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="min-w-[210px] rounded-md border border-gray-700 bg-gray-950 px-3 py-2 text-xs text-gray-200 shadow-xl shadow-black/30">
+      <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+        Seasonal Day {point.dayOfYear}
+      </div>
+      <div className="space-y-1">
+        {rows.map((row) => (
+          <div key={row.key} className="flex items-center gap-2">
+            <span
+              className="h-2 w-2 shrink-0 rounded-sm"
+              style={{ backgroundColor: row.color }}
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1 truncate text-gray-300">{row.label}</span>
+            <span className="pl-3 text-right font-medium tabular-nums text-gray-100">{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function buildMetricHeatBounds(rows: OutageRow[], metric: OutageMetricKey): HeatBounds | null {
@@ -245,6 +399,7 @@ function buildSeasonalChartRows({
   }
 
   const valuesByDayYear = new Map<number, Map<number, number>>();
+  const datesByDayYear = new Map<number, Map<number, string>>();
   seasonalRows.forEach((row) => {
     if (!row.year || !row.day_of_year) return;
     const value = metricValue(row, metric);
@@ -252,13 +407,36 @@ function buildSeasonalChartRows({
     const valuesByYear = valuesByDayYear.get(row.day_of_year) ?? new Map<number, number>();
     valuesByYear.set(row.year, value);
     valuesByDayYear.set(row.day_of_year, valuesByYear);
+    const datesByYear = datesByDayYear.get(row.day_of_year) ?? new Map<number, string>();
+    datesByYear.set(row.year, row.date ?? dateFromYearDay(row.year, row.day_of_year));
+    datesByDayYear.set(row.day_of_year, datesByYear);
   });
 
+  const historicalYears = new Set(historicalFiveYearWindow(years));
   byDay.forEach((point, day) => {
     const valuesByYear = valuesByDayYear.get(day);
+    const datesByYear = datesByDayYear.get(day);
     years.forEach((year) => {
       point[`year_${year}`] = valuesByYear?.get(year) ?? null;
+      point[`year_${year}_date`] = datesByYear?.get(year) ?? dateFromYearDay(year, day);
     });
+    const historicalValues = [...historicalYears]
+      .map((year) => valuesByYear?.get(year) ?? null)
+      .filter((value): value is number => value !== null);
+    if (!historicalValues.length) {
+      point[FIVE_YEAR_MIN_KEY] = null;
+      point[FIVE_YEAR_MAX_KEY] = null;
+      point[FIVE_YEAR_AVG_DATA_KEY] = null;
+      point[FIVE_YEAR_RANGE_DATA_KEY] = null;
+      return;
+    }
+    const min = Math.min(...historicalValues);
+    const max = Math.max(...historicalValues);
+    point[FIVE_YEAR_MIN_KEY] = min;
+    point[FIVE_YEAR_MAX_KEY] = max;
+    point[FIVE_YEAR_AVG_DATA_KEY] =
+      historicalValues.reduce((sum, value) => sum + value, 0) / historicalValues.length;
+    point[FIVE_YEAR_RANGE_DATA_KEY] = [min, max];
   });
 
   return Array.from(byDay.values());
@@ -413,24 +591,59 @@ export default function PjmOutages({
     [forecastMetrics, rows]
   );
   const seasonalYears = useMemo(() => data?.seasonal.years ?? [], [data]);
+  const visibleSeasonalYears = useMemo(() => defaultVisibleSeasonalYears(seasonalYears), [seasonalYears]);
+  const historicalSeasonalYears = useMemo(() => historicalFiveYearWindow(seasonalYears), [seasonalYears]);
   const seasonalSeries: PlotSeries[] = useMemo(
-    () =>
-      seasonalYears.map((year, index) => ({
-        key: `year_${year}`,
-        label: String(year),
-        color: YEAR_COLORS[index % YEAR_COLORS.length],
+    () => [
+      {
+        key: FIVE_YEAR_RANGE_KEY,
+        label: "5Y Min/Max",
+        color: FIVE_YEAR_RANGE_COLOR,
         defaultVisible: true,
+      },
+      {
+        key: FIVE_YEAR_AVG_KEY,
+        label: "5Y Avg",
+        color: FIVE_YEAR_AVG_COLOR,
+        defaultVisible: true,
+      },
+      ...seasonalYears.map((year) => ({
+        key: `year_${year}`,
+        label:
+          year === latestSeasonalYear(seasonalYears)
+            ? `${year} Current`
+            : year === previousSeasonalYear(seasonalYears, latestSeasonalYear(seasonalYears))
+              ? `${year} Last Year`
+              : String(year),
+        color: yearSeriesColor(year, seasonalYears),
+        defaultVisible: visibleSeasonalYears.has(year),
       })),
-    [seasonalYears]
+    ],
+    [seasonalYears, visibleSeasonalYears]
   );
   const seasonalSubtitle = useMemo(
     () =>
       [
         `${REGION_LABELS[region] ?? region}: same-day PJM publication by operating date`,
-        `${seasonalYears.length.toLocaleString()} years`,
+        `Default current + last year`,
+        `${historicalSeasonalYears.length.toLocaleString()}Y historical envelope`,
       ].join(" | "),
-    [region, seasonalYears.length]
+    [historicalSeasonalYears.length, region]
   );
+
+  const seasonalSeriesDefaultsKey = useMemo(
+    () =>
+      [
+        region,
+        ...seasonalSeries.map((series) => `${series.key}:${series.defaultVisible ? "1" : "0"}`),
+      ].join("|"),
+    [region, seasonalSeries],
+  );
+
+  useEffect(() => {
+    if (!seasonalSeries.length) return;
+    setHiddenSeasonalSeries(defaultHiddenSeries(seasonalSeries));
+  }, [seasonalSeriesDefaultsKey, seasonalSeries]);
 
   const toggleSeasonalSeries = (key: string) => {
     setHiddenSeasonalSeries((prev) => {
@@ -447,6 +660,10 @@ export default function PjmOutages({
       metric,
       years: seasonalYears,
     });
+    const currentYear = latestSeasonalYear(seasonalYears);
+    const previousYear = previousSeasonalYear(seasonalYears, currentYear);
+    const showFiveYearRange = !hiddenSeasonalSeries.has(FIVE_YEAR_RANGE_KEY);
+    const showFiveYearAvg = !hiddenSeasonalSeries.has(FIVE_YEAR_AVG_KEY);
 
     return (
       <div className={heightClass}>
@@ -468,28 +685,91 @@ export default function PjmOutages({
               tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
             />
             <Tooltip
-              contentStyle={{
-                background: "#0f172a",
-                border: "1px solid #334155",
-                borderRadius: 6,
-                color: "#e5e7eb",
-              }}
-              formatter={renderTooltipValue}
-              labelFormatter={(value) => `Day ${value}`}
+              content={
+                <SeasonalTooltip
+                  series={seasonalSeries}
+                  hiddenSeries={hiddenSeasonalSeries}
+                />
+              }
+              cursor={{ stroke: "#64748b", strokeDasharray: "3 3" }}
             />
-            {seasonalSeries.map((series) =>
-              hiddenSeasonalSeries.has(series.key) ? null : (
+            {showFiveYearRange && (
+              <>
+                <Area
+                  type="monotone"
+                  dataKey={FIVE_YEAR_RANGE_DATA_KEY}
+                  name="5Y Min/Max"
+                  stroke="none"
+                  fill={FIVE_YEAR_RANGE_COLOR}
+                  fillOpacity={0.14}
+                  dot={false}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={FIVE_YEAR_MAX_KEY}
+                  name="5Y Max"
+                  stroke={FIVE_YEAR_RANGE_COLOR}
+                  strokeOpacity={0.45}
+                  strokeWidth={1}
+                  dot={false}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+                <Line
+                  type="monotone"
+                  dataKey={FIVE_YEAR_MIN_KEY}
+                  name="5Y Min"
+                  stroke={FIVE_YEAR_RANGE_COLOR}
+                  strokeOpacity={0.45}
+                  strokeWidth={1}
+                  dot={false}
+                  activeDot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              </>
+            )}
+            {showFiveYearAvg && (
               <Line
-                key={series.key}
                 type="monotone"
-                dataKey={series.key}
-                name={series.label}
-                stroke={series.color}
+                dataKey={FIVE_YEAR_AVG_DATA_KEY}
+                name="5Y Avg"
+                stroke={FIVE_YEAR_AVG_COLOR}
+                strokeDasharray="4 4"
+                strokeOpacity={0.9}
+                strokeWidth={1.5}
                 dot={false}
-                strokeWidth={series.key.endsWith(String(seasonalYears.at(-1))) ? 2.5 : 1.6}
+                activeDot={false}
                 connectNulls
+                isAnimationActive={false}
               />
-              )
+            )}
+            {seasonalSeries.map((series) =>
+              hiddenSeasonalSeries.has(series.key) || !series.key.startsWith("year_") ? null : (
+                <Line
+                  key={series.key}
+                  type="monotone"
+                  dataKey={series.key}
+                  name={series.label}
+                  stroke={series.color}
+                  dot={false}
+                  activeDot={{ r: 3 }}
+                  strokeWidth={
+                    series.key === `year_${currentYear}`
+                      ? 2.5
+                      : series.key === `year_${previousYear}`
+                        ? 1.9
+                        : 1.4
+                  }
+                  strokeOpacity={visibleSeasonalYears.has(Number(series.key.replace("year_", ""))) ? 1 : 0.7}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ),
             )}
           </ComposedChart>
         </ResponsiveContainer>
