@@ -1503,17 +1503,6 @@ systemctl status helios-miso-rt-lmps-final.timer
 journalctl -u helios-miso-rt-lmps-final.service -n 200 --no-pager
 ```
 
-For SPP LMPs:
-
-```bash
-systemctl status helios-spp-da-lmps.service
-systemctl status helios-spp-da-lmps.timer
-journalctl -u helios-spp-da-lmps.service -n 200 --no-pager
-systemctl status helios-spp-rt-lmps-prelim.service
-systemctl status helios-spp-rt-lmps-prelim.timer
-journalctl -u helios-spp-rt-lmps-prelim.service -n 200 --no-pager
-```
-
 For EIA Open Data:
 
 ```bash
