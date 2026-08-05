@@ -28,7 +28,7 @@ if __name__ == "__main__":
     from backend.modelling.pjm_da_models._entrypoint import run_entrypoint
 
     run_entrypoint(
-        name="pjm_da_knn_sunny_meteo_tomorrow",
+        name="pjm_da_like_day_knn_sunny_meteo_rto_hourly_tomorrow",
         module_file=__file__,
         runner=run,
     )

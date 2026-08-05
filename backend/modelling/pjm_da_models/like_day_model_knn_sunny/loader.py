@@ -2,88 +2,22 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta
-from pathlib import Path
+from datetime import date, timedelta
 from typing import Iterable
-from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
 
 from . import calendar as sunny_calendar
 from . import configs, domains
-from .db import fetch_df
-
-
-SQL_ROOT = Path(__file__).resolve().parents[1] / "sql_inputs"
-EASTERN_TZ = ZoneInfo("America/New_York")
-UTC_TZ = ZoneInfo("UTC")
-
-
-def today_ept() -> date:
-    return datetime.now(EASTERN_TZ).date()
-
-
-def default_cutoff_utc(run_date: date | datetime | str | None = None) -> str:
-    resolved_run_date = _coerce_date(run_date) if run_date is not None else today_ept()
-    cutoff_ept = datetime.combine(resolved_run_date, time(10, 0), tzinfo=EASTERN_TZ)
-    return cutoff_ept.astimezone(UTC_TZ).isoformat()
-
-
-def _coerce_date(value: date | datetime | str) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    return date.fromisoformat(str(value))
-
-
-def _read_sql(name: str) -> str:
-    path = SQL_ROOT / name
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Missing backend PJM DA model SQL artifact: {path}. "
-            "Compile dbt in runtime mode and run "
-            "dbt/azure_postgres/scripts/promote_pjm_da_model_backend_sql.py."
-        )
-    return path.read_text(encoding="utf-8")
-
-
-def _normalize_hourly(
-    rows: pd.DataFrame,
-    *,
-    numeric_columns: Iterable[str] = (),
-) -> pd.DataFrame:
-    output = rows.copy()
-    if output.empty:
-        return output
-    output["date"] = pd.to_datetime(output["date"], errors="coerce").dt.date
-    output["hour_ending"] = pd.to_numeric(
-        output["hour_ending"],
-        errors="coerce",
-    ).astype("Int64")
-    output = output.dropna(subset=["date", "hour_ending"]).copy()
-    output["hour_ending"] = output["hour_ending"].astype(int)
-    for column in numeric_columns:
-        if column in output.columns:
-            output[column] = pd.to_numeric(output[column], errors="coerce")
-    return output.sort_values(["date", "hour_ending"]).reset_index(drop=True)
-
-
-def _normalize_daily(
-    rows: pd.DataFrame,
-    *,
-    numeric_columns: Iterable[str] = (),
-) -> pd.DataFrame:
-    output = rows.copy()
-    if output.empty:
-        return output
-    output["date"] = pd.to_datetime(output["date"], errors="coerce").dt.date
-    output = output.dropna(subset=["date"]).copy()
-    for column in numeric_columns:
-        if column in output.columns:
-            output[column] = pd.to_numeric(output[column], errors="coerce")
-    return output.sort_values("date").reset_index(drop=True)
+from ..runtime import (
+    coerce_date as _coerce_date,
+    default_cutoff_utc,
+    load_sql_input_frame,
+    normalize_daily as _normalize_daily,
+    normalize_hourly as _normalize_hourly,
+    today_ept,
+)
 
 
 def _empty_hourly(columns: list[str]) -> pd.DataFrame:
@@ -96,8 +30,8 @@ def load_lmp_history(
     end_date: date | str,
     hub: str = configs.HUB,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("actual_da_lmps_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "actual_da_lmps_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -110,14 +44,59 @@ def load_lmp_history(
     )
 
 
+def load_actual_da_lmps(
+    *,
+    target_date: date | str,
+    hub: str = configs.HUB,
+) -> pd.DataFrame:
+    rows = load_sql_input_frame(
+        "actual_da_lmps_hourly.sql",
+        {
+            "target_date": _coerce_date(target_date),
+            "hub": hub,
+        },
+    )
+    return _normalize_hourly(
+        rows,
+        numeric_columns=("lmp", "lmp_system_energy_price"),
+    )
+
+
+def actuals_hourly(actuals: pd.DataFrame) -> dict[int, float] | None:
+    if actuals.empty or not {"hour_ending", "lmp"}.issubset(actuals.columns):
+        return None
+    output: dict[int, float] = {}
+    for row in actuals.itertuples(index=False):
+        value = getattr(row, "lmp", None)
+        if pd.notna(value):
+            output[int(getattr(row, "hour_ending"))] = float(value)
+    return output or None
+
+
+def actuals_by_date_hour(actuals: pd.DataFrame) -> dict[date, dict[int, float]]:
+    if actuals.empty or not {"date", "hour_ending", "lmp"}.issubset(actuals.columns):
+        return {}
+    output: dict[date, dict[int, float]] = {}
+    dates = pd.to_datetime(actuals["date"], errors="coerce").dt.date
+    for row, resolved_date in zip(actuals.itertuples(index=False), dates):
+        if pd.isna(resolved_date):
+            continue
+        value = getattr(row, "lmp", None)
+        if pd.notna(value):
+            output.setdefault(resolved_date, {})[
+                int(getattr(row, "hour_ending"))
+            ] = float(value)
+    return output
+
+
 def load_rto_load_history(
     *,
     start_date: date | str,
     end_date: date | str,
     load_region: str = configs.LOAD_REGION,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("rto_load_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "rto_load_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -134,8 +113,8 @@ def load_rto_load_forecast_history(
     load_region: str = configs.LOAD_REGION,
     lead_days: int = 1,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("rto_load_forecast_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "rto_load_forecast_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -159,8 +138,8 @@ def load_rto_load_latest_forecast(
 ) -> pd.DataFrame:
     resolved_run_date = _coerce_date(run_date) if run_date else today_ept()
     resolved_cutoff_utc = cutoff_utc or default_cutoff_utc(resolved_run_date)
-    rows = fetch_df(
-        _read_sql("rto_load_latest_forecast_hourly.sql"),
+    rows = load_sql_input_frame(
+        "rto_load_latest_forecast_hourly.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -179,8 +158,8 @@ def load_renewables_history(
     start_date: date | str,
     end_date: date | str,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("renewables_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "renewables_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -249,8 +228,8 @@ def load_renewables_latest_forecast(
 ) -> pd.DataFrame:
     resolved_run_date = _coerce_date(run_date) if run_date else today_ept()
     resolved_cutoff_utc = cutoff_utc or default_cutoff_utc(resolved_run_date)
-    rows = fetch_df(
-        _read_sql("renewables_latest_forecast_hourly.sql"),
+    rows = load_sql_input_frame(
+        "renewables_latest_forecast_hourly.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -270,8 +249,8 @@ def load_gen_outages_history(
     region: str = configs.LOAD_REGION,
     lead_days: int = 1,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("gen_outages_daily_history.sql"),
+    rows = load_sql_input_frame(
+        "gen_outages_daily_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -290,8 +269,8 @@ def load_gen_outages_latest_forecast(
     region: str = configs.LOAD_REGION,
 ) -> pd.DataFrame:
     resolved_cutoff_date = _coerce_date(cutoff_date) if cutoff_date else today_ept()
-    rows = fetch_df(
-        _read_sql("gen_outages_daily_latest_forecast.sql"),
+    rows = load_sql_input_frame(
+        "gen_outages_daily_latest_forecast.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -311,8 +290,8 @@ def load_meteologica_rto_latest_forecast(
     forecast_area: str = configs.METEO_FORECAST_AREA,
 ) -> pd.DataFrame:
     resolved_cutoff_utc = cutoff_utc or default_cutoff_utc()
-    rows = fetch_df(
-        _read_sql("meteo_pjm_rto_latest_forecast_hourly.sql"),
+    rows = load_sql_input_frame(
+        "meteo_pjm_rto_latest_forecast_hourly.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -340,8 +319,8 @@ def load_meteologica_rto_forecast_history(
     forecast_area: str = configs.METEO_FORECAST_AREA,
     lead_days: int = 1,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("meteo_pjm_rto_forecast_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "meteo_pjm_rto_forecast_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -367,8 +346,8 @@ def load_wsi_temperature_history(
     end_date: date | str,
     region: str = configs.WEATHER_REGION,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("wsi_temperature_hourly_history.sql"),
+    rows = load_sql_input_frame(
+        "wsi_temperature_hourly_history.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -420,8 +399,8 @@ def load_wsi_temperature_latest_forecast(
     region: str = configs.WEATHER_REGION,
 ) -> pd.DataFrame:
     resolved_cutoff_utc = cutoff_utc or default_cutoff_utc()
-    rows = fetch_df(
-        _read_sql("wsi_temperature_hourly_latest_forecast.sql"),
+    rows = load_sql_input_frame(
+        "wsi_temperature_hourly_latest_forecast.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),
@@ -437,8 +416,8 @@ def load_gas_prices_hourly(
     start_date: date | str,
     end_date: date | str,
 ) -> pd.DataFrame:
-    rows = fetch_df(
-        _read_sql("ice_python_next_day_gas_hourly.sql"),
+    rows = load_sql_input_frame(
+        "ice_python_next_day_gas_hourly.sql",
         {
             "start_date": _coerce_date(start_date),
             "end_date": _coerce_date(end_date),

@@ -29,6 +29,9 @@ RUN_DATE: date | None = None
 HORIZON_DAYS: int = 3
 HISTORY_DAYS: int = 730
 CUTOFF_UTC: str | None = None
+INCLUDE_ACTUALS: bool = True
+PER_DAY_DETAIL: bool = True
+USE_DAY_TYPE_PROFILES: bool = False
 
 
 def run(
@@ -40,6 +43,9 @@ def run(
     pool_year_months: dict[int, list[int]] | None = None,
     cutoff_utc: str | None = CUTOFF_UTC,
     feature_group_weights_override: dict[str, float] | None = None,
+    include_actuals: bool = INCLUDE_ACTUALS,
+    per_day_detail: bool = PER_DAY_DETAIL,
+    use_day_type_profiles: bool = USE_DAY_TYPE_PROFILES,
     quiet: bool = False,
 ) -> dict[str, object]:
     return run_latest_horizon(
@@ -50,6 +56,9 @@ def run(
         pool_year_months=pool_year_months,
         cutoff_utc=cutoff_utc,
         feature_group_weights_override=feature_group_weights_override,
+        include_actuals=include_actuals,
+        per_day_detail=per_day_detail,
+        use_day_type_profiles=use_day_type_profiles,
         quiet=quiet,
     )
 
@@ -58,7 +67,7 @@ if __name__ == "__main__":
     from backend.modelling.pjm_da_models._entrypoint import run_entrypoint
 
     run_entrypoint(
-        name="pjm_da_knn_sunny_meteo_next_3_days",
+        name="pjm_da_like_day_knn_sunny_meteo_rto_hourly_next_3_days",
         module_file=__file__,
         runner=run,
     )

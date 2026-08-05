@@ -51,6 +51,11 @@ The one-day pipeline defaults to tomorrow, `lead_days=1`, and a 10:00 EPT
 cutoff. Pass `lead_days=None` to relax the lead-day vintage while still keeping
 the run-date cutoff unless `cutoff_utc` is explicit.
 
+This model uses the shared PJM DA package-root runtime helpers for read-only DB
+access, promoted SQL artifact loading, cutoff defaults, and terminal logging.
+The local `db.py` and `logging_utils.py` files are compatibility wrappers for
+older imports.
+
 ## Frontend DEV Runtime
 
 The local DEV frontend page `/?section=pjm-da-model` presents this workflow as

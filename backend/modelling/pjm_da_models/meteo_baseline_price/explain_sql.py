@@ -8,16 +8,17 @@ from typing import Iterable
 
 if __package__ in (None, ""):
     _MODULE_DIR = Path(__file__).resolve().parent
-    if str(_MODULE_DIR) not in sys.path:
-        sys.path.insert(0, str(_MODULE_DIR))
-    from db import connect  # type: ignore[import-not-found]
-    from loader import default_cutoff_utc  # type: ignore[import-not-found]
+    _REPO_ROOT = _MODULE_DIR.parents[3]
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from backend.modelling.pjm_da_models.db import connect  # type: ignore[import-not-found]
+    from backend.modelling.pjm_da_models.runtime import (  # type: ignore[import-not-found]
+        default_cutoff_utc,
+        read_sql_input,
+    )
 else:
-    from .db import connect
-    from .loader import default_cutoff_utc
-
-
-SQL_ROOT = Path(__file__).resolve().parents[1] / "sql_inputs"
+    from ..db import connect
+    from ..runtime import default_cutoff_utc, read_sql_input
 
 DEFAULT_TARGET_DATE = "2026-07-25"
 DEFAULT_RUN_DATE = "2026-07-24"
@@ -32,23 +33,6 @@ PLAN_KEYWORDS = (
     "Buffers",
     "Rows Removed",
 )
-
-
-def _find_repo_root() -> Path:
-    for parent in Path(__file__).resolve().parents:
-        if (parent / "backend" / "modelling" / "pjm_da_models").exists():
-            return parent
-    raise RuntimeError(
-        "Could not locate helioscta-platform repo root with "
-        "backend/modelling/pjm_da_models."
-    )
-
-
-def _read_sql(name: str) -> str:
-    path = SQL_ROOT / name
-    if not path.exists():
-        raise FileNotFoundError(f"Missing backend PJM DA model SQL artifact: {path}")
-    return path.read_text(encoding="utf-8")
 
 
 def _print_plan(name: str, lines: Iterable[str], *, verbose: bool) -> None:
@@ -71,7 +55,7 @@ def explain_query(
     try:
         with connection.cursor() as cursor:
             cursor.execute(
-                "explain (analyze, buffers, format text) " + _read_sql(sql_file),
+                "explain (analyze, buffers, format text) " + read_sql_input(sql_file),
                 params,
             )
             _print_plan(name, (row[0] for row in cursor.fetchall()), verbose=verbose)
@@ -123,9 +107,6 @@ def run_explain(
 
 
 if __name__ == "__main__":
-    _REPO_ROOT = _find_repo_root()
-    if str(_REPO_ROOT) not in sys.path:
-        sys.path.insert(0, str(_REPO_ROOT))
     from backend.modelling.pjm_da_models._entrypoint import run_entrypoint
 
     run_entrypoint(

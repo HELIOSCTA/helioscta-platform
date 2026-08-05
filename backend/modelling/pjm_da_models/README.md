@@ -17,6 +17,18 @@ Current model families:
 - `meteo_baseline_price`: Meteologica Western Hub DA price baseline.
 - `like_day_model_knn_sunny`: PJM RTO hourly like-day KNN Sunny forecasts.
 
+Shared backend runtime helpers live at the package root:
+
+- `db.py`: read-only `helios_prod` Postgres connection boundary.
+- `runtime.py`: SQL artifact loading, 10:00 EPT cutoff defaults, and common
+  date/hour normalization helpers.
+- `logging_utils.py` and `reporting.py`: terminal logger/report helpers used by
+  all PJM DA model pipelines.
+
+Model-family packages may keep compatibility wrappers, but new loaders and
+pipelines should import the shared package-root helpers instead of duplicating
+SQL-root, cutoff, DB, or terminal logging code.
+
 Current scope is read-only. Model output table publication, scheduling, and
 rerun/upsert contracts should be added only after an output owner, grain, and
 uniqueness key are confirmed. The local DEV Meteo Baseline frontend route also

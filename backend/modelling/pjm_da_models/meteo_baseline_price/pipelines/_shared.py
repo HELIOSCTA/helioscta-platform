@@ -5,12 +5,12 @@ from __future__ import annotations
 import sys
 import uuid
 from datetime import date, timedelta
-from pathlib import Path
 
 import pandas as pd
 
+from ...logging_utils import init_logging, print_divider, print_header
+from ...runtime import DEFAULT_LOG_DIR
 from .. import loader
-from ..logging_utils import init_logging, print_divider, print_header
 from ..tables import (
     build_bands_vs_actuals,
     build_bands_table,
@@ -28,7 +28,6 @@ from ..tables import (
 
 DEFAULT_HUB = "WESTERN HUB"
 DEFAULT_LEAD_DAYS = 1
-LOG_DIR = Path(__file__).resolve().parents[4] / "logs"
 
 
 def _resolve_date(value: date | str | None, *, default: date) -> date:
@@ -86,7 +85,7 @@ def run_single_day(
 
     logger = init_logging(
         name="baseline_meteo_da_price",
-        log_dir=LOG_DIR,
+        log_dir=DEFAULT_LOG_DIR,
         log_to_file=False,
         log_to_console=not quiet,
     )

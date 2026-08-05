@@ -14,28 +14,44 @@ the old DA boundary: 10:00 America/New_York on the relevant run date.
 from __future__ import annotations
 
 import sys
-from datetime import date, datetime, time, timedelta
-from pathlib import Path
+from datetime import date, datetime, timedelta
 from typing import Iterable
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 
 if __package__ in (None, ""):
-    _MODULE_DIR = Path(__file__).resolve().parent
-    if str(_MODULE_DIR) not in sys.path:
-        sys.path.insert(0, str(_MODULE_DIR))
-    from db import fetch_df  # type: ignore[import-not-found]
+    from pathlib import Path
+
+    def _find_repo_root() -> Path:
+        for parent in Path(__file__).resolve().parents:
+            if (parent / "backend" / "modelling" / "pjm_da_models").exists():
+                return parent
+        raise RuntimeError(
+            "Could not locate helioscta-platform repo root with "
+            "backend/modelling/pjm_da_models."
+        )
+
+    _REPO_ROOT = _find_repo_root()
+    if str(_REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(_REPO_ROOT))
+    from backend.modelling.pjm_da_models.runtime import (  # type: ignore[import-not-found]
+        coerce_date as _coerce_date,
+        default_cutoff_utc,
+        load_sql_input_frame,
+        today_ept,
+    )
 else:
-    from .db import fetch_df
+    from ..runtime import (
+        coerce_date as _coerce_date,
+        default_cutoff_utc,
+        load_sql_input_frame,
+        today_ept,
+    )
 
 DET_TABLE = "meteologica.usa_pjm_western_hub_da_power_price_forecast_hourly"
 ENS_TABLE = "meteologica.usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly"
 ACTUAL_DA_TABLE = "pjm.da_hrl_lmps"
 DEFAULT_HUB = "WESTERN HUB"
-SQL_ROOT = Path(__file__).resolve().parents[1] / "sql_inputs"
-EASTERN_TZ = ZoneInfo("America/New_York")
-UTC_TZ = ZoneInfo("UTC")
 
 ENS_MEMBER_COLUMNS = tuple(f"da_price_ens_{index:02d}" for index in range(51))
 FORECAST_COLUMNS = (
@@ -53,33 +69,8 @@ FORECAST_COLUMNS = (
 )
 
 
-def _coerce_date(value: date | datetime | str) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    return date.fromisoformat(value)
-
-
-def today_ept() -> date:
-    return datetime.now(EASTERN_TZ).date()
-
-
-def default_cutoff_utc(run_date: date | datetime | str | None = None) -> str:
-    resolved_run_date = _coerce_date(run_date) if run_date is not None else today_ept()
-    cutoff_ept = datetime.combine(resolved_run_date, time(10, 0), tzinfo=EASTERN_TZ)
-    return cutoff_ept.astimezone(UTC_TZ).isoformat()
-
-
 def _empty_forecast_frame() -> pd.DataFrame:
     return pd.DataFrame(columns=list(FORECAST_COLUMNS))
-
-
-def _read_sql(name: str) -> str:
-    path = SQL_ROOT / name
-    if not path.exists():
-        raise FileNotFoundError(f"Missing backend PJM DA model SQL artifact: {path}. Compile dbt in runtime mode and run dbt/azure_postgres/scripts/promote_pjm_da_model_backend_sql.py.")
-    return path.read_text(encoding="utf-8")
 
 
 def _expand_ens_member_values(rows: pd.DataFrame) -> pd.DataFrame:
@@ -108,8 +99,8 @@ def available_target_dates(
         resolved_start - timedelta(days=1)
     )
     bounded_limit = max(1, min(int(limit), 90))
-    rows = fetch_df(
-        _read_sql("available_target_dates.sql"),
+    rows = load_sql_input_frame(
+        "available_target_dates.sql",
         {
             "start_date": resolved_start,
             "cutoff_utc": resolved_cutoff_utc,
@@ -139,8 +130,8 @@ def load_meteologica_da_price_forecast(
         else today_ept()
     )
     resolved_cutoff_utc = cutoff_utc or default_cutoff_utc(cutoff_run_date)
-    rows = fetch_df(
-        _read_sql("meteo_da_price_forecast_hourly.sql"),
+    rows = load_sql_input_frame(
+        "meteo_da_price_forecast_hourly.sql",
         {
             "target_date": resolved_target,
             "cutoff_utc": resolved_cutoff_utc,
@@ -181,8 +172,8 @@ def load_actual_da_lmps(
 ) -> pd.DataFrame:
     """Load settled/current DA LMP actuals for one hub and delivery date."""
     resolved_target = _coerce_date(target_date)
-    rows = fetch_df(
-        _read_sql("actual_da_lmps_hourly.sql"),
+    rows = load_sql_input_frame(
+        "actual_da_lmps_hourly.sql",
         {
             "target_date": resolved_target,
             "hub": hub,
