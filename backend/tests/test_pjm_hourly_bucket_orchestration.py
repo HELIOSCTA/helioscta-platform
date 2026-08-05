@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from backend.orchestration.power.pjm import hourly_bucket
 
 
-def test_hourly_bucket_runs_default_feed_with_bucket_metadata(monkeypatch):
+def test_hourly_bucket_runs_default_unverified_feed_with_bucket_metadata(monkeypatch):
     captured: dict[str, dict[str, object]] = {}
 
     def fake_import_module(module_path: str):
@@ -22,7 +22,18 @@ def test_hourly_bucket_runs_default_feed_with_bucket_metadata(monkeypatch):
     result = hourly_bucket.main(database="stage_db", metadata={"trigger": "test"})
 
     assert result == 0
-    assert set(captured) == {"gen_by_fuel"}
+    assert set(captured) == {"rt_unverified_hrl_lmps", "gen_by_fuel"}
+    assert captured["rt_unverified_hrl_lmps"] == {
+        "database": "stage_db",
+        "run_mode": "scheduled_hourly",
+        "metadata": {
+            "bucket": "pjm_hourly_bucket",
+            "scheduler": "helios-pjm-hourly-bucket.timer",
+            "schedule_reason": "hourly_pjm_bucket_refresh",
+            "bucket_feed": "rt_unverified_hrl_lmps",
+            "trigger": "test",
+        },
+    }
     assert captured["gen_by_fuel"] == {
         "database": "stage_db",
         "run_mode": "scheduled_hourly",
