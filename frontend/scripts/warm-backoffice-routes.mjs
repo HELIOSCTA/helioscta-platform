@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const DEFAULT_BASE_URL = "https://frontend-git-main-helioscta.vercel.app";
+const DEFAULT_BASE_URL = "https://frontend-helioscta.vercel.app";
 const DEFAULT_REPEAT = 1;
 
 const ROUTES = [

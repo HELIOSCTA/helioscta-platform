@@ -4,20 +4,20 @@ import { execFileSync, execSync } from "node:child_process";
 
 const DEFAULT_SCOPE = "helioscta";
 const DEFAULT_PROJECT = "frontend";
-const DEFAULT_GIT_PRODUCTION_ALIAS = "frontend-git-main-helioscta.vercel.app";
+const DEFAULT_PRODUCTION_DOMAIN = "frontend-helioscta.vercel.app";
 
 function parseArgs(argv) {
   const options = {
     scope: process.env.VERCEL_SCOPE ?? DEFAULT_SCOPE,
     project: process.env.VERCEL_PROJECT ?? DEFAULT_PROJECT,
-    gitProductionAlias: process.env.HELIOS_GIT_PRODUCTION_ALIAS ?? DEFAULT_GIT_PRODUCTION_ALIAS,
+    productionDomain: process.env.HELIOS_VERCEL_PRODUCTION_DOMAIN ?? DEFAULT_PRODUCTION_DOMAIN,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--fix") {
       throw new Error(
-        "Manual Vercel alias repair is not supported. Push or redeploy from the GitHub production branch instead.",
+        "Manual Vercel domain repair is not supported. Push or redeploy from the GitHub production branch instead.",
       );
     } else if (arg === "--scope") {
       options.scope = requiredValue(argv, index, arg);
@@ -25,8 +25,8 @@ function parseArgs(argv) {
     } else if (arg === "--project") {
       options.project = requiredValue(argv, index, arg);
       index += 1;
-    } else if (arg === "--git-production-alias" || arg === "--main-alias") {
-      options.gitProductionAlias = requiredValue(argv, index, arg);
+    } else if (arg === "--production-domain" || arg === "--domain") {
+      options.productionDomain = requiredValue(argv, index, arg);
       index += 1;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -49,7 +49,7 @@ function requiredValue(argv, index, flag) {
 
 function printHelp() {
   console.log(`
-Check that Vercel's Git-managed production URL tracks the latest main deployment.
+Check that Vercel's canonical production domain tracks the latest main deployment.
 
 Usage:
   npm run check:vercel-production
@@ -57,7 +57,7 @@ Usage:
 Options:
   --scope <scope>                   Vercel scope. Default: ${DEFAULT_SCOPE}
   --project <project>               Vercel project. Default: ${DEFAULT_PROJECT}
-  --git-production-alias <alias>    Git-managed production URL. Default: ${DEFAULT_GIT_PRODUCTION_ALIAS}
+  --production-domain <domain>      Canonical production domain. Default: ${DEFAULT_PRODUCTION_DOMAIN}
 `);
 }
 
@@ -151,7 +151,7 @@ function fail(message) {
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const latest = latestProductionDeployment(options);
-  const gitProduction = inspectDeployment(options.gitProductionAlias, options);
+  const productionDomain = inspectDeployment(options.productionDomain, options);
   const latestByUrl = inspectDeployment(latest.url, options);
 
   summarizeDeployment("Latest READY production", {
@@ -160,7 +160,7 @@ async function main() {
     target: latest.target,
     readyState: latest.state,
   });
-  summarizeDeployment("Git production URL", gitProduction);
+  summarizeDeployment("Production domain", productionDomain);
 
   const latestBranch = latest.meta?.githubCommitRef ?? null;
   if (latestBranch !== "main") {
@@ -175,16 +175,16 @@ async function main() {
     fail(`Latest READY production SHA ${deployedSha} does not match origin/main ${gitRemoteMainSha}.`);
   }
 
-  if (gitProduction.id !== latestByUrl.id) {
+  if (productionDomain.id !== latestByUrl.id) {
     fail(
-      `${options.gitProductionAlias} points to ${gitProduction.id}, but latest READY production is ${latestByUrl.id}. ` +
+      `${options.productionDomain} points to ${productionDomain.id}, but latest READY production is ${latestByUrl.id}. ` +
         "Wait for the GitHub production deployment to finish or redeploy from GitHub; do not repair with vercel alias set.",
     );
   }
 
   if (process.exitCode) return;
   console.log(
-    `\nOK: ${options.gitProductionAlias} tracks latest origin/main production deployment ` +
+    `\nOK: ${options.productionDomain} tracks latest origin/main production deployment ` +
       `${latestByUrl.id}${deployedSha ? ` (${deployedSha})` : ""}.`,
   );
 }

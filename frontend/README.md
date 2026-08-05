@@ -1211,13 +1211,13 @@ Run the endpoint health check after a local build or production deploy:
 ```bash
 npm run check:api -- --base-url=http://localhost:3000 --cache-bust
 npm run check:api -- --base-url=http://localhost:3000 --filter="Power Settles" --cache-bust
-npm run check:api -- --base-url=https://frontend-git-main-helioscta.vercel.app --cache-bust
-npm run check:api -- --filter=NAV --base-url=https://frontend-git-main-helioscta.vercel.app
-npm run check:api -- --filter="Back Office" --base-url=https://frontend-git-main-helioscta.vercel.app --allow-slow
-npm run warm:backoffice -- --base-url=https://frontend-git-main-helioscta.vercel.app
-npm run check:perf:backoffice -- --url="https://frontend-git-main-helioscta.vercel.app/?view=backoffice-nav-daily-position-sheet" --allow-slow
-npm run check:perf:backoffice -- --base-url=https://frontend-git-main-helioscta.vercel.app --all --allow-slow
-npm run check:perf:backoffice -- --base-url=https://frontend-git-main-helioscta.vercel.app --view=backoffice-nav-daily-position-sheet --api-cache-bust --allow-slow
+npm run check:api -- --base-url=https://frontend-helioscta.vercel.app --cache-bust
+npm run check:api -- --filter=NAV --base-url=https://frontend-helioscta.vercel.app
+npm run check:api -- --filter="Back Office" --base-url=https://frontend-helioscta.vercel.app --allow-slow
+npm run warm:backoffice -- --base-url=https://frontend-helioscta.vercel.app
+npm run check:perf:backoffice -- --url="https://frontend-helioscta.vercel.app/?view=backoffice-nav-daily-position-sheet" --allow-slow
+npm run check:perf:backoffice -- --base-url=https://frontend-helioscta.vercel.app --all --allow-slow
+npm run check:perf:backoffice -- --base-url=https://frontend-helioscta.vercel.app --view=backoffice-nav-daily-position-sheet --api-cache-bust --allow-slow
 ```
 
 The checker calls each production API route, parses `Server-Timing`, and fails
@@ -1252,19 +1252,17 @@ to be handled by Vercel Authentication, SSO, or project access, not app-level
 auth.
 
 The Vercel project production branch is `main`. The canonical production URL is
-the Git-managed production branch URL
-`https://frontend-git-main-helioscta.vercel.app`; `npx vercel project ls`
-reports this as the project `latestProductionUrl`. Do not manually repoint
-domains with `vercel alias set` for normal production promotion. Promotion
-should come from GitHub pushes or GitHub/Vercel redeploys of the `main` branch.
+`https://frontend-helioscta.vercel.app`. Do not manually repoint domains with
+`vercel alias set` for normal production promotion. Promotion should come from
+GitHub pushes or GitHub/Vercel redeploys of the `main` branch.
 
-After a production push, verify the Git-managed production URL:
+After a production push, verify the canonical production domain:
 
 ```bash
 npm run check:vercel-production
 ```
 
-If the check fails because the Git-managed URL has not reached the latest
+If the check fails because the canonical production domain has not reached the latest
 `origin/main` commit, wait for the deployment to finish or redeploy from
 GitHub/Vercel. Do not repair the mismatch with a manual alias.
 
@@ -1277,7 +1275,7 @@ AZURE_OUTLOOK_CLIENT_ID=
 AZURE_OUTLOOK_TENANT_ID=
 AZURE_OUTLOOK_CLIENT_SECRET=
 AZURE_OUTLOOK_SENDER=aidan.keaveny@helioscta.com
-HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-git-main-helioscta.vercel.app
+HELIOS_EMAIL_FRONTEND_BASE_URL=https://frontend-helioscta.vercel.app
 ```
 
 The Power Settles Vercel queue recipient is pinned in code to
