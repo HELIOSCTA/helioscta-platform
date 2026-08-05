@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type Market = "rt" | "da";
@@ -127,19 +128,6 @@ const HOUR_FILTERS: Array<{ key: HourFilter; label: string }> = [
   { key: "offpeak", label: "Off-peak" },
   { key: "all_hours", label: "All hours" },
 ];
-const YEAR_COLORS = [
-  "#38bdf8",
-  "#f97316",
-  "#22c55e",
-  "#f43f5e",
-  "#a78bfa",
-  "#eab308",
-  "#14b8a6",
-  "#fb7185",
-  "#60a5fa",
-  "#c084fc",
-];
-
 function fmtDateTime(value: string | null | undefined): string {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
@@ -260,10 +248,10 @@ function freshnessFromPayload(payload: DurationPayload | null): PjmPriceDuration
 }
 
 function toSeries(payload: DurationPayload | null): PlotSeries[] {
-  return (payload?.years ?? []).map((year, index) => ({
+  return (payload?.years ?? []).map((year) => ({
     key: `y${year}`,
     label: String(year),
-    color: YEAR_COLORS[index % YEAR_COLORS.length],
+    color: seasonalYearColor(year),
   }));
 }
 

@@ -20,6 +20,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import type { Watchlist } from "@/lib/watchlists";
 import {
   CHART_SERIES as SHARED_CHART_SERIES,
@@ -163,16 +164,6 @@ const DAILY_PLOT_SERIES: PlotSeries[] = CHART_SERIES.map((series) => ({
 
 /** Selectable metrics for the pivot summary table */
 const PIVOT_METRICS = SHARED_PIVOT_METRICS;
-const SEASONAL_YEAR_COLORS = [
-  "#3b82f6",
-  "#f97316",
-  "#22c55e",
-  "#eab308",
-  "#a855f7",
-  "#ec4899",
-  "#14b8a6",
-  "#f43f5e",
-];
 
 const DEFAULT_HISTORICAL_NOMS_COLUMN_LABELS = [
   "Gas Day",
@@ -1608,14 +1599,14 @@ export default function GenscapeNomsReport({
               String(name),
             ]}
           />
-          {years.map((year, index) =>
+          {years.map((year) =>
             hiddenSeasonalYears.has(year) ? null : (
               <Line
                 key={year}
                 type="monotone"
                 dataKey={year}
                 name={year}
-                stroke={SEASONAL_YEAR_COLORS[index % SEASONAL_YEAR_COLORS.length]}
+                stroke={seasonalYearColor(Number(year))}
                 strokeWidth={2}
                 dot={false}
               />
@@ -2381,10 +2372,10 @@ export default function GenscapeNomsReport({
                 key={roleId}
                 title={`Role ID ${roleId}`}
                 subtitle={loc_name || undefined}
-                series={years.map((year, index) => ({
+                series={years.map((year) => ({
                   key: year,
                   label: year,
-                  color: SEASONAL_YEAR_COLORS[index % SEASONAL_YEAR_COLORS.length],
+                  color: seasonalYearColor(Number(year)),
                   defaultVisible: true,
                 }))}
                 hiddenSeries={hiddenSeasonalYears}

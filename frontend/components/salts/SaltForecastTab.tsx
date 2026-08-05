@@ -20,6 +20,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 
 export type SaltForecastRegion = "salt-main" | "se-salt";
 export type SaltForecastWeatherRegion =
@@ -133,12 +134,6 @@ const SALT_FORECAST_WEATHER_REGION_OPTIONS: SaltForecastWeatherRegion[] = [
   "SOUTHCENTRAL",
 ];
 const SALT_FORECAST_YEAR_FILTERS = [2023, 2024, 2025, 2026] as const;
-const SALT_FORECAST_YEAR_COLORS: Record<(typeof SALT_FORECAST_YEAR_FILTERS)[number], string> = {
-  2023: "#22d3ee",
-  2024: "#f59e0b",
-  2025: "#a78bfa",
-  2026: "#34d399",
-};
 
 const labelClass = "mb-1 block text-[10px] font-semibold uppercase text-gray-500";
 const controlClass =
@@ -224,7 +219,7 @@ function initialChartDimension(height: CSSProperties["height"]) {
 }
 
 function forecastYearColor(year: number): string {
-  return SALT_FORECAST_YEAR_COLORS[year as (typeof SALT_FORECAST_YEAR_FILTERS)[number]] ?? "#94a3b8";
+  return seasonalYearColor(year);
 }
 
 function ForecastNumberInput({

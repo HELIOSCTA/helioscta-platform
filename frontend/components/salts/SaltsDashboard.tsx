@@ -34,6 +34,7 @@ import SaltForecastTab, {
   type SaltForecastRegion,
   type SaltForecastWeatherRegion,
 } from "@/components/salts/SaltForecastTab";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
   NEXT_DAY_GAS_PRICE_METRICS,
@@ -770,6 +771,12 @@ function storageSeasonStartYear(date: string): number | null {
   const month = Number.parseInt(date.slice(5, 7), 10);
   if (!Number.isFinite(year) || !Number.isFinite(month)) return null;
   return month >= 4 ? year : year - 1;
+}
+
+function currentStorageSeasonStartYear(): number {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  return now.getUTCMonth() + 1 >= 4 ? year : year - 1;
 }
 
 function storageSeasonDayIndex(date: string): number | null {
@@ -1892,8 +1899,6 @@ function SaltModelKpi({
 }
 
 const SALT_PLOTS_CHART_COLORS = {
-  current: "#22d3ee",
-  lastYear: "#c084fc",
   historicalAverage: "#64748b",
   historicalEnvelope: "#334155",
   grid: "#1f2937",
@@ -1985,6 +1990,10 @@ function SaltPlotsSeasonalChart({
   showLegend?: boolean;
 }) {
   const monthlyTicks = [0, 30, 61, 91, 122, 153, 183, 214, 244, 275, 306, 334, 365];
+  const currentSeasonYear = storageSeasonStartYear(summary.latestDate ?? "") ?? currentStorageSeasonStartYear();
+  const lastSeasonYear = currentSeasonYear - 1;
+  const currentSeasonColor = seasonalYearColor(currentSeasonYear);
+  const lastSeasonColor = seasonalYearColor(lastSeasonYear);
 
   return (
     <div className="w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
@@ -2050,17 +2059,17 @@ function SaltPlotsSeasonalChart({
           <Line
             type="monotone"
             dataKey="lastYearInventory"
-            name="Last Year"
+            name={String(lastSeasonYear)}
             dot={false}
-            stroke={SALT_PLOTS_CHART_COLORS.lastYear}
+            stroke={lastSeasonColor}
             strokeWidth={1.8}
           />
           <Line
             type="monotone"
             dataKey="currentInventory"
-            name="Current"
+            name={String(currentSeasonYear)}
             dot={false}
-            stroke={SALT_PLOTS_CHART_COLORS.current}
+            stroke={currentSeasonColor}
             strokeWidth={2.2}
           />
         </LineChart>
@@ -2078,6 +2087,8 @@ function SaltPlotsFlowChart({
   height?: number;
   showCumulative?: boolean;
 }) {
+  const currentSeasonYear = storageSeasonStartYear(summary.latestDate ?? "") ?? currentStorageSeasonStartYear();
+
   return (
     <div className="w-full min-w-0 overflow-hidden" style={{ height, minHeight: height }}>
       <ResponsiveContainer
@@ -2142,7 +2153,7 @@ function SaltPlotsFlowChart({
               dataKey="seasonCumFlow"
               name="Season Cum Flow"
               dot={false}
-              stroke={SALT_PLOTS_CHART_COLORS.current}
+              stroke={seasonalYearColor(currentSeasonYear)}
               strokeWidth={2}
             />
           )}

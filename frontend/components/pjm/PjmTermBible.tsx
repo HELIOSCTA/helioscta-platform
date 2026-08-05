@@ -12,6 +12,7 @@ import {
   YAxis,
 } from "recharts";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 export type LmpProduct = "da" | "rt";
@@ -200,19 +201,6 @@ const TERM_PERIOD_OPTIONS: Array<{ value: TermPeriod; label: string }> = [
   { value: "7x8", label: "7x8 - All days HE1-7, HE24" },
   { value: "wrap", label: "Wrap - 7x8 plus weekend HE8-23" },
   { value: "7x24", label: "7x24 - All hours" },
-];
-
-const YEAR_COLORS = [
-  "#38bdf8",
-  "#f97316",
-  "#22c55e",
-  "#a78bfa",
-  "#facc15",
-  "#fb7185",
-  "#2dd4bf",
-  "#818cf8",
-  "#e5e7eb",
-  "#84cc16",
 ];
 
 function todayYear(): number {
@@ -1361,14 +1349,14 @@ function DailyChart({
             labelStyle={{ color: "#f3f4f6" }}
             formatter={(value: unknown) => [fmtTooltipValue(value), valueLabel]}
           />
-          {years.map((year, index) =>
+          {years.map((year) =>
             hiddenSeries.has(String(year)) ? null : (
               <Line
                 key={year}
                 type="monotone"
                 dataKey={String(year)}
                 name={String(year)}
-                stroke={YEAR_COLORS[index % YEAR_COLORS.length]}
+                stroke={seasonalYearColor(year)}
                 strokeWidth={2}
                 dot={false}
                 connectNulls
@@ -1517,10 +1505,10 @@ export default function PjmTermBible({
 
   const plotSeries = useMemo<PlotSeries[]>(() => {
     const years = data ? [...new Set(data.dailyValues.map((row) => row.year))].sort((a, b) => a - b) : [];
-    return years.map((year, index) => ({
+    return years.map((year) => ({
       key: String(year),
       label: String(year),
-      color: YEAR_COLORS[index % YEAR_COLORS.length],
+      color: seasonalYearColor(year),
       defaultVisible: true,
     }));
   }, [data]);

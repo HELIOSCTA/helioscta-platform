@@ -21,6 +21,7 @@ import {
 } from "recharts";
 
 import DataTableShell from "@/components/dashboard/DataTableShell";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
   EIA_DEFAULT_HEAT_RATE_MMBTU_PER_MWH,
@@ -138,6 +139,7 @@ interface SeriesToggleItem<TKey extends string> {
   key: TKey;
   label: string;
   color: string;
+  secondaryColor?: string;
 }
 
 type HeatRateScope = "region" | "all";
@@ -466,6 +468,12 @@ function ChartSeriesToggles<TKey extends string>({
     <div className="mt-3 flex flex-wrap gap-2">
       {items.map((item) => {
         const active = !hiddenSeries.has(item.key);
+        const swatchStyle = item.secondaryColor
+          ? {
+              background: `linear-gradient(90deg, ${item.color} 0 50%, ${item.secondaryColor} 50% 100%)`,
+              opacity: active ? 1 : 0.35,
+            }
+          : { backgroundColor: item.color, opacity: active ? 1 : 0.35 };
         return (
           <label
             key={item.key}
@@ -483,7 +491,7 @@ function ChartSeriesToggles<TKey extends string>({
             />
             <span
               className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: item.color, opacity: active ? 1 : 0.35 }}
+              style={swatchStyle}
             />
             <span className="max-w-[120px] truncate">{item.label}</span>
           </label>
@@ -569,10 +577,14 @@ function WeatherAnomalyTooltip({
   metricLabel,
   currentYear,
   priorYear,
+  currentYearColor,
+  priorYearColor,
 }: ChartTooltipProps<EiaGenerationWeatherAnomalyRow> & {
   metricLabel: string;
   currentYear: number | string;
   priorYear: number | string;
+  currentYearColor: string;
+  priorYearColor: string;
 }) {
   if (!active || !payload?.length) return null;
   const row = payload.find((item) => item.payload)?.payload;
@@ -635,7 +647,7 @@ function WeatherAnomalyTooltip({
         demandMw: row.currentDemandMw,
         normalDemandMw: row.currentNormalDemandMw,
         anomalyMw: row.current,
-        color: "#22d3ee",
+        color: currentYearColor,
       })}
       {renderPointRows({
         title: String(priorYear),
@@ -644,7 +656,7 @@ function WeatherAnomalyTooltip({
         demandMw: row.priorDemandMw,
         normalDemandMw: row.priorNormalDemandMw,
         anomalyMw: row.prior,
-        color: "#60a5fa",
+        color: priorYearColor,
       })}
     </div>
   );
@@ -708,6 +720,15 @@ function tooltipStyle() {
 function monthTickLabel(value: string): string {
   const month = Number.parseInt(value.slice(0, 2), 10);
   return MONTH_LABELS[month - 1] ?? value;
+}
+
+function numericYear(value: number | string): number | null {
+  const parsed = typeof value === "number" ? value : Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function yearSeriesColor(value: number | string, fallbackYear: number): string {
+  return seasonalYearColor(numericYear(value) ?? fallbackYear);
 }
 
 function metricValue(row: EiaGenerationDailyRow | undefined, key: EiaGenerationYoyMetricKey): number | null {
@@ -1195,6 +1216,8 @@ function YoyMetricPanel({
   );
   const currentYear = payload.currentYear ?? new Date().getUTCFullYear();
   const priorYear = payload.priorYear ?? currentYear - 1;
+  const currentYearColor = seasonalYearColor(currentYear);
+  const priorYearColor = seasonalYearColor(priorYear);
   const hasRows = rows.some((row) => row.current !== null || row.prior !== null);
   const axisFormatter =
     metric.unit === "pct"
@@ -1258,7 +1281,7 @@ function YoyMetricPanel({
                   type="monotone"
                   dataKey="current"
                   name={String(currentYear)}
-                  stroke={metric.color}
+                  stroke={currentYearColor}
                   strokeWidth={2}
                   dot={false}
                   connectNulls
@@ -1268,7 +1291,7 @@ function YoyMetricPanel({
                   type="monotone"
                   dataKey="prior"
                   name={String(priorYear)}
-                  stroke={metric.color}
+                  stroke={priorYearColor}
                   strokeOpacity={0.45}
                   strokeWidth={1.5}
                   strokeDasharray="4 4"
@@ -1318,6 +1341,10 @@ function YoyMetricPanel({
 function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
   const pairedRows = payload.monthly.rows;
   const rows = useMemo(() => buildMonthlyAverageDisplayRows(payload), [payload]);
+  const currentYear = payload.currentYear ?? new Date().getUTCFullYear();
+  const priorYear = payload.priorYear ?? currentYear - 1;
+  const currentYearColor = seasonalYearColor(currentYear);
+  const priorYearColor = seasonalYearColor(priorYear);
   const hasRows = rows.length > 0;
 
   return (
@@ -1417,8 +1444,8 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
                   <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtPct(toNumber(value)), String(name)]} />
                   <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
-                  <Line type="monotone" dataKey="gasThermalPct" name={String(payload.currentYear ?? "Current")} stroke={EIA_GENERATION_FUEL_COLORS.gas} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-                  <Line type="monotone" dataKey="priorGasThermalPct" name={String(payload.priorYear ?? "Prior")} stroke={EIA_GENERATION_FUEL_COLORS.gas} strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="gasThermalPct" name={String(currentYear)} stroke={currentYearColor} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorGasThermalPct" name={String(priorYear)} stroke={priorYearColor} strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -1509,8 +1536,8 @@ function MonthlyAveragesTab({ payload }: { payload: EiaGenerationPayload }) {
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `${Number(value).toFixed(0)}%`} width={58} />
                   <Tooltip contentStyle={tooltipStyle()} formatter={(value, name) => [fmtPct(toNumber(value)), String(name)]} />
                   <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
-                  <Line type="monotone" dataKey="renewableSharePct" name={String(payload.currentYear ?? "Current")} stroke="#14b8a6" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-                  <Line type="monotone" dataKey="priorRenewableSharePct" name={String(payload.priorYear ?? "Prior")} stroke="#14b8a6" strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="renewableSharePct" name={String(currentYear)} stroke={currentYearColor} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorRenewableSharePct" name={String(priorYear)} stroke={priorYearColor} strokeOpacity={0.45} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -1829,6 +1856,8 @@ function YoyMtdTab({
   );
   const currentYear = payload.currentYear ?? new Date().getUTCFullYear();
   const priorYear = payload.priorYear ?? currentYear - 1;
+  const currentYearColor = seasonalYearColor(currentYear);
+  const priorYearColor = seasonalYearColor(priorYear);
   const selectedMonthLabel = payload.selectedDate
     ? MONTH_LABELS[Number.parseInt(payload.selectedDate.slice(5, 7), 10) - 1]
     : null;
@@ -1887,8 +1916,8 @@ function YoyMtdTab({
                     formatter={(value, name) => [fmtBcf(toNumber(value), true), String(name)]}
                   />
                   <Legend wrapperStyle={{ color: "#9ca3af", fontSize: 11 }} />
-                  <Line type="monotone" dataKey="currentCumulativeBcf" name={String(currentYear)} stroke="#38bdf8" strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
-                  <Line type="monotone" dataKey="priorCumulativeBcf" name={String(priorYear)} stroke="#f59e0b" strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="currentCumulativeBcf" name={String(currentYear)} stroke={currentYearColor} strokeWidth={2} dot={false} connectNulls isAnimationActive={false} />
+                  <Line type="monotone" dataKey="priorCumulativeBcf" name={String(priorYear)} stroke={priorYearColor} strokeDasharray="4 4" strokeWidth={1.6} dot={false} connectNulls isAnimationActive={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -2091,6 +2120,9 @@ function WeatherResponsePanel({
   const metricKeyLabel = weatherMetricKeyLabel(weather.metricLabel);
   const currentYear = weather.currentYear ?? "Current";
   const priorYear = weather.priorYear ?? "Prior";
+  const fallbackYear = new Date().getUTCFullYear();
+  const currentYearColor = yearSeriesColor(currentYear, fallbackYear);
+  const priorYearColor = yearSeriesColor(priorYear, fallbackYear - 1);
   const chartHeight = focused ? "h-[620px]" : "h-[410px]";
   const toggleSeries = (key: WeatherResponseSeriesKey) => {
     setHiddenSeries((current) => {
@@ -2104,12 +2136,12 @@ function WeatherResponsePanel({
     });
   };
   const toggleItems: Array<SeriesToggleItem<WeatherResponseSeriesKey>> = [
-    { key: "priorDaily", label: `${priorYear} Daily`, color: "#60a5fa" },
-    { key: "currentDaily", label: `${currentYear} Daily`, color: "#22d3ee" },
+    { key: "priorDaily", label: `${priorYear} Daily`, color: priorYearColor },
+    { key: "currentDaily", label: `${currentYear} Daily`, color: currentYearColor },
     { key: "historicalBand", label: "Historical 10-90%", color: "#334155" },
     { key: "historicalMedian", label: "Historical Median", color: "#94a3b8" },
     { key: "historicalScatter", label: "Historical Points", color: "#64748b" },
-    { key: "fitCurves", label: "Fit Curves", color: "#38bdf8" },
+    { key: "fitCurves", label: "Fit Curves", color: currentYearColor, secondaryColor: priorYearColor },
   ];
   const showPriorDaily = !hiddenSeries.has("priorDaily");
   const showCurrentDaily = !hiddenSeries.has("currentDaily");
@@ -2217,12 +2249,12 @@ function WeatherResponsePanel({
               <Scatter
                 name={`${priorYear} Daily`}
                 data={weather.priorPoints}
-                fill="#60a5fa"
+                fill={priorYearColor}
                 fillOpacity={0.55}
                 shape={(props) => (
                   <WeatherPointShape
                     {...(props as WeatherPointShapeProps)}
-                    fill="#60a5fa"
+                    fill={priorYearColor}
                     fillOpacity={0.55}
                     onPointHover={setHoveredPoint}
                   />
@@ -2234,12 +2266,12 @@ function WeatherResponsePanel({
               <Scatter
                 name={`${currentYear} Daily`}
                 data={weather.currentPoints}
-                fill="#22d3ee"
+                fill={currentYearColor}
                 fillOpacity={0.75}
                 shape={(props) => (
                   <WeatherPointShape
                     {...(props as WeatherPointShapeProps)}
-                    fill="#22d3ee"
+                    fill={currentYearColor}
                     fillOpacity={0.75}
                     onPointHover={setHoveredPoint}
                   />
@@ -2271,7 +2303,7 @@ function WeatherResponsePanel({
                 data={priorFitRows}
                 type="monotone"
                 dataKey="demandMw"
-                stroke="#60a5fa"
+                stroke={priorYearColor}
                 strokeWidth={2}
                 dot={false}
                 legendType="none"
@@ -2285,7 +2317,7 @@ function WeatherResponsePanel({
                 data={currentFitRows}
                 type="monotone"
                 dataKey="demandMw"
-                stroke="#22d3ee"
+                stroke={currentYearColor}
                 strokeWidth={2.5}
                 dot={false}
                 legendType="none"
@@ -2324,6 +2356,9 @@ function WeatherAnomalyPanel({
   const rows = buildAnomalyChartRows(weather);
   const currentYear = weather.currentYear ?? "Current";
   const priorYear = weather.priorYear ?? "Prior";
+  const fallbackYear = new Date().getUTCFullYear();
+  const currentYearColor = yearSeriesColor(currentYear, fallbackYear);
+  const priorYearColor = yearSeriesColor(priorYear, fallbackYear - 1);
   const metricKeyLabel = weatherMetricKeyLabel(weather.metricLabel);
   const chartHeight = focused ? "h-[540px]" : "h-[340px]";
   const toggleSeries = (key: WeatherAnomalySeriesKey) => {
@@ -2338,8 +2373,8 @@ function WeatherAnomalyPanel({
     });
   };
   const toggleItems: Array<SeriesToggleItem<WeatherAnomalySeriesKey>> = [
-    { key: "priorDaily", label: `${priorYear} Daily`, color: "#60a5fa" },
-    { key: "currentDaily", label: `${currentYear} Daily`, color: "#22d3ee" },
+    { key: "priorDaily", label: `${priorYear} Daily`, color: priorYearColor },
+    { key: "currentDaily", label: `${currentYear} Daily`, color: currentYearColor },
     { key: "historicalBand", label: "Historical 10-90%", color: "#334155" },
     { key: "historicalMedian", label: "Historical Median", color: "#94a3b8" },
   ];
@@ -2399,6 +2434,8 @@ function WeatherAnomalyPanel({
                   metricLabel={weather.metricLabel}
                   currentYear={currentYear}
                   priorYear={priorYear}
+                  currentYearColor={currentYearColor}
+                  priorYearColor={priorYearColor}
                 />
               )}
             />
@@ -2430,7 +2467,7 @@ function WeatherAnomalyPanel({
                 type="monotone"
                 dataKey="prior"
                 name={`${priorYear} Daily`}
-                stroke="#60a5fa"
+                stroke={priorYearColor}
                 strokeWidth={1.6}
                 strokeDasharray="4 4"
                 dot={false}
@@ -2443,7 +2480,7 @@ function WeatherAnomalyPanel({
                 type="monotone"
                 dataKey="current"
                 name={`${currentYear} Daily`}
-                stroke="#22d3ee"
+                stroke={currentYearColor}
                 strokeWidth={2}
                 dot={false}
                 connectNulls
