@@ -14,6 +14,7 @@ import {
 } from "recharts";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type OutagesView = "forecast" | "seasonal";
@@ -65,27 +66,6 @@ const REGION_LABELS: Record<string, string> = {
   WEST: "West",
 };
 
-const YEAR_SERIES_COLORS: Record<number, string> = {
-  2024: "#94a3b8",
-  2025: "#60a5fa",
-  2026: "#f8fafc",
-  2027: "#fb923c",
-  2028: "#a78bfa",
-  2029: "#34d399",
-  2030: "#facc15",
-  2031: "#f472b6",
-  2032: "#22d3ee",
-};
-const FALLBACK_YEAR_COLORS = [
-  "#60a5fa",
-  "#fb923c",
-  "#a78bfa",
-  "#34d399",
-  "#facc15",
-  "#f472b6",
-  "#22d3ee",
-  "#94a3b8",
-];
 const FIVE_YEAR_RANGE_KEY = "five_year_range";
 const FIVE_YEAR_AVG_KEY = "five_year_avg";
 const FIVE_YEAR_MIN_KEY = "fiveYearMin";
@@ -238,13 +218,6 @@ function monthLabel(day: number): string {
     [335, "Dec"],
   ] as const;
   return labels.findLast(([start]) => day >= start)?.[1] ?? "";
-}
-
-function yearSeriesColor(year: number, sortedYears: number[]): string {
-  return (
-    YEAR_SERIES_COLORS[year] ??
-    FALLBACK_YEAR_COLORS[Math.max(sortedYears.indexOf(year), 0) % FALLBACK_YEAR_COLORS.length]
-  );
 }
 
 function latestSeasonalYear(years: number[]): number | null {
@@ -615,7 +588,7 @@ export default function PjmOutages({
             : year === previousSeasonalYear(seasonalYears, latestSeasonalYear(seasonalYears))
               ? `${year} Last Year`
               : String(year),
-        color: yearSeriesColor(year, seasonalYears),
+        color: seasonalYearColor(year),
         defaultVisible: visibleSeasonalYears.has(year),
       })),
     ],
