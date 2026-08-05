@@ -425,7 +425,9 @@ function parsePjmLmpIsoParam(value: string | null): PjmLmpIso | undefined {
     value === "ercot" ||
     value === "isone" ||
     value === "caiso" ||
-    value === "spp"
+    value === "miso" ||
+    value === "spp" ||
+    value === "nyiso"
     ? value
     : undefined;
 }
@@ -933,7 +935,7 @@ export default function HomePageClient({
     return {
       title: "Power LMPs",
       subtitle:
-        "PJM, ERCOT, ISO-NE, and CAISO day-ahead, real-time, and DART power prices.",
+        "PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO day-ahead, real-time, and DART power prices.",
       footer: "Power LMPs | Source: Azure PostgreSQL",
     };
   }, [activeSection, saltsActiveTab, showLocalDevFeatures]);

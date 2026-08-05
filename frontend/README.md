@@ -80,6 +80,9 @@ GET /api/power-lmps?iso=pjm&product=da&date=YYYY-MM-DD
 GET /api/power-lmps?iso=ercot&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmps?iso=isone&product=rt&date=YYYY-MM-DD&source=verified
 GET /api/power-lmps?iso=caiso&product=rt&date=YYYY-MM-DD&source=unverified
+GET /api/power-lmps?iso=miso&product=rt&date=YYYY-MM-DD&source=unverified
+GET /api/power-lmps?iso=spp&product=rt&date=YYYY-MM-DD&source=unverified
+GET /api/power-lmps?iso=nyiso&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
 GET /api/power-lmp-adders?iso=pjm&dataset=pjm-rt-ancillary-services&date=YYYY-MM-DD
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
@@ -120,15 +123,20 @@ view:
 /?section=pjm-da-lmps&iso=pjm&view=single-day&product=rt&source=verified&date=YYYY-MM-DD&hub=WESTERN%20HUB&component=all&refresh=1
 ```
 
-The Power LMPs page accepts `iso=pjm|ercot|isone|caiso` and exposes ISO tabs in the
-order `PJM | ERCOT | ISO-NE | CAISO` before the `DA LMPs | RT | DART` product tabs.
-PJM links without `iso` still default to PJM. ERCOT uses total settlement point
-prices only, so component controls are constrained to `Total`; ERCOT RT is
-hourly-averaged from promoted 15-minute settlement point prices. ISO-NE RT
-maps `source=verified` to final hourly LMPs and `source=unverified` to
-preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
+The Power LMPs page accepts `iso=pjm|ercot|isone|caiso|miso|spp|nyiso` and exposes
+ISO tabs in the order `PJM | ERCOT | ISO-NE | CAISO | MISO | SPP | NYISO` before the
+`DA LMPs | RT | DART` product tabs. PJM links without `iso` still default to PJM.
+ERCOT uses total settlement point prices only, so component controls are constrained
+to `Total`; ERCOT RT is hourly-averaged from promoted 15-minute settlement point
+prices. ISO-NE RT maps `source=verified` to final hourly LMPs and `source=unverified`
+to preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
 SP15/NP15 trading hubs; CAISO RT is hourly-averaged from promoted five-minute
-OASIS intervals.
+OASIS intervals. MISO reads `miso.da_lmps`, `miso.rt_lmps_prelim`, and
+`miso.rt_lmps_final` for Indiana Hub and the ICE-traded MISO hub family; MISO
+RT maps `source=verified` to final hourly LMPs and `source=unverified` to
+preliminary hourly LMPs. SPP reads `spp.da_lmps` and `spp.rt_lmps_prelim`.
+NYISO reads `nyiso.da_lmps` and `nyiso.rt_lmps_prelim` for the promoted load
+zones; NYISO RT is hourly-averaged from preliminary five-minute LBMP rows.
 
 The LMP Adders page (`/?section=power-lmp-adders`) accepts `iso=pjm|ercot` and dataset params. PJM exposes `DA Reserves`, `RT Reserves`, and `RT Ancillary`; `RT Ancillary` reads current rows from `pjm.ancillary_services`, defaults the Metric filter to price rows, and leaves `RTO Mileage Ratio` opt-in because it is a ratio rather than a dollar price.
 

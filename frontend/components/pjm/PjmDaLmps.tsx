@@ -68,7 +68,7 @@ const API_CACHE_TTL_MS = 5 * 60 * 1000;
 
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type ComponentSelection = ComponentKey | "all";
-export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "spp";
+export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "miso" | "spp" | "nyiso";
 export type LmpProduct = "da" | "rt" | "dart";
 export type LmpView = "single-day" | "compare-dates" | "compare-hubs" | "daily-settles";
 export type RtLmpSource = "verified" | "unverified";
@@ -78,7 +78,9 @@ const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   ercot: { start: 7, end: 22 },
   isone: { start: 8, end: 23 },
   caiso: { start: 7, end: 22 },
+  miso: { start: 7, end: 22 },
   spp: { start: 7, end: 22 },
+  nyiso: { start: 8, end: 23 },
 };
 
 function onPeakHoursForIso(iso: PowerIso): number[] {
@@ -99,7 +101,7 @@ function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
 type SettleDayType = "all" | "weekday" | "weekend" | "holiday";
 type SettleSortDirection = "asc" | "desc";
 // Sort/selection column keys for the daily settles grid: the three period summaries
-// plus one per hour-ending ("he1" … "he24"). "date" sorts the leading column.
+// plus one per hour-ending ("he1" â€¦ "he24"). "date" sorts the leading column.
 type SettleColumnKey = "onpeak" | "offpeak" | "flat" | `he${number}`;
 type SettleSortKey = "date" | SettleColumnKey;
 type SettleFilterKey = "dayType" | SettleSortKey;
@@ -156,7 +158,7 @@ interface PjmLmpSettleDayRow {
   isWeekend: boolean;
   isNercHoliday: boolean;
   holidayName: string | null;
-  // 24-element arrays indexed by hour-ending (HE1 at index 0 … HE24 at index 23),
+  // 24-element arrays indexed by hour-ending (HE1 at index 0 â€¦ HE24 at index 23),
   // carrying the selected component's value for that hour.
   daHourly: Array<number | string | null>;
   rtHourly: Array<number | string | null>;
@@ -230,7 +232,9 @@ const ISO_LABELS: Record<PowerIso, string> = {
   ercot: "ERCOT",
   isone: "ISO-NE",
   caiso: "CAISO",
+  miso: "MISO",
   spp: "SPP",
+  nyiso: "NYISO",
 };
 
 const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
@@ -238,7 +242,9 @@ const ISO_DEFAULT_HUBS: Record<PowerIso, string> = {
   ercot: "HB_NORTH",
   isone: ".H.INTERNAL_HUB",
   caiso: "TH_SP15_GEN-APND",
+  miso: "INDIANA.HUB",
   spp: "SPPNORTH_HUB",
+  nyiso: "N.Y.C.",
 };
 
 const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
@@ -246,7 +252,9 @@ const ISO_TABS: Array<DashboardTabOption<PowerIso>> = [
   { value: "ercot", label: "ERCOT" },
   { value: "isone", label: "ISO-NE" },
   { value: "caiso", label: "CAISO" },
+  { value: "miso", label: "MISO" },
   { value: "spp", label: "SPP" },
+  { value: "nyiso", label: "NYISO" },
 ];
 
 const TOTAL_COMPONENT = COMPONENTS.find((component) => component.key === "total") ?? COMPONENTS[3];
@@ -268,7 +276,15 @@ const RT_SOURCE_LABELS_BY_ISO: Record<PowerIso, Record<RtLmpSource, string>> = {
     verified: "Five-Min Avg",
     unverified: "Five-Min Avg",
   },
+  miso: {
+    verified: "Final Hourly",
+    unverified: "Prelim Hourly",
+  },
   spp: {
+    verified: "Prelim Five-Min Avg",
+    unverified: "Prelim Five-Min Avg",
+  },
+  nyiso: {
     verified: "Prelim Five-Min Avg",
     unverified: "Prelim Five-Min Avg",
   },
@@ -340,6 +356,27 @@ const LMP_SOURCE_FEEDS: LmpSourceFeed[] = [
       "https://www.caiso.com/systems-applications/portals-applications/open-access-same-time-information-system-oasis",
   },
   {
+    iso: "miso",
+    market: "DA hourly",
+    sourceLabel: "MISO Data Exchange Day-Ahead Ex-Post LMP",
+    sourceUrl:
+      "https://www.misoenergy.org/markets-and-operations/real-time--market-data/market-reports/",
+  },
+  {
+    iso: "miso",
+    market: "RT final hourly",
+    sourceLabel: "MISO Data Exchange Real-Time Ex-Post LMP final",
+    sourceUrl:
+      "https://www.misoenergy.org/markets-and-operations/real-time--market-data/market-reports/",
+  },
+  {
+    iso: "miso",
+    market: "RT preliminary hourly",
+    sourceLabel: "MISO Data Exchange Real-Time Ex-Post LMP preliminary",
+    sourceUrl:
+      "https://www.misoenergy.org/markets-and-operations/real-time--market-data/market-reports/",
+  },
+  {
     iso: "spp",
     market: "DA hourly",
     sourceLabel: "SPP Portal DA LMP by Settlement Location",
@@ -350,6 +387,18 @@ const LMP_SOURCE_FEEDS: LmpSourceFeed[] = [
     market: "RT preliminary five-minute",
     sourceLabel: "SPP Portal RTBM LMP by Location",
     sourceUrl: "https://portal.spp.org/pages/lmp-by-location",
+  },
+  {
+    iso: "nyiso",
+    market: "DA hourly",
+    sourceLabel: "NYISO MIS Day-Ahead LBMP by Zone",
+    sourceUrl: "https://mis.nyiso.com/public/csv/damlbmp/",
+  },
+  {
+    iso: "nyiso",
+    market: "RT preliminary five-minute",
+    sourceLabel: "NYISO MIS Real-Time LBMP by Zone",
+    sourceUrl: "https://mis.nyiso.com/public/csv/realtime/",
   },
 ];
 
@@ -490,7 +539,9 @@ function selectedLmpSourceFeeds({
     ercot: "DAM settlement point",
     isone: "DA hourly",
     caiso: "DA hourly",
+    miso: "DA hourly",
     spp: "DA hourly",
+    nyiso: "DA hourly",
   };
   const rtMarketByIso: Record<PowerIso, Record<RtLmpSource, string>> = {
     pjm: {
@@ -509,7 +560,15 @@ function selectedLmpSourceFeeds({
       verified: "RT five-minute",
       unverified: "RT five-minute",
     },
+    miso: {
+      verified: "RT final hourly",
+      unverified: "RT preliminary hourly",
+    },
     spp: {
+      verified: "RT preliminary five-minute",
+      unverified: "RT preliminary five-minute",
+    },
+    nyiso: {
       verified: "RT preliminary five-minute",
       unverified: "RT preliminary five-minute",
     },
@@ -1022,7 +1081,9 @@ function RtDatasetCard({
   onChange: (value: RtLmpSource) => void;
 }) {
   const options: RtLmpSource[] =
-    iso === "pjm" || iso === "isone" ? ["unverified", "verified"] : ["unverified"];
+    iso === "pjm" || iso === "isone" || iso === "miso"
+      ? ["unverified", "verified"]
+      : ["unverified"];
   const labels = RT_SOURCE_LABELS_BY_ISO[iso];
 
   return (
@@ -1199,7 +1260,7 @@ function SelectedLmpSource({
 }
 
 // Sortable column header for the daily settles grid: click to sort, arrow shows the
-// active key + direction (↕ = inactive).
+// active key + direction (â†• = inactive).
 function SettleHeaderButton({
   label,
   sortKey,
@@ -1220,7 +1281,7 @@ function SettleHeaderButton({
     >
       {label}
       <span className={`text-[9px] ${active ? "text-sky-300" : "text-gray-700"}`} aria-hidden="true">
-        {active ? (activeSort.direction === "asc" ? "▲" : "▼") : "↕"}
+        {active ? (activeSort.direction === "asc" ? "â–²" : "â–¼") : "â†•"}
       </span>
     </button>
   );
@@ -1458,7 +1519,7 @@ export default function PjmDaLmps({
   const [selectedMetricCells, setSelectedMetricCells] = useState<Set<string>>(() => new Set());
   const [lastSelectedMetricCell, setLastSelectedMetricCell] = useState<LastMetricCell | null>(null);
   // Seed the settles range to the latest available date once, the first time PJM data
-  // loads — so we don't land on an empty "today" window before settles are posted.
+  // loads â€” so we don't land on an empty "today" window before settles are posted.
   const settlesRangeSeededRef = useRef(Boolean(initialDate));
   const isoInitializedRef = useRef(false);
   const [singleComponent, setSingleComponent] = useState<ComponentSelection>(
@@ -1512,7 +1573,12 @@ export default function PjmDaLmps({
     setSelectedHub(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubA(ISO_DEFAULT_HUBS[activeIso]);
     setCompareHubB(ISO_DEFAULT_HUBS[activeIso]);
-    if (activeIso === "ercot" || activeIso === "caiso" || activeIso === "spp") {
+    if (
+      activeIso === "ercot" ||
+      activeIso === "caiso" ||
+      activeIso === "spp" ||
+      activeIso === "nyiso"
+    ) {
       setRtSource("unverified");
     }
   }, [activeIso]);
@@ -1639,7 +1705,7 @@ export default function PjmDaLmps({
   }, [settlesData]);
 
   // Default the settles window to end on the latest available market date (start = 30
-  // days prior), seeded once from the PJM single-day payload's latestDate — which is
+  // days prior), seeded once from the PJM single-day payload's latestDate â€” which is
   // already fetched for the hub grid, so the settles request goes out a single time
   // with a valid range (the API skips its own latest-date lookup). Runs before the
   // user touches the inputs; after that their range is preserved.
@@ -1943,7 +2009,7 @@ export default function PjmDaLmps({
       }),
     [activeIso, activeProduct, settleRows]
   );
-  // Shared color scale across the whole day×hour grid so magnitudes are comparable
+  // Shared color scale across the whole dayÃ—hour grid so magnitudes are comparable
   // between days (a per-row scale would flatten every day to the same gradient).
   const settleHeatRange = useMemo(() => {
     const nums = settleDays
@@ -2725,7 +2791,7 @@ export default function PjmDaLmps({
                             </span>
                           ) : (
                             <span className="text-gray-700" aria-hidden="true">
-                              ·
+                              Â·
                             </span>
                           )}
                         </td>
