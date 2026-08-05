@@ -9,6 +9,7 @@
 - RT endpoint: `/pricing/v1/real-time/{operating_date}/lmp-expost`.
 - Default hub set: `INDIANA.HUB`, `ARKANSAS.HUB`, `ILLINOIS.HUB`,
   `LOUISIANA.HUB`, `MICHIGAN.HUB`, `MINN.HUB`, and `TEXAS.HUB`.
+- DA interface extension: MISO source node `PJMC` for the PJM interface.
 - Primary grain: `operating_date x operating_hour x node_id x market_run_id`.
 - Upsert key: `interval_start_time_utc, node_id, market_run_id`.
 
