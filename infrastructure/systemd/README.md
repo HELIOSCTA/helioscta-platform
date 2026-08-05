@@ -145,9 +145,9 @@ PJM Data Miner `da_transconstraints` feed for the next market day, waits until
 the target market day returns normalized constraint rows, upserts
 `pjm.da_transconstraints`, and writes one resolved API fetch telemetry row to
 `ops.api_fetch_log` with poll count and elapsed seconds. The timer runs daily
-at `17:00 UTC`, matching `helios-pjm-hrl-dmd-bids.timer`, with a four-hour
-polling ceiling and two-minute poll interval. The service uses `flock` with
-`/tmp/helios-pjm-da-transconstraints.lock`.
+at `16:30 UTC`, one hour after `helios-pjm-da-hrl-lmps.timer` starts, with a
+four-hour polling ceiling and five-minute poll interval. The service uses
+`flock` with `/tmp/helios-pjm-da-transconstraints.lock`.
 
 ## PJM Day-Ahead Marginal Value
 

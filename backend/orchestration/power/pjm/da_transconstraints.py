@@ -37,7 +37,7 @@ TARGET_TABLE_FQN = scrape.TARGET_TABLE_FQN
 
 LOCAL_MARKET_TIMEZONE = "America/New_York"
 POLL_CEILING_SECONDS = 4 * 60 * 60
-POLL_WAIT_SECONDS = 2 * 60
+POLL_WAIT_SECONDS = 5 * 60
 
 
 def _target_market_date(value: date | datetime | str | None = None) -> date:

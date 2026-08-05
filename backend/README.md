@@ -406,8 +406,11 @@ API fetch telemetry row to `ops.api_fetch_log`.
 
 PJM day-ahead transmission constraints run through
 `backend.orchestration.power.pjm.da_transconstraints` and write
-`pjm.da_transconstraints`. The scheduled path uses the same daily start and
-polling policy as hourly demand bids, then upserts by
+`pjm.da_transconstraints`. The VM timer
+`helios-pjm-da-transconstraints.timer` runs daily at `16:30 UTC`, one hour
+after the DA hourly LMP timer starts. The scheduled path polls PJM Data Miner
+`da_transconstraints` for the next market day every five minutes for up to
+four hours, then upserts by
 `datetime_beginning_utc x day_ahead_congestion_event x monitored_facility x
 contingency_facility` and logs one resolved API fetch telemetry row to
 `ops.api_fetch_log`.

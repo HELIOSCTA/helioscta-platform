@@ -9,6 +9,11 @@ from backend.orchestration.power.pjm import da_transconstraints
 from backend.orchestration.power.pjm._policies import DataNotYetAvailable
 
 
+def test_polling_policy_uses_five_minute_interval():
+    assert da_transconstraints.POLL_WAIT_SECONDS == 5 * 60
+    assert da_transconstraints.POLL_CEILING_SECONDS == 4 * 60 * 60
+
+
 def test_market_day_shape_accepts_sparse_non_duplicate_constraints():
     target_date = date(2026, 6, 30)
 

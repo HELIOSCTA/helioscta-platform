@@ -2068,9 +2068,9 @@ LIMIT 20;
 - Unit files:
   - `infrastructure/systemd/helios-pjm-da-transconstraints.service`
   - `infrastructure/systemd/helios-pjm-da-transconstraints.timer`
-- Schedule: daily at `17:00 UTC`, matching
-  `helios-pjm-hrl-dmd-bids.timer`, with `Persistent=true`.
-- Polling policy: poll every `120` seconds for up to `4` hours until the
+- Schedule: daily at `16:30 UTC`, one hour after
+  `helios-pjm-da-hrl-lmps.timer` starts, with `Persistent=true`.
+- Polling policy: poll every `300` seconds for up to `4` hours until the
   target market day returns normalized constraint rows with no duplicate
   primary keys.
 - Timer behavior: missed runs fire after VM downtime.

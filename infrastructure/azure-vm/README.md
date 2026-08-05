@@ -53,8 +53,8 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
     `Persistent=true`, `RandomizedDelaySec=2min`.
   - `helios-miso-rt-lmps-final.timer`, daily at `13:00 UTC`,
     `Persistent=true`, `RandomizedDelaySec=2min`.
-  - `helios-pjm-da-transconstraints.timer`, daily at `17:00 UTC`
-    (`13:00 America/New_York` during daylight saving time), `Persistent=true`,
+  - `helios-pjm-da-transconstraints.timer`, daily at `16:30 UTC`
+    (`12:30 America/New_York` during daylight saving time), `Persistent=true`,
     `AccuracySec=1min`.
   - `helios-pjm-gen-outages-by-type.timer`, daily at `06:05`, `06:30`, and
     `07:00 America/New_York` (`10:05`, `10:30`, and `11:00 UTC` during
