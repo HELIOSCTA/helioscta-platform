@@ -487,7 +487,7 @@ into `spp.da_lmps` and `spp.rt_lmps_prelim`, write one resolved polling
 telemetry row to `ops.api_fetch_log`, and emit complete-day readiness events
 to `ops.data_availability_events`.
 
-The DA timer runs daily at `16:00 America/Chicago`, targets the next operating
+The DA timer runs daily at `15:35 America/Chicago`, targets the next operating
 date, and polls every 10 minutes for up to two hours. The RT preliminary timer
 runs daily at `00:15 America/Chicago`, targets the previous operating date,
 checks the final expected interval before downloading all five-minute files,
