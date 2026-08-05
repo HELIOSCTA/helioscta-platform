@@ -2,7 +2,7 @@
 Description=Daily HeliosCTA SPP Day-Ahead Hourly LMP orchestration timer
 
 [Timer]
-OnCalendar=*-*-* 16:00:00 America/Chicago
+OnCalendar=*-*-* 15:35:00 America/Chicago
 Persistent=true
 RandomizedDelaySec=2min
 AccuracySec=1min
@@ -10,4 +10,3 @@ Unit=helios-spp-da-lmps.service
 
 [Install]
 WantedBy=timers.target
-

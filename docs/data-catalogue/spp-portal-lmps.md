@@ -17,7 +17,7 @@
 `backend.orchestration.power.spp.da_lmps` targets the next Central operating
 date and polls for complete day-ahead hourly hub coverage. The VM timer is
 `helios-spp-da-lmps.timer`, scheduled daily at
-`16:00 America/Chicago`, polling every 10 minutes for up to two hours.
+`15:35 America/Chicago`, polling every 10 minutes for up to two hours.
 
 `backend.orchestration.power.spp.rt_lmps_prelim` targets the previous Central
 operating date and polls for complete five-minute RTBM hub coverage. Before
