@@ -2916,16 +2916,37 @@ LIMIT 20;
   `metadata.telemetry_stage = 'parse_daily_weighted_temperature_csv'` or
   `metadata.telemetry_stage = 'parse_daily_weighted_degree_day_csv'`.
 - Freshness completeness: `complete` only when the configured entities,
-  expected metrics, and 15 consecutive daily forecast dates are present for the
-  latest source issue; otherwise emits `partial` with missing
-  entity/metric/date details.
+  model-specific expected metrics, and 15 consecutive daily forecast dates are
+  present for the latest source issue. WDD model-run pollers also require the
+  expected 00Z or 12Z source init cycle before upserting. Timeout or wrong-cycle
+  responses write resolved poll telemetry, emit `partial` freshness when source
+  context is available, and do not upsert partial rows.
 - Unit files:
   - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service`
   - `infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer`
-- Proposed schedule: every six hours at `00:44`, `06:44`, `12:44`, and
+- Model-run unit files:
+  - `infrastructure/systemd/helios-weather-wsi-wdd-model-run@.service`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-gfs-op-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-gfs-op-12z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-gfs-ens-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-gfs-ens-12z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-ecmwf-op-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-ecmwf-op-12z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-ecmwf-ens-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-ecmwf-ens-12z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-aifs-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-aifs-12z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-aifs-ens-00z.timer`
+  - `infrastructure/systemd/helios-weather-wsi-wdd-aifs-ens-12z.timer`
+- Proposed baseline schedule: every six hours at `00:44`, `06:44`, `12:44`, and
   `18:44` UTC with `RandomizedDelaySec=3min`.
-- Timer behavior: `Persistent=false`; scheduled runs store the latest WSI
-  source issue returned by each endpoint.
+- Proposed model-run schedules: GFS_OP at `05:35` and `17:35` UTC; GFS_ENS at
+  `07:30` and `18:15` UTC; ECMWF_OP at `06:00` and `18:00` UTC; ECMWF_ENS at
+  `08:30` and `18:30` UTC; AIFS at `06:00` and `18:00` UTC; AIFS_ENS at
+  `07:45` and `19:45` UTC.
+- Timer behavior: `Persistent=false`; the baseline scheduled run stores the
+  latest WSI temperature and WSI-baseline WDD issue, while model-run timers
+  store only complete expected model/cycle snapshots.
 - Overlap protection: service uses `/usr/bin/flock` with
   `/tmp/helios-weather-wsi-daily-weighted-forecasts.lock`.
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
@@ -2933,9 +2954,14 @@ LIMIT 20;
   `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD` in
   `/etc/helioscta/backend.env`.
 - Application DDL required before first run is managed outside this repo.
+  Existing deployed tables require
+  `alter_weather_wsi_daily_weighted_degree_day_forecasts_model_run_columns.sql`
+  before the model-run writer is deployed.
 - Safe rerun story: upsert on
   `(source_issue_key, model, forecast_type, request_region, entity_id,
   forecast_date, metric_name)`.
+- Hot-table retention: weighted temperature forecasts retain 90 days of source
+  issues; weighted degree-day forecasts retain 30 days of source issues.
 - Local endpoint probe: `GetModelForecast` and
   `GetWeightedDegreeDayForecast` returned HTTP 200 on `2026-07-21` with source
   issue `2026-07-21 10:28 UTC`; no table rows were written during the probe.
@@ -3104,6 +3130,18 @@ LIMIT 20;
   `helios-weather-wsi-daily-weighted-observations.timer` remained
   `enabled`/`active`; next runs were observed at `2026-07-22 00:45:11 UTC` and
   `2026-07-22 00:56:06 UTC`, respectively.
+- Multi-model WDD repo update: implemented on `2026-08-05`; a manual local
+  production load refreshed all seven WDD models on `2026-08-05 15:06 UTC`.
+  VM deployment and VM-timer smoke remain pending.
+- WDD model-run coverage update: implemented in repo on `2026-08-05`. It adds
+  nullable raw model-run metadata columns, model/cycle comparison indexes, a
+  strict per-model/per-cycle poller that upserts only complete snapshots, and
+  systemd timers seeded for the 00Z/12Z GFS, ECMWF, and AIFS model families.
+  Before VM deployment, apply the WDD ALTER SQL and index SQL with
+  `helios_admin`; then install the `helios-weather-wsi-wdd-model-run@.service`
+  template and the twelve `helios-weather-wsi-wdd-*.timer` files. The existing
+  combined daily weighted forecast service now remains the weighted-temperature
+  plus WSI-baseline WDD path.
 
 Verification SQL for WSI daily weighted forecast table freshness:
 
@@ -3111,31 +3149,42 @@ Verification SQL for WSI daily weighted forecast table freshness:
 SELECT
     'temperature' AS dataset,
     request_region,
+    model,
+    bias_corrected,
+    NULL::VARCHAR AS model_run_cycle,
     entity_id,
     COUNT(*) AS rows,
     COUNT(DISTINCT source_issue_key) AS source_issue_count,
     MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc)) AS latest_issue_at,
+    NULL::TIMESTAMPTZ AS latest_source_init_at_utc,
+    NULL::VARCHAR[] AS source_init_cycles,
     MIN(forecast_date) AS min_forecast_date,
     MAX(forecast_date) AS max_forecast_date,
     COUNT(DISTINCT metric_name) AS metric_count,
     MAX(updated_at) AS latest_updated_at
 FROM weather.wsi_daily_weighted_temperature_forecasts
-GROUP BY request_region, entity_id
+GROUP BY request_region, model, bias_corrected, entity_id
 UNION ALL
 SELECT
     'degree_day' AS dataset,
     request_region,
+    model,
+    bias_corrected,
+    model_run_cycle,
     entity_id,
     COUNT(*) AS rows,
     COUNT(DISTINCT source_issue_key) AS source_issue_count,
     MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc)) AS latest_issue_at,
+    MAX(source_init_at_utc) AS latest_source_init_at_utc,
+    ARRAY_AGG(DISTINCT source_init_cycle ORDER BY source_init_cycle)
+        FILTER (WHERE source_init_cycle IS NOT NULL) AS source_init_cycles,
     MIN(forecast_date) AS min_forecast_date,
     MAX(forecast_date) AS max_forecast_date,
     COUNT(DISTINCT metric_name) AS metric_count,
     MAX(updated_at) AS latest_updated_at
 FROM weather.wsi_daily_weighted_degree_day_forecasts
-GROUP BY request_region, entity_id
-ORDER BY dataset, request_region, entity_id;
+GROUP BY request_region, model, bias_corrected, model_run_cycle, entity_id
+ORDER BY dataset, request_region, model, bias_corrected, model_run_cycle, entity_id;
 ```
 
 Verification SQL for WSI daily weighted observed table freshness:

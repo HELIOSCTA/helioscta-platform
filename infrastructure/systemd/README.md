@@ -861,11 +861,25 @@ journalctl -u helios-weather-wsi-hourly-forecast.service -n 200 --no-pager
 
 ## WSI Daily Weighted Forecast Weather
 
-The WSI daily weighted forecast weather workflow has one combined timer:
+The WSI daily weighted forecast weather workflow has a six-hourly baseline
+timer plus per-model weighted degree-day model-run timers:
 
 ```text
 helios-weather-wsi-daily-weighted-forecasts.service
 helios-weather-wsi-daily-weighted-forecasts.timer
+helios-weather-wsi-wdd-model-run@.service
+helios-weather-wsi-wdd-gfs-op-00z.timer
+helios-weather-wsi-wdd-gfs-op-12z.timer
+helios-weather-wsi-wdd-gfs-ens-00z.timer
+helios-weather-wsi-wdd-gfs-ens-12z.timer
+helios-weather-wsi-wdd-ecmwf-op-00z.timer
+helios-weather-wsi-wdd-ecmwf-op-12z.timer
+helios-weather-wsi-wdd-ecmwf-ens-00z.timer
+helios-weather-wsi-wdd-ecmwf-ens-12z.timer
+helios-weather-wsi-wdd-aifs-00z.timer
+helios-weather-wsi-wdd-aifs-12z.timer
+helios-weather-wsi-wdd-aifs-ens-00z.timer
+helios-weather-wsi-wdd-aifs-ens-12z.timer
 ```
 
 It runs `backend.orchestration.weather.wsi.daily_weighted_forecasts`, pulls WSI
@@ -876,30 +890,73 @@ Trader `GetModelForecast` weighted temperature forecasts and
 `ops.api_fetch_log`, and emits forecast freshness events to
 `ops.data_availability_events`. Weighted temperatures use WSI
 `allregions=true` and retain all configured NA regions returned by the source;
-weighted degree days request the full configured nine-region basket. The timer
-runs every six hours at `00:44`,
+the baseline timer also refreshes the WSI weighted degree-day model with the
+original 32-metric shape. Model-driven degree-day forecasts use the 72 metrics
+returned by WSI, including 6-hour difference columns, and are owned by the
+model-run pollers. The baseline timer runs every six hours at `00:44`,
 `06:44`, `12:44`, and `18:44` UTC with `Persistent=false`, after the existing
 WSI observed and hourly forecast timers. The service uses `flock` with
 `/tmp/helios-weather-wsi-daily-weighted-forecasts.lock`.
+
+The model-run poller service runs
+`daily_weighted_forecasts.run_degree_day_model_run_instance("<model>-<cycle>")`.
+Each timer starts near the expected upstream availability window and the Python
+poller checks every three minutes for up to 45 minutes. It validates the
+expected source init cycle, all nine configured WDD regions, model-specific
+expected metrics, and 15 consecutive forecast days before upserting. Timeout,
+wrong-cycle, or incomplete responses log one resolved poll row to
+`ops.api_fetch_log`, emit a `partial` freshness event when the WSI response has
+source context, and do not upsert partial rows. The seeded UTC schedules are:
+
+```text
+GFS_OP     00Z 05:35   12Z 17:35
+GFS_ENS    00Z 07:30   12Z 18:15
+ECMWF_OP   00Z 06:00   12Z 18:00
+ECMWF_ENS  00Z 08:30   12Z 18:30
+AIFS       00Z 06:00   12Z 18:00
+AIFS_ENS   00Z 07:45   12Z 19:45
+```
+
 Malformed forecast CSV responses add failed fetch-telemetry rows with
 `metadata.telemetry_stage = 'parse_daily_weighted_temperature_csv'` or
 `metadata.telemetry_stage = 'parse_daily_weighted_degree_day_csv'`. Forecast
-freshness emits `complete` only when the configured entities, expected metrics,
-and 15 consecutive daily forecast dates are present for the latest source
-issue; otherwise it emits `partial` with missing entity/metric/date details.
+freshness emits `complete` only when the configured entities, model-specific
+expected metrics, and 15 consecutive daily forecast dates are present for the
+latest source issue and expected source init cycle; weighted degree-day
+freshness is emitted per model issue/cycle.
+Otherwise it emits `partial` with missing entity/metric/date details. Weighted temperature
+forecasts retain 90 days of source issues, and weighted degree-day forecasts
+retain 30 days.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `WSI_TRADER_USERNAME`, `WSI_TRADER_NAME`, and `WSI_TRADER_PASSWORD`, and the
-daily weighted weather table/index application DDL has been applied.
+daily weighted weather table/index application DDL has been applied. Existing
+WDD forecast tables also need the nullable metadata update in
+`alter_weather_wsi_daily_weighted_degree_day_forecasts_model_run_columns.sql`
+before deploying the model-run writer.
 
 After those prerequisites are complete:
 
 ```bash
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-wdd-model-run@.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-wdd-*.timer /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl start helios-weather-wsi-daily-weighted-forecasts.service
 sudo systemctl enable --now helios-weather-wsi-daily-weighted-forecasts.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-op-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-op-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-ens-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-op-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-op-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-ens-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-ens-12z.timer
 ```
 
 Verify the workflow with:
@@ -908,6 +965,9 @@ Verify the workflow with:
 systemctl status helios-weather-wsi-daily-weighted-forecasts.service
 systemctl status helios-weather-wsi-daily-weighted-forecasts.timer
 journalctl -u helios-weather-wsi-daily-weighted-forecasts.service -n 200 --no-pager
+systemctl status helios-weather-wsi-wdd-gfs-op-00z.timer
+systemctl status 'helios-weather-wsi-wdd-model-run@GFS_OP-00Z.service'
+journalctl -u 'helios-weather-wsi-wdd-model-run@GFS_OP-00Z.service' -n 200 --no-pager
 ```
 
 ## WSI Daily Weighted Observed Weather
@@ -1076,6 +1136,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-external-int
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-external-interface-metered-data.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-forecasts.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-wdd-model-run@.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-wdd-*.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-observations.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-weather-wsi-daily-weighted-observations.timer /etc/systemd/system/
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
@@ -1116,6 +1178,18 @@ sudo systemctl enable --now helios-isone-forecast-batch.timer
 sudo systemctl enable --now helios-isone-rt-hrl-scheduled-interchange.timer
 sudo systemctl enable --now helios-isone-external-interface-metered-data.timer
 sudo systemctl enable --now helios-weather-wsi-daily-weighted-forecasts.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-op-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-op-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-gfs-ens-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-op-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-op-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-ecmwf-ens-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-12z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-ens-00z.timer
+sudo systemctl enable --now helios-weather-wsi-wdd-aifs-ens-12z.timer
 sudo systemctl enable --now helios-weather-wsi-daily-weighted-observations.timer
 sudo systemctl enable --now helios-prod-health-check.timer
 ```

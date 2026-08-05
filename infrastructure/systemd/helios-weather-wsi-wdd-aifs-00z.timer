@@ -1,0 +1,11 @@
+[Unit]
+Description=HeliosCTA WSI WDD AIFS 00Z model-run poller timer
+
+[Timer]
+OnCalendar=*-*-* 06:00:00
+Persistent=false
+AccuracySec=1min
+Unit=helios-weather-wsi-wdd-model-run@AIFS-00Z.service
+
+[Install]
+WantedBy=timers.target

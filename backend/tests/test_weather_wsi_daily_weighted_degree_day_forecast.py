@@ -48,12 +48,17 @@ def test_daily_weighted_degree_day_forecast_normalizes_long_form_metrics():
         ),
         "scrape_run_at_utc": pd.Timestamp(SCRAPE_RUN_AT),
         "source_product_id": "WEIGHTED_DEGREE_DAY_FORECAST",
+        "source_model": None,
+        "source_init_at_utc": pd.Timestamp("2026-07-21 10:28:00+0000"),
+        "source_init_cycle": "10Z",
+        "model_run_cycle": "10Z",
         "request_region": "NA",
         "entity_id": "CONUS",
         "model": "WSI",
         "forecast_type": "Daily",
         "bias_corrected": False,
         "forecast_period": "Day 1",
+        "forecast_day": 1,
         "forecast_date": date(2026, 7, 21),
         "period_end_date": date(2026, 7, 21),
         "metric_name": "gas_cdd",
@@ -62,7 +67,76 @@ def test_daily_weighted_degree_day_forecast_normalizes_long_form_metrics():
     }
 
 
-def test_daily_weighted_degree_day_pull_uses_expected_request_params(monkeypatch):
+def test_daily_weighted_degree_day_forecast_uses_requested_model_in_issue_key():
+    df = scrape.parse_daily_weighted_degree_day_forecast_text(
+        _fixture_text(),
+        model="GFS_OP",
+        scrape_run_at_utc=SCRAPE_RUN_AT,
+    )
+
+    assert df["model"].unique().tolist() == ["GFS_OP"]
+    assert df["source_issue_key"].unique().tolist() == [
+        "wsi:GetWeightedDegreeDayForecast:GFS_OP:Daily:202607211028"
+    ]
+
+
+def test_daily_weighted_degree_day_forecast_handles_model_output_shape():
+    text = "\n".join(
+        [
+            "Model Weighted Degree Day Forecast - Forecast Updated Aug 5 2026 1200 UTC",
+            (
+                "site_id,model,init_time,period,period_start,period_end,"
+                "electric_cdd,electric_cdd_6hr_difference"
+            ),
+            (
+                "CONUS,MF_GFS_OP,8/5/2026 12:00:00 PM,Day 1,"
+                "8/5/2026,8/5/2026,13.8,0.6,"
+            ),
+            (
+                "CONUS,GFS_OP,8/5/2026 6:00:00 AM,Day 1,"
+                "8/5/2026,8/5/2026,12.2,-0.4,"
+            ),
+        ]
+    )
+
+    df = scrape.parse_daily_weighted_degree_day_forecast_text(
+        text,
+        model="GFS_OP",
+        scrape_run_at_utc=datetime(2026, 8, 5, 12, 30, tzinfo=timezone.utc),
+    )
+
+    assert len(df) == 2
+    assert df["entity_id"].unique().tolist() == ["CONUS"]
+    assert df["model"].unique().tolist() == ["GFS_OP"]
+    assert df["source_model"].unique().tolist() == ["MF_GFS_OP"]
+    assert df["source_init_at_utc"].unique().tolist() == [
+        pd.Timestamp("2026-08-05 12:00:00+0000")
+    ]
+    assert df["source_init_cycle"].unique().tolist() == ["12Z"]
+    assert df["model_run_cycle"].unique().tolist() == ["12Z"]
+    assert df["forecast_day"].unique().tolist() == [1]
+    assert set(df["metric_name"]) == {"electric_cdd", "electric_cdd_6hr_difference"}
+    assert "model" not in set(df["metric_name"])
+    assert sorted(df["metric_value"].dropna().tolist()) == [0.6, 13.8]
+
+
+def test_daily_weighted_degree_day_model_run_cycle_uses_requested_bucket():
+    df = scrape.parse_daily_weighted_degree_day_forecast_text(
+        _fixture_text(),
+        model="GFS_OP",
+        model_run_cycle="00Z",
+        scrape_run_at_utc=SCRAPE_RUN_AT,
+    )
+
+    assert df["source_init_cycle"].unique().tolist() == ["10Z"]
+    assert df["model_run_cycle"].unique().tolist() == ["00Z"]
+
+
+@pytest.mark.parametrize("model", scrape.DEFAULT_MODELS)
+def test_daily_weighted_degree_day_pull_uses_expected_request_params(
+    monkeypatch,
+    model,
+):
     captured: list[dict[str, object]] = []
 
     def fake_get_text(**kwargs):
@@ -74,6 +148,7 @@ def test_daily_weighted_degree_day_pull_uses_expected_request_params(monkeypatch
     df = scrape._pull(
         run_id="run-1",
         database="helios_prod",
+        model=model,
         scrape_run_at_utc=SCRAPE_RUN_AT,
         metadata={"run_mode": "test"},
     )
@@ -86,14 +161,36 @@ def test_daily_weighted_degree_day_pull_uses_expected_request_params(monkeypatch
     assert captured[0]["params"] == {
         "Region": "NA",
         "ForecastType": "Daily",
-        "Model": "WSI",
+        "Model": model,
         "BiasCorrected": "false",
         "stations[]": scrape.DEFAULT_STATIONS,
         "datatypes[]": scrape.DEFAULT_DATA_TYPES,
     }
+    assert captured[0]["metadata"]["model"] == model
     assert captured[0]["metadata"]["stations"] == scrape.DEFAULT_STATIONS
     assert captured[0]["metadata"]["data_types"] == scrape.DEFAULT_DATA_TYPES
     assert captured[0]["metadata"]["run_mode"] == "test"
+
+
+def test_daily_weighted_degree_day_default_models_include_full_wsi_coverage():
+    assert scrape.DEFAULT_MODELS == [
+        "WSI",
+        "GFS_OP",
+        "GFS_ENS",
+        "ECMWF_OP",
+        "ECMWF_ENS",
+        "AIFS",
+        "AIFS_ENS",
+    ]
+
+
+def test_daily_weighted_degree_day_expected_metrics_vary_by_model_shape():
+    assert scrape.expected_metric_names_for_model("WSI") == scrape.EXPECTED_METRIC_NAMES
+    assert scrape.expected_metric_names_for_model("GFS_OP") == (
+        scrape.MODEL_EXPECTED_METRIC_NAMES
+    )
+    assert len(scrape.EXPECTED_METRIC_NAMES) == 32
+    assert len(scrape.MODEL_EXPECTED_METRIC_NAMES) == 72
 
 
 def test_daily_weighted_degree_day_default_stations_include_all_regions():
@@ -206,6 +303,6 @@ def test_daily_weighted_degree_day_retention_uses_source_issue_fallback(monkeypa
     assert captured == {
         "schema": "weather",
         "table_name": "wsi_daily_weighted_degree_day_forecasts",
-        "retention_days": 90,
+        "retention_days": 30,
         "database": "helios_prod",
     }

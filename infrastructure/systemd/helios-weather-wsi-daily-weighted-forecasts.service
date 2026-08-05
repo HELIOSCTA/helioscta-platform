@@ -9,7 +9,7 @@ User=helios
 Group=helios
 WorkingDirectory=/opt/helioscta-platform
 EnvironmentFile=/etc/helioscta/backend.env
-ExecStart=/usr/bin/flock -n /tmp/helios-weather-wsi-daily-weighted-forecasts.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.weather.wsi.daily_weighted_forecasts
+ExecStart=/usr/bin/flock -n /tmp/helios-weather-wsi-daily-weighted-forecasts.lock /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.weather.wsi import daily_weighted_forecasts; daily_weighted_forecasts.main(degree_day_models=['WSI'], metadata={'scheduler':'systemd','model_run_pollers':'separate'})"
 TimeoutStartSec=45min
 StandardOutput=journal
 StandardError=journal

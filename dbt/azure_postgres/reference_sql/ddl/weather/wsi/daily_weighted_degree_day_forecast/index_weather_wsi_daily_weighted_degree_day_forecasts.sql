@@ -40,6 +40,44 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_dd_issue_
         request_region
     );
 
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_dd_latest_model_cycle
+    ON weather.wsi_daily_weighted_degree_day_forecasts (
+        request_region,
+        model,
+        bias_corrected,
+        forecast_type,
+        model_run_cycle,
+        source_issue_at_utc DESC NULLS LAST,
+        scrape_run_at_utc DESC
+    )
+    INCLUDE (
+        source_issue_key,
+        source_init_at_utc,
+        source_init_cycle,
+        updated_at
+    );
+
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_dd_entity_metric_date_compare
+    ON weather.wsi_daily_weighted_degree_day_forecasts (
+        request_region,
+        model,
+        bias_corrected,
+        forecast_type,
+        entity_id,
+        metric_name,
+        forecast_date,
+        model_run_cycle,
+        source_issue_at_utc DESC NULLS LAST
+    )
+    INCLUDE (
+        metric_value,
+        metric_unit,
+        source_issue_key,
+        source_init_cycle,
+        forecast_day,
+        updated_at
+    );
+
 CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_weather_wsi_daily_weighted_dd_updated
     ON weather.wsi_daily_weighted_degree_day_forecasts (
         updated_at DESC

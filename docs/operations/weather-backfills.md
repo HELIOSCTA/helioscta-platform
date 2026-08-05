@@ -73,18 +73,37 @@ Destination tables:
 - `weather.wsi_daily_weighted_degree_day_forecasts`
 
 Default scope: all NA weighted-temperature regions returned by WSI
-`allregions=true`, and all nine weighted degree-day regions accepted by the
-forecast endpoint.
+`allregions=true`, and raw WSI, GFS_OP, GFS_ENS, ECMWF_OP,
+ECMWF_ENS, AIFS, and AIFS_ENS weighted degree-day forecasts for all nine
+weighted degree-day regions accepted by the forecast endpoint. WSI weighted
+degree-day forecasts use the original 32 metrics; model-driven degree-day
+forecasts use the 72 metrics returned by WSI, including 6-hour difference
+columns. Scheduled model-driven WDD refreshes are owned by per-model/per-cycle
+pollers that upsert only complete 00Z/12Z snapshots; the combined manual
+orchestration remains useful for latest-issue probes. EIA storage-week totals,
+period buckets, and any forecast-change views should be derived from the raw
+rows downstream. Ten-year normal calculations are not part of the promoted raw
+table contract.
 
 Safe rerun key for both tables:
 `source_issue_key, model, forecast_type, request_region, entity_id,
 forecast_date, metric_name`.
 
+Hot-table retention keeps 90 days of weighted-temperature source issues and 30
+days of weighted degree-day source issues.
+
 There is no historical replay path in v1. After DDL is applied, run the
 scheduled orchestration on demand to refresh the latest source issue:
 
 ```bash
-sudo systemd-run --unit=helios-wsi-daily-weighted-forecasts-manual --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.weather.wsi.daily_weighted_forecasts
+sudo systemd-run --unit=helios-wsi-daily-weighted-forecasts-manual --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.weather.wsi import daily_weighted_forecasts; daily_weighted_forecasts.main(degree_day_models=['WSI'], metadata={'run_reason':'manual_latest_baseline'})"
+```
+
+For a model-driven WDD on-demand refresh, run the poller for the expected model
+and source init cycle. This upserts only after the snapshot is complete:
+
+```bash
+sudo systemd-run --unit=helios-wsi-wdd-gfs-op-12z-manual --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.weather.wsi.daily_weighted_forecasts import run_degree_day_model_run; run_degree_day_model_run(model='GFS_OP', model_run_cycle='12Z', metadata={'run_reason':'manual_model_run_refresh'})"
 ```
 
 ## Verification
@@ -122,10 +141,14 @@ LIMIT 20;
 SELECT
     'wsi_daily_weighted_temperature' AS dataset,
     request_region,
+    NULL::VARCHAR AS model,
+    NULL::BOOLEAN AS bias_corrected,
+    NULL::VARCHAR AS model_run_cycle,
     entity_id,
     COUNT(*) AS rows,
     COUNT(DISTINCT source_issue_key) AS source_issue_count,
     MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc))::text AS latest_issue_at,
+    NULL::text AS latest_source_init_at_utc,
     MIN(forecast_date)::text AS min_forecast_date,
     MAX(forecast_date)::text AS max_forecast_date,
     COUNT(DISTINCT metric_name) AS metric_count,
@@ -136,17 +159,21 @@ UNION ALL
 SELECT
     'wsi_daily_weighted_degree_day' AS dataset,
     request_region,
+    model,
+    bias_corrected,
+    model_run_cycle,
     entity_id,
     COUNT(*) AS rows,
     COUNT(DISTINCT source_issue_key) AS source_issue_count,
     MAX(COALESCE(source_issue_at_utc, scrape_run_at_utc))::text AS latest_issue_at,
+    MAX(source_init_at_utc)::text AS latest_source_init_at_utc,
     MIN(forecast_date)::text AS min_forecast_date,
     MAX(forecast_date)::text AS max_forecast_date,
     COUNT(DISTINCT metric_name) AS metric_count,
     MAX(updated_at)::text AS latest_updated_at
 FROM weather.wsi_daily_weighted_degree_day_forecasts
-GROUP BY request_region, entity_id
-ORDER BY dataset, request_region, entity_id;
+GROUP BY request_region, model, bias_corrected, model_run_cycle, entity_id
+ORDER BY dataset, request_region, model, bias_corrected, model_run_cycle, entity_id;
 ```
 
 ```sql

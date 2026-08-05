@@ -10,6 +10,10 @@
 -- Grain:
 --   source_issue_key x model x forecast_type x request_region x entity_id
 --   x forecast_date x metric_name.
+-- Raw model-run metadata: source_model, source_init_at_utc,
+--   source_init_cycle, model_run_cycle, and forecast_day are nullable so
+--   existing hot rows can remain in place during the operator-applied DDL
+--   update.
 -- Safe rerun key: primary key below.
 -- Freshness field: source_issue_at_utc when parseable, otherwise
 -- scrape_run_at_utc and deterministic source_issue_key.
@@ -21,12 +25,17 @@ CREATE TABLE IF NOT EXISTS weather.wsi_daily_weighted_degree_day_forecasts (
     source_banner VARCHAR,
     scrape_run_at_utc TIMESTAMPTZ NOT NULL,
     source_product_id VARCHAR NOT NULL DEFAULT 'WEIGHTED_DEGREE_DAY_FORECAST',
+    source_model VARCHAR,
+    source_init_at_utc TIMESTAMPTZ,
+    source_init_cycle VARCHAR,
+    model_run_cycle VARCHAR,
     request_region VARCHAR NOT NULL,
     entity_id VARCHAR NOT NULL,
     model VARCHAR NOT NULL,
     forecast_type VARCHAR NOT NULL,
     bias_corrected BOOLEAN NOT NULL,
     forecast_period VARCHAR NOT NULL,
+    forecast_day INTEGER,
     forecast_date DATE NOT NULL,
     period_end_date DATE NOT NULL,
     metric_name VARCHAR NOT NULL,

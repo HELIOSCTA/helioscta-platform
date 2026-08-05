@@ -291,18 +291,30 @@ and `GetWeightedDegreeDayForecast` to
 tables is
 `source_issue_key x model x forecast_type x request_region x entity_id x
 forecast_date x metric_name`; safe reruns upsert by that key while preserving
-distinct source forecast issues. Defaults are North America, WSI model, daily
-resolution, Fahrenheit temperature units for weighted temperatures, uncorrected
-model bias, all NA weighted-temperature regions returned by WSI
-`allregions=true`, and all nine weighted degree-day regions accepted by the
-forecast endpoint. Both scrapes log WSI API fetch telemetry to
-`ops.api_fetch_log`; malformed or schema-incompatible CSV after HTTP success
-adds a failed parse-stage fetch row. The combined orchestration emits one
-`ops.data_availability_events` forecast freshness event for each table, marking
-`complete` only when the configured entities, expected metrics, and 15
-consecutive daily forecast dates are present for the latest source issue.
-Scheduled runs retain 90 days of source issues in the hot tables after
-successful upserts, using `source_issue_at_utc` when WSI publishes it and
+distinct source forecast issues. Weighted temperatures default to North America,
+WSI model, daily resolution, Fahrenheit temperature units, uncorrected model
+bias, and all NA weighted-temperature regions returned by WSI
+`allregions=true`. Weighted degree days default to North America, daily
+resolution, raw output without bias correction for the WSI, GFS_OP, GFS_ENS,
+ECMWF_OP, ECMWF_ENS, AIFS, and AIFS_ENS models, and all nine weighted
+degree-day regions accepted by the forecast endpoint. WSI weighted degree-day
+output uses the original 32 metric shape; the model-driven feeds use the
+72-metric shape returned by WSI, including 6-hour difference columns. Both
+scrapes log WSI API fetch telemetry to `ops.api_fetch_log`; malformed or
+schema-incompatible CSV after HTTP success adds a failed parse-stage fetch row.
+The raw weighted degree-day table also stores nullable model-run metadata from
+the source rows: `source_model`, `source_init_at_utc`, `source_init_cycle`,
+`model_run_cycle`, and `forecast_day`. The combined orchestration remains the
+temperature plus WSI-baseline refresh path. Model-driven weighted degree-day
+forecasts run through per-model/per-cycle pollers that check every three
+minutes until the expected 00Z or 12Z source init cycle has all configured
+entities, model-specific expected metrics, and 15 consecutive daily forecast
+dates; only complete snapshots are upserted. Timeout or wrong-cycle responses
+write resolved poll telemetry to `ops.api_fetch_log`, emit a partial freshness
+event when source context is available, and leave partial rows out of the raw
+table. Scheduled runs retain 90 days of weighted-temperature source issues and
+30 days of weighted degree-day source issues in the hot tables after successful
+upserts, using `source_issue_at_utc` when WSI publishes it and
 `scrape_run_at_utc` as the fallback for deterministic hourly issue keys.
 
 The promoted WSI daily weighted observed runtime modules are
