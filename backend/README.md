@@ -352,6 +352,20 @@ orchestration emits one `ops.data_availability_events` observed freshness event
 for each table, marking `complete` only when the configured entities and
 expected metrics are present for the latest observed date returned by WSI.
 
+The derived WSI weighted degree-day 10-year normal workflow lives at
+`backend.orchestration.weather.wsi.daily_weighted_degree_day_10yr_normals`.
+It reads only
+`weather.wsi_daily_weighted_degree_day_observations`, writes
+`weather.wsi_daily_weighted_degree_day_10yr_normals`, and does not call WSI.
+The default window is the previous 10 complete calendar years, so a 2026 run
+uses 2016-01-01 through 2025-12-31. The derived grain is
+`normal_window_end_year x lookback_years x request_region x entity_id x
+metric_name x calendar_month x calendar_day`, with February 29 intentionally
+excluded. Defaults cover all nine promoted WDD entities and all eight WDD
+metric families, including `gas_hdd`. Scheduled or manual VM runs gate on a
+complete source-history shape before upserting and write one transform
+telemetry row to `ops.api_fetch_log`.
+
 Run `python -m backend.scrapes.weather.wsi.station_metadata` manually to fetch
 WSI Trader `GetCityIds` metadata and compare the returned station IDs against
 the configured PJM station basket. This probe is not scheduled and writes no

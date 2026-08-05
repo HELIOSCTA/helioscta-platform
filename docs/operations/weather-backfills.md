@@ -65,6 +65,52 @@ sudo systemd-run --unit=helios-wsi-daily-weighted-observations-backfill --wait -
 rm -f /tmp/helios-wsi-daily-weighted-observations-backfill.py
 ```
 
+## WSI WDD 10-Year Normals
+
+Destination table:
+
+- `weather.wsi_daily_weighted_degree_day_10yr_normals`
+
+Source table:
+
+- `weather.wsi_daily_weighted_degree_day_observations`
+
+Default scope: all nine WSI weighted degree-day entities and the eight promoted
+WDD metric families: `electric_cdd`, `electric_hdd`, `gas_cdd`, `gas_hdd`,
+`oil_cdd`, `oil_hdd`, `population_cdd`, and `population_hdd`.
+
+Default window: the previous 10 complete calendar years. A 2026 run uses
+2016-01-01 through 2025-12-31. February 29 is excluded, so a complete default
+run writes `9 x 8 x 365 = 26280` normal rows and uses 262800 source
+entity/metric/date observations.
+
+Safe rerun key:
+`normal_window_end_year, lookback_years, request_region, entity_id,
+metric_name, calendar_month, calendar_day`.
+
+Apply the operator DDL first with `helios_admin`. From a shell where the
+standard `AZURE_POSTGRES_WRITER_*` variables are exported:
+
+```bash
+PGPASSWORD="$AZURE_POSTGRES_WRITER_PASSWORD" psql "host=$AZURE_POSTGRES_WRITER_HOST port=${AZURE_POSTGRES_WRITER_PORT:-5432} dbname=${AZURE_POSTGRES_WRITER_DBNAME:-helios_prod} user=$AZURE_POSTGRES_WRITER_USER sslmode=${AZURE_POSTGRES_WRITER_SSLMODE:-require}" -f dbt/azure_postgres/reference_sql/ddl/weather/wsi/daily_weighted_degree_day_10yr_normals/table_weather_wsi_daily_weighted_degree_day_10yr_normals.sql
+PGPASSWORD="$AZURE_POSTGRES_WRITER_PASSWORD" psql "host=$AZURE_POSTGRES_WRITER_HOST port=${AZURE_POSTGRES_WRITER_PORT:-5432} dbname=${AZURE_POSTGRES_WRITER_DBNAME:-helios_prod} user=$AZURE_POSTGRES_WRITER_USER sslmode=${AZURE_POSTGRES_WRITER_SSLMODE:-require}" -f dbt/azure_postgres/reference_sql/ddl/weather/wsi/daily_weighted_degree_day_10yr_normals/index_weather_wsi_daily_weighted_degree_day_10yr_normals.sql
+```
+
+Run the calculation on the VM:
+
+```bash
+sudo systemd-run --unit=helios-wsi-wdd-10yr-normals-manual --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.weather.wsi.daily_weighted_degree_day_10yr_normals
+```
+
+The module validates the source window before writing. If a source-history gap
+exists, the default run fails before upserting and writes failure telemetry to
+`ops.api_fetch_log`. Use `dry_run=True` from a Python one-liner to check the
+shape without writing:
+
+```bash
+sudo systemd-run --unit=helios-wsi-wdd-10yr-normals-dry-run --wait --collect --pipe --property=User=helios --property=WorkingDirectory=/opt/helioscta-platform --property=EnvironmentFile=/etc/helioscta/backend.env /opt/helioscta-platform/.venv/bin/python -c "from backend.orchestration.weather.wsi.daily_weighted_degree_day_10yr_normals import main; print(main(normal_window_end_year=2025, dry_run=True, run_mode='manual'))"
+```
+
 ## WSI Daily Weighted Forecasts
 
 Destination tables:
@@ -224,6 +270,43 @@ WHERE dataset IN (
     'wsi_daily_weighted_temperature_observations',
     'wsi_daily_weighted_degree_day_observations'
 )
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+```sql
+SELECT
+    normal_window_end_year,
+    lookback_years,
+    request_region,
+    COUNT(*) AS normal_rows,
+    COUNT(DISTINCT entity_id) AS entity_count,
+    COUNT(DISTINCT metric_name) AS metric_count,
+    MIN(sample_start_date)::text AS sample_start_date,
+    MAX(sample_end_date)::text AS sample_end_date,
+    MIN(sample_year_count) AS min_sample_year_count,
+    MAX(sample_year_count) AS max_sample_year_count,
+    COUNT(*) FILTER (
+        WHERE sample_year_count <> lookback_years
+           OR sample_day_count <> lookback_years
+    ) AS incomplete_normal_rows,
+    MAX(updated_at)::text AS latest_updated_at
+FROM weather.wsi_daily_weighted_degree_day_10yr_normals
+GROUP BY normal_window_end_year, lookback_years, request_region
+ORDER BY normal_window_end_year DESC, lookback_years, request_region;
+```
+
+```sql
+SELECT
+    pipeline_name,
+    status,
+    target_table,
+    rows_returned,
+    rows_written,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'wsi_daily_weighted_degree_day_10yr_normals'
 ORDER BY created_at DESC
 LIMIT 20;
 ```
