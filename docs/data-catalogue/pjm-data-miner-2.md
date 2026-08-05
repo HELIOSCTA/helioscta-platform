@@ -252,7 +252,16 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Uniqueness key: `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Freshness field: `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.da_marginal_value`.
+- Runtime: `backend.orchestration.power.pjm.da_marginal_value` for the
+  scheduled publication-aware refresh; `backend.scrapes.power.pjm.da_marginal_value`
+  remains the lower-level scrape module.
+- Scheduled path: `helios-pjm-da-marginal-value.timer` starts daily at
+  `17:00 UTC`; the orchestration polls every two minutes for up to four hours
+  for the next PJM/Eastern market date.
+- Runtime observability: `ops.api_fetch_log` and
+  `ops.data_availability_events`.
+- Data availability event:
+  `pjm_da_marginal_value:data_ready:<YYYY-MM-DD>:constraint_contingency`.
 
 ### da_reserve_market_results
 
@@ -419,7 +428,16 @@ Feed selection and promotion priority are documented in
 - Grain: source contract from PJM Data Miner 2 metadata; primary key `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Uniqueness key: `datetime_beginning_utc, monitored_facility, contingency_facility`.
 - Freshness field: `datetime_beginning_ept`.
-- Runtime: `backend.scrapes.power.pjm.rt_marginal_value`.
+- Runtime: `backend.orchestration.power.pjm.rt_marginal_value` for the
+  scheduled release/repair refresh; `backend.scrapes.power.pjm.rt_marginal_value`
+  remains the lower-level scrape module.
+- Scheduled path: `helios-pjm-rt-marginal-value.timer` starts daily at
+  `00:20` and `04:20 America/New_York`; the orchestration targets the
+  PJM/Eastern market date two days back and polls a rolling five-day window.
+- Runtime observability: `ops.api_fetch_log` and
+  `ops.data_availability_events`.
+- Data availability event:
+  `pjm_rt_marginal_value:data_ready:<YYYY-MM-DD>:constraint_contingency`.
 
 ### rt_short_term_mv_override
 

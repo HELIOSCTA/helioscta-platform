@@ -44,6 +44,8 @@ A backend workflow is production-ready when it has:
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `17:00 UTC`, matching hourly demand bids, and polls for up to 4 hours. |
+| DA marginal value schedule | Promoted for VM install | `helios-pjm-da-marginal-value.timer` runs daily at `17:00 UTC`, polls for the next PJM/Eastern market date for up to 4 hours, and emits constraint-contingency readiness. |
+| RT marginal value schedule | Promoted for VM install | `helios-pjm-rt-marginal-value.timer` runs at `00:20` and `04:20 America/New_York`, targets the PJM/Eastern market date two days back, and polls a rolling five-day window. |
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago` and polls for complete next-day DAM hub prices. |
 | CAISO DA LMP schedule | In place | `helios-caiso-da-lmps.timer` runs daily at `12:00 America/Los_Angeles` and polls for CAISO's day-ahead OASIS publication. |
 | CAISO RT LMP schedule | In place | `helios-caiso-rt-lmps.timer` runs daily at `09:20 America/Los_Angeles` for the previous complete Pacific trading date. |
@@ -59,7 +61,7 @@ A backend workflow is production-ready when it has:
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
 | ISO-NE RT final hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-final.timer` runs daily at `20:10 UTC`. |
 | PJM load forecast schedule | In place | `helios-pjm-load-frcstd-7-day.timer` runs `load_frcstd_7_day` hourly. |
-| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 23 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
+| PJM Data Miner batch schedule | In place | `helios-pjm-data-miner-batch.timer` runs the remaining 20 support scrapes daily at `04:30 UTC`; `helios-pjm-hrl-load-prelim.timer`, `helios-pjm-da-transconstraints.timer`, `helios-pjm-da-marginal-value.timer`, `helios-pjm-rt-marginal-value.timer`, `helios-pjm-da-reserve-market-results.timer`, and `helios-pjm-gen-outages-by-type.timer` cover promoted dedicated feeds. |
 | PJM Operations Summary schedule | Promoted for VM install | `helios-pjm-ops-sum.timer` runs the Ops Sum feeds daily after PJM's 05:00-08:00 EPT refresh window. |
 | LMP price repair | In place | `helios-lmp-price-backfill-7-day.timer` reruns seven-day PJM, ISO-NE, ERCOT, CAISO, MISO, SPP, and NYISO LMP scrape/backfill repairs nightly at `22:15 UTC`; it replaces the older PJM-only repair timer. |
 | Production health digest schedule | In place | `helios-prod-health-check.timer` runs after RT and DA priority timers. |
@@ -150,6 +152,12 @@ Current criticality decision:
   `da_reserve_market_results`, because the feed posts after the early PJM Data
   Miner support batch. It starts at 13:45 America/New_York, polls every two
   minutes for up to four hours, and emits a complete-day readiness event.
+- Dedicated constraint-value timers: `da_marginal_value` runs with the
+  day-ahead constraint release window at 17:00 UTC, while
+  `rt_marginal_value` runs at 00:20 and 04:20 America/New_York for the
+  market date two days back. Both emit constraint-contingency readiness events
+  and stay out of the early support batch so the constraints page can show
+  release-lag telemetry.
 - PJM hourly bucket: `rt_unverified_hrl_lmps` runs hourly after the source's
   typical top-of-hour refresh and stays out of the daily support batch so
   dashboard-facing RT prices do not wait for the next overnight job. Add other

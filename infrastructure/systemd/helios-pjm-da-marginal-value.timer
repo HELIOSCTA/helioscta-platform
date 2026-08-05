@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily HeliosCTA PJM day-ahead marginal value timer
+
+[Timer]
+OnCalendar=*-*-* 17:00:00 UTC
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=2min
+Unit=helios-pjm-da-marginal-value.service
+
+[Install]
+WantedBy=timers.target

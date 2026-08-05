@@ -73,8 +73,10 @@ def test_batch_feed_configs_have_contract_fields():
 
 
 def test_publication_specific_feeds_are_not_in_early_support_batch():
+    assert "da_marginal_value" not in data_miner_batch.DEFAULT_FEEDS
     assert "hrl_load_prelim" not in data_miner_batch.DEFAULT_FEEDS
     assert "load_frcstd_hist" not in data_miner_batch.DEFAULT_FEEDS
+    assert "rt_marginal_value" not in data_miner_batch.DEFAULT_FEEDS
 
 
 def test_retired_historical_load_forecast_scrape_is_not_available():

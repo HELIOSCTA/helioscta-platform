@@ -1683,14 +1683,14 @@ FROM isone.seven_day_solar_forecast;
 
 - Status: deployed; daily batch timer enabled.
 - Scope: promoted PJM Data Miner scrape modules under
-  `backend.scrapes.power.pjm`; 22 support scrapes run through the shared batch
+  `backend.scrapes.power.pjm`; 20 support scrapes run through the shared batch
   after `da_hrl_lmps`, `rt_fivemin_hrl_lmps`, `rt_hrl_lmps`,
   `rt_unverified_hrl_lmps`, `gen_by_fuel`, `load_frcstd_7_day`,
   `hrl_load_prelim`, `hrl_dmd_bids`, `da_transconstraints`,
-  `da_reserve_market_results`, `gen_outages_by_type`, and the four Operations
-  Summary feeds were promoted to dedicated timers. `load_frcstd_hist` was
-  retired from current code for storage-cost control after its hot table was
-  dropped from `helios_prod`.
+  `da_marginal_value`, `rt_marginal_value`, `da_reserve_market_results`,
+  `gen_outages_by_type`, and the four Operations Summary feeds were promoted
+  to dedicated timers. `load_frcstd_hist` was retired from current code for
+  storage-cost control after its hot table was dropped from `helios_prod`.
 - Destination schema: `pjm`.
 - VM path: `/opt/helioscta-platform`.
 - Azure VM host/name: `helioscta-prod-vm-01`.
@@ -1761,6 +1761,10 @@ FROM isone.seven_day_solar_forecast;
   `helios-pjm-da-reserve-market-results.timer` remains separate because the
   day-ahead ancillary service market results post after the early support batch
   and need a post-publication retry window.
+  `helios-pjm-da-marginal-value.timer` and
+  `helios-pjm-rt-marginal-value.timer` remain separate because the constraints
+  dashboard needs release-window telemetry and RT marginal values were observed
+  posting around midnight Eastern for a market date two days back.
   `helios-pjm-gen-outages-by-type.timer` runs later because the source was
   observed unavailable at the early `04:30 UTC` batch but available during a
   manual `13:55 UTC` VM run.
@@ -2107,6 +2111,163 @@ FROM ops.api_fetch_log
 WHERE pipeline_name = 'da_transconstraints'
 ORDER BY created_at DESC
 LIMIT 20;
+```
+
+## helios-pjm-da-marginal-value
+
+- Status: promoted for VM deployment; timer not yet VM-verified.
+- Workflow: PJM day-ahead marginal value publication polling.
+- Runtime module: `backend.orchestration.power.pjm.da_marginal_value`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.da_marginal_value`.
+- Source system: PJM Data Miner 2 `da_marginal_value`.
+- Destination table: `pjm.da_marginal_value`.
+- Source grain:
+  `datetime_beginning_utc x monitored_facility x contingency_facility`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-da-marginal-value.service`
+  - `infrastructure/systemd/helios-pjm-da-marginal-value.timer`
+- Schedule: daily at `17:00 UTC` with `Persistent=true`,
+  `AccuracySec=1min`, and `RandomizedDelaySec=2min`.
+- Polling policy: poll every `120` seconds for up to `4` hours until the
+  next PJM/Eastern market day returns normalized marginal-value rows with no
+  duplicate primary keys.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-da-marginal-value.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on
+  `(datetime_beginning_utc, monitored_facility, contingency_facility)`.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT monitored_facility || '|' || contingency_facility) AS constraint_count,
+    COUNT(DISTINCT datetime_beginning_utc) AS periods,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.da_marginal_value
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'da_marginal_value'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    event_key,
+    business_date,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at,
+    updated_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_da_marginal_value'
+ORDER BY business_date DESC, created_at DESC
+LIMIT 10;
+```
+
+## helios-pjm-rt-marginal-value
+
+- Status: promoted for VM deployment; timer not yet VM-verified.
+- Workflow: PJM real-time marginal value release/repair polling.
+- Runtime module: `backend.orchestration.power.pjm.rt_marginal_value`.
+- Lower-level scrape module: `backend.scrapes.power.pjm.rt_marginal_value`.
+- Source system: PJM Data Miner 2 `rt_marginal_value`.
+- Destination table: `pjm.rt_marginal_value`.
+- Source grain:
+  `datetime_beginning_utc x monitored_facility x contingency_facility`.
+- API telemetry: `ops.api_fetch_log`.
+- Data readiness output: `ops.data_availability_events`.
+- Unit files:
+  - `infrastructure/systemd/helios-pjm-rt-marginal-value.service`
+  - `infrastructure/systemd/helios-pjm-rt-marginal-value.timer`
+- Schedule: daily at `00:20` and `04:20 America/New_York` with
+  `Persistent=true`, `AccuracySec=1min`, and `RandomizedDelaySec=2min`.
+- Polling policy: target the PJM/Eastern market date two days back, poll a
+  rolling five-day market-date window every `900` seconds for up to `3` hours,
+  and require the target date to return normalized marginal-value rows with no
+  duplicate primary keys before upserting the window.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-pjm-rt-marginal-value.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Safe rerun story: upsert on
+  `(datetime_beginning_utc, monitored_facility, contingency_facility)`.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    datetime_beginning_ept::date AS market_date,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT monitored_facility || '|' || contingency_facility) AS constraint_count,
+    COUNT(DISTINCT datetime_beginning_utc) AS periods,
+    MIN(datetime_beginning_ept) AS min_ept,
+    MAX(datetime_beginning_ept) AS max_ept,
+    MAX(updated_at) AS latest_updated_at
+FROM pjm.rt_marginal_value
+GROUP BY datetime_beginning_ept::date
+ORDER BY market_date DESC
+LIMIT 10;
+```
+
+Verification SQL for API telemetry:
+
+```sql
+SELECT
+    provider,
+    operation_name,
+    status,
+    http_status,
+    rows_returned,
+    metadata,
+    created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'rt_marginal_value'
+ORDER BY created_at DESC
+LIMIT 20;
+```
+
+Verification SQL for data-availability events:
+
+```sql
+SELECT
+    event_key,
+    business_date,
+    completeness_status,
+    row_count,
+    entity_count,
+    period_count,
+    created_at,
+    updated_at
+FROM ops.data_availability_events
+WHERE dataset = 'pjm_rt_marginal_value'
+ORDER BY business_date DESC, created_at DESC
+LIMIT 10;
 ```
 
 ## helios-pjm-da-reserve-market-results

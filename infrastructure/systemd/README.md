@@ -91,7 +91,7 @@ helios-pjm-data-miner-batch.service
 helios-pjm-data-miner-batch.timer
 ```
 
-It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 23
+It runs `backend.orchestration.power.pjm.data_miner_batch`, which executes 20
 lower-level scrape modules that are not covered by dedicated timers.
 The service uses `flock` with
 `/tmp/helios-pjm-data-miner-batch.lock` so a delayed run cannot overlap the next
@@ -148,6 +148,45 @@ the target market day returns normalized constraint rows, upserts
 at `17:00 UTC`, matching `helios-pjm-hrl-dmd-bids.timer`, with a four-hour
 polling ceiling and two-minute poll interval. The service uses `flock` with
 `/tmp/helios-pjm-da-transconstraints.lock`.
+
+## PJM Day-Ahead Marginal Value
+
+PJM day-ahead marginal values have their own publication-aware timer:
+
+```text
+helios-pjm-da-marginal-value.service
+helios-pjm-da-marginal-value.timer
+```
+
+It runs `backend.orchestration.power.pjm.da_marginal_value`, which polls the
+PJM Data Miner `da_marginal_value` feed for the next market day, waits until
+the target market day returns normalized constraint-contingency shadow-price
+rows with no duplicate primary keys, upserts `pjm.da_marginal_value`, writes
+one resolved API fetch telemetry row to `ops.api_fetch_log`, and emits a
+complete-day readiness event to `ops.data_availability_events`. The timer runs
+daily at `17:00 UTC` with `Persistent=true`, `AccuracySec=1min`, and
+`RandomizedDelaySec=2min`, with a four-hour polling ceiling and two-minute
+poll interval. The service uses `flock` with
+`/tmp/helios-pjm-da-marginal-value.lock`.
+
+## PJM Real-Time Marginal Value
+
+PJM real-time marginal values have their own release/repair timer:
+
+```text
+helios-pjm-rt-marginal-value.service
+helios-pjm-rt-marginal-value.timer
+```
+
+It runs `backend.orchestration.power.pjm.rt_marginal_value`, which targets the
+PJM/Eastern market date two days back, polls a rolling five-day market-date
+window until the target date is available, upserts all nonempty days in the
+window to `pjm.rt_marginal_value`, writes one resolved API fetch telemetry row
+to `ops.api_fetch_log`, and emits complete-day readiness events for available
+dates. The timer runs daily at `00:20` and `04:20 America/New_York` with
+`Persistent=true`, `AccuracySec=1min`, and `RandomizedDelaySec=2min`, with a
+three-hour polling ceiling and fifteen-minute poll interval. The service uses
+`flock` with `/tmp/helios-pjm-rt-marginal-value.lock`.
 
 ## PJM Day-Ahead Reserve Market Results
 
@@ -1112,6 +1151,10 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.s
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-hrl-dmd-bids.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-transconstraints.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-marginal-value.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-marginal-value.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-marginal-value.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-rt-marginal-value.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-market-results.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-da-reserve-market-results.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-pjm-gen-outages-by-type.service /etc/systemd/system/
@@ -1184,6 +1227,8 @@ sudo systemctl disable --now helios-pjm-hourly-price-backfill-7-day.timer || tru
 sudo systemctl enable --now helios-lmp-price-backfill-7-day.timer
 sudo systemctl enable --now helios-pjm-hrl-dmd-bids.timer
 sudo systemctl enable --now helios-pjm-da-transconstraints.timer
+sudo systemctl enable --now helios-pjm-da-marginal-value.timer
+sudo systemctl enable --now helios-pjm-rt-marginal-value.timer
 sudo systemctl enable --now helios-pjm-da-reserve-market-results.timer
 sudo systemctl enable --now helios-pjm-gen-outages-by-type.timer
 sudo systemctl enable --now helios-pjm-hrl-load-prelim.timer
@@ -1241,6 +1286,8 @@ sudo systemctl start helios-pjm-hourly-bucket.service
 sudo systemctl start helios-lmp-price-backfill-7-day.service
 sudo systemctl start helios-pjm-hrl-dmd-bids.service
 sudo systemctl start helios-pjm-da-transconstraints.service
+sudo systemctl start helios-pjm-da-marginal-value.service
+sudo systemctl start helios-pjm-rt-marginal-value.service
 sudo systemctl start helios-pjm-da-reserve-market-results.service
 sudo systemctl start helios-pjm-gen-outages-by-type.service
 sudo systemctl start helios-pjm-hrl-load-prelim.service
@@ -1306,6 +1353,22 @@ For the PJM day-ahead transmission constraints refresh:
 systemctl status helios-pjm-da-transconstraints.service
 systemctl status helios-pjm-da-transconstraints.timer
 journalctl -u helios-pjm-da-transconstraints.service -n 200 --no-pager
+```
+
+For the PJM day-ahead marginal value refresh:
+
+```bash
+systemctl status helios-pjm-da-marginal-value.service
+systemctl status helios-pjm-da-marginal-value.timer
+journalctl -u helios-pjm-da-marginal-value.service -n 200 --no-pager
+```
+
+For the PJM real-time marginal value refresh:
+
+```bash
+systemctl status helios-pjm-rt-marginal-value.service
+systemctl status helios-pjm-rt-marginal-value.timer
+journalctl -u helios-pjm-rt-marginal-value.service -n 200 --no-pager
 ```
 
 For the PJM day-ahead reserve market results refresh:

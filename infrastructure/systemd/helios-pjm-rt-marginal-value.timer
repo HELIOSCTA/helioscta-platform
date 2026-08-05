@@ -1,0 +1,13 @@
+[Unit]
+Description=Daily HeliosCTA PJM real-time marginal value timer
+
+[Timer]
+OnCalendar=*-*-* 00:20:00 America/New_York
+OnCalendar=*-*-* 04:20:00 America/New_York
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=2min
+Unit=helios-pjm-rt-marginal-value.service
+
+[Install]
+WantedBy=timers.target
