@@ -452,10 +452,10 @@ The services run `backend.orchestration.power.miso.da_lmps`,
 `backend.orchestration.power.miso.rt_lmps_prelim`, and
 `backend.orchestration.power.miso.rt_lmps_final`. They use the MISO Data
 Exchange Pricing API with `MISO_DATA_EXCHANGE_SUBSCRIPTION_KEY`, upsert hourly
-hub LMPs into `miso.da_lmps`, `miso.rt_lmps_prelim`, and
-`miso.rt_lmps_final`, write one resolved polling telemetry row to
-`ops.api_fetch_log`, and emit complete-day readiness events to
-`ops.data_availability_events`.
+hub and `PJMC` PJM interface LMPs into `miso.da_lmps`, upsert hourly hub LMPs
+into `miso.rt_lmps_prelim` and `miso.rt_lmps_final`, write one resolved
+polling telemetry row to `ops.api_fetch_log`, and emit complete-day readiness
+events to `ops.data_availability_events`.
 
 The DA timer runs daily at `19:00 UTC`, targets the next operating date, and
 polls every 10 minutes for up to two hours. The RT preliminary timer runs daily
@@ -511,12 +511,12 @@ helios-nyiso-rt-lmps-prelim.timer
 
 The services run `backend.orchestration.power.nyiso.da_lmps` and
 `backend.orchestration.power.nyiso.rt_lmps_prelim`. They use public NYISO MIS
-zonal CSV files, upsert all 11 public load zones into `nyiso.da_lmps` and
-`nyiso.rt_lmps_prelim`, write one resolved polling telemetry row to
-`ops.api_fetch_log`, and emit complete-day readiness events to
-`ops.data_availability_events`.
+zonal CSV files, upsert all 11 public load zones plus the PJM interface into
+`nyiso.da_lmps`, upsert all 11 public load zones into `nyiso.rt_lmps_prelim`,
+write one resolved polling telemetry row to `ops.api_fetch_log`, and emit
+complete-day readiness events to `ops.data_availability_events`.
 
-The DA timer runs daily at `09:00 America/New_York`, targets the next
+The DA timer runs daily at `08:30 America/New_York`, targets the next
 operating date, and polls every 5 minutes for up to two hours. The RT
 preliminary timer runs daily at `00:15 America/New_York`, targets the previous
 operating date, and polls every 5 minutes for up to two hours. Services use
