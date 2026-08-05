@@ -69,8 +69,8 @@ boundary, or log path changes.
 
 ## nyiso-mis-lmps
 
-- Status: prepared for deployment; update after VM DDL, timer install, and
-  smoke verification.
+- Status: deployed on `helioscta-prod-vm-01`; DDL applied, timers enabled, and
+  manual smoke verification completed on `2026-08-05`.
 - Host: `helioscta-prod-vm-01`.
 - Runtime path: `/opt/helioscta-platform`.
 - Service user: `helios`.
@@ -91,12 +91,18 @@ boundary, or log path changes.
   - RT preliminary runs daily at `00:15 America/New_York`, targets the
     previous operating date, and polls every 5 minutes for up to 2 hours.
 - Verification:
-  - Local focused backend pytest required before deployment.
-  - Apply DDL under `dbt/azure_postgres/reference_sql/ddl/power/nyiso/`.
-  - Run DA/RT manual smokes without release email side effects.
-  - Confirm `ops.api_fetch_log` success telemetry,
-    `ops.data_availability_events` complete-day readiness, and enabled
-    `helios-nyiso-*` timers.
+  - Local focused backend pytest passed: 52 tests.
+  - DDL applied with `helios_admin` using `AZURE_POSTGRES_WRITER_*`.
+  - Manual DA smoke for `2026-08-06` upserted 264 rows and skipped release
+    email because `run_mode=smoke`.
+  - Manual RT preliminary smoke for `2026-08-04` upserted 3,168 rows.
+  - Read-only SQL verified `N.Y.C.` DA count 24, `N.Y.C.` RT count 288,
+    max component reconciliation delta `6.572520305780927e-14`, success
+    telemetry in `ops.api_fetch_log`, and complete readiness events in
+    `ops.data_availability_events`.
+  - Timers enabled and active: `helios-nyiso-da-lmps.timer` next trigger
+    `2026-08-06 13:00:05 UTC`; `helios-nyiso-rt-lmps-prelim.timer` next
+    trigger `2026-08-06 04:15:41 UTC`.
 
 ## eia-open-data
 

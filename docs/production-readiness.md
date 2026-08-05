@@ -52,8 +52,8 @@ A backend workflow is production-ready when it has:
 | MISO RT final LMP schedule | Promoted for VM install | `helios-miso-rt-lmps-final.timer` runs daily at `13:00 UTC`, targets five calendar days back, and polls for final RT ex-post publication. |
 | SPP DA LMP schedule | Promoted for VM install | `helios-spp-da-lmps.timer` runs daily at `16:00 America/Chicago`, targets the next operating date, and polls for SPP Portal DA publication. |
 | SPP RT preliminary LMP schedule | Promoted for VM install | `helios-spp-rt-lmps-prelim.timer` runs daily at `00:15 America/Chicago`, targets the previous operating date, and polls for complete five-minute RTBM publication. |
-| NYISO DA LBMP schedule | Promoted for VM install | `helios-nyiso-da-lmps.timer` runs daily at `09:00 America/New_York`, targets the next operating date, and polls for NYISO MIS DA publication. |
-| NYISO RT preliminary LBMP schedule | Promoted for VM install | `helios-nyiso-rt-lmps-prelim.timer` runs daily at `00:15 America/New_York`, targets the previous operating date, and polls for complete five-minute realtime publication. |
+| NYISO DA LBMP schedule | In place | `helios-nyiso-da-lmps.timer` runs daily at `09:00 America/New_York`, targets the next operating date, and polls for NYISO MIS DA publication. |
+| NYISO RT preliminary LBMP schedule | In place | `helios-nyiso-rt-lmps-prelim.timer` runs daily at `00:15 America/New_York`, targets the previous operating date, and polls for complete five-minute realtime publication. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
 | ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `11:55 America/New_York` and polls for the complete next Eastern operating date. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
