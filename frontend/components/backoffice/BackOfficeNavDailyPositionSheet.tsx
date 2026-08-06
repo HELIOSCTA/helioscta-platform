@@ -2,7 +2,6 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 
-import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import type {
   BackOfficeNavDailyPositionSheetAccountColumn,
@@ -24,7 +23,7 @@ const GAS_OPTION_SCOPE_TABS: Array<{
   label: string;
 }> = [
   { value: "outright", label: "LN/PHE" },
-  { value: "other", label: "Other Gas" },
+  { value: "other", label: "Other Options" },
 ];
 type ActivePositionView = "gas" | "power";
 
@@ -817,7 +816,7 @@ function OptionsLadder({
     summary.detailLoaded ? fmtNumber(value, emptyZero) : detailPending ? "Loading" : "-";
   const scopeTabs = GAS_OPTION_SCOPE_TABS.map((tab) => ({
     ...tab,
-    label: gasOptionScopes?.find((scope) => scope.scope === tab.value)?.label ?? tab.label,
+    summary: gasOptionScopes?.find((scope) => scope.scope === tab.value),
   }));
   const showScopeTabs = Boolean(gasOptionScope && setGasOptionScope);
 
@@ -828,26 +827,54 @@ function OptionsLadder({
   return (
     <div className="rounded-2xl border border-gray-800 bg-gray-950/80 p-4">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm font-bold text-gray-100">{title}</p>
           <p className="mt-1 text-xs text-gray-500">{description}</p>
         </div>
-        <div className="flex flex-col items-start gap-2 sm:items-end">
-          <p className="text-xs text-gray-500">
-            {fmtNumber(summary.activeRows, false)} active rows |{" "}
-            {fmtNumber(summary.expiredHidden, false)} expired hidden
-          </p>
-          {showScopeTabs && gasOptionScope && setGasOptionScope && (
-            <DashboardTabs
-              tabs={scopeTabs}
-              activeValue={gasOptionScope}
-              onChange={setGasOptionScope}
-              ariaLabel="Gas option scope"
-              variant="secondary"
-            />
-          )}
-        </div>
+        <p className="text-xs text-gray-500 sm:text-right">
+          {fmtNumber(summary.activeRows, false)} active rows |{" "}
+          {fmtNumber(summary.expiredHidden, false)} expired hidden
+        </p>
       </div>
+
+      {showScopeTabs && gasOptionScope && setGasOptionScope && (
+        <div className="mb-4 flex flex-wrap gap-2" role="tablist" aria-label="Gas option scope">
+          {scopeTabs.map((scope) => {
+            const active = scope.value === gasOptionScope;
+            return (
+              <button
+                key={scope.value}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setGasOptionScope(scope.value)}
+                className={`min-w-[132px] rounded-lg border px-3 py-2 text-left text-xs transition ${
+                  active
+                    ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-100"
+                    : "border-gray-800 bg-black/20 text-gray-400 hover:border-gray-600"
+                }`}
+              >
+                <span className="block font-bold">{scope.label}</span>
+                <span className="block text-[10px] text-gray-500">
+                  {scope.summary
+                    ? `${fmtNumber(scope.summary.activeRows, false)} rows | ${fmtNumber(
+                        scope.summary.monthCount,
+                        false,
+                      )} months`
+                    : "Option scope"}
+                </span>
+                <span
+                  className={`block tabular-nums ${
+                    scope.summary ? valueClass(scope.summary.netQuantity) : "text-gray-500"
+                  }`}
+                >
+                  Net {scope.summary ? fmtNumber(scope.summary.netQuantity) : "-"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap gap-2">
         {months.map((month) => {
