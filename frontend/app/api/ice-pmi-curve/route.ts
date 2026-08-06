@@ -1,8 +1,14 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
 import {
+  DEFAULT_ICE_POWER_TERM_PRODUCT,
+  getIcePowerTermProduct,
+  type IcePowerTermProduct,
+} from "@/lib/icePowerTerm/products";
+import {
   DEFAULT_POWER_SPARK_SPREAD_PRODUCT,
   getPowerSparkSpreadProduct,
+  type PowerSparkSpreadProduct,
 } from "@/lib/sparkSpreads/products";
 
 export const runtime = "nodejs";
@@ -14,7 +20,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "ICE PMI monthly curve table",
+  purpose: "ICE power monthly curve table",
   p95TargetMs: 1_500,
   freshnessSource: "ice_python.settlements trade_date",
 } as const;
@@ -68,6 +74,15 @@ interface MatrixSettlementPoint {
   symbol: string;
 }
 
+interface DerivedMatrixProductConfig {
+  product: string;
+  powerRoot: string;
+  spreadRoot: string | null;
+  gasRoot: string;
+  basisRoot: string;
+  heatRate: number;
+}
+
 interface DerivedMatrixRow {
   strip: string;
   stripOrder: number;
@@ -95,6 +110,10 @@ interface DerivedMatrixRow {
   previousYearSettlements: ReturnType<typeof normalizePriorPoint>[];
   monthCurvePoints: ReturnType<typeof normalizePriorPoint>[];
 }
+
+const DEFAULT_POWER_TERM_GAS_ROOT = "HNG";
+const DEFAULT_POWER_TERM_BASIS_ROOT = "TMT";
+const DEFAULT_POWER_TERM_HEAT_RATE = 7.0;
 
 function intParam(value: string | null, fallback: number, min: number, max: number): number {
   if (!value) return fallback;
@@ -912,6 +931,97 @@ function buildDerivedRows({
     });
 }
 
+function derivedConfigForPowerTermProduct(
+  product: IcePowerTermProduct,
+): DerivedMatrixProductConfig {
+  return {
+    product: product.root,
+    powerRoot: product.root,
+    spreadRoot: null,
+    gasRoot: DEFAULT_POWER_TERM_GAS_ROOT,
+    basisRoot: DEFAULT_POWER_TERM_BASIS_ROOT,
+    heatRate: DEFAULT_POWER_TERM_HEAT_RATE,
+  };
+}
+
+function derivedConfigForSparkProduct(
+  product: PowerSparkSpreadProduct,
+): DerivedMatrixProductConfig {
+  return {
+    product: product.spreadRoot ? `${product.powerRoot}-${product.spreadRoot}` : product.powerRoot,
+    powerRoot: product.powerRoot,
+    spreadRoot: product.spreadRoot,
+    gasRoot: product.gasRoot,
+    basisRoot: product.basisRoot,
+    heatRate: product.heatRate,
+  };
+}
+
+async function loadDerivedMatrix({
+  config,
+  mode,
+  currentYear,
+  endYear,
+  tradingDays,
+  priorYears,
+}: {
+  config: DerivedMatrixProductConfig;
+  mode: MatrixMode;
+  currentYear: number;
+  endYear: number;
+  tradingDays: number;
+  priorYears: number;
+}) {
+  const rows = await query<MatrixSettlementSourceRow>(DERIVED_MATRIX_SQL, [
+    currentYear,
+    endYear,
+    tradingDays,
+    priorYears,
+    config.powerRoot,
+    config.gasRoot,
+    config.basisRoot,
+    config.spreadRoot,
+  ]);
+  const normalizedRows = buildDerivedRows({
+    sourceRows: rows,
+    mode,
+    currentYear,
+    endYear,
+    priorYears,
+    heatRate: config.heatRate,
+    productRoots: {
+      power: config.powerRoot,
+      spread: config.spreadRoot,
+      gas: config.gasRoot,
+      basis: config.basisRoot,
+    },
+  });
+  const dataAsOf =
+    normalizedRows
+      .flatMap((row) => row.monthCurvePoints.map((point) => point.finalTradeDate))
+      .filter((value): value is string => Boolean(value))
+      .sort()
+      .at(-1) ?? null;
+
+  return {
+    payload: {
+      product: config.product,
+      pricingMode: mode,
+      source: "ice_python.settlements",
+      startContractMonth: `${currentYear}-01-01`,
+      currentYear,
+      endYear,
+      tradingDays,
+      priorYears,
+      dataAsOf,
+      rows: normalizedRows,
+    },
+    headers: { "Cache-Control": CACHE_HEADER },
+    rowCount: rows.length,
+    dataAsOf,
+  };
+}
+
 const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const defaultCurrentYear = new Date().getUTCFullYear();
@@ -920,60 +1030,34 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const tradingDays = intParam(searchParams.get("tradingDays"), 7, 2, 20);
   const priorYears = intParam(searchParams.get("priorYears"), 5, 1, 10);
   const mode = normalizeMode(searchParams.get("mode"));
+  const powerProductParam = searchParams.get("powerProduct");
+  const sparkProductParam = searchParams.get("sparkProduct");
+  const selectedPowerProduct = getIcePowerTermProduct(powerProductParam);
   const selectedProduct =
-    getPowerSparkSpreadProduct(searchParams.get("sparkProduct")) ?? DEFAULT_POWER_SPARK_SPREAD_PRODUCT;
+    getPowerSparkSpreadProduct(sparkProductParam) ?? DEFAULT_POWER_SPARK_SPREAD_PRODUCT;
 
-  if (mode !== "power" || selectedProduct.id !== DEFAULT_POWER_SPARK_SPREAD_PRODUCT.id) {
-    const rows = await query<MatrixSettlementSourceRow>(DERIVED_MATRIX_SQL, [
-      currentYear,
-      endYear,
-      tradingDays,
-      priorYears,
-      selectedProduct.powerRoot,
-      selectedProduct.gasRoot,
-      selectedProduct.basisRoot,
-      selectedProduct.spreadRoot,
-    ]);
-    const normalizedRows = buildDerivedRows({
-      sourceRows: rows,
-      mode,
-      currentYear,
-      endYear,
-      priorYears,
-      heatRate: selectedProduct.heatRate,
-      productRoots: {
-        power: selectedProduct.powerRoot,
-        spread: selectedProduct.spreadRoot,
-        gas: selectedProduct.gasRoot,
-        basis: selectedProduct.basisRoot,
-      },
-    });
-    const dataAsOf =
-      normalizedRows
-        .flatMap((row) => row.monthCurvePoints.map((point) => point.finalTradeDate))
-        .filter((value): value is string => Boolean(value))
-        .sort()
-        .at(-1) ?? null;
-
-    return {
-      payload: {
-        product: selectedProduct.spreadRoot
-          ? `${selectedProduct.powerRoot}-${selectedProduct.spreadRoot}`
-          : selectedProduct.powerRoot,
-        pricingMode: mode,
-        source: "ice_python.settlements",
-        startContractMonth: `${currentYear}-01-01`,
+  if (mode === "power" && selectedPowerProduct) {
+    if (selectedPowerProduct.root !== DEFAULT_ICE_POWER_TERM_PRODUCT.root) {
+      return loadDerivedMatrix({
+        config: derivedConfigForPowerTermProduct(selectedPowerProduct),
+        mode,
         currentYear,
         endYear,
         tradingDays,
         priorYears,
-        dataAsOf,
-        rows: normalizedRows,
-      },
-      headers: { "Cache-Control": CACHE_HEADER },
-      rowCount: rows.length,
-      dataAsOf,
-    };
+      });
+    }
+  } else if (mode !== "power" || sparkProductParam) {
+    if (mode !== "power" || selectedProduct.id !== DEFAULT_POWER_SPARK_SPREAD_PRODUCT.id) {
+      return loadDerivedMatrix({
+        config: derivedConfigForSparkProduct(selectedProduct),
+        mode,
+        currentYear,
+        endYear,
+        tradingDays,
+        priorYears,
+      });
+    }
   }
 
   const rows = await query<IcePmiCurveSourceRow>(CURVE_SQL, [
@@ -992,7 +1076,7 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
 
   return {
     payload: {
-      product: "PMI",
+      product: DEFAULT_ICE_POWER_TERM_PRODUCT.root,
       source: "ice_python.settlements",
       startContractMonth: `${currentYear}-01-01`,
       currentYear,

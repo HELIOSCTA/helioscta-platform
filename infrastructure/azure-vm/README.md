@@ -56,6 +56,11 @@ The workflow pulls PJM Day-Ahead Hourly LMPs, upserts `pjm.da_hrl_lmps`, writes
   - `helios-pjm-da-transconstraints.timer`, daily at `16:30 UTC`
     (`12:30 America/New_York` during daylight saving time), `Persistent=true`,
     `AccuracySec=1min`.
+  - `helios-pjm-da-marginal-value.timer`, daily at `17:00 UTC`,
+    `Persistent=true`, `AccuracySec=1min`, `RandomizedDelaySec=2min`.
+  - `helios-pjm-rt-marginal-value.timer`, daily at `00:20` and
+    `04:20 America/New_York`, `Persistent=true`, `AccuracySec=1min`,
+    `RandomizedDelaySec=2min`.
   - `helios-pjm-gen-outages-by-type.timer`, daily at `06:05`, `06:30`, and
     `07:00 America/New_York` (`10:05`, `10:30`, and `11:00 UTC` during
     daylight saving time), `Persistent=true`, `AccuracySec=1min`.
@@ -349,6 +354,8 @@ sudo systemctl restart helios-pjm-hourly-bucket.timer
 sudo systemctl restart helios-pjm-transmission-outages.timer
 sudo systemctl restart helios-lmp-price-backfill-7-day.timer
 sudo systemctl restart helios-pjm-da-transconstraints.timer
+sudo systemctl restart helios-pjm-da-marginal-value.timer
+sudo systemctl restart helios-pjm-rt-marginal-value.timer
 sudo systemctl restart helios-pjm-gen-outages-by-type.timer
 sudo systemctl restart helios-pjm-hrl-load-prelim.timer
 sudo systemctl restart helios-pjm-ops-sum.timer

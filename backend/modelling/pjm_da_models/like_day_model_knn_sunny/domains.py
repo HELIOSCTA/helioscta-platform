@@ -55,6 +55,31 @@ def feature_columns() -> list[str]:
     return seen
 
 
+def feature_group_weight_locations() -> dict[str, tuple[str, int]]:
+    """Return the source location for each raw feature-group weight literal."""
+    import ast
+
+    src_file = __file__
+    with open(src_file, encoding="utf-8") as handle:
+        tree = ast.parse(handle.read())
+    output: dict[str, tuple[str, int]] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(
+            isinstance(target, ast.Name)
+            and target.id == "RAW_FEATURE_GROUP_WEIGHTS"
+            for target in node.targets
+        ):
+            continue
+        if not isinstance(node.value, ast.Dict):
+            continue
+        for key in node.value.keys:
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                output[key.value] = (src_file, key.lineno)
+    return output
+
+
 MODEL_COLUMNS: tuple[str, ...] = (
     "date",
     "hour_ending",

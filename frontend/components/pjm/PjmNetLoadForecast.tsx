@@ -177,8 +177,10 @@ export type ForecastSourceMode = "pjm" | "meteologica";
 type AreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 export type NetLoadForecastTab = "outright" | "compareDay";
 export type StatisticKey = "peak" | "onPeak" | "offPeak" | "flat";
-type ViewMode = "latest" | "change";
-type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
+export type NetLoadForecastViewMode = "latest" | "change";
+export type NetLoadChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
+type ViewMode = NetLoadForecastViewMode;
+type ChangeWindowKey = NetLoadChangeWindowKey;
 type DetailRowType = "Snapshot" | "Delta";
 type CompareMwField = Exclude<keyof NetLoadDateCompareHour, "he">;
 type ComparePlotRows = Map<ComponentKey, Array<Record<string, number | null>>>;
@@ -755,11 +757,25 @@ export default function PjmNetLoadForecast({
   onSourceModeChange,
   activeTab: controlledActiveTab,
   onActiveTabChange,
+  viewMode: controlledViewMode,
+  onViewModeChange,
+  changeWindow: controlledChangeWindow,
+  onChangeWindowChange,
+  selectedStatistic: controlledSelectedStatistic,
+  onSelectedStatisticChange,
+  compareBaseDate: controlledCompareBaseDate,
+  onCompareBaseDateChange,
+  compareTargetDate: controlledCompareTargetDate,
+  onCompareTargetDateChange,
+  compareRampingEnabled: controlledCompareRampingEnabled,
+  onCompareRampingEnabledChange,
+  onCompareDateOptionsChange,
   initialArea = "RTO",
   initialDate,
   initialComponent = "netLoad",
   initialStatistic = "peak",
   embedded = false,
+  filterControlsPlacement = "internal",
 }: {
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmNetLoadForecastFreshnessSummary) => void;
@@ -767,11 +783,25 @@ export default function PjmNetLoadForecast({
   onSourceModeChange?: (sourceMode: ForecastSourceMode) => void;
   activeTab?: NetLoadForecastTab;
   onActiveTabChange?: (activeTab: NetLoadForecastTab) => void;
+  viewMode?: NetLoadForecastViewMode;
+  onViewModeChange?: (viewMode: NetLoadForecastViewMode) => void;
+  changeWindow?: NetLoadChangeWindowKey;
+  onChangeWindowChange?: (changeWindow: NetLoadChangeWindowKey) => void;
+  selectedStatistic?: StatisticKey;
+  onSelectedStatisticChange?: (selectedStatistic: StatisticKey) => void;
+  compareBaseDate?: string | null;
+  onCompareBaseDateChange?: (compareBaseDate: string | null) => void;
+  compareTargetDate?: string | null;
+  onCompareTargetDateChange?: (compareTargetDate: string | null) => void;
+  compareRampingEnabled?: boolean;
+  onCompareRampingEnabledChange?: (compareRampingEnabled: boolean) => void;
+  onCompareDateOptionsChange?: (compareDateOptions: string[]) => void;
   initialArea?: string;
   initialDate?: string;
   initialComponent?: ComponentKey;
   initialStatistic?: StatisticKey;
   embedded?: boolean;
+  filterControlsPlacement?: "internal" | "external";
 }) {
   const [internalSourceMode, setInternalSourceMode] = useState<ForecastSourceMode>("pjm");
   const [internalActiveTab, setInternalActiveTab] = useState<NetLoadForecastTab>("outright");
@@ -796,11 +826,11 @@ export default function PjmNetLoadForecast({
     },
     [controlledActiveTab, onActiveTabChange],
   );
-  const [viewMode, setViewMode] = useState<ViewMode>("latest");
-  const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
+  const [internalViewMode, setInternalViewMode] = useState<ViewMode>("latest");
+  const [internalChangeWindow, setInternalChangeWindow] = useState<ChangeWindowKey>("24h");
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [collapsedAreaCards, setCollapsedAreaCards] = useState<Set<string>>(() => new Set());
-  const [selectedStatistic, setSelectedStatistic] = useState<StatisticKey>(initialStatistic);
+  const [internalSelectedStatistic, setInternalSelectedStatistic] = useState<StatisticKey>(initialStatistic);
   const [explorerData, setExplorerData] = useState<NetLoadExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<NetLoadDifferencesPayload | null>(null);
   const [compareDataByArea, setCompareDataByArea] = useState<Record<string, NetLoadDateComparePayload>>({});
@@ -814,9 +844,9 @@ export default function PjmNetLoadForecast({
     initialDate ?? null,
   );
   const [selectedArea, setSelectedArea] = useState(initialArea);
-  const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
-  const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
-  const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
+  const [internalCompareBaseDate, setInternalCompareBaseDate] = useState<string | null>(null);
+  const [internalCompareTargetDate, setInternalCompareTargetDate] = useState<string | null>(null);
+  const [internalCompareRampingEnabled, setInternalCompareRampingEnabled] = useState(false);
   const [focusedCompareChart, setFocusedCompareChart] = useState<FocusedCompareChart | null>(null);
   const [selectedComponent, setSelectedComponent] = useState<ComponentKey>(initialComponent);
   const [lookbackHours, setLookbackHours] = useState(DEFAULT_LOOKBACK_HOURS);
@@ -827,6 +857,73 @@ export default function PjmNetLoadForecast({
   );
   const [visibleDetailRowTypes, setVisibleDetailRowTypes] = useState<Set<DetailRowType>>(
     () => new Set(VINTAGE_ROW_TYPES.map((type) => type.key)),
+  );
+  const viewMode = controlledViewMode ?? internalViewMode;
+  const changeWindow = controlledChangeWindow ?? internalChangeWindow;
+  const selectedStatistic = controlledSelectedStatistic ?? internalSelectedStatistic;
+  const compareBaseDate =
+    controlledCompareBaseDate !== undefined ? controlledCompareBaseDate : internalCompareBaseDate;
+  const compareTargetDate =
+    controlledCompareTargetDate !== undefined
+      ? controlledCompareTargetDate
+      : internalCompareTargetDate;
+  const compareRampingEnabled =
+    controlledCompareRampingEnabled ?? internalCompareRampingEnabled;
+  const setViewMode = useCallback(
+    (nextViewMode: ViewMode) => {
+      startTransition(() => {
+        if (controlledViewMode === undefined) setInternalViewMode(nextViewMode);
+        onViewModeChange?.(nextViewMode);
+      });
+    },
+    [controlledViewMode, onViewModeChange],
+  );
+  const setChangeWindow = useCallback(
+    (nextChangeWindow: ChangeWindowKey) => {
+      startTransition(() => {
+        if (controlledChangeWindow === undefined) setInternalChangeWindow(nextChangeWindow);
+        onChangeWindowChange?.(nextChangeWindow);
+      });
+    },
+    [controlledChangeWindow, onChangeWindowChange],
+  );
+  const setSelectedStatistic = useCallback(
+    (nextStatistic: StatisticKey) => {
+      startTransition(() => {
+        if (controlledSelectedStatistic === undefined) setInternalSelectedStatistic(nextStatistic);
+        onSelectedStatisticChange?.(nextStatistic);
+      });
+    },
+    [controlledSelectedStatistic, onSelectedStatisticChange],
+  );
+  const setCompareBaseDate = useCallback(
+    (nextDate: string | null) => {
+      startTransition(() => {
+        if (controlledCompareBaseDate === undefined) setInternalCompareBaseDate(nextDate);
+        onCompareBaseDateChange?.(nextDate);
+      });
+    },
+    [controlledCompareBaseDate, onCompareBaseDateChange],
+  );
+  const setCompareTargetDate = useCallback(
+    (nextDate: string | null) => {
+      startTransition(() => {
+        if (controlledCompareTargetDate === undefined) setInternalCompareTargetDate(nextDate);
+        onCompareTargetDateChange?.(nextDate);
+      });
+    },
+    [controlledCompareTargetDate, onCompareTargetDateChange],
+  );
+  const setCompareRampingEnabled = useCallback(
+    (nextEnabled: boolean) => {
+      startTransition(() => {
+        if (controlledCompareRampingEnabled === undefined) {
+          setInternalCompareRampingEnabled(nextEnabled);
+        }
+        onCompareRampingEnabledChange?.(nextEnabled);
+      });
+    },
+    [controlledCompareRampingEnabled, onCompareRampingEnabledChange],
   );
 
   useEffect(() => {
@@ -848,7 +945,17 @@ export default function PjmNetLoadForecast({
     setCompareTargetDate(null);
     setCompareRampingEnabled(false);
     setFocusedCompareChart(null);
-  }, [sourceMode]);
+  }, [
+    setCompareBaseDate,
+    setCompareRampingEnabled,
+    setCompareTargetDate,
+    setSelectedStatistic,
+    sourceMode,
+  ]);
+
+  useEffect(() => {
+    if (viewMode === "change") setLookbackHours(changeWindowHours(changeWindow));
+  }, [changeWindow, viewMode]);
 
   useEffect(() => {
     if (activeTab !== "compareDay") {
@@ -963,11 +1070,21 @@ export default function PjmNetLoadForecast({
     if (!explorerData) return;
 
     const dates = explorerData.forecastDates ?? [];
-    setCompareBaseDate((current) => (current && dates.includes(current) ? current : dates[0] ?? null));
-    setCompareTargetDate((current) =>
-      current && dates.includes(current) ? current : dates[1] ?? dates[0] ?? null,
-    );
-  }, [explorerData]);
+    const nextBaseDate =
+      compareBaseDate && dates.includes(compareBaseDate) ? compareBaseDate : dates[0] ?? null;
+    const nextTargetDate =
+      compareTargetDate && dates.includes(compareTargetDate)
+        ? compareTargetDate
+        : dates[1] ?? dates[0] ?? null;
+    if (nextBaseDate !== compareBaseDate) setCompareBaseDate(nextBaseDate);
+    if (nextTargetDate !== compareTargetDate) setCompareTargetDate(nextTargetDate);
+  }, [
+    compareBaseDate,
+    compareTargetDate,
+    explorerData,
+    setCompareBaseDate,
+    setCompareTargetDate,
+  ]);
 
   const visibleAreaGroups = useMemo(() => {
     const areas = explorerData?.areas ?? [];
@@ -1144,7 +1261,10 @@ export default function PjmNetLoadForecast({
   const explorerSubtitle = `${sourceLabel(sourceMode)} | ${statisticLabel(selectedStatistic)} by area/component | ${
     viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"
   } | complete load, wind, and solar hours only`;
-  const compareDateOptions = explorerData?.forecastDates ?? [];
+  const compareDateOptions = useMemo(() => explorerData?.forecastDates ?? [], [explorerData]);
+  useEffect(() => {
+    onCompareDateOptionsChange?.(compareDateOptions);
+  }, [compareDateOptions, onCompareDateOptionsChange]);
   const compareDataList = visibleAreas
     .map((area) => compareDataByArea[area])
     .filter((payload): payload is NetLoadDateComparePayload => Boolean(payload));
@@ -1666,89 +1786,116 @@ export default function PjmNetLoadForecast({
 
     return (
       <SectionCard title="Forecast Date Compare" subtitle={compareSubtitle}>
-        <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_130px_1fr] lg:items-end">
-          <label>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Date A
+        {filterControlsPlacement === "internal" ? (
+          <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_130px_1fr] lg:items-end">
+            <label>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Date A
+              </span>
+              <select
+                value={compareBaseDate ?? ""}
+                disabled={!compareDateOptions.length}
+                onChange={(event) => {
+                  const nextDate = event.target.value || null;
+                  setCompareBaseDate(nextDate);
+                }}
+                className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+              >
+                {!compareDateOptions.length && <option value="">--</option>}
+                {compareDateOptions.map((date) => (
+                  <option key={date} value={date}>
+                    {fmtDate(date)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Date B
+              </span>
+              <select
+                value={compareTargetDate ?? ""}
+                disabled={!compareDateOptions.length}
+                onChange={(event) => {
+                  const nextDate = event.target.value || null;
+                  setCompareTargetDate(nextDate);
+                }}
+                className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+              >
+                {!compareDateOptions.length && <option value="">--</option>}
+                {compareDateOptions.map((date) => (
+                  <option key={date} value={date}>
+                    {fmtDate(date)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div>
+              <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                Profile
+              </span>
+              <button
+                type="button"
+                aria-pressed={compareRampingEnabled}
+                onClick={() => {
+                  setCompareRampingEnabled(!compareRampingEnabled);
+                }}
+                className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
+                  compareRampingEnabled
+                    ? "border-sky-500/50 bg-sky-500/10 text-white"
+                    : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                }`}
+              >
+                {compareRampingEnabled ? "Ramps" : "Levels"}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2 w-4 rounded-sm" style={{ backgroundColor: COMPARE_BASE_COLOR }} />
+                {compareBaseLegend}
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span
+                  className="h-2 w-4 rounded-sm"
+                  style={{ backgroundColor: COMPARE_TARGET_COLOR }}
+                />
+                {compareTargetLegend}
+              </span>
+              {compareLatestUpdate && (
+                <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>
+              )}
+              <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
+                Expand all
+              </button>
+              <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
+                Collapse all
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="h-2 w-4 rounded-sm" style={{ backgroundColor: COMPARE_BASE_COLOR }} />
+              {compareBaseLegend}
             </span>
-            <select
-              value={compareBaseDate ?? ""}
-              disabled={!compareDateOptions.length}
-              onChange={(event) => {
-                const nextDate = event.target.value || null;
-                startTransition(() => setCompareBaseDate(nextDate));
-              }}
-              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-            >
-              {!compareDateOptions.length && <option value="">--</option>}
-              {compareDateOptions.map((date) => (
-                <option key={date} value={date}>
-                  {fmtDate(date)}
-                </option>
-              ))}
-            </select>
-          </label>
-        <label>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Date B
-          </span>
-          <select
-            value={compareTargetDate ?? ""}
-            disabled={!compareDateOptions.length}
-            onChange={(event) => {
-              const nextDate = event.target.value || null;
-              startTransition(() => setCompareTargetDate(nextDate));
-            }}
-            className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-          >
-            {!compareDateOptions.length && <option value="">--</option>}
-            {compareDateOptions.map((date) => (
-              <option key={date} value={date}>
-                {fmtDate(date)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div>
-          <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-            Mode
-          </span>
-          <button
-            type="button"
-            aria-pressed={compareRampingEnabled}
-            onClick={() => {
-              startTransition(() => setCompareRampingEnabled((enabled) => !enabled));
-            }}
-            className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-              compareRampingEnabled
-                ? "border-sky-500/50 bg-sky-500/10 text-white"
-                : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-            }`}
-          >
-            Ramping
-          </button>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-4 rounded-sm" style={{ backgroundColor: COMPARE_BASE_COLOR }} />
-            {compareBaseLegend}
-          </span>
-          <span className="inline-flex items-center gap-1.5">
-            <span
-              className="h-2 w-4 rounded-sm"
-              style={{ backgroundColor: COMPARE_TARGET_COLOR }}
-            />
-            {compareTargetLegend}
-          </span>
-          {compareLatestUpdate && <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>}
-          <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
-            Expand all
-          </button>
-          <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
-            Collapse all
-          </button>
-        </div>
-      </div>
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="h-2 w-4 rounded-sm"
+                style={{ backgroundColor: COMPARE_TARGET_COLOR }}
+              />
+              {compareTargetLegend}
+            </span>
+            {compareLatestUpdate && (
+              <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>
+            )}
+            <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
+              Expand all
+            </button>
+            <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
+              Collapse all
+            </button>
+          </div>
+        )}
 
       {compareError && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
@@ -2481,100 +2628,96 @@ export default function PjmNetLoadForecast({
         renderDateCompareSection()
       ) : (
         <>
-          <SectionCard title="Explorer Controls" subtitle={explorerSubtitle}>
-            <div className="grid gap-3 xl:grid-cols-[170px_1fr_300px] xl:items-end">
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  View
-                </span>
-                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Explorer view">
-                  {[
-                    ["latest", "Latest"],
-                    ["change", "Change"],
-                  ].map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      role="radio"
-                      aria-checked={viewMode === key}
-                      onClick={() => {
-                        if (viewMode === key) return;
-                        startTransition(() => {
+          {filterControlsPlacement === "internal" && (
+            <SectionCard title="Explorer Controls" subtitle={explorerSubtitle}>
+              <div className="grid gap-3 xl:grid-cols-[170px_1fr_300px] xl:items-end">
+                <div>
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    View
+                  </span>
+                  <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Explorer view">
+                    {[
+                      ["latest", "Latest"],
+                      ["change", "Change"],
+                    ].map(([key, label]) => (
+                      <button
+                        key={key}
+                        type="button"
+                        role="radio"
+                        aria-checked={viewMode === key}
+                        onClick={() => {
+                          if (viewMode === key) return;
                           setViewMode(key as ViewMode);
-                          if (key === "change") setLookbackHours(selectedWindow.hours);
-                        });
-                      }}
-                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                        viewMode === key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                        }}
+                        className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                          viewMode === key
+                            ? "border-sky-500/50 bg-sky-500/10 text-white"
+                            : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Statistic
-                </span>
-                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Statistic">
-                  {STATISTICS.map((statistic) => (
-                    <button
-                      key={statistic.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={selectedStatistic === statistic.key}
-                      onClick={() => {
-                        if (selectedStatistic === statistic.key) return;
-                        startTransition(() => setSelectedStatistic(statistic.key));
-                      }}
-                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                        selectedStatistic === statistic.key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {statistic.label}
-                    </button>
-                  ))}
+                <div>
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    Statistic
+                  </span>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Statistic">
+                    {STATISTICS.map((statistic) => (
+                      <button
+                        key={statistic.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={selectedStatistic === statistic.key}
+                        onClick={() => {
+                          if (selectedStatistic === statistic.key) return;
+                          setSelectedStatistic(statistic.key);
+                        }}
+                        className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                          selectedStatistic === statistic.key
+                            ? "border-sky-500/50 bg-sky-500/10 text-white"
+                            : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                        }`}
+                      >
+                        {statistic.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
 
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Window
-                </span>
-                <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Change window">
-                  {CHANGE_WINDOWS.map((window) => (
-                    <button
-                      key={window.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={changeWindow === window.key}
-                      onClick={() => {
-                        if (viewMode === "change" && changeWindow === window.key) return;
-                        startTransition(() => {
+                <div>
+                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    Window
+                  </span>
+                  <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Change window">
+                    {CHANGE_WINDOWS.map((window) => (
+                      <button
+                        key={window.key}
+                        type="button"
+                        role="radio"
+                        aria-checked={changeWindow === window.key}
+                        onClick={() => {
+                          if (viewMode === "change" && changeWindow === window.key) return;
                           setViewMode("change");
                           setChangeWindow(window.key);
-                          setLookbackHours(changeWindowHours(window.key));
-                        });
-                      }}
-                      className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
-                        changeWindow === window.key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {window.label}
-                    </button>
-                  ))}
+                        }}
+                        className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
+                          changeWindow === window.key
+                            ? "border-sky-500/50 bg-sky-500/10 text-white"
+                            : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+                        }`}
+                      >
+                        {window.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
-          </SectionCard>
+            </SectionCard>
+          )}
 
           {explorerError && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">

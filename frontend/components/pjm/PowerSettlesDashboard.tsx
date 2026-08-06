@@ -6,8 +6,14 @@ import { useSearchParams } from "next/navigation";
 
 import ControlCard from "@/components/dashboard/ControlCard";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
+import {
+  MAX_POWER_LMP_SPARK_HEAT_RATE,
+  MIN_POWER_LMP_SPARK_HEAT_RATE,
+  normalizePowerLmpSparkHeatRate,
+  parsePowerLmpSparkHeatRate,
+} from "@/lib/powerLmpHeatRate";
 
-type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
+type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "miso" | "spp" | "nyiso";
 type RtLmpSource = "verified" | "unverified";
 type PowerSettlesComponent = "total" | "energy" | "congestion" | "loss";
 type DashboardStatus = "ok" | "partial" | "missing";
@@ -20,6 +26,26 @@ interface ProductSummary {
   peakHour: number | null;
   peakPrice: number | null;
   observationCount: number;
+}
+
+interface PowerSettlesInputSummary {
+  gasHub: string;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus: string;
+  gasReviewStatus: string;
+  units: "MMBtu/MWh";
+  sparkUnits: "$/MWh";
+  sparkHeatRate: number;
+  sourceTable: "ice_python_next_day_gas";
+  latestGasDay: string | null;
+  latestTradeDate: string | null;
+  latestAsOf: string | null;
+  gas: ProductSummary;
+  daHeatRate: ProductSummary;
+  rtHeatRate: ProductSummary;
+  daSpark: ProductSummary;
+  rtSpark: ProductSummary;
 }
 
 interface DashboardIsoRow {
@@ -47,12 +73,14 @@ interface DashboardIsoRow {
     rt: ProductSummary;
     dart: ProductSummary;
   };
+  inputs?: PowerSettlesInputSummary | null;
 }
 
 interface PowerSettlesDashboardPayload {
   component: PowerSettlesComponent;
   rtSource: RtLmpSource;
   lookbackDays: number;
+  sparkHeatRate: number;
   requestedDate: string | null;
   defaultDate: string;
   datePolicy: "requested" | "default-yesterday";
@@ -71,6 +99,7 @@ interface PowerSettlesDashboardPayload {
   };
 }
 
+const API_CACHE_SCHEMA_VERSION = "dashboard-spark-v4";
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const COMPONENT_TABS: Array<{ value: PowerSettlesComponent; label: string }> = [
   { value: "total", label: "Total" },
@@ -78,31 +107,28 @@ const COMPONENT_TABS: Array<{ value: PowerSettlesComponent; label: string }> = [
   { value: "congestion", label: "Congestion" },
   { value: "loss", label: "Loss" },
 ];
-const MAIN_HUB_ORDER: PowerIso[] = ["pjm", "ercot", "isone", "caiso"];
-const MAIN_HUB_BY_ISO: Record<PowerIso, string> = {
-  pjm: "WESTERN HUB",
-  ercot: "HB_NORTH",
-  isone: ".H.INTERNAL_HUB",
-  caiso: "TH_SP15_GEN-APND",
-};
+const PINNED_REPORT_ISO_ORDER: PowerIso[] = ["pjm", "ercot"];
 
 function buildApiUrl({
   date,
   lookbackDays,
   rtSource,
   component,
+  sparkHeatRate,
   refresh,
 }: {
   date: string | null;
   lookbackDays: number;
   rtSource: RtLmpSource;
   component: PowerSettlesComponent;
+  sparkHeatRate: number;
   refresh: boolean;
 }): string {
   const params = new URLSearchParams({
     lookbackDays: String(lookbackDays),
     rtSource,
     component,
+    sparkHeatRate: sparkHeatRate.toFixed(1),
   });
   if (date) params.set("date", date);
   if (refresh) params.set("refresh", "1");
@@ -114,18 +140,22 @@ function buildCacheKey({
   lookbackDays,
   rtSource,
   component,
+  sparkHeatRate,
 }: {
   date: string | null;
   lookbackDays: number;
   rtSource: RtLmpSource;
   component: PowerSettlesComponent;
+  sparkHeatRate: number;
 }): string {
   return [
     "api:power-settles-dashboard",
+    API_CACHE_SCHEMA_VERSION,
     date ?? "default-yesterday",
     lookbackDays,
     rtSource,
     component,
+    sparkHeatRate.toFixed(1),
   ].join(":");
 }
 
@@ -148,10 +178,24 @@ function parseInitialDate(value: string | null): string | null {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
+function parseInitialSparkHeatRate(value: string | null): number {
+  return parsePowerLmpSparkHeatRate(value);
+}
+
 function fmtPrice(value: number | null, signed = false): string {
   if (value === null || !Number.isFinite(value)) return "-";
   const sign = value < 0 ? "-" : signed && value > 0 ? "+" : "";
   return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function fmtHeatRate(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return value.toFixed(2);
+}
+
+function fmtSparkHeatRate(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return value.toFixed(1);
 }
 
 function fmtStamp(value: string | null): string {
@@ -183,11 +227,31 @@ function dartClass(value: number | null): string {
 }
 
 function metricCell(value: number | null, signed = false) {
+  const unavailable = value === null || !Number.isFinite(value);
   return (
-    <span className={`tabular-nums ${signed ? dartClass(value) : "text-gray-200"}`}>
+    <span className={`tabular-nums ${unavailable ? "text-gray-500" : signed ? dartClass(value) : "text-gray-200"}`}>
       {fmtPrice(value, signed)}
     </span>
   );
+}
+
+function sparkCell(value: number | null) {
+  const unavailable = value === null || !Number.isFinite(value);
+  const className = unavailable
+    ? "text-gray-500"
+    : value < 0
+      ? "text-red-200"
+      : value > 0
+        ? "text-emerald-200"
+        : "text-gray-200";
+  return <span className={`tabular-nums ${className}`}>{fmtPrice(value)}</span>;
+}
+
+function periodValue(
+  summary: ProductSummary,
+  period: "onPeak" | "offPeak",
+): number | null {
+  return period === "onPeak" ? summary.onPeakAvg : summary.offPeakAvg;
 }
 
 function FilterPills<T extends string>({
@@ -228,72 +292,72 @@ function FilterPills<T extends string>({
   );
 }
 
-function metricTriplet(
-  row: DashboardIsoRow,
-  period: "onPeak" | "offPeak",
-  withDivider = false,
-) {
-  const da = period === "onPeak" ? row.products.da.onPeakAvg : row.products.da.offPeakAvg;
-  const rt = period === "onPeak" ? row.products.rt.onPeakAvg : row.products.rt.offPeakAvg;
-  const dart =
-    period === "onPeak" ? row.products.dart.onPeakAvg : row.products.dart.offPeakAvg;
-  const label = period === "onPeak" ? "OnPk" : "OffPeak";
-
+function SparkHeatRateInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
   return (
-    <span
-      className={`inline-grid w-full grid-cols-3 items-center gap-1 tabular-nums ${
-        withDivider ? "border-l border-gray-800 pl-2" : ""
-      }`}
-      title={`${label} DA ${fmtPrice(da)} | RT ${fmtPrice(rt)} | DART ${fmtPrice(dart, true)}`}
-    >
-      <span className="text-right">{metricCell(da)}</span>
-      <span className="text-right">{metricCell(rt)}</span>
-      <span className="text-right">{metricCell(dart, true)}</span>
-    </span>
-  );
-}
-
-function metricTripletHeader(label: string, withDivider = false) {
-  return (
-    <span
-      className={`inline-grid w-full grid-cols-3 items-center gap-1 ${
-        withDivider ? "border-l border-gray-800 pl-2" : ""
-      }`}
-    >
-      <span className="col-span-3 text-center text-[10px] normal-case">{label}</span>
-      <span className="text-right text-[9px] text-gray-700">DA</span>
-      <span className="text-right text-[9px] text-gray-700">RT</span>
-      <span className="text-right text-[9px] text-gray-700">DART</span>
-    </span>
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        Spark HR
+      </span>
+      <input
+        type="number"
+        min={MIN_POWER_LMP_SPARK_HEAT_RATE}
+        max={MAX_POWER_LMP_SPARK_HEAT_RATE}
+        step={0.1}
+        value={value.toFixed(1)}
+        onChange={(event) => {
+          if (event.target.value === "") return;
+          onChange(Number(event.target.value));
+        }}
+        className="h-8 w-24 rounded-md border border-gray-700 bg-gray-900 px-2 text-xs tabular-nums text-gray-200 focus:border-gray-500 focus:outline-none"
+      />
+      <span className="text-[11px] text-gray-500">MMBtu/MWh</span>
+    </div>
   );
 }
 
 function sourceBadge(row: DashboardIsoRow) {
   if (row.rtSourceStatus === "fallback") {
+    const label = row.iso === "miso" ? "Prelim RT" : "Unverified RT";
+    const title =
+      row.iso === "miso"
+        ? "Final RT was unavailable or less complete, so this hub uses preliminary RT."
+        : "Verified RT was unavailable or less complete, so this hub uses unverified RT.";
     return {
-      label: "Unverified RT",
+      label,
       className: "border-amber-500/35 bg-amber-500/10 text-amber-200",
-      title: "Verified RT was unavailable or less complete, so this hub uses unverified RT.",
+      title,
     };
   }
   if (row.rtSourceStatus === "single-source") {
+    const label =
+      row.iso === "ercot"
+        ? "Settlement RT"
+        : row.iso === "caiso"
+          ? "Five-Min RT"
+          : "Prelim RT";
     return {
-      label: row.iso === "ercot" ? "Settlement RT" : "Five-Min RT",
+      label,
       className: "border-cyan-500/30 bg-cyan-500/10 text-cyan-200",
       title: "This ISO uses the single promoted RT source available in the LMP page.",
     };
   }
   if (row.effectiveRtSource === "verified") {
     return {
-      label: "Verified RT",
+      label: row.iso === "miso" ? "Final RT" : "Verified RT",
       className: "border-emerald-500/30 bg-emerald-500/10 text-emerald-200",
-      title: "This hub uses verified RT data.",
+      title: row.iso === "miso" ? "This hub uses final RT data." : "This hub uses verified RT data.",
     };
   }
   return {
-    label: "Unverified RT",
+    label: row.iso === "miso" ? "Prelim RT" : "Unverified RT",
     className: "border-sky-500/30 bg-sky-500/10 text-sky-200",
-    title: "This hub uses unverified RT data.",
+    title: row.iso === "miso" ? "This hub uses preliminary RT data." : "This hub uses unverified RT data.",
   };
 }
 
@@ -303,107 +367,734 @@ function isoStatus(rows: DashboardIsoRow[]): DashboardStatus {
   return "missing";
 }
 
-function IsoSummaryCard({
-  isoLabel,
-  rows,
-  requestedComponent,
+function summaryStatus(summary: PowerSettlesDashboardPayload["summary"]): DashboardStatus {
+  if (summary.hubCount > 0 && summary.completeHubCount === summary.hubCount) return "ok";
+  if (summary.completeHubCount > 0 || summary.partialHubCount > 0) return "partial";
+  return "missing";
+}
+
+function isoDomId(iso: PowerIso): string {
+  return iso.replace(/[^a-z0-9_-]/gi, "-");
+}
+
+function maxReportStamp(rows: DashboardIsoRow[]): string {
+  const stamps = rows.map((row) => row.dataAsOf).filter((value): value is string => Boolean(value));
+  return fmtStamp(stamps.sort().at(-1) ?? null);
+}
+
+function SummaryToken({
+  label,
+  value,
+  tone = "neutral",
+  title,
 }: {
-  isoLabel: string;
-  rows: DashboardIsoRow[];
-  requestedComponent: PowerSettlesComponent;
+  label: string;
+  value: string;
+  tone?: "neutral" | "ok" | "partial" | "source";
+  title?: string;
 }) {
-  const status = isoStatus(rows);
-  const fallbackComponent = rows.some((row) => row.effectiveComponent !== requestedComponent);
-  const fallbackSourceCount = rows.filter((row) => row.rtSourceStatus === "fallback").length;
-  const latestAsOf = fmtStamp(
-    rows
-      .map((row) => row.dataAsOf)
-      .filter((value): value is string => Boolean(value))
-      .sort()
-      .at(-1) ?? null,
-  );
-  const targetDate = fmtDate(rows[0]?.targetDate ?? null);
+  const toneClass =
+    tone === "ok"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-100"
+      : tone === "partial"
+        ? "border-amber-500/35 bg-amber-500/10 text-amber-100"
+        : tone === "source"
+          ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
+          : "border-gray-800 bg-gray-950/50 text-gray-300";
 
   return (
-    <article className="w-full max-w-[620px] overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-1.5">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-sm font-semibold text-gray-100">{isoLabel}</h3>
-            <span className="text-[11px] text-gray-600">
-              {rows.length} {rows.length === 1 ? "hub" : "hubs"}
-            </span>
-          </div>
-          <div className="mt-0.5 text-[11px] tabular-nums text-gray-500">
-            {targetDate} / as of {latestAsOf}
-          </div>
-        </div>
-        <div className="flex flex-wrap justify-end gap-1.5">
-          <span
-            className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(status)}`}
-          >
-            {statusLabel(status)}
-          </span>
-          {fallbackSourceCount > 0 && (
-            <span
-              className="inline-flex rounded-md border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-200"
-              title={`${fallbackSourceCount} hub${fallbackSourceCount === 1 ? "" : "s"} use unverified RT fallback.`}
-            >
-              {fallbackSourceCount} Fallback
-            </span>
-          )}
-          {fallbackComponent && (
-            <span className="inline-flex rounded-md border border-gray-700 bg-gray-950/70 px-2 py-0.5 text-[11px] font-semibold text-gray-500">
-              Total
-            </span>
-          )}
-        </div>
-      </div>
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] ${toneClass}`}
+      title={title}
+    >
+      <span className="font-semibold text-gray-500">{label}</span>
+      <span className="font-semibold tabular-nums">{value}</span>
+    </span>
+  );
+}
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[598px] px-2.5 py-1.5 text-xs">
-          <div className="grid grid-cols-[118px_94px_42px_160px_160px] items-center gap-1.5 border-b border-gray-800/80 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-            <span>Hub</span>
-            <span>Source</span>
-            <span className="text-right">LMPs</span>
-            {metricTripletHeader("OnPk", true)}
-            {metricTripletHeader("OffPeak", true)}
-          </div>
-          <div className="divide-y divide-gray-800/70">
+function IsoSummaryPill({ group }: { group: DashboardIsoGroup }) {
+  const completeCount = group.rows.filter((row) => row.status === "ok").length;
+  const fallbackCount = group.rows.filter((row) => row.rtSourceStatus === "fallback").length;
+  const singleSourceCount = group.rows.filter((row) => row.rtSourceStatus === "single-source").length;
+  const status = isoStatus(group.rows);
+
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-semibold ${statusClass(status)}`}
+      title={`${group.isoLabel}: ${completeCount}/${group.rows.length} hubs complete${
+        fallbackCount > 0 ? `; ${fallbackCount} RT fallback` : ""
+      }${singleSourceCount > 0 ? `; ${singleSourceCount} single-source RT` : ""}.`}
+    >
+      <span>{group.isoLabel}</span>
+      <span className="tabular-nums text-gray-200">
+        {completeCount}/{group.rows.length}
+      </span>
+      {fallbackCount > 0 && (
+        <span className="rounded-sm bg-amber-950/70 px-1 text-amber-100">
+          {fallbackCount} fallback
+        </span>
+      )}
+      {singleSourceCount > 0 && (
+        <span className="rounded-sm bg-cyan-950/70 px-1 text-cyan-100">
+          single RT
+        </span>
+      )}
+    </span>
+  );
+}
+
+function ReportBandHeader({
+  title,
+  meta,
+}: {
+  title: string;
+  meta?: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-700/80 pb-1.5">
+      <h3 className="text-sm font-semibold tracking-wide text-sky-100">
+        {title}
+      </h3>
+      {meta && (
+        <span className="rounded-md border border-gray-700 bg-gray-950/70 px-2 py-0.5 text-[11px] font-semibold text-gray-300">
+          {meta}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function DetailLink({ href, label }: { href: string | null; label: string }) {
+  if (!href) return <span className="text-gray-600">-</span>;
+  return (
+    <a
+      href={href}
+      className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[10px] font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
+    >
+      {label}
+    </a>
+  );
+}
+
+function LmpDetailLink({ href }: { href: string | null }) {
+  return <DetailLink href={href} label="LMPs" />;
+}
+
+function heatRateDetailUrl(row: DashboardIsoRow): string | null {
+  if (!row.detailUrl || !row.inputs) return null;
+  const url = new URL(row.detailUrl, "https://helios.local");
+  url.searchParams.set("product", "da");
+  url.searchParams.set("metric", "heat-rate");
+  url.searchParams.set("gasHub", row.inputs.gasHub);
+  url.searchParams.set("refresh", "1");
+  return `${url.pathname}?${url.searchParams.toString()}`;
+}
+
+function HeatRateDetailLink({ row }: { row: DashboardIsoRow }) {
+  return <DetailLink href={heatRateDetailUrl(row)} label="HRs" />;
+}
+
+function sparkDetailUrl(row: DashboardIsoRow): string | null {
+  if (!row.detailUrl || !row.inputs) return null;
+  const url = new URL(row.detailUrl, "https://helios.local");
+  url.searchParams.set("product", "da");
+  url.searchParams.set("metric", "spark-spread");
+  url.searchParams.set("component", "total");
+  url.searchParams.set("gasHub", row.inputs.gasHub);
+  url.searchParams.set("sparkHeatRate", row.inputs.sparkHeatRate.toFixed(1));
+  url.searchParams.set("refresh", "1");
+  return `${url.pathname}?${url.searchParams.toString()}`;
+}
+
+function SparkDetailLink({ row }: { row: DashboardIsoRow }) {
+  return <DetailLink href={sparkDetailUrl(row)} label="Spark" />;
+}
+
+function HeatRateMetric({ value }: { value: number | null }) {
+  return (
+    <span className={`tabular-nums ${value === null || !Number.isFinite(value) ? "text-gray-500" : "text-gray-200"}`}>
+      {fmtHeatRate(value)}
+    </span>
+  );
+}
+
+function LmpPeriodCells({
+  row,
+  period,
+}: {
+  row: DashboardIsoRow;
+  period: "onPeak" | "offPeak";
+}) {
+  return (
+    <>
+      <td className="border-l border-gray-800 px-2 py-1.5 text-right">
+        {metricCell(periodValue(row.products.da, period))}
+      </td>
+      <td className="px-2 py-1.5 text-right">
+        {metricCell(periodValue(row.products.rt, period))}
+      </td>
+      <td className="px-2 py-1.5 text-right">
+        {metricCell(periodValue(row.products.dart, period), true)}
+      </td>
+    </>
+  );
+}
+
+function HeatRatePeriodCells({
+  row,
+  period,
+}: {
+  row: DashboardIsoRow;
+  period: "onPeak" | "offPeak";
+}) {
+  const daHeatRate = row.inputs ? periodValue(row.inputs.daHeatRate, period) : null;
+  const rtHeatRate = row.inputs ? periodValue(row.inputs.rtHeatRate, period) : null;
+  const gas = row.inputs ? periodValue(row.inputs.gas, period) : null;
+
+  return (
+    <>
+      <td className="border-l border-gray-800 px-2 py-1.5 text-right">
+        <HeatRateMetric value={daHeatRate} />
+      </td>
+      <td className="px-2 py-1.5 text-right">
+        <HeatRateMetric value={rtHeatRate} />
+      </td>
+      <td className="px-2 py-1.5 text-right">{metricCell(gas)}</td>
+    </>
+  );
+}
+
+function SparkPeriodCells({
+  row,
+  period,
+}: {
+  row: DashboardIsoRow;
+  period: "onPeak" | "offPeak";
+}) {
+  const daSpark = row.inputs ? periodValue(row.inputs.daSpark, period) : null;
+  const rtSpark = row.inputs ? periodValue(row.inputs.rtSpark, period) : null;
+  const gas = row.inputs ? periodValue(row.inputs.gas, period) : null;
+
+  return (
+    <>
+      <td className="border-l border-gray-800 px-2 py-1.5 text-right">
+        {sparkCell(daSpark)}
+      </td>
+      <td className="px-2 py-1.5 text-right">
+        {sparkCell(rtSpark)}
+      </td>
+      <td className="px-2 py-1.5 text-right">{metricCell(gas)}</td>
+    </>
+  );
+}
+
+function LmpReportBand({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: DashboardIsoRow[];
+}) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label={title}>
+      <ReportBandHeader title={title} meta={`${rows.length} ${rows.length === 1 ? "hub" : "hubs"}`} />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">
+                Hub
+              </th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Source</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Status</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">LMPs</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">DART</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">DART</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
             {rows.map((row) => {
               const badge = sourceBadge(row);
               return (
-                <div
-                  key={`${row.iso}-${row.hub}`}
-                  className="grid grid-cols-[118px_94px_42px_160px_160px] items-center gap-1.5 py-1"
-                  title={row.statusDetail}
-                >
-                  <span className="truncate font-semibold text-gray-300" title={row.hub}>
+                <tr key={`${row.iso}-${row.hub}-lmps`} className="hover:bg-gray-900/60" title={row.statusDetail}>
+                  <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
                     {row.hub}
-                  </span>
-                  <span
-                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
-                    title={badge.title}
-                  >
-                    {badge.label}
-                  </span>
-                  <span className="text-right">
-                    {row.detailUrl ? (
-                      <a
-                        href={row.detailUrl}
-                        className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[10px] font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
-                      >
-                        LMPs
-                      </a>
-                    ) : (
-                      <span className="text-gray-600">-</span>
-                    )}
-                  </span>
-                  <span className="text-right">{metricTriplet(row, "onPeak", true)}</span>
-                  <span className="text-right">{metricTriplet(row, "offPeak", true)}</span>
-                </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span
+                      className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                      title={badge.title}
+                    >
+                      {badge.label}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(row.status)}`}>
+                      {statusLabel(row.status)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <LmpDetailLink href={row.detailUrl} />
+                  </td>
+                  <LmpPeriodCells row={row} period="onPeak" />
+                  <LmpPeriodCells row={row} period="offPeak" />
+                </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function HeatRateReportBand({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: DashboardIsoRow[];
+}) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label={title}>
+      <ReportBandHeader title={title} meta="DA HR / RT HR / Gas" />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">
+                Hub
+              </th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Gas Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">HRs</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA HR</th>
+              <th className="px-2 py-1 text-right">RT HR</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA HR</th>
+              <th className="px-2 py-1 text-right">RT HR</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
+            {rows.map((row) => (
+              <tr key={`${row.iso}-${row.hub}-hrs`} className="hover:bg-gray-900/60">
+                <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
+                  {row.hub}
+                </td>
+                <td className="px-2 py-1.5 text-gray-400">
+                  {row.inputs?.gasHubLabel ?? "-"}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <HeatRateDetailLink row={row} />
+                </td>
+                <HeatRatePeriodCells row={row} period="onPeak" />
+                <HeatRatePeriodCells row={row} period="offPeak" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SparkReportBand({
+  title,
+  rows,
+  sparkHeatRate,
+}: {
+  title: string;
+  rows: DashboardIsoRow[];
+  sparkHeatRate: number;
+}) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label={title}>
+      <ReportBandHeader title={title} meta={`Spark HR ${fmtSparkHeatRate(sparkHeatRate)}`} />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">
+                Hub
+              </th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Gas Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">Spark HR</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">Sparks</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
+            {rows.map((row) => (
+              <tr key={`${row.iso}-${row.hub}-sparks`} className="hover:bg-gray-900/60">
+                <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
+                  {row.hub}
+                </td>
+                <td className="px-2 py-1.5 text-gray-400">
+                  {row.inputs?.gasHubLabel ?? "-"}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-300">
+                  {fmtSparkHeatRate(row.inputs?.sparkHeatRate ?? null)}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <SparkDetailLink row={row} />
+                </td>
+                <SparkPeriodCells row={row} period="onPeak" />
+                <SparkPeriodCells row={row} period="offPeak" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+interface DashboardIsoGroup {
+  iso: PowerIso;
+  isoLabel: string;
+  rows: DashboardIsoRow[];
+}
+
+function orderedIsoGroups(data: PowerSettlesDashboardPayload): DashboardIsoGroup[] {
+  const groups: DashboardIsoGroup[] = [];
+  const byIso = new Map<PowerIso, DashboardIsoGroup>();
+
+  for (const row of data.rows) {
+    let group = byIso.get(row.iso);
+    if (!group) {
+      group = { iso: row.iso, isoLabel: row.isoLabel, rows: [] };
+      byIso.set(row.iso, group);
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+
+  const ordered = [
+    ...PINNED_REPORT_ISO_ORDER.map((iso) => byIso.get(iso)).filter(
+      (group): group is DashboardIsoGroup => Boolean(group),
+    ),
+    ...groups.filter((group) => !PINNED_REPORT_ISO_ORDER.includes(group.iso)),
+  ];
+
+  return ordered;
+}
+
+function DashboardSummaryStrip({
+  data,
+  groups,
+}: {
+  data: PowerSettlesDashboardPayload;
+  groups: DashboardIsoGroup[];
+}) {
+  const status = summaryStatus(data.summary);
+  const fallbackCount = data.summary.unverifiedFallbackHubCount;
+  const singleSourceCount = data.rows.filter((row) => row.rtSourceStatus === "single-source").length;
+  const componentFallbackCount = data.rows.filter((row) => row.effectiveComponent !== data.component).length;
+
+  return (
+    <div className="space-y-2" aria-label="Power Settles report summary">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold ${statusClass(status)}`}>
+          {statusLabel(status)}
+        </span>
+        <SummaryToken label="Date" value={data.requestedDate ?? data.defaultDate} />
+        <SummaryToken label="Spark HR" value={fmtSparkHeatRate(data.sparkHeatRate)} />
+        <SummaryToken label="ISOs" value={String(data.summary.isoCount)} />
+        <SummaryToken
+          label="Hubs"
+          value={`${data.summary.completeHubCount}/${data.summary.hubCount}`}
+          tone={status === "ok" ? "ok" : "partial"}
+        />
+        {fallbackCount > 0 && (
+          <SummaryToken
+            label="Fallback"
+            value={`${fallbackCount} RT`}
+            tone="partial"
+            title="Verified/final RT was unavailable or less complete, so preliminary/unverified RT is shown for these hubs."
+          />
+        )}
+        {componentFallbackCount > 0 && (
+          <SummaryToken
+            label="Component"
+            value={`${componentFallbackCount} Total`}
+            tone="partial"
+            title="These rows use Total because the selected component is not promoted for that ISO."
+          />
+        )}
+        {singleSourceCount > 0 && (
+          <SummaryToken
+            label="Single RT"
+            value={String(singleSourceCount)}
+            tone="source"
+            title="These hubs use the only promoted RT source available for that ISO."
+          />
+        )}
+        <SummaryToken label="As Of" value={fmtStamp(data.summary.latestAsOf)} />
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5" aria-label="ISO coverage summary">
+        {groups.map((group) => (
+          <IsoSummaryPill key={group.iso} group={group} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function summaryHubRows(groups: DashboardIsoGroup[]): DashboardIsoRow[] {
+  return groups.flatMap((group) => group.rows.slice(0, group.iso === "caiso" ? 2 : 1));
+}
+
+function SummaryLmpTable({ rows }: { rows: DashboardIsoRow[] }) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label="Summary LMPs">
+      <ReportBandHeader title="Summary LMPs" meta={`${rows.length} hubs`} />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">ISO</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Source</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Status</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">LMPs</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">DART</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">DART</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
+            {rows.map((row) => {
+              const badge = sourceBadge(row);
+              return (
+                <tr key={`${row.iso}-${row.hub}-summary`} className="hover:bg-gray-900/60" title={row.statusDetail}>
+                  <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300">
+                    {row.isoLabel}
+                  </td>
+                  <td className="px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
+                    {row.hub}
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span
+                      className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
+                      title={badge.title}
+                    >
+                      {badge.label}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <span className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(row.status)}`}>
+                      {statusLabel(row.status)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right">
+                    <LmpDetailLink href={row.detailUrl} />
+                  </td>
+                  <LmpPeriodCells row={row} period="onPeak" />
+                  <LmpPeriodCells row={row} period="offPeak" />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SummaryHeatRateTable({ rows }: { rows: DashboardIsoRow[] }) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label="Summary HRs">
+      <ReportBandHeader title="Summary HRs" meta="DA HR / RT HR / Gas" />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">ISO</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Gas Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">HRs</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA HR</th>
+              <th className="px-2 py-1 text-right">RT HR</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA HR</th>
+              <th className="px-2 py-1 text-right">RT HR</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
+            {rows.map((row) => (
+              <tr key={`${row.iso}-${row.hub}-summary-hrs`} className="hover:bg-gray-900/60">
+                <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300">
+                  {row.isoLabel}
+                </td>
+                <td className="px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
+                  {row.hub}
+                </td>
+                <td className="px-2 py-1.5 text-gray-400">
+                  {row.inputs?.gasHubLabel ?? "-"}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <HeatRateDetailLink row={row} />
+                </td>
+                <HeatRatePeriodCells row={row} period="onPeak" />
+                <HeatRatePeriodCells row={row} period="offPeak" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function SummarySparkTable({
+  rows,
+  sparkHeatRate,
+}: {
+  rows: DashboardIsoRow[];
+  sparkHeatRate: number;
+}) {
+  return (
+    <section className="w-max flex-none space-y-2" aria-label="Summary Sparks">
+      <ReportBandHeader title="Summary Sparks" meta={`Spark HR ${fmtSparkHeatRate(sparkHeatRate)}`} />
+      <div>
+        <table className="w-max table-auto border-collapse text-xs text-gray-200 whitespace-nowrap">
+          <thead className="bg-gray-950/50 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+            <tr className="border-b border-gray-800/80">
+              <th rowSpan={2} className="bg-gray-950 px-2 py-1.5 text-left">ISO</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-left">Gas Hub</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">Spark HR</th>
+              <th rowSpan={2} className="px-2 py-1.5 text-right">Sparks</th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OnPk
+              </th>
+              <th colSpan={3} className="border-l border-gray-800 px-2 py-1 text-center normal-case text-gray-500">
+                OffPeak
+              </th>
+            </tr>
+            <tr className="border-b border-gray-800/80">
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+              <th className="border-l border-gray-800 px-2 py-1 text-right">DA</th>
+              <th className="px-2 py-1 text-right">RT</th>
+              <th className="px-2 py-1 text-right">Gas</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800/70 bg-[#0d1119]">
+            {rows.map((row) => (
+              <tr key={`${row.iso}-${row.hub}-summary-sparks`} className="hover:bg-gray-900/60">
+                <td className="bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-300">
+                  {row.isoLabel}
+                </td>
+                <td className="px-2 py-1.5 font-semibold text-gray-300" title={row.hub}>
+                  {row.hub}
+                </td>
+                <td className="px-2 py-1.5 text-gray-400">
+                  {row.inputs?.gasHubLabel ?? "-"}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-300">
+                  {fmtSparkHeatRate(row.inputs?.sparkHeatRate ?? null)}
+                </td>
+                <td className="px-2 py-1.5 text-right">
+                  <SparkDetailLink row={row} />
+                </td>
+                <SparkPeriodCells row={row} period="onPeak" />
+                <SparkPeriodCells row={row} period="offPeak" />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function DashboardSummaryCard({
+  data,
+  groups,
+}: {
+  data: PowerSettlesDashboardPayload;
+  groups: DashboardIsoGroup[];
+}) {
+  const rows = summaryHubRows(groups);
+
+  return (
+    <article className="w-full overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-100">Summary</h2>
+            <span className="text-[11px] text-gray-600">
+              {data.summary.isoCount} ISOs / {data.summary.hubCount} hubs
+            </span>
+          </div>
+          <div className="mt-0.5 text-[11px] tabular-nums text-gray-500">
+            {data.requestedDate ?? data.defaultDate} / as of {fmtStamp(data.summary.latestAsOf)}
+          </div>
+        </div>
+      </div>
+      <div className="px-2.5 py-3 sm:px-3">
+        <DashboardSummaryStrip data={data} groups={groups} />
+        <div className="mt-3 overflow-x-auto">
+          <div className="flex w-max min-w-full items-start gap-10">
+            <SummaryLmpTable rows={rows} />
+            <SummaryHeatRateTable rows={rows} />
+            <SummarySparkTable rows={rows} sparkHeatRate={data.sparkHeatRate} />
           </div>
         </div>
       </div>
@@ -411,72 +1102,90 @@ function IsoSummaryCard({
   );
 }
 
-function MainHubSummary({ rows }: { rows: DashboardIsoRow[] }) {
+function IsoReportCard({
+  group,
+  requestedComponent,
+  sparkHeatRate,
+  open,
+  onToggle,
+}: {
+  group: DashboardIsoGroup;
+  requestedComponent: PowerSettlesComponent;
+  sparkHeatRate: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  const status = isoStatus(group.rows);
+  const completeCount = group.rows.filter((row) => row.status === "ok").length;
+  const fallbackComponent = group.rows.some((row) => row.effectiveComponent !== requestedComponent);
+  const fallbackSourceCount = group.rows.filter((row) => row.rtSourceStatus === "fallback").length;
+  const targetDate = fmtDate(group.rows[0]?.targetDate ?? null);
+  const latestAsOf = maxReportStamp(group.rows);
+  const bodyId = `power-settles-${isoDomId(group.iso)}-body`;
+
   return (
-    <section className="overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
-      <div className="flex items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-1.5">
-        <div>
-          <h3 className="text-sm font-semibold text-gray-100">Main Hubs</h3>
-          <div className="mt-0.5 text-[11px] text-gray-500">One hub per ISO</div>
+    <article className="w-full overflow-hidden rounded-lg border border-gray-800 bg-[#0d1119] shadow-xl shadow-black/20">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/30 px-2.5 py-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-sm font-semibold text-gray-100">{group.isoLabel}</h2>
+            <span className="text-[11px] text-gray-600">
+              {group.rows.length} {group.rows.length === 1 ? "hub" : "hubs"}
+            </span>
+            <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(status)}`}>
+              {statusLabel(status)}
+            </span>
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] tabular-nums text-gray-500">
+            <span>{completeCount}/{group.rows.length} hubs complete</span>
+            <span className="text-gray-700">/</span>
+            <span>{targetDate}</span>
+            <span className="text-gray-700">/</span>
+            <span>as of {latestAsOf}</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <span
+            className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${
+              fallbackSourceCount > 0
+                ? "border-amber-500/35 bg-amber-500/10 text-amber-200"
+                : "border-gray-700 bg-gray-950/70 text-gray-500"
+            }`}
+            title={`${fallbackSourceCount} hub${fallbackSourceCount === 1 ? "" : "s"} use RT fallback.`}
+          >
+            {fallbackSourceCount} Fallback
+          </span>
+          {fallbackComponent && (
+            <span className="inline-flex rounded-md border border-gray-700 bg-gray-950/70 px-2 py-0.5 text-[11px] font-semibold text-gray-500">
+              Total
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={open}
+            aria-controls={bodyId}
+            className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+          >
+            {open ? "Collapse" : "Expand"}
+          </button>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <div className="min-w-[828px] px-2.5 py-1.5 text-xs">
-          <div className="grid grid-cols-[58px_138px_96px_72px_42px_160px_160px] items-center gap-1.5 border-b border-gray-800/80 pb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
-            <span>ISO</span>
-            <span>Hub</span>
-            <span>Source</span>
-            <span>Status</span>
-            <span className="text-right">LMPs</span>
-            {metricTripletHeader("OnPk", true)}
-            {metricTripletHeader("OffPeak", true)}
-          </div>
-          <div className="divide-y divide-gray-800/70">
-            {rows.map((row) => {
-              const badge = sourceBadge(row);
-              return (
-                <div
-                  key={`main-${row.iso}-${row.hub}`}
-                  className="grid grid-cols-[58px_138px_96px_72px_42px_160px_160px] items-center gap-1.5 py-1"
-                  title={row.statusDetail}
-                >
-                  <span className="font-semibold text-gray-100">{row.isoLabel}</span>
-                  <span className="truncate font-semibold text-gray-300" title={row.hub}>
-                    {row.hub}
-                  </span>
-                  <span
-                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${badge.className}`}
-                    title={badge.title}
-                  >
-                    {badge.label}
-                  </span>
-                  <span
-                    className={`w-fit rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(row.status)}`}
-                  >
-                    {statusLabel(row.status)}
-                  </span>
-                  <span className="text-right">
-                    {row.detailUrl ? (
-                      <a
-                        href={row.detailUrl}
-                        className="rounded border border-gray-700 bg-gray-800 px-1.5 py-0.5 text-[10px] font-semibold text-gray-300 transition-colors hover:border-sky-500/50 hover:bg-gray-700 hover:text-white"
-                      >
-                        LMPs
-                      </a>
-                    ) : (
-                      <span className="text-gray-600">-</span>
-                    )}
-                  </span>
-                  <span className="text-right">{metricTriplet(row, "onPeak", true)}</span>
-                  <span className="text-right">{metricTriplet(row, "offPeak", true)}</span>
-                </div>
-              );
-            })}
+      {open && (
+        <div id={bodyId} className="overflow-x-auto px-2.5 py-4 sm:px-3">
+          <div className="flex w-max min-w-full items-start gap-10">
+            <LmpReportBand title={`${group.isoLabel} LMPs`} rows={group.rows} />
+            <HeatRateReportBand title={`${group.isoLabel} HRs`} rows={group.rows} />
+            <SparkReportBand
+              title={`${group.isoLabel} Sparks`}
+              rows={group.rows}
+              sparkHeatRate={sparkHeatRate}
+            />
           </div>
         </div>
-      </div>
-    </section>
+      )}
+    </article>
   );
 }
 
@@ -492,6 +1201,9 @@ export default function PowerSettlesDashboard() {
   const [lookbackDays] = useState(() =>
     parseInitialLookbackDays(searchParams.get("lookbackDays")),
   );
+  const [sparkHeatRate, setSparkHeatRate] = useState(() =>
+    parseInitialSparkHeatRate(searchParams.get("sparkHeatRate")),
+  );
   const [selectedDate, setSelectedDate] = useState<string | null>(() => initialDate);
   const [dateInput, setDateInput] = useState(() => initialDate ?? "");
   const [refreshToken, setRefreshToken] = useState(() =>
@@ -500,6 +1212,7 @@ export default function PowerSettlesDashboard() {
   const [data, setData] = useState<PowerSettlesDashboardPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [collapsedIsoCards, setCollapsedIsoCards] = useState<Set<string>>(() => new Set());
 
   const forceRefresh = refreshToken > 0;
   const apiUrl = useMemo(
@@ -509,9 +1222,10 @@ export default function PowerSettlesDashboard() {
         lookbackDays,
         rtSource,
         component,
+        sparkHeatRate,
         refresh: forceRefresh,
       }),
-    [component, forceRefresh, lookbackDays, rtSource, selectedDate],
+    [component, forceRefresh, lookbackDays, rtSource, selectedDate, sparkHeatRate],
   );
   const cacheKey = useMemo(
     () =>
@@ -520,8 +1234,9 @@ export default function PowerSettlesDashboard() {
         lookbackDays,
         rtSource,
         component,
+        sparkHeatRate,
       }),
-    [component, lookbackDays, rtSource, selectedDate],
+    [component, lookbackDays, rtSource, selectedDate, sparkHeatRate],
   );
 
   useEffect(() => {
@@ -541,6 +1256,9 @@ export default function PowerSettlesDashboard() {
       .then((payload) => {
         if (cancelled) return;
         setData(payload);
+        if (!selectedDate) {
+          setDateInput(payload.defaultDate);
+        }
       })
       .catch((nextError) => {
         if (cancelled) return;
@@ -555,35 +1273,9 @@ export default function PowerSettlesDashboard() {
       cancelled = true;
       controller.abort();
     };
-  }, [apiUrl, cacheKey, forceRefresh, refreshToken]);
+  }, [apiUrl, cacheKey, forceRefresh, refreshToken, selectedDate]);
 
-  const componentFallbackApplies =
-    data?.rows.some((row) => row.effectiveComponent !== data.component) ?? false;
-  const isoCards = useMemo(() => {
-    if (!data) return [];
-    const groups: Array<{ iso: PowerIso; isoLabel: string; rows: DashboardIsoRow[] }> = [];
-    const byIso = new Map<PowerIso, { iso: PowerIso; isoLabel: string; rows: DashboardIsoRow[] }>();
-    for (const row of data.rows) {
-      let group = byIso.get(row.iso);
-      if (!group) {
-        group = { iso: row.iso, isoLabel: row.isoLabel, rows: [] };
-        byIso.set(row.iso, group);
-        groups.push(group);
-      }
-      group.rows.push(row);
-    }
-    return groups;
-  }, [data]);
-  const mainHubRows = useMemo(() => {
-    if (!data) return [];
-    return MAIN_HUB_ORDER.map((iso) => {
-      const mainHub = MAIN_HUB_BY_ISO[iso];
-      return (
-        data.rows.find((row) => row.iso === iso && row.hub === mainHub) ??
-        data.rows.find((row) => row.iso === iso)
-      );
-    }).filter((row): row is DashboardIsoRow => Boolean(row));
-  }, [data]);
+  const reportCards = useMemo(() => (data ? orderedIsoGroups(data) : []), [data]);
 
   const handleDateSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -591,11 +1283,24 @@ export default function PowerSettlesDashboard() {
     setRefreshToken((value) => value + 1);
   };
 
+  const handleSparkHeatRateChange = (nextSparkHeatRate: number) => {
+    setSparkHeatRate(normalizePowerLmpSparkHeatRate(nextSparkHeatRate));
+  };
+
+  const toggleIsoCard = (iso: PowerIso) => {
+    setCollapsedIsoCards((current) => {
+      const next = new Set(current);
+      if (next.has(iso)) next.delete(iso);
+      else next.add(iso);
+      return next;
+    });
+  };
+
   const ready = !loading;
 
   return (
     <div
-      className="mx-auto w-full max-w-[1252px] space-y-4"
+      className="mx-auto w-full max-w-none space-y-4"
       data-perf-ready={ready ? "power-settles-dashboard" : undefined}
     >
       <ControlCard title="Power Settles">
@@ -607,7 +1312,7 @@ export default function PowerSettlesDashboard() {
             <span className="h-px flex-1 bg-gray-800" />
             <span className="text-xs text-gray-500">
               {data
-                ? `${data.summary.completeHubCount}/${data.summary.hubCount} hubs complete`
+                ? `${data.summary.isoCount} ISOs / ${data.summary.hubCount} hubs`
                 : "DA / RT / DART OnPk-OffPeak"}
             </span>
           </div>
@@ -632,7 +1337,7 @@ export default function PowerSettlesDashboard() {
               <button
                 type="button"
                 onClick={() => {
-                  setDateInput("");
+                  setDateInput(data?.defaultDate ?? "");
                   setSelectedDate(null);
                   setRefreshToken((value) => value + 1);
                 }}
@@ -647,33 +1352,12 @@ export default function PowerSettlesDashboard() {
               value={component}
               onChange={setComponent}
             />
+            <SparkHeatRateInput
+              value={sparkHeatRate}
+              onChange={handleSparkHeatRateChange}
+            />
           </div>
 
-          {data && (
-            <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-              <span>
-                Date <span className="font-semibold tabular-nums text-gray-300">{data.requestedDate ?? data.defaultDate}</span>
-              </span>
-              <span className="text-gray-700">/</span>
-              <span>
-                As of <span className="font-semibold tabular-nums text-gray-300">{fmtStamp(data.summary.latestAsOf)}</span>
-              </span>
-              {componentFallbackApplies && (
-                <>
-                  <span className="text-gray-700">/</span>
-                  <span>ERCOT uses Total</span>
-                </>
-              )}
-              {data.summary.unverifiedFallbackHubCount > 0 && (
-                <>
-                  <span className="text-gray-700">/</span>
-                  <span>
-                    {data.summary.unverifiedFallbackHubCount} unverified RT fallback
-                  </span>
-                </>
-              )}
-            </div>
-          )}
         </div>
       </ControlCard>
 
@@ -690,22 +1374,19 @@ export default function PowerSettlesDashboard() {
       )}
 
       {data && (
-        <>
-          <MainHubSummary rows={mainHubRows} />
-          <section
-            className="grid w-full grid-cols-[minmax(0,620px)] justify-center gap-3 2xl:grid-cols-[repeat(2,minmax(0,620px))]"
-            aria-label="Power Settles ISO summaries"
-          >
-            {isoCards.map((card) => (
-              <IsoSummaryCard
-                key={card.iso}
-                isoLabel={card.isoLabel}
-                rows={card.rows}
-                requestedComponent={data.component}
-              />
-            ))}
-          </section>
-        </>
+        <section className="space-y-3" aria-label="Power Settles ISO report cards">
+          <DashboardSummaryCard data={data} groups={reportCards} />
+          {reportCards.map((card) => (
+            <IsoReportCard
+              key={card.iso}
+              group={card}
+              requestedComponent={data.component}
+              sparkHeatRate={data.sparkHeatRate}
+              open={!collapsedIsoCards.has(card.iso)}
+              onToggle={() => toggleIsoCard(card.iso)}
+            />
+          ))}
+        </section>
       )}
     </div>
   );

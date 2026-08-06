@@ -27,7 +27,7 @@ dbt/dbt_azure_sql/models/salts/marts/marts_v1_salt_facilities_bcf.sql
 dbt/dbt_azure_sql/models/salts/marts/marts_v1_salt_inventories.sql
 ```
 
-The Salt Model API route (`/api/salts/wx-adj-scrapes`) reads
+The Salts Home API route (`/api/salts/wx-adj-scrapes`) reads
 `marts_v1_salt_facilities_bcf.sql`, injects bounded `@startYear` and `@month`
 predicates into the raw nominations CTE, and projects the final daily salts
 flow columns for the weather join.

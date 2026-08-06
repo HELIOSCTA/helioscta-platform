@@ -1,11 +1,37 @@
 import "server-only";
 
 import { query } from "@/lib/server/db";
+import {
+  bindPromotedSql,
+  readPjmDaPromotedSql,
+} from "@/lib/server/pjmDaPromotedSql";
+import {
+  DEFAULT_POWER_LMP_METRIC_MODE,
+  DEFAULT_POWER_LMP_SPARK_HEAT_RATE,
+  defaultPowerLmpGasHubForIso,
+  isPowerLmpGasHubAllowedForIso,
+  normalizePowerLmpSparkHeatRate,
+  parsePowerLmpSparkHeatRate,
+  type PowerLmpGasHubKey,
+  type PowerLmpMetricMode,
+  parsePowerLmpGasHubKey,
+  parsePjmHeatRateGasHubKey,
+  parsePowerLmpMetricMode,
+  powerLmpGasHubConfig,
+} from "@/lib/powerLmpHeatRate";
+
 export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "miso" | "spp" | "nyiso";
 export type PowerLmpProduct = "da" | "rt";
 export type RtLmpSource = "verified" | "unverified";
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type PowerSettlesDashboardComponent = "total" | "energy" | "congestion" | "loss";
+export type { PowerLmpGasHubKey, PowerLmpMetricMode };
+export {
+  parsePowerLmpGasHubKey as parsePowerLmpGasHub,
+  parsePjmHeatRateGasHubKey as parsePjmHeatRateGasHub,
+  parsePowerLmpMetricMode as parsePowerLmpMetric,
+  parsePowerLmpSparkHeatRate as parsePowerSettlesSparkHeatRate,
+};
 
 const PJM_HUBS = [
   "WESTERN HUB",
@@ -125,7 +151,19 @@ const ISO_CONFIGS: Record<PowerIso, IsoConfig> = {
   },
 };
 
-const POWER_SETTLES_DASHBOARD_ISOS: PowerIso[] = ["pjm", "ercot", "isone", "caiso"];
+const POWER_SETTLES_DASHBOARD_ISOS: PowerIso[] = [
+  "pjm",
+  "ercot",
+  "isone",
+  "caiso",
+  "miso",
+  "spp",
+  "nyiso",
+];
+export const POWER_SETTLES_EMAIL_REPORT_ISOS: PowerIso[] = [
+  ...POWER_SETTLES_DASHBOARD_ISOS,
+];
+const POWER_SETTLES_DEFAULT_TIME_ZONE = "America/Denver";
 
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
@@ -137,6 +175,16 @@ const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   nyiso: { start: 8, end: 23 },
 };
 
+const POWER_LMP_MARKET_TIMEZONE_BY_ISO: Record<PowerIso, string> = {
+  pjm: "America/New_York",
+  ercot: "America/Chicago",
+  isone: "America/New_York",
+  caiso: "America/Los_Angeles",
+  miso: "America/Chicago",
+  spp: "America/Chicago",
+  nyiso: "America/New_York",
+};
+
 interface LmpRow {
   datetime_beginning_ept: string;
   hub: string;
@@ -146,6 +194,7 @@ interface LmpRow {
   congestion: number | string | null;
   marginal_loss: number | string | null;
   as_of: string | null;
+  gas_metadata?: PowerLmpHeatRateGasHourMetadata | null;
 }
 
 interface HourRow {
@@ -154,6 +203,44 @@ interface HourRow {
   value: number | string | null;
   as_of: string | null;
 }
+
+export interface PowerLmpHeatRateGasHourMetadata {
+  date: string;
+  hourEnding: number;
+  gasDay: string | null;
+  tradeDate: string | null;
+  gasHub: PowerLmpGasHubKey;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus: string;
+  gasReviewStatus: string;
+  gasSourceHubName: string | null;
+  gasPrice: number | null;
+  gasPriceSource: string | null;
+  latestTradeDate: string | null;
+  updatedAt: string | null;
+  contractDatesUpdatedAt: string | null;
+  sourceTable: "ice_python_next_day_gas";
+}
+
+export interface PowerLmpHeatRateMetadata {
+  units: "MMBtu/MWh";
+  gasHub: PowerLmpGasHubKey;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus: string;
+  gasReviewStatus: string;
+  gasPriceColumn: string;
+  sourceTable: "ice_python_next_day_gas";
+  latestGasDay: string | null;
+  latestTradeDate: string | null;
+  latestAsOf: string | null;
+  missingGasHourCount: number;
+  hourly: PowerLmpHeatRateGasHourMetadata[];
+}
+
+export type PjmHeatRateGasHourMetadata = PowerLmpHeatRateGasHourMetadata;
+export type PjmHeatRateMetadata = PowerLmpHeatRateMetadata;
 
 type PowerSettlesDashboardStatus = "ok" | "partial" | "missing";
 export type PowerSettlesDashboardRtSourceStatus = "requested" | "fallback" | "single-source";
@@ -170,6 +257,26 @@ export interface PowerSettlesDashboardProductSummary {
   peakHour: number | null;
   peakPrice: number | null;
   observationCount: number;
+}
+
+export interface PowerSettlesDashboardInputSummary {
+  gasHub: PowerLmpGasHubKey;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus: string;
+  gasReviewStatus: string;
+  units: "MMBtu/MWh";
+  sparkUnits: "$/MWh";
+  sparkHeatRate: number;
+  sourceTable: "ice_python_next_day_gas";
+  latestGasDay: string | null;
+  latestTradeDate: string | null;
+  latestAsOf: string | null;
+  gas: PowerSettlesDashboardProductSummary;
+  daHeatRate: PowerSettlesDashboardProductSummary;
+  rtHeatRate: PowerSettlesDashboardProductSummary;
+  daSpark: PowerSettlesDashboardProductSummary;
+  rtSpark: PowerSettlesDashboardProductSummary;
 }
 
 export interface PowerSettlesDashboardIsoRow {
@@ -197,12 +304,14 @@ export interface PowerSettlesDashboardIsoRow {
     rt: PowerSettlesDashboardProductSummary;
     dart: PowerSettlesDashboardProductSummary;
   };
+  inputs?: PowerSettlesDashboardInputSummary | null;
 }
 
 export interface PowerSettlesDashboardPayload {
   component: PowerSettlesDashboardComponent;
   rtSource: RtLmpSource;
   lookbackDays: number;
+  sparkHeatRate: number;
   requestedDate: string | null;
   defaultDate: string;
   datePolicy: "requested" | "default-yesterday";
@@ -256,10 +365,31 @@ export function parseDate(raw: string | null): string | null {
   return raw && /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
 }
 
+function calendarDatePartsInTimeZone(now: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+
+  return {
+    year: value("year"),
+    month: value("month"),
+    day: value("day"),
+  };
+}
+
 export function defaultPowerSettlesDashboardDate(now = new Date()): string {
-  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  todayUtc.setUTCDate(todayUtc.getUTCDate() - 1);
-  return todayUtc.toISOString().slice(0, 10);
+  const { year, month, day } = calendarDatePartsInTimeZone(
+    now,
+    POWER_SETTLES_DEFAULT_TIME_ZONE,
+  );
+  const localCalendarDate = new Date(Date.UTC(year, month - 1, day));
+  localCalendarDate.setUTCDate(localCalendarDate.getUTCDate() - 1);
+  return localCalendarDate.toISOString().slice(0, 10);
 }
 
 export function parsePowerSettlesLookbackDays(raw: string | null): number {
@@ -270,6 +400,10 @@ export function parsePowerSettlesLookbackDays(raw: string | null): number {
 
 function parseDateWithFallback(value: string | null, fallback: string): string {
   return value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+}
+
+function promotedSqlBody(sql: string): string {
+  return sql.trim().replace(/;\s*$/, "");
 }
 
 function toNumber(value: unknown): number | null {
@@ -299,6 +433,13 @@ function dateRange(start: string, end: string): string[] {
   return out;
 }
 
+function offsetIsoDate(value: string, days: number): string {
+  const cursor = new Date(`${value}T00:00:00Z`);
+  if (Number.isNaN(cursor.getTime())) return value;
+  cursor.setUTCDate(cursor.getUTCDate() + days);
+  return cursor.toISOString().slice(0, 10);
+}
+
 function inclusiveDayCount(start: string, end: string): number {
   const startTime = new Date(`${start}T00:00:00Z`).getTime();
   const endTime = new Date(`${end}T00:00:00Z`).getTime();
@@ -310,20 +451,322 @@ function maxStamp(values: Array<string | null>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
+function gasHourKey(date: string, hourEnding: number): string {
+  return `${date}|${hourEnding}`;
+}
+
 function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
   const window = PEAK_WINDOW_BY_ISO[iso];
   return hourEnding >= window.start && hourEnding <= window.end;
 }
 
-function summarizeHub(iso: PowerIso, hub: string, rows: LmpRow[]) {
-  const hourly = rows.map((row) => ({
+interface PowerLmpHeatRateGasHourlyDbRow {
+  date: string;
+  hour_ending: number | string;
+  gas_day: string | null;
+  trade_date: string | null;
+  hub_name: string | null;
+  gas_price: number | string | null;
+  price_basis: string | null;
+  latest_trade_date: string | null;
+  updated_at: string | null;
+  contract_dates_updated_at: string | null;
+}
+
+function resolvePowerLmpHeatRateGasHub({
+  iso,
+  powerHub,
+  gasHub,
+}: {
+  iso: PowerIso;
+  powerHub?: string | null;
+  gasHub?: PowerLmpGasHubKey | null;
+}): { gasHub: PowerLmpGasHubKey; error: string | null } {
+  const resolvedGasHub = gasHub ?? defaultPowerLmpGasHubForIso(iso, powerHub);
+  if (isPowerLmpGasHubAllowedForIso(iso, resolvedGasHub)) {
+    return { gasHub: resolvedGasHub, error: null };
+  }
+  const config = powerLmpGasHubConfig(resolvedGasHub);
+  return {
+    gasHub: resolvedGasHub,
+    error: `${config.label} is not configured for ${ISO_CONFIGS[iso].label} heat-rate mode.`,
+  };
+}
+
+async function powerLmpHeatRateGasHours({
+  iso,
+  startDate,
+  endDate,
+  gasHub,
+}: {
+  iso: PowerIso;
+  startDate: string;
+  endDate: string;
+  gasHub: PowerLmpGasHubKey;
+}): Promise<PowerLmpHeatRateGasHourMetadata[]> {
+  const config = powerLmpGasHubConfig(gasHub);
+  const gasStartDate = offsetIsoDate(startDate, -1);
+  const dailyPromoted = bindPromotedSql(readPjmDaPromotedSql("ice_python_next_day_gas"), {
+    start_date: gasStartDate,
+    end_date: endDate,
+  });
+  const symbolParam = `$${dailyPromoted.values.length + 1}`;
+  const timezoneParam = `$${dailyPromoted.values.length + 2}`;
+  const startParam = `$${dailyPromoted.values.length + 3}`;
+  const endParam = `$${dailyPromoted.values.length + 4}`;
+  const rows = await query<PowerLmpHeatRateGasHourlyDbRow>(
+    `
+      with gas_daily as (
+        ${promotedSqlBody(dailyPromoted.text)}
+      ),
+      market_hours as (
+        select
+          market_date::date as date,
+          hour_ending::int as hour_ending,
+          (
+            market_date::timestamp
+            + ((hour_ending::int - 1) * interval '1 hour')
+          ) at time zone ${timezoneParam}::text at time zone 'America/Chicago' as central_local
+        from generate_series(${startParam}::date, ${endParam}::date, interval '1 day') as d(market_date)
+        cross join generate_series(1, 24) as h(hour_ending)
+      ),
+      hourly_gas_day as (
+        select
+          date,
+          hour_ending,
+          case
+            when central_local::time >= time '09:00:00' then central_local::date
+            else (central_local::date - interval '1 day')::date
+          end as gas_day
+        from market_hours
+      )
+      select
+        h.date::date::text as date,
+        h.hour_ending,
+        h.gas_day::date::text as gas_day,
+        gas_daily.trade_date::date::text as trade_date,
+        gas_daily.hub_name,
+        gas_daily.gas_price::float8 as gas_price,
+        gas_daily.price_basis,
+        gas_daily.latest_trade_date::date::text as latest_trade_date,
+        to_char(gas_daily.updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as updated_at,
+        to_char(gas_daily.contract_dates_updated_at, 'YYYY-MM-DD"T"HH24:MI:SS') as contract_dates_updated_at
+      from hourly_gas_day h
+      left join gas_daily
+        on gas_daily.gas_day = h.gas_day
+       and gas_daily.symbol = ${symbolParam}::text
+      order by h.date, h.hour_ending
+    `,
+    [
+      ...dailyPromoted.values,
+      config.symbol,
+      POWER_LMP_MARKET_TIMEZONE_BY_ISO[iso],
+      startDate,
+      endDate,
+    ],
+  );
+
+  return rows.map((row) => ({
+    date: row.date,
     hourEnding: Number(row.hour_ending),
-    datetimeBeginningEpt: row.datetime_beginning_ept,
-    total: toNumber(row.total),
-    systemEnergy: toNumber(row.system_energy),
-    congestion: toNumber(row.congestion),
-    marginalLoss: toNumber(row.marginal_loss),
+    gasDay: row.gas_day,
+    tradeDate: row.trade_date,
+    gasHub,
+    gasHubLabel: config.label,
+    gasSymbol: config.symbol,
+    gasMetadataStatus: config.metadataStatus,
+    gasReviewStatus: config.reviewStatus,
+    gasSourceHubName: row.hub_name ?? config.label,
+    gasPrice: toNumber(row.gas_price),
+    gasPriceSource: row.price_basis,
+    latestTradeDate: row.latest_trade_date,
+    updatedAt: row.updated_at,
+    contractDatesUpdatedAt: row.contract_dates_updated_at,
+    sourceTable: "ice_python_next_day_gas",
   }));
+}
+
+function heatRateMetadata({
+  gasHub,
+  gasHours,
+}: {
+  gasHub: PowerLmpGasHubKey;
+  gasHours: PowerLmpHeatRateGasHourMetadata[];
+}): PowerLmpHeatRateMetadata {
+  const config = powerLmpGasHubConfig(gasHub);
+  return {
+    units: "MMBtu/MWh",
+    gasHub,
+    gasHubLabel: config.label,
+    gasSymbol: config.symbol,
+    gasMetadataStatus: config.metadataStatus,
+    gasReviewStatus: config.reviewStatus,
+    gasPriceColumn: config.sqlColumn,
+    sourceTable: "ice_python_next_day_gas",
+    latestGasDay: maxStamp(gasHours.map((row) => row.gasDay)),
+    latestTradeDate: maxStamp(gasHours.map((row) => row.latestTradeDate)),
+    latestAsOf: maxStamp(gasHours.map((row) => row.updatedAt)),
+    missingGasHourCount: gasHours.filter((row) => row.gasPrice === null).length,
+    hourly: gasHours,
+  };
+}
+
+function gasHoursByDateHour(
+  gasHours: PowerLmpHeatRateGasHourMetadata[],
+): Map<string, PowerLmpHeatRateGasHourMetadata> {
+  return new Map(gasHours.map((row) => [gasHourKey(row.date, row.hourEnding), row] as const));
+}
+
+function divideByGas(value: number | string | null, gas: number | null): number | null {
+  const numerator = toNumber(value);
+  if (numerator === null || gas === null || gas === 0) return null;
+  return numerator / gas;
+}
+
+function sparkSpreadValue(
+  value: number | string | null,
+  gas: number | null,
+  sparkHeatRate: number,
+): number | null {
+  const lmp = toNumber(value);
+  if (lmp === null || gas === null) return null;
+  return lmp - gas * sparkHeatRate;
+}
+
+function gasHourlyValues(
+  gasHoursByHour: Map<string, PowerLmpHeatRateGasHourMetadata>,
+  date: string,
+): Array<number | null> {
+  return Array.from(
+    { length: 24 },
+    (_, index) => gasHoursByHour.get(gasHourKey(date, index + 1))?.gasPrice ?? null,
+  );
+}
+
+function divideHourlyValuesByGas(
+  values: Array<number | null>,
+  gasValues: Array<number | null>,
+): Array<number | null> {
+  return values.map((value, index) => divideByGas(value, gasValues[index] ?? null));
+}
+
+function sparkHourlyValues(
+  values: Array<number | null>,
+  gasValues: Array<number | null>,
+  sparkHeatRate: number,
+): Array<number | null> {
+  return values.map((value, index) =>
+    sparkSpreadValue(value, gasValues[index] ?? null, sparkHeatRate),
+  );
+}
+
+function buildPowerSettlesInputSummary({
+  iso,
+  targetDate,
+  gasHub,
+  sparkHeatRate,
+  gasHours,
+  daValues,
+  rtValues,
+  daSparkValues,
+  rtSparkValues,
+}: {
+  iso: PowerIso;
+  targetDate: string;
+  gasHub: PowerLmpGasHubKey;
+  sparkHeatRate: number;
+  gasHours: PowerLmpHeatRateGasHourMetadata[];
+  daValues: Array<number | null>;
+  rtValues: Array<number | null>;
+  daSparkValues: Array<number | null>;
+  rtSparkValues: Array<number | null>;
+}): PowerSettlesDashboardInputSummary {
+  const metadata = heatRateMetadata({ gasHub, gasHours });
+  const gasValues = gasHourlyValues(gasHoursByDateHour(gasHours), targetDate);
+
+  return {
+    gasHub,
+    gasHubLabel: metadata.gasHubLabel,
+    gasSymbol: metadata.gasSymbol,
+    gasMetadataStatus: metadata.gasMetadataStatus,
+    gasReviewStatus: metadata.gasReviewStatus,
+    units: metadata.units,
+    sparkUnits: "$/MWh",
+    sparkHeatRate,
+    sourceTable: metadata.sourceTable,
+    latestGasDay: metadata.latestGasDay,
+    latestTradeDate: metadata.latestTradeDate,
+    latestAsOf: metadata.latestAsOf,
+    gas: productSummary(iso, gasValues),
+    daHeatRate: productSummary(iso, divideHourlyValuesByGas(daValues, gasValues)),
+    rtHeatRate: productSummary(iso, divideHourlyValuesByGas(rtValues, gasValues)),
+    daSpark: productSummary(iso, sparkHourlyValues(daSparkValues, gasValues, sparkHeatRate)),
+    rtSpark: productSummary(iso, sparkHourlyValues(rtSparkValues, gasValues, sparkHeatRate)),
+  };
+}
+
+function applyHeatRateToLmpRows(
+  rows: LmpRow[],
+  gasHoursByDateHour: Map<string, PowerLmpHeatRateGasHourMetadata>,
+): LmpRow[] {
+  return rows.map((row) => {
+    const gas = gasHoursByDateHour.get(
+      gasHourKey(row.datetime_beginning_ept.slice(0, 10), Number(row.hour_ending)),
+    );
+    const gasPrice = gas?.gasPrice ?? null;
+    return {
+      ...row,
+      system_energy: divideByGas(row.system_energy, gasPrice),
+      total: divideByGas(row.total, gasPrice),
+      congestion: divideByGas(row.congestion, gasPrice),
+      marginal_loss: divideByGas(row.marginal_loss, gasPrice),
+      as_of: maxStamp([row.as_of, gas?.updatedAt ?? null]),
+      gas_metadata: gas ?? null,
+    };
+  });
+}
+
+function applyHeatRateToHourRows(
+  rows: HourRow[],
+  gasHoursByDateHour: Map<string, PowerLmpHeatRateGasHourMetadata>,
+): HourRow[] {
+  return rows.map((row) => {
+    const gas = gasHoursByDateHour.get(gasHourKey(row.market_date, Number(row.hour_ending)));
+    return {
+      ...row,
+      value: divideByGas(row.value, gas?.gasPrice ?? null),
+      as_of: maxStamp([row.as_of, gas?.updatedAt ?? null]),
+    };
+  });
+}
+
+function applySparkSpreadToHourRows(
+  rows: HourRow[],
+  gasHoursByDateHour: Map<string, PowerLmpHeatRateGasHourMetadata>,
+  sparkHeatRate: number,
+): HourRow[] {
+  return rows.map((row) => {
+    const gas = gasHoursByDateHour.get(gasHourKey(row.market_date, Number(row.hour_ending)));
+    return {
+      ...row,
+      value: sparkSpreadValue(row.value, gas?.gasPrice ?? null, sparkHeatRate),
+      as_of: maxStamp([row.as_of, gas?.updatedAt ?? null]),
+    };
+  });
+}
+
+function summarizeHub(iso: PowerIso, hub: string, rows: LmpRow[]) {
+  const hourly = rows.map((row) => {
+    const item = {
+      hourEnding: Number(row.hour_ending),
+      datetimeBeginningEpt: row.datetime_beginning_ept,
+      total: toNumber(row.total),
+      systemEnergy: toNumber(row.system_energy),
+      congestion: toNumber(row.congestion),
+      marginalLoss: toNumber(row.marginal_loss),
+    };
+    return row.gas_metadata ? { ...item, gasMetadata: row.gas_metadata } : item;
+  });
   const onPeak = hourly.filter((row) => isOnPeakHour(iso, row.hourEnding));
   const offPeak = hourly.filter((row) => !isOnPeakHour(iso, row.hourEnding));
   const peak = hourly.reduce<(typeof hourly)[number] | null>((best, row) => {
@@ -935,13 +1378,28 @@ export async function buildPowerLmpsPayload({
   product,
   rtSource,
   requestedDate,
+  powerHub = null,
+  metric = DEFAULT_POWER_LMP_METRIC_MODE,
+  gasHub = null,
 }: {
   iso: PowerIso;
   product: PowerLmpProduct;
   rtSource: RtLmpSource;
   requestedDate: string | null;
+  powerHub?: string | null;
+  metric?: PowerLmpMetricMode;
+  gasHub?: PowerLmpGasHubKey | null;
 }) {
   const config = ISO_CONFIGS[iso];
+  if (metric === "spark-spread") {
+    return {
+      status: 400,
+      payload: { error: "metric=spark-spread is only supported by /api/power-lmp-settles." },
+      headers: { "Cache-Control": "no-store" },
+      rowCount: 0,
+      dataAsOf: null,
+    };
+  }
   const latest = await latestDate({ iso, product, rtSource, hubs: config.hubs });
   const targetDate = requestedDate ?? latest;
   if (!targetDate) {
@@ -954,29 +1412,68 @@ export async function buildPowerLmpsPayload({
     };
   }
 
-  const rows = await lmpRows({ iso, product, rtSource, targetDate, hubs: config.hubs });
+  let rows = await lmpRows({ iso, product, rtSource, targetDate, hubs: config.hubs });
+  let metadata: PowerLmpHeatRateMetadata | null = null;
+  let resolvedGasHub: PowerLmpGasHubKey | null = null;
+  if (metric === "heat-rate") {
+    const resolved = resolvePowerLmpHeatRateGasHub({
+      iso,
+      powerHub: powerHub ?? config.defaultHub,
+      gasHub,
+    });
+    if (resolved.error) {
+      return {
+        status: 400,
+        payload: { error: resolved.error },
+        headers: { "Cache-Control": "no-store" },
+        rowCount: 0,
+        dataAsOf: null,
+      };
+    }
+    resolvedGasHub = resolved.gasHub;
+    const gasHours = await powerLmpHeatRateGasHours({
+      iso,
+      startDate: targetDate,
+      endDate: targetDate,
+      gasHub: resolvedGasHub,
+    });
+    rows = applyHeatRateToLmpRows(rows, gasHoursByDateHour(gasHours));
+    metadata = heatRateMetadata({ gasHub: resolvedGasHub, gasHours });
+  }
+
   const asOf = maxStamp(rows.map((row) => row.as_of));
-  const source = sourceTableFor({ iso, product, rtSource });
+  const lmpSource = sourceTableFor({ iso, product, rtSource });
+  const source =
+    metric === "heat-rate" ? `${lmpSource} / ice_python_next_day_gas` : lmpSource;
+  const payload = {
+    iso,
+    isoLabel: config.label,
+    defaultHub: config.defaultHub,
+    ...(resolvedGasHub ? { defaultGasHub: resolvedGasHub } : {}),
+    supportsComponents: config.supportsComponents,
+    targetDate,
+    latestDate: latest,
+    asOf,
+    source,
+    rtSource: product === "rt" ? rtSource : undefined,
+    hubs: config.hubs.map((hub) =>
+      summarizeHub(
+        iso,
+        hub,
+        rows.filter((row) => row.hub === hub),
+      ),
+    ),
+    ...(metadata
+      ? {
+          metricMode: metric,
+          units: metadata.units,
+          heatRateMetadata: metadata,
+        }
+      : {}),
+  };
 
   return {
-    payload: {
-      iso,
-      isoLabel: config.label,
-      defaultHub: config.defaultHub,
-      supportsComponents: config.supportsComponents,
-      targetDate,
-      latestDate: latest,
-      asOf,
-      source,
-      rtSource: product === "rt" ? rtSource : undefined,
-      hubs: config.hubs.map((hub) =>
-        summarizeHub(
-          iso,
-          hub,
-          rows.filter((row) => row.hub === hub),
-        ),
-      ),
-    },
+    payload,
     rowCount: rows.length,
     dataAsOf: asOf,
   };
@@ -1456,11 +1953,13 @@ function dashboardRtSourceStatus({
   requestedRtSource: RtLmpSource;
   effectiveRtSource: RtLmpSource;
 }): PowerSettlesDashboardRtSourceStatus {
-  if (iso === "ercot" || iso === "caiso" || iso === "spp") {
-    return "single-source";
-  }
+  if (hasSinglePromotedRtSource(iso)) return "single-source";
   if (requestedRtSource === "verified" && effectiveRtSource === "unverified") return "fallback";
   return "requested";
+}
+
+function hasSinglePromotedRtSource(iso: PowerIso): boolean {
+  return iso === "ercot" || iso === "caiso" || iso === "spp" || iso === "nyiso";
 }
 
 async function buildPowerSettlesDashboardIsoRows({
@@ -1468,12 +1967,14 @@ async function buildPowerSettlesDashboardIsoRows({
   requestedDate,
   rtSource,
   component,
+  sparkHeatRate,
   defaultDate,
 }: {
   iso: PowerIso;
   requestedDate: string | null;
   rtSource: RtLmpSource;
   component: PowerSettlesDashboardComponent;
+  sparkHeatRate: number;
   defaultDate: string;
 }): Promise<PowerSettlesDashboardIsoRow[]> {
   const config = ISO_CONFIGS[iso];
@@ -1486,22 +1987,19 @@ async function buildPowerSettlesDashboardIsoRows({
   ]);
 
   if (!targetDate) {
+    const effectiveRtSource: RtLmpSource = hasSinglePromotedRtSource(iso)
+      ? "unverified"
+      : rtSource;
     return hubs.map((hub) => ({
       iso,
       isoLabel: config.label,
       hub,
       effectiveComponent,
-      effectiveRtSource:
-        iso === "ercot" || iso === "caiso" || iso === "spp"
-          ? "unverified"
-          : rtSource,
+      effectiveRtSource,
       rtSourceStatus: dashboardRtSourceStatus({
         iso,
         requestedRtSource: rtSource,
-        effectiveRtSource:
-          iso === "ercot" || iso === "caiso" || iso === "spp"
-            ? "unverified"
-            : rtSource,
+        effectiveRtSource,
       }),
       targetDate: null,
       latestDaDate,
@@ -1511,7 +2009,7 @@ async function buildPowerSettlesDashboardIsoRows({
       dataAsOf: null,
       sourceTables: {
         da: sourceTableFor({ iso, product: "da", rtSource }),
-        rt: sourceTableFor({ iso, product: "rt", rtSource }),
+        rt: sourceTableFor({ iso, product: "rt", rtSource: effectiveRtSource }),
       },
       status: "missing",
       statusDetail: "No latest DA/RT date could be resolved for the dashboard hub.",
@@ -1545,16 +2043,33 @@ async function buildPowerSettlesDashboardIsoRows({
     hubs,
     component: effectiveComponent,
   });
+  const totalDaByHub =
+    effectiveComponent === "total"
+      ? daByHub
+      : dashboardHourlyValuesByHub({
+          rows: daRows,
+          hubs,
+          component: "total",
+        });
   const requestedRtByHub = dashboardHourlyValuesByHub({
     rows: requestedRtRows,
     hubs,
     component: effectiveComponent,
   });
+  const totalRequestedRtByHub =
+    effectiveComponent === "total"
+      ? requestedRtByHub
+      : dashboardHourlyValuesByHub({
+          rows: requestedRtRows,
+          hubs,
+          component: "total",
+        });
 
   let fallbackRtByHub: Map<string, HourlyValueSet> | null = null;
+  let totalFallbackRtByHub: Map<string, HourlyValueSet> | null = null;
   let fallbackLatestRtDate: string | null = null;
   const canFallbackToUnverified =
-    rtSource === "verified" && (iso === "pjm" || iso === "isone");
+    rtSource === "verified" && (iso === "pjm" || iso === "isone" || iso === "miso");
   if (canFallbackToUnverified) {
     const needsFallback = hubs.some((hub) => {
       const requestedRt = requestedRtByHub.get(hub) ?? { values: emptyHours(), asOf: null };
@@ -1577,9 +2092,34 @@ async function buildPowerSettlesDashboardIsoRows({
         hubs,
         component: effectiveComponent,
       });
+      totalFallbackRtByHub =
+        effectiveComponent === "total"
+          ? fallbackRtByHub
+          : dashboardHourlyValuesByHub({
+              rows: fallbackRtRows,
+              hubs,
+              component: "total",
+            });
       fallbackLatestRtDate = nextFallbackLatestRtDate;
     }
   }
+
+  const gasHubKeys = Array.from(
+    new Set(hubs.map((hub) => defaultPowerLmpGasHubForIso(iso, hub))),
+  );
+  const gasHoursByHub = new Map<PowerLmpGasHubKey, PowerLmpHeatRateGasHourMetadata[]>(
+    await Promise.all(
+      gasHubKeys.map(async (gasHub) => [
+        gasHub,
+        await powerLmpHeatRateGasHours({
+          iso,
+          startDate: targetDate,
+          endDate: targetDate,
+          gasHub,
+        }),
+      ] as const),
+    ),
+  );
 
   return hubs.map((hub) => {
     const targetDa = daByHub.get(hub) ?? { values: emptyHours(), asOf: null };
@@ -1592,15 +2132,33 @@ async function buildPowerSettlesDashboardIsoRows({
       fallbackRtSummary !== null &&
       fallbackRtSummary.observationCount > requestedRtSummary.observationCount;
     const targetRt: HourlyValueSet = useFallback && fallbackRt ? fallbackRt : requestedRt;
+    const totalDa = totalDaByHub.get(hub) ?? { values: emptyHours(), asOf: null };
+    const totalRequestedRt = totalRequestedRtByHub.get(hub) ?? {
+      values: emptyHours(),
+      asOf: null,
+    };
+    const totalFallbackRt = totalFallbackRtByHub?.get(hub) ?? null;
+    const targetSparkRt: HourlyValueSet =
+      useFallback && totalFallbackRt ? totalFallbackRt : totalRequestedRt;
     const effectiveRtSource: RtLmpSource =
-      iso === "ercot" || iso === "caiso" || iso === "spp" || useFallback
-        ? "unverified"
-        : rtSource;
+      hasSinglePromotedRtSource(iso) || useFallback ? "unverified" : rtSource;
     const rt = useFallback && fallbackRtSummary ? fallbackRtSummary : requestedRtSummary;
     const da = productSummary(iso, targetDa.values);
     const dart = productSummary(iso, subtractHourlyValues(targetDa.values, targetRt.values));
+    const gasHub = defaultPowerLmpGasHubForIso(iso, hub);
+    const inputs = buildPowerSettlesInputSummary({
+      iso,
+      targetDate,
+      gasHub,
+      sparkHeatRate,
+      gasHours: gasHoursByHub.get(gasHub) ?? [],
+      daValues: targetDa.values,
+      rtValues: targetRt.values,
+      daSparkValues: totalDa.values,
+      rtSparkValues: targetSparkRt.values,
+    });
     const { status, detail } = dashboardStatus({ targetDate, da, rt });
-    const dataAsOf = maxStamp([targetDa.asOf, targetRt.asOf]);
+    const dataAsOf = maxStamp([targetDa.asOf, targetRt.asOf, inputs.latestAsOf]);
     const rtSourceStatus = dashboardRtSourceStatus({
       iso,
       requestedRtSource: rtSource,
@@ -1608,7 +2166,7 @@ async function buildPowerSettlesDashboardIsoRows({
     });
     const statusDetail =
       rtSourceStatus === "fallback"
-        ? `${detail} Verified RT was unavailable or less complete for this hub, so unverified RT is shown.`
+        ? `${detail} Preferred RT was unavailable or less complete for this hub, so the preliminary/unverified RT source is shown.`
         : detail;
 
     return {
@@ -1642,6 +2200,7 @@ async function buildPowerSettlesDashboardIsoRows({
         rt,
         dart,
       },
+      inputs,
     };
   });
 }
@@ -1651,29 +2210,35 @@ export async function buildPowerSettlesDashboardPayload({
   lookbackDays,
   rtSource,
   component,
+  sparkHeatRate = DEFAULT_POWER_LMP_SPARK_HEAT_RATE,
+  dashboardIsos = POWER_SETTLES_DASHBOARD_ISOS,
 }: {
   requestedDate: string | null;
   lookbackDays: number;
   rtSource: RtLmpSource;
   component: PowerSettlesDashboardComponent;
+  sparkHeatRate?: number;
+  dashboardIsos?: readonly PowerIso[];
 }) {
   const normalizedLookbackDays = Number.isFinite(lookbackDays) ? Math.trunc(lookbackDays) : 7;
   const boundedLookbackDays = Math.min(Math.max(normalizedLookbackDays, 1), 14);
+  const normalizedSparkHeatRate = normalizePowerLmpSparkHeatRate(sparkHeatRate);
   const defaultDate = defaultPowerSettlesDashboardDate();
-  const rows = (
-    await Promise.all(
-      POWER_SETTLES_DASHBOARD_ISOS.map((iso) =>
-        buildPowerSettlesDashboardIsoRows({
-          iso,
-          requestedDate,
-          rtSource,
-          component,
-          defaultDate,
-        }),
-      ),
-    )
-  ).flat();
-  const isoStatuses = POWER_SETTLES_DASHBOARD_ISOS.map((iso) => {
+  const reportIsos = dashboardIsos.length > 0 ? dashboardIsos : POWER_SETTLES_DASHBOARD_ISOS;
+  const rowGroups = await Promise.all(
+    reportIsos.map((iso) =>
+      buildPowerSettlesDashboardIsoRows({
+        iso,
+        requestedDate,
+        rtSource,
+        component,
+        sparkHeatRate: normalizedSparkHeatRate,
+        defaultDate,
+      }),
+    ),
+  );
+  const rows = rowGroups.flat();
+  const isoStatuses = reportIsos.map((iso) => {
     const isoRows = rows.filter((row) => row.iso === iso);
     if (isoRows.length > 0 && isoRows.every((row) => row.status === "ok")) return "ok";
     if (isoRows.some((row) => row.status !== "missing")) return "partial";
@@ -1684,12 +2249,13 @@ export async function buildPowerSettlesDashboardPayload({
     component,
     rtSource,
     lookbackDays: boundedLookbackDays,
+    sparkHeatRate: normalizedSparkHeatRate,
     requestedDate,
     defaultDate,
     datePolicy: requestedDate ? "requested" : "default-yesterday",
     rows,
     summary: {
-      isoCount: POWER_SETTLES_DASHBOARD_ISOS.length,
+      isoCount: reportIsos.length,
       completeIsoCount: isoStatuses.filter((status) => status === "ok").length,
       partialIsoCount: isoStatuses.filter((status) => status === "partial").length,
       missingIsoCount: isoStatuses.filter((status) => status === "missing").length,
@@ -1716,6 +2282,9 @@ export async function buildPowerLmpSettlesPayload({
   hub,
   component,
   rtSource,
+  metric = DEFAULT_POWER_LMP_METRIC_MODE,
+  gasHub = null,
+  sparkHeatRate = DEFAULT_POWER_LMP_SPARK_HEAT_RATE,
 }: {
   iso: PowerIso;
   start: string | null;
@@ -1723,13 +2292,18 @@ export async function buildPowerLmpSettlesPayload({
   hub: string | null;
   component: ComponentKey;
   rtSource: RtLmpSource;
+  metric?: PowerLmpMetricMode;
+  gasHub?: PowerLmpGasHubKey | null;
+  sparkHeatRate?: number;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const startDate = parseDateWithFallback(start, today);
   const endDate = parseDateWithFallback(end, startDate);
   const config = ISO_CONFIGS[iso];
   const selectedHub = hub && config.hubs.includes(hub) ? hub : config.defaultHub;
-  const selectedComponent = config.supportsComponents ? component : "total";
+  const selectedComponent =
+    metric === "spark-spread" ? "total" : config.supportsComponents ? component : "total";
+  const normalizedSparkHeatRate = normalizePowerLmpSparkHeatRate(sparkHeatRate);
   const dayCount = inclusiveDayCount(startDate, endDate);
 
   if (dayCount < 1) {
@@ -1742,7 +2316,7 @@ export async function buildPowerLmpSettlesPayload({
     };
   }
 
-  const [daRows, rtRows] = await Promise.all([
+  let [daRows, rtRows] = await Promise.all([
     settleRows({
       iso,
       market: "da",
@@ -1762,6 +2336,40 @@ export async function buildPowerLmpSettlesPayload({
       component: selectedComponent,
     }),
   ]);
+  let metadata: PowerLmpHeatRateMetadata | null = null;
+  let resolvedGasHub: PowerLmpGasHubKey | null = null;
+  if (metric === "heat-rate" || metric === "spark-spread") {
+    const resolved = resolvePowerLmpHeatRateGasHub({
+      iso,
+      powerHub: selectedHub,
+      gasHub,
+    });
+    if (resolved.error) {
+      return {
+        status: 400,
+        payload: { error: resolved.error },
+        headers: { "Cache-Control": "no-store" },
+        rowCount: 0,
+        dataAsOf: null,
+      };
+    }
+    resolvedGasHub = resolved.gasHub;
+    const gasHours = await powerLmpHeatRateGasHours({
+      iso,
+      startDate,
+      endDate,
+      gasHub: resolvedGasHub,
+    });
+    const byDateHour = gasHoursByDateHour(gasHours);
+    if (metric === "heat-rate") {
+      daRows = applyHeatRateToHourRows(daRows, byDateHour);
+      rtRows = applyHeatRateToHourRows(rtRows, byDateHour);
+    } else {
+      daRows = applySparkSpreadToHourRows(daRows, byDateHour, normalizedSparkHeatRate);
+      rtRows = applySparkSpreadToHourRows(rtRows, byDateHour, normalizedSparkHeatRate);
+    }
+    metadata = heatRateMetadata({ gasHub: resolvedGasHub, gasHours });
+  }
 
   const daByDate = new Map<string, { values: Array<number | null>; asOf: string | null }>();
   const rtByDate = new Map<string, { values: Array<number | null>; asOf: string | null }>();
@@ -1782,6 +2390,9 @@ export async function buildPowerLmpSettlesPayload({
     const jsDate = new Date(`${date}T00:00:00Z`);
     const da = daByDate.get(date);
     const rt = rtByDate.get(date);
+    const gasHourly =
+      metadata?.hourly.filter((row) => row.date === date).sort((a, b) => a.hourEnding - b.hourEnding) ??
+      undefined;
     return {
       date,
       hub: selectedHub,
@@ -1792,27 +2403,40 @@ export async function buildPowerLmpSettlesPayload({
       rtHourly: rt?.values ?? emptyHours(),
       daAsOf: da?.asOf ?? null,
       rtAsOf: rt?.asOf ?? null,
+      ...(gasHourly ? { gasHourly } : {}),
     };
   });
   const latestAsOf = maxStamp(rows.flatMap((row) => [row.daAsOf, row.rtAsOf]));
+  const source = sourceTableFor({ iso, product: "da", rtSource });
+  const payload = {
+    iso,
+    isoLabel: config.label,
+    startDate,
+    endDate,
+    hub: selectedHub,
+    ...(resolvedGasHub ? { defaultGasHub: resolvedGasHub } : {}),
+    component: selectedComponent,
+    rtSource,
+    rowCount: rows.length,
+    summary: {
+      rowCount: rows.length,
+      latestDate: rows.at(-1)?.date ?? null,
+      latestAsOf,
+    },
+    rows,
+    ...(metadata
+      ? {
+          metricMode: metric,
+          units: metric === "spark-spread" ? "$/MWh" : metadata.units,
+          ...(metric === "spark-spread" ? { sparkHeatRate: normalizedSparkHeatRate } : {}),
+          source: `${source} / ${sourceTableFor({ iso, product: "rt", rtSource })} / ice_python_next_day_gas`,
+          heatRateMetadata: metadata,
+        }
+      : {}),
+  };
 
   return {
-    payload: {
-      iso,
-      isoLabel: config.label,
-      startDate,
-      endDate,
-      hub: selectedHub,
-      component: selectedComponent,
-      rtSource,
-      rowCount: rows.length,
-      summary: {
-        rowCount: rows.length,
-        latestDate: rows.at(-1)?.date ?? null,
-        latestAsOf,
-      },
-      rows,
-    },
+    payload,
     rowCount: rows.length,
     dataAsOf: latestAsOf,
   };

@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
 import FreshnessCard from "@/components/dashboard/FreshnessCard";
 import EiaGenerationDashboard, {
   type EiaGenerationFreshnessSummary,
@@ -14,6 +15,9 @@ import GasDailyPrices, {
   type GasDailyPricesFreshnessSummary,
 } from "@/components/gas/GasDailyPrices";
 import GasCurveEvolution from "@/components/gas/GasCurveEvolution";
+import CriterionNomsDashboard, {
+  type CriterionNomsFreshnessSummary,
+} from "@/components/gas/CriterionNomsDashboard";
 import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
@@ -45,14 +49,15 @@ import PjmDaLmps, {
 import PowerSettlesDashboard from "@/components/pjm/PowerSettlesDashboard";
 import PjmDaMeteoBaselinePrice from "@/components/pjm/PjmDaMeteoBaselinePrice";
 import PowerLmpAdders, {
+  type PowerIso as LmpAdderIso,
   type PowerLmpAddersFreshnessSummary,
 } from "@/components/pjm/PowerLmpAdders";
 import PjmForecasts, {
   type ForecastMode,
-  type ForecastSourceMode,
-  type ForecastType,
   type NetLoadForecastComponent,
   type NetLoadForecastStatistic,
+  type ForecastSourceMode,
+  type ForecastType,
   type PjmForecastsFreshnessSummary,
 } from "@/components/pjm/PjmForecasts";
 import PjmForecastReports, {
@@ -72,6 +77,14 @@ import PjmConstraints, {
 import PjmOpsSummary, {
   type PjmOpsSummaryFreshnessSummary,
 } from "@/components/pjm/PjmOpsSummary";
+import {
+  defaultPowerLmpGasHubForIso,
+  parsePowerLmpGasHubKey,
+  parsePowerLmpMetricMode,
+  parsePowerLmpSparkHeatRate,
+  type PjmHeatRateGasHubKey,
+  type PowerLmpMetricMode,
+} from "@/lib/powerLmpHeatRate";
 import PjmTightnessLookback, {
   type PjmTightnessLookbackFreshnessSummary,
 } from "@/components/pjm/PjmTightnessLookback";
@@ -83,6 +96,8 @@ import WeatherDashboard, {
   type WeatherDashboardFreshnessSummary,
 } from "@/components/weather/WeatherDashboard";
 import ShortTermWeatherDashboard from "@/components/weather/ShortTermWeatherDashboard";
+import WsiWeatherDashboard from "@/components/weather/WsiWeatherDashboard";
+import WsiWeatherReportDashboard from "@/components/weather/WsiWeatherReportDashboard";
 import Sidebar, { type ActiveSection } from "@/components/Sidebar";
 import SparkSpreadEvolution from "@/components/spark/SparkSpreadEvolution";
 import SaltsDashboard, {
@@ -297,9 +312,44 @@ const DEFAULT_GENSCAPE_NOMS_FRESHNESS: GenscapeNomsFreshnessSummary = {
   latestUpdateLabel: "--",
 };
 
+const DEFAULT_CRITERION_NOMS_FRESHNESS: CriterionNomsFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Criterion nominations --",
+  targetDateLabel: "--",
+  latestUpdateLabel: "--",
+  rowCountLabel: "--",
+  scopeLabel: "--",
+};
+
 interface HomePageClientProps {
   showLocalDevFeatures: boolean;
 }
+
+type LmpHeatRateWorkspaceView = "da-hr" | "rt-hr";
+type LmpSparkWorkspaceView = "da-spark" | "rt-spark";
+type LmpWorkspaceView = PjmLmpProduct | LmpHeatRateWorkspaceView | LmpSparkWorkspaceView | "adders";
+
+const LMP_WORKSPACE_TABS: Array<DashboardTabOption<LmpWorkspaceView>> = [
+  { value: "da", label: "DA LMPs" },
+  { value: "rt", label: "RT LMPs" },
+  { value: "dart", label: "DART LMPs" },
+  { value: "da-hr", label: "DA HR" },
+  { value: "rt-hr", label: "RT HR" },
+  { value: "da-spark", label: "DA Spark" },
+  { value: "rt-spark", label: "RT Spark" },
+  { value: "adders", label: "Adders & Reserves" },
+];
+
+const LMP_ISO_TABS: Array<DashboardTabOption<PjmLmpIso>> = [
+  { value: "pjm", label: "PJM" },
+  { value: "ercot", label: "ERCOT" },
+  { value: "isone", label: "ISO-NE" },
+  { value: "caiso", label: "CAISO" },
+  { value: "miso", label: "MISO" },
+  { value: "spp", label: "SPP" },
+  { value: "nyiso", label: "NYISO" },
+];
 
 const BACKOFFICE_SECTION_ALIASES: Record<string, ActiveSection> = {
   "backoffice-home": "backoffice-home",
@@ -340,13 +390,12 @@ function parseInitialSection(
   if (value === "power-settles-dashboard") {
     return "power-settles-dashboard";
   }
-  if (value === "pjm-da-lmps") {
+  if (value === "pjm-da-lmps" || value === "power-lmp-adders") {
     return "pjm-da-lmps";
   }
   if (value === "pjm-historical-settlements" || value === "pjm-term-bible") {
     return "pjm-historical-settlements";
   }
-  if (value === "power-lmp-adders") return "power-lmp-adders";
   if (showLocalDevFeatures && value === "pjm-price-duration-curves") {
     return "pjm-price-duration-curves";
   }
@@ -373,6 +422,9 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "noms") {
     return "noms";
+  }
+  if (showLocalDevFeatures && value === "criterion-noms") {
+    return "criterion-noms";
   }
   if (showLocalDevFeatures && value === "gtn-balance") {
     return "gtn-balance";
@@ -408,6 +460,8 @@ function parseInitialSection(
     return "pjm-forecasts";
   }
   if (showLocalDevFeatures && value === "pjm-weather") return "pjm-weather";
+  if (showLocalDevFeatures && value === "wsi-weather") return "wsi-weather";
+  if (showLocalDevFeatures && value === "wsi-weather-report") return "wsi-weather-report";
   if (showLocalDevFeatures && value === "weather-short-term") return "weather-short-term";
   if (
     showLocalDevFeatures &&
@@ -421,7 +475,49 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "pjm-forecast-reports") return "pjm-forecast-reports";
   if (value === "pjm-outages") return "pjm-outages";
   if (value === "pjm-constraints") return "pjm-constraints";
-  return "ice-power-short-term";
+  return "power-settles-dashboard";
+}
+
+function parseLmpWorkspaceView(
+  section: string | null,
+  viewValue: string | null,
+  productValue: string | null,
+  metricValue: string | null,
+): LmpWorkspaceView {
+  if (section === "power-lmp-adders" || viewValue === "adders") return "adders";
+  const product = parsePjmLmpProductParam(productValue) ?? "da";
+  if (
+    product !== "dart" &&
+    parsePowerLmpMetricMode(metricValue) === "heat-rate"
+  ) {
+    return product === "rt" ? "rt-hr" : "da-hr";
+  }
+  if (
+    product !== "dart" &&
+    parsePowerLmpMetricMode(metricValue) === "spark-spread"
+  ) {
+    return product === "rt" ? "rt-spark" : "da-spark";
+  }
+  return product;
+}
+
+function isLmpHeatRateWorkspaceView(view: LmpWorkspaceView): view is LmpHeatRateWorkspaceView {
+  return view === "da-hr" || view === "rt-hr";
+}
+
+function isLmpSparkWorkspaceView(view: LmpWorkspaceView): view is LmpSparkWorkspaceView {
+  return view === "da-spark" || view === "rt-spark";
+}
+
+function productForLmpWorkspaceView(view: LmpWorkspaceView): PjmLmpProduct {
+  if (view === "rt-hr" || view === "rt-spark") return "rt";
+  if (view === "da-hr" || view === "da-spark" || view === "adders") return "da";
+  return view;
+}
+
+function metricModeForLmpWorkspaceView(view: LmpWorkspaceView): PowerLmpMetricMode {
+  if (isLmpSparkWorkspaceView(view)) return "spark-spread";
+  return isLmpHeatRateWorkspaceView(view) ? "heat-rate" : "price";
 }
 
 function parseInitialForecastType(
@@ -486,6 +582,10 @@ function parsePjmLmpIsoParam(value: string | null): PjmLmpIso | undefined {
     : undefined;
 }
 
+function isLmpAdderIso(value: PjmLmpIso): value is LmpAdderIso {
+  return value === "pjm" || value === "ercot";
+}
+
 function parsePjmLmpRtSourceParam(value: string | null): PjmLmpRtSource | undefined {
   return value === "verified" || value === "unverified" ? value : undefined;
 }
@@ -530,7 +630,34 @@ export default function HomePageClient({
     searchParams.get("view"),
     showLocalDevFeatures,
   );
+  const rawRouteLmpWorkspaceIso = parsePjmLmpIsoParam(searchParams.get("iso")) ?? "pjm";
+  const routeLmpWorkspaceView = parseLmpWorkspaceView(
+    searchParams.get("section"),
+    searchParams.get("view"),
+    searchParams.get("product"),
+    searchParams.get("metric"),
+  );
+  const routeLmpWorkspaceIso =
+    routeLmpWorkspaceView === "adders" && !isLmpAdderIso(rawRouteLmpWorkspaceIso)
+      ? "pjm"
+      : rawRouteLmpWorkspaceIso;
+  const initialPjmDaLmpHub = parseTextParam(searchParams.get("hub"));
+  const routeLmpGasHubParam = searchParams.get("gasHub");
+  const routeLmpGasHub =
+    parsePowerLmpGasHubKey(routeLmpGasHubParam) ??
+    defaultPowerLmpGasHubForIso(routeLmpWorkspaceIso, initialPjmDaLmpHub);
+  const routeLmpSparkHeatRate = parsePowerLmpSparkHeatRate(
+    searchParams.get("sparkHeatRate"),
+  );
   const [activeSection, setActiveSection] = useState<ActiveSection>(routeSection);
+  const [lmpWorkspaceView, setLmpWorkspaceView] =
+    useState<LmpWorkspaceView>(routeLmpWorkspaceView);
+  const [lmpWorkspaceIso, setLmpWorkspaceIso] =
+    useState<PjmLmpIso>(routeLmpWorkspaceIso);
+  const [lmpGasHub, setLmpGasHub] =
+    useState<PjmHeatRateGasHubKey>(routeLmpGasHub);
+  const [lmpSparkHeatRate, setLmpSparkHeatRate] =
+    useState(routeLmpSparkHeatRate);
   const [pjmDaLmpsRefreshToken, setPjmDaLmpsRefreshToken] = useState(0);
   const [powerLmpAddersRefreshToken, setPowerLmpAddersRefreshToken] = useState(0);
   const [pjmPriceDurationRefreshToken, setPjmPriceDurationRefreshToken] = useState(0);
@@ -555,6 +682,7 @@ export default function HomePageClient({
   const [iceSettlementsRefreshToken, setIceSettlementsRefreshToken] = useState(0);
   const [gasDailyPricesRefreshToken, setGasDailyPricesRefreshToken] = useState(0);
   const [genscapeNomsRefreshToken, setGenscapeNomsRefreshToken] = useState(0);
+  const [criterionNomsRefreshToken, setCriterionNomsRefreshToken] = useState(0);
   const [pjmDaLmpsFreshnessOpen, setPjmDaLmpsFreshnessOpen] = useState(false);
   const [powerLmpAddersFreshnessOpen, setPowerLmpAddersFreshnessOpen] = useState(false);
   const [pjmPriceDurationFreshnessOpen, setPjmPriceDurationFreshnessOpen] = useState(false);
@@ -583,6 +711,8 @@ export default function HomePageClient({
   const [gasDailyPricesFreshnessOpen, setGasDailyPricesFreshnessOpen] =
     useState(false);
   const [genscapeNomsFreshnessOpen, setGenscapeNomsFreshnessOpen] =
+    useState(false);
+  const [criterionNomsFreshnessOpen, setCriterionNomsFreshnessOpen] =
     useState(false);
   const [pjmDaLmpsFreshness, setPjmDaLmpsFreshness] =
     useState<PjmDaLmpsFreshnessSummary>(DEFAULT_PJM_DA_LMPS_FRESHNESS);
@@ -642,15 +772,15 @@ export default function HomePageClient({
     );
   const [genscapeNomsFreshness, setGenscapeNomsFreshness] =
     useState<GenscapeNomsFreshnessSummary>(DEFAULT_GENSCAPE_NOMS_FRESHNESS);
+  const [criterionNomsFreshness, setCriterionNomsFreshness] =
+    useState<CriterionNomsFreshnessSummary>(DEFAULT_CRITERION_NOMS_FRESHNESS);
   const initialPjmDaLmpDate = parseDateParam(searchParams.get("date"));
   const initialGtnBalanceDate = parseDateParam(searchParams.get("date"));
-  const initialPjmDaLmpIso = parsePjmLmpIsoParam(searchParams.get("iso"));
+  const initialCriterionNomsDate = parseDateParam(searchParams.get("date"));
   const initialPjmDaLmpView = parsePjmLmpViewParam(searchParams.get("view"));
-  const initialPjmDaLmpProduct = parsePjmLmpProductParam(searchParams.get("product"));
   const initialPjmDaLmpRtSource = parsePjmLmpRtSourceParam(
     searchParams.get("source") ?? searchParams.get("rtSource"),
   );
-  const initialPjmDaLmpHub = parseTextParam(searchParams.get("hub"));
   const initialPjmDaLmpComponent = parsePjmLmpComponentParam(
     searchParams.get("component"),
   );
@@ -700,6 +830,34 @@ export default function HomePageClient({
   }, [routeSection]);
 
   useEffect(() => {
+    if (routeSection !== "pjm-da-lmps") return;
+    setLmpWorkspaceView((current) =>
+      current === routeLmpWorkspaceView ? current : routeLmpWorkspaceView,
+    );
+  }, [routeLmpWorkspaceView, routeSection]);
+
+  useEffect(() => {
+    if (routeSection !== "pjm-da-lmps") return;
+    setLmpWorkspaceIso((current) =>
+      current === routeLmpWorkspaceIso ? current : routeLmpWorkspaceIso,
+    );
+  }, [routeLmpWorkspaceIso, routeSection]);
+
+  useEffect(() => {
+    if (routeSection !== "pjm-da-lmps") return;
+    setLmpGasHub((current) =>
+      current === routeLmpGasHub ? current : routeLmpGasHub,
+    );
+  }, [routeLmpGasHub, routeSection]);
+
+  useEffect(() => {
+    if (routeSection !== "pjm-da-lmps") return;
+    setLmpSparkHeatRate((current) =>
+      current === routeLmpSparkHeatRate ? current : routeLmpSparkHeatRate,
+    );
+  }, [routeLmpSparkHeatRate, routeSection]);
+
+  useEffect(() => {
     if (activeSection !== "salts") return;
     const routedTab = parseSaltsTabFromView(searchParams.get("view"));
     setSaltsActiveTab(routedTab ?? "wx-adj-scrapes");
@@ -727,9 +885,98 @@ export default function HomePageClient({
     router.replace(`/?${params.toString()}`, { scroll: false });
   };
 
+  const replaceLmpWorkspaceRoute = (
+    view: LmpWorkspaceView,
+    iso: PjmLmpIso,
+    gasHub: PjmHeatRateGasHubKey = lmpGasHub,
+    sparkHeatRate: number = lmpSparkHeatRate,
+  ) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const product = productForLmpWorkspaceView(view);
+    const metricMode = metricModeForLmpWorkspaceView(view);
+    params.set("section", "pjm-da-lmps");
+    params.set("iso", iso);
+    params.delete("forecastView");
+    if (view === "adders") {
+      params.set("view", "adders");
+      params.delete("product");
+      params.delete("source");
+      params.delete("rtSource");
+      params.delete("hub");
+      params.delete("component");
+      params.delete("metric");
+      params.delete("gasHub");
+      params.delete("sparkHeatRate");
+    } else {
+      if (params.get("view") === "adders" || (metricMode === "heat-rate" && params.get("view") === "compare-hubs")) {
+        params.delete("view");
+      }
+      params.set("product", product);
+      params.delete("dataset");
+      if (metricMode === "spark-spread") {
+        params.set("view", "daily-settles");
+        params.set("component", "total");
+        params.set("metric", "spark-spread");
+        params.set("gasHub", gasHub);
+        params.set("sparkHeatRate", sparkHeatRate.toFixed(1));
+      } else if (metricMode === "heat-rate") {
+        params.set("metric", "heat-rate");
+        params.set("gasHub", gasHub);
+        params.delete("sparkHeatRate");
+      } else {
+        params.delete("metric");
+        params.delete("gasHub");
+        params.delete("sparkHeatRate");
+      }
+    }
+    router.replace(`/?${params.toString()}`, { scroll: false });
+  };
+
   const handleSectionChange = (section: ActiveSection) => {
+    if (section === "pjm-da-lmps") {
+      setLmpWorkspaceView("da");
+      setActiveSection(section);
+      replaceLmpWorkspaceRoute("da", lmpWorkspaceIso);
+      return;
+    }
     setActiveSection(section);
     replaceRouteState(section);
+  };
+
+  const handleLmpWorkspaceViewChange = (view: LmpWorkspaceView) => {
+    const nextIso =
+      view === "adders" && !isLmpAdderIso(lmpWorkspaceIso)
+        ? "pjm"
+        : lmpWorkspaceIso;
+    setLmpWorkspaceView(view);
+    setLmpWorkspaceIso(nextIso);
+    setActiveSection("pjm-da-lmps");
+    replaceLmpWorkspaceRoute(view, nextIso);
+  };
+
+  const handleLmpWorkspaceIsoChange = (iso: PjmLmpIso) => {
+    const nextView =
+      lmpWorkspaceView === "adders" && !isLmpAdderIso(iso)
+        ? "da"
+        : lmpWorkspaceView;
+    setLmpWorkspaceIso(iso);
+    setLmpWorkspaceView(nextView);
+    setActiveSection("pjm-da-lmps");
+    replaceLmpWorkspaceRoute(nextView, iso);
+  };
+
+  const handlePjmLmpGasHubChange = (nextGasHub: PjmHeatRateGasHubKey) => {
+    setLmpGasHub(nextGasHub);
+    if (isLmpHeatRateWorkspaceView(lmpWorkspaceView) || isLmpSparkWorkspaceView(lmpWorkspaceView)) {
+      replaceLmpWorkspaceRoute(lmpWorkspaceView, lmpWorkspaceIso, nextGasHub);
+    }
+  };
+
+  const handlePjmLmpSparkHeatRateChange = (nextSparkHeatRate: number) => {
+    setLmpSparkHeatRate(nextSparkHeatRate);
+    if (isLmpSparkWorkspaceView(lmpWorkspaceView)) {
+      replaceLmpWorkspaceRoute(lmpWorkspaceView, lmpWorkspaceIso, lmpGasHub, nextSparkHeatRate);
+    }
   };
 
   const handleSaltsTabChange = (tab: SaltsTab) => {
@@ -854,7 +1101,7 @@ export default function HomePageClient({
       return {
         title: "ICE Power Term",
         subtitle:
-          "PMI and OPJ monthly power settlement matrices with contract detail history.",
+          "Market-level monthly power futures matrices with contract detail history.",
         footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
@@ -878,6 +1125,14 @@ export default function HomePageClient({
         title: "Noms",
         subtitle: "Pipeline, location, and imported nominations from Genscape natgas data.",
         footer: "Noms | Source: GenscapeDataFeed.natgas nominations / Azure SQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "criterion-noms") {
+      return {
+        title: "Criterion Noms",
+        subtitle:
+          "PJM-state power plant delivery nominations from Criterion Snowflake.",
+        footer: "Criterion Noms | Source: Criterion Snowflake PRODUCTION.PIPELINES",
       };
     }
     if (showLocalDevFeatures && activeSection === "gtn-balance") {
@@ -986,7 +1241,8 @@ export default function HomePageClient({
     if (activeSection === "pjm-outages") {
       return {
         title: "Outages",
-        subtitle: "PJM generation outage forecast vintages and seasonal outage overlays.",
+        subtitle:
+          "PJM generation outage forecast vintages and seasonal outage overlays. Transmission outage tickets now live under Constraints.",
         footer: "Outages | Source: PJM Data Miner / Azure PostgreSQL",
       };
     }
@@ -1014,6 +1270,24 @@ export default function HomePageClient({
         footer: "Weather | Source: WSI / Azure PostgreSQL",
       };
     }
+    if (showLocalDevFeatures && activeSection === "wsi-weather") {
+      return {
+        title: "WSI Weather",
+        subtitle:
+          "Weighted degree-day forecast changes by WSI and model-run issue.",
+        footer:
+          "WSI Weather | Source: weather.wsi_daily_weighted_degree_day_forecasts / Azure PostgreSQL",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "wsi-weather-report") {
+      return {
+        title: "WSI Report",
+        subtitle:
+          "Screen-first WSI weighted degree-day report with EIA week and day-bucket summaries.",
+        footer:
+          "WSI Report | Sources: WSI weighted degree-day forecasts, 10yr normals, and prior-year observations / Azure PostgreSQL",
+      };
+    }
     if (showLocalDevFeatures && activeSection === "weather-short-term") {
       return {
         title: "Short-Term Weather",
@@ -1023,19 +1297,11 @@ export default function HomePageClient({
           "Short-Term Weather | Sources: IEM NEXRAD, IEM ASOS/MADIS, NOAA/NWS, and NOAA MRMS reference",
       };
     }
-    if (activeSection === "power-lmp-adders") {
-      return {
-        title: "LMP Adders & Reserves",
-        subtitle:
-          "PJM reserve and ancillary metrics plus ERCOT RT price adders, with source contracts alongside LMPs.",
-        footer: "LMP Adders | Source: promoted reserve/adders tables and source contracts",
-      };
-    }
     return {
       title: "Power LMPs",
       subtitle:
-        "PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO day-ahead, real-time, and DART power prices.",
-      footer: "Power LMPs | Source: Azure PostgreSQL",
+        "PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO power prices, with price adders and reserve metrics in the Adders tab.",
+      footer: "Power LMPs | Source: Azure PostgreSQL and promoted reserve/adders tables",
     };
   }, [activeSection, saltsActiveTab, showLocalDevFeatures]);
 
@@ -1049,10 +1315,10 @@ export default function HomePageClient({
   const isCenteredWorkstation =
     isHistoricalSettlements ||
     activeSection === "spark-spreads" ||
-    activeSection === "gas-outright" ||
-    isSaltModelSection;
+    activeSection === "gas-outright";
   const usesPowerMarketEyebrow =
     activeSection === "power-settles-dashboard" ||
+    activeSection === "pjm-da-lmps" ||
     (showLocalDevFeatures && activeSection === "pjm-forecast-reports") ||
     isPjmDaModelSection ||
     isEiaGenerationSection ||
@@ -1066,6 +1332,14 @@ export default function HomePageClient({
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
     showLocalDevFeatures && activeSection === "gtn-balance";
+  const activeLmpAdderIso: LmpAdderIso = isLmpAdderIso(lmpWorkspaceIso)
+    ? lmpWorkspaceIso
+    : "pjm";
+  const activeLmpProduct = productForLmpWorkspaceView(lmpWorkspaceView);
+  const activeLmpMetricMode = metricModeForLmpWorkspaceView(lmpWorkspaceView);
+  const initialLmpViewForWorkspace = isLmpSparkWorkspaceView(lmpWorkspaceView)
+    ? "daily-settles"
+    : initialPjmDaLmpView;
 
   return (
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
@@ -1085,7 +1359,7 @@ export default function HomePageClient({
               : isEiaGenerationSection
               ? "mx-auto w-full max-w-[1700px] px-4 py-8 sm:px-8"
               : isSaltModelSection
-              ? "mx-auto max-w-[1700px] w-full px-4 py-8 sm:px-8"
+              ? "w-full max-w-none px-4 py-8 sm:px-8"
               : `w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-8 ${
                   isCenteredWorkstation ? "mx-auto max-w-full md:max-w-7xl" : ""
                 }`
@@ -1126,6 +1400,11 @@ export default function HomePageClient({
                   meta.subtitle
                 )}
               </p>
+              {activeSection === "pjm-da-lmps" && (
+                <p className="mt-1 text-xs font-medium text-sky-300">
+                  Adders & Reserves covers PJM reserve and ancillary metrics plus ERCOT RT price adders.
+                </p>
+              )}
               {isSaltModelSection && (
                 <div className="mt-3 flex flex-wrap gap-2">
                   {saltsChromeForTab(saltsActiveTab).badges.map((badge) => (
@@ -1141,7 +1420,7 @@ export default function HomePageClient({
               )}
             </div>
 
-            {activeSection === "pjm-da-lmps" && (
+            {activeSection === "pjm-da-lmps" && lmpWorkspaceView !== "adders" && (
               <FreshnessCard
                 statusLabel={pjmDaLmpsFreshness.status}
                 statusClass={pjmDaLmpsFreshness.statusClass}
@@ -1163,7 +1442,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "power-lmp-adders" && (
+            {activeSection === "pjm-da-lmps" && lmpWorkspaceView === "adders" && (
               <FreshnessCard
                 statusLabel={powerLmpAddersFreshness.status}
                 statusClass={powerLmpAddersFreshness.statusClass}
@@ -1434,6 +1713,29 @@ export default function HomePageClient({
               />
             )}
 
+            {showLocalDevFeatures && activeSection === "criterion-noms" && (
+              <FreshnessCard
+                statusLabel={criterionNomsFreshness.status}
+                statusClass={criterionNomsFreshness.statusClass}
+                summary={criterionNomsFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: criterionNomsFreshness.status,
+                    className: criterionNomsFreshness.statusClass,
+                  },
+                  { label: "Report Date", value: criterionNomsFreshness.targetDateLabel },
+                  { label: "Source Update", value: criterionNomsFreshness.latestUpdateLabel },
+                  { label: "Rows", value: criterionNomsFreshness.rowCountLabel },
+                  { label: "Scope", value: criterionNomsFreshness.scopeLabel },
+                ]}
+                open={criterionNomsFreshnessOpen}
+                onToggle={() => setCriterionNomsFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setCriterionNomsRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {showLocalDevFeatures && activeSection === "pjm-generation" && (
               <FreshnessCard
                 statusLabel={pjmGenerationFreshness.status}
@@ -1636,29 +1938,66 @@ export default function HomePageClient({
           )}
 
           {activeSection === "pjm-da-lmps" && (
-            <PjmDaLmps
-              initialIso={initialPjmDaLmpIso}
-              initialDate={initialPjmDaLmpDate}
-              initialView={initialPjmDaLmpView}
-              initialProduct={initialPjmDaLmpProduct}
-              initialRtSource={initialPjmDaLmpRtSource}
-              initialHub={initialPjmDaLmpHub}
-              initialComponent={initialPjmDaLmpComponent}
-              refreshToken={pjmDaLmpsRefreshToken + (initialPjmDaLmpRefresh ? 1 : 0)}
-              onFreshnessChange={setPjmDaLmpsFreshness}
-            />
+            <div className="space-y-4">
+              <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
+                <div className="border-b border-gray-800 pb-2">
+                  <DashboardTabs
+                    tabs={LMP_ISO_TABS}
+                    activeValue={lmpWorkspaceIso}
+                    onChange={handleLmpWorkspaceIsoChange}
+                    ariaLabel="Power ISO"
+                  />
+                </div>
+                <DashboardTabs
+                  tabs={LMP_WORKSPACE_TABS}
+                  activeValue={lmpWorkspaceView}
+                  onChange={handleLmpWorkspaceViewChange}
+                  ariaLabel="LMP products and adders"
+                  variant="secondary"
+                  className="pt-2"
+                />
+              </div>
+              {lmpWorkspaceView !== "adders" ? (
+                <PjmDaLmps
+                  key={`lmp-prices-${lmpWorkspaceIso}-${lmpWorkspaceView}`}
+                  initialIso={lmpWorkspaceIso}
+                  initialDate={initialPjmDaLmpDate}
+                  initialView={initialLmpViewForWorkspace}
+                  initialProduct={activeLmpProduct}
+                  initialRtSource={initialPjmDaLmpRtSource}
+                  initialHub={initialPjmDaLmpHub}
+                  initialComponent={initialPjmDaLmpComponent}
+                  initialGasHub={routeLmpGasHubParam ? lmpGasHub : null}
+                  initialGasHubExplicit={routeLmpGasHubParam !== null}
+                  metricMode={activeLmpMetricMode}
+                  gasHub={lmpGasHub}
+                  sparkHeatRate={lmpSparkHeatRate}
+                  showIsoTabs={false}
+                  showProductTabs={false}
+                  refreshToken={pjmDaLmpsRefreshToken + (initialPjmDaLmpRefresh ? 1 : 0)}
+                  onProductChange={handleLmpWorkspaceViewChange}
+                  onGasHubChange={handlePjmLmpGasHubChange}
+                  onSparkHeatRateChange={handlePjmLmpSparkHeatRateChange}
+                  onFreshnessChange={setPjmDaLmpsFreshness}
+                />
+              ) : (
+                <PowerLmpAdders
+                  key={`lmp-adders-${activeLmpAdderIso}`}
+                  initialIso={activeLmpAdderIso}
+                  showIsoTabs={false}
+                  refreshToken={powerLmpAddersRefreshToken}
+                  onFreshnessChange={setPowerLmpAddersFreshness}
+                  routeSection="pjm-da-lmps"
+                  routeView="adders"
+                />
+              )}
+            </div>
           )}
           {activeSection === "power-settles-dashboard" && (
             <PowerSettlesDashboard />
           )}
           {isPjmDaModelSection && (
             <PjmDaMeteoBaselinePrice />
-          )}
-          {activeSection === "power-lmp-adders" && (
-            <PowerLmpAdders
-              refreshToken={powerLmpAddersRefreshToken}
-              onFreshnessChange={setPowerLmpAddersFreshness}
-            />
           )}
           {activeSection === "pjm-price-duration-curves" && (
             <PjmPriceDurationCurves
@@ -1732,6 +2071,13 @@ export default function HomePageClient({
               initialSelectionSource={initialGenscapeNomsSelectionSource}
               refreshToken={genscapeNomsRefreshToken}
               onFreshnessChange={setGenscapeNomsFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "criterion-noms" && (
+            <CriterionNomsDashboard
+              initialDate={initialCriterionNomsDate}
+              refreshToken={criterionNomsRefreshToken}
+              onFreshnessChange={setCriterionNomsFreshness}
             />
           )}
           {showLocalDevFeatures && activeSection === "gtn-balance" && (
@@ -1834,6 +2180,12 @@ export default function HomePageClient({
               refreshToken={pjmWeatherRefreshToken}
               onFreshnessChange={setPjmWeatherFreshness}
             />
+          )}
+          {showLocalDevFeatures && activeSection === "wsi-weather" && (
+            <WsiWeatherDashboard />
+          )}
+          {showLocalDevFeatures && activeSection === "wsi-weather-report" && (
+            <WsiWeatherReportDashboard />
           )}
           {showLocalDevFeatures && activeSection === "weather-short-term" && (
             <ShortTermWeatherDashboard />

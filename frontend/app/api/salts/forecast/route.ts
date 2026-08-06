@@ -65,7 +65,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "no-store",
   owner: "gas",
-  purpose: "Local-dev Salt Fc weekly EIA salt storage forecast diagnostics.",
+  purpose: "Local-dev Salts Forecast weekly EIA salt storage diagnostics.",
   p95TargetMs: 3_000,
   freshnessSource:
     "eia.weekly_underground_storage, promoted dbt salts mart SQL over GenscapeDataFeed.natgas, and weather.wsi_daily_weighted_degree_day_observations",
@@ -172,9 +172,40 @@ interface Driver {
   value: number;
 }
 
+interface PendingModelLeg {
+  key: ModelStats["key"];
+  model: string;
+  weight: number | null;
+  forecastActualWx: number | null;
+  forecastNormalWx: number | null;
+  weightedContributionActualWx: number | null;
+  weightedContributionNormalWx: number | null;
+  mae: number | null;
+  rmse: number | null;
+  bias: number | null;
+}
+
+interface WeatherAdjustedDriverContribution {
+  key: keyof typeof WEATHER_FIT_COEFFICIENT_INDEX;
+  driver: string;
+  inputValue: number | null;
+  coefficient: number | null;
+  contributionBcf: number | null;
+}
+
 interface PendingForecastRow {
   weekEnding: string;
   releaseDate: string | null;
+  weekNumber: number;
+  saltSumBcf: number | null;
+  saltObservedBcf: number | null;
+  saltCoverage: number | null;
+  saltDayCount: number | null;
+  lastActualChangeBcf: number | null;
+  gasHddObserved: number | null;
+  gasCddObserved: number | null;
+  weatherCoverage: number | null;
+  weatherDayCount: number | null;
   forecastActualWx: number | null;
   forecastNormalWx: number | null;
   weatherImpact: number | null;
@@ -182,6 +213,8 @@ interface PendingForecastRow {
   rangeHigh: number | null;
   coverage: number | null;
   weatherAnomaly: number | null;
+  modelLegs: PendingModelLeg[];
+  weatherAdjustedDriverContributions: WeatherAdjustedDriverContribution[];
   status: string;
 }
 
@@ -636,6 +669,98 @@ function blendModelPrediction(row: ModelRecord, modelWeights: ModelStats[]): num
   return average(modelWeights.map((stat) => row[stat.key]));
 }
 
+function modelLegContributionMap(
+  row: ModelRecord,
+  modelWeights: ModelStats[],
+): Map<ModelStats["key"], number | null> {
+  const weightedPredictions = modelWeights
+    .map((stat) => {
+      const value = row[stat.key];
+      return value === null || stat.weight === null ? null : { key: stat.key, value, weight: stat.weight };
+    })
+    .filter((item): item is { key: ModelStats["key"]; value: number; weight: number } => item !== null);
+  const weightTotal = weightedPredictions.reduce((sum, item) => sum + item.weight, 0);
+  const contributions = new Map<ModelStats["key"], number | null>();
+
+  if (weightTotal > 0) {
+    for (const item of weightedPredictions) {
+      contributions.set(item.key, (item.value * item.weight) / weightTotal);
+    }
+    return contributions;
+  }
+
+  const availableValues = modelWeights
+    .map((stat) => ({ key: stat.key, value: row[stat.key] }))
+    .filter((item): item is { key: ModelStats["key"]; value: number } =>
+      item.value !== null && Number.isFinite(item.value),
+    );
+  const availableCount = availableValues.length;
+  for (const item of availableValues) {
+    contributions.set(item.key, availableCount ? item.value / availableCount : null);
+  }
+  return contributions;
+}
+
+function buildPendingModelLegs({
+  pendingRecord,
+  normalWeatherRecord,
+  modelWeights,
+  includeNormalWeather,
+}: {
+  pendingRecord: ModelRecord;
+  normalWeatherRecord: ModelRecord;
+  modelWeights: ModelStats[];
+  includeNormalWeather: boolean;
+}): PendingModelLeg[] {
+  const actualContributions = modelLegContributionMap(pendingRecord, modelWeights);
+  const normalContributions = includeNormalWeather
+    ? modelLegContributionMap(normalWeatherRecord, modelWeights)
+    : new Map<ModelStats["key"], number | null>();
+
+  return modelWeights.map((stat) => ({
+    key: stat.key,
+    model: stat.model,
+    weight: stat.weight,
+    forecastActualWx: pendingRecord[stat.key],
+    forecastNormalWx: includeNormalWeather ? normalWeatherRecord[stat.key] : null,
+    weightedContributionActualWx: actualContributions.get(stat.key) ?? null,
+    weightedContributionNormalWx: includeNormalWeather
+      ? normalContributions.get(stat.key) ?? null
+      : null,
+    mae: stat.mae,
+    rmse: stat.rmse,
+    bias: stat.bias,
+  }));
+}
+
+function buildWeatherAdjustedDriverContributions(
+  row: ModelRecord,
+  fit: MultiFit | null,
+): WeatherAdjustedDriverContribution[] {
+  const specs: Array<{
+    key: keyof typeof WEATHER_FIT_COEFFICIENT_INDEX;
+    driver: string;
+    inputValue: number | null;
+  }> = [
+    { key: "intercept", driver: "Intercept", inputValue: 1 },
+    { key: "saltSumBcf", driver: "Salt Total", inputValue: row.saltSumBcf },
+    { key: "saltLastBcf", driver: "Last Actual", inputValue: row.lastActualChangeBcf },
+    { key: "gasHddObserved", driver: "Gas HDD", inputValue: row.gasHddObserved },
+    { key: "gasCddObserved", driver: "Population CDD", inputValue: row.gasCddObserved },
+    { key: "weatherAnomaly", driver: "Weather Anomaly", inputValue: row.weatherAnomaly },
+  ];
+
+  return specs.map((spec) => {
+    const coefficient = fit?.coefficients[WEATHER_FIT_COEFFICIENT_INDEX[spec.key]] ?? null;
+    return {
+      ...spec,
+      coefficient,
+      contributionBcf:
+        coefficient === null || spec.inputValue === null ? null : coefficient * spec.inputValue,
+    };
+  });
+}
+
 function statsForRows(rows: ModelRecord[]): ModelStats[] {
   return computeWeights([
     predictionStats(rows, "saltBaseline", "Salt Sum Baseline"),
@@ -717,6 +842,17 @@ function buildPendingForecastRow({
   assignLegPredictions(normalWeatherRecord, finalFit);
   const forecastNormalWx =
     pendingRecord.weatherAnomaly === null ? null : blendModelPrediction(normalWeatherRecord, modelWeights);
+  const hasNormalWeatherForecast = forecastNormalWx !== null;
+  const modelLegs = buildPendingModelLegs({
+    pendingRecord,
+    normalWeatherRecord,
+    modelWeights,
+    includeNormalWeather: hasNormalWeatherForecast,
+  });
+  const weatherAdjustedDriverContributions = buildWeatherAdjustedDriverContributions(
+    pendingRecord,
+    finalFit.weatherFit,
+  );
 
   const residualLow = quantile(residuals, 0.1);
   const residualHigh = quantile(residuals, 0.9);
@@ -724,6 +860,16 @@ function buildPendingForecastRow({
   return {
     weekEnding: pendingWeek,
     releaseDate: addDays(pendingWeek, 6),
+    weekNumber: pendingRecord.weekNumber,
+    saltSumBcf: fullWeekSaltEstimate,
+    saltObservedBcf: saltFeature.saltSumBcf,
+    saltCoverage,
+    saltDayCount: saltFeature.dayCount,
+    lastActualChangeBcf: pendingRecord.lastActualChangeBcf,
+    gasHddObserved: pendingRecord.gasHddObserved,
+    gasCddObserved: pendingRecord.gasCddObserved,
+    weatherCoverage,
+    weatherDayCount: weatherFeature?.dayCount ?? null,
     forecastActualWx,
     forecastNormalWx,
     weatherImpact:
@@ -732,6 +878,8 @@ function buildPendingForecastRow({
     rangeHigh: forecastActualWx === null || residualHigh === null ? null : forecastActualWx + residualHigh,
     coverage: signalCoverage,
     weatherAnomaly: pendingRecord.weatherAnomaly,
+    modelLegs,
+    weatherAdjustedDriverContributions,
     status:
       forecastActualWx === null
         ? "insufficient model"
@@ -1003,7 +1151,7 @@ const observedGET = observedJsonRoute(
           status: sourceStatus,
           warnings,
           lineage:
-            "Derived local API walk-forward backtest from EIA salt working gas stock changes, promoted daily salt nominations, and observed WSI degree days; not a persisted legacy Salt Fc model artifact.",
+            "Derived local API walk-forward backtest from EIA salt working gas stock changes, promoted daily salt nominations, and observed WSI degree days; not a persisted production Salts Forecast model artifact.",
           promotedSql: {
             path: promotedSql.promotedSqlPath,
             dbtModel: promotedSql.dbtModelPath,

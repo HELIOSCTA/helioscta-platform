@@ -7,6 +7,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/**/*": [
       "./sql/**/*",
+      "./data/pjm_network_model.raw",
       "../backend/modelling/pjm_da_models/sql_inputs/**/*",
     ],
   },

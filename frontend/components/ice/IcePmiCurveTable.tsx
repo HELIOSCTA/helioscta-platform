@@ -87,6 +87,7 @@ interface ContractHistoryPayload {
 
 interface IcePmiCurveTableProps {
   mode?: PricingMode;
+  powerProduct?: string;
   sparkProduct?: string;
   selectedYears?: number[];
   className?: string;
@@ -427,6 +428,7 @@ function pricingModeLabel(mode: PricingMode): string {
 
 export default function IcePmiCurveTable({
   mode = "power",
+  powerProduct,
   sparkProduct,
   selectedYears,
   className = "",
@@ -472,14 +474,18 @@ export default function IcePmiCurveTable({
         priorYears: String(priorYears),
         mode,
       });
-      if (sparkProduct) params.set("sparkProduct", sparkProduct);
+      if (powerProduct) params.set("powerProduct", powerProduct);
+      else if (sparkProduct) params.set("sparkProduct", sparkProduct);
       return `/api/ice-pmi-curve?${params.toString()}`;
     },
-    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, priorYears, sparkProduct],
+    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, powerProduct, priorYears, sparkProduct],
   );
   const cacheKey = useMemo(
-    () => `api:ice-pmi-curve:${mode}:${sparkProduct ?? "default"}:${matrixCurrentYear}:${matrixEndYear}:${lookbackDays}:${priorYears}`,
-    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, priorYears, sparkProduct],
+    () =>
+      `api:ice-pmi-curve:${mode}:${
+        powerProduct ? `power:${powerProduct}` : sparkProduct ?? "default"
+      }:${matrixCurrentYear}:${matrixEndYear}:${lookbackDays}:${priorYears}`,
+    [lookbackDays, matrixCurrentYear, matrixEndYear, mode, powerProduct, priorYears, sparkProduct],
   );
 
   useEffect(() => {
@@ -718,7 +724,7 @@ export default function IcePmiCurveTable({
                             cell.point?.symbol
                               ? undefined
                               : cell.point
-                                ? "Derived analytics cell; contract history is available only for outright PMI contracts"
+                                ? "Derived analytics cell; contract history is available only for outright ICE power contracts"
                                 : undefined
                           }
                           className={`min-h-[42px] w-full rounded border px-1.5 py-1 text-right transition-colors disabled:cursor-not-allowed ${

@@ -32,6 +32,7 @@ type TransmissionColumnKey =
   | "ticketId"
   | "zoneCompany"
   | "facilityName"
+  | "relatedEquipmentText"
   | "startDate"
   | "startTime"
   | "endDate"
@@ -65,6 +66,7 @@ const CORE_COLUMN_KEYS = new Set<TransmissionColumnKey>([
   "ticketId",
   "zoneCompany",
   "facilityName",
+  "relatedEquipmentText",
   "startDate",
   "startTime",
   "endDate",
@@ -221,6 +223,10 @@ function sourceTimezoneLabel(value: string | null | undefined): string {
 
 function normalizeSearchText(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function searchTerms(value: string): string[] {
+  return normalizeSearchText(value).split(/\s+/).filter(Boolean);
 }
 
 function changeLabel(change: TransmissionOutageChangeType): string {
@@ -385,10 +391,18 @@ function rowSearchText(row: TransmissionOutageRow): string {
     row.availability,
     row.risk,
     row.onTime,
+    row.relatedEquipmentText,
+    row.detailSearchText,
     row.changeTypes.map(changeLabel).join(" "),
   ]
     .join(" ")
     .toLowerCase();
+}
+
+function rowMatchesSearch(row: TransmissionOutageRow, terms: string[]): boolean {
+  if (terms.length === 0) return true;
+  const haystack = rowSearchText(row);
+  return terms.every((term) => haystack.includes(term));
 }
 
 function uniqueSortedTexts(values: string[]): string[] {
@@ -399,6 +413,16 @@ function uniqueSortedTexts(values: string[]): string[] {
 
 function columnFilterValues(column: TableColumn, row: TransmissionOutageRow): string[] {
   return column.filterValues?.(row) ?? [String(column.sortValue(row) ?? "")];
+}
+
+function relatedEquipmentPreview(value: string): string {
+  const parts = value
+    .split("|")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return "-";
+  const preview = parts.slice(0, 4).join(" | ");
+  return parts.length > 4 ? `${preview} | +${parts.length - 4}` : preview;
 }
 
 function buildFilterOptionsByColumn(
@@ -628,6 +652,18 @@ const TABLE_COLUMNS: TableColumn[] = [
     render: (row) => row.facilityName,
   },
   {
+    key: "relatedEquipmentText",
+    label: "Related",
+    width: 420,
+    filterValues: () => [],
+    sortValue: (row) => row.relatedEquipmentText,
+    render: (row) => (
+      <span className="text-gray-300" title={row.relatedEquipmentText}>
+        {relatedEquipmentPreview(row.relatedEquipmentText)}
+      </span>
+    ),
+  },
+  {
     key: "startDate",
     label: "Start Date",
     width: 112,
@@ -792,7 +828,7 @@ function TransmissionOutageTable({
             type="search"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search ticket, zone, facility, status"
+            placeholder="Search ticket, zone, facility, related equipment"
             className="h-8 w-[520px] max-w-full rounded-md border border-gray-700 bg-gray-950 px-3 text-xs text-gray-100 outline-none placeholder:text-gray-600 focus:border-sky-500/60 lg:min-w-[420px]"
           />
           <div
@@ -1037,10 +1073,10 @@ export default function PjmTransmissionOutages({
 
   const filteredRows = useMemo(() => {
     if (!payload) return [];
-    const searchText = normalizeSearchText(search);
+    const terms = searchTerms(search);
     return payload.rows.filter((row) => {
       if (changedOnly && !row.changed) return false;
-      if (searchText && !rowSearchText(row).includes(searchText)) return false;
+      if (!rowMatchesSearch(row, terms)) return false;
       return TABLE_COLUMNS.every((column) => {
         const selected = columnFilters[column.key] ?? [];
         if (selected.length === 0) return true;

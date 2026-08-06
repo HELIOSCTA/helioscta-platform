@@ -8,6 +8,7 @@ import {
   parsePowerSettlesComponent,
   parsePowerSettlesLookbackDays,
   parsePowerSettlesRtSource,
+  parsePowerSettlesSparkHeatRate,
 } from "@/lib/server/powerLmps";
 import {
   getCachedRouteValue,
@@ -20,14 +21,15 @@ export const maxDuration = 30;
 
 const CACHE_TTL_SECONDS = 300;
 const CACHE_HEADER = `public, s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=60`;
+const CACHE_NAMESPACE = "power-settles-dashboard-v4";
 const ROUTE_CONFIG = {
   route: "/api/power-settles-dashboard",
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60, process-cache=300",
   owner: "frontend",
-  purpose: "Production compact multi-ISO DA/RT/DART Power Settles summary cards with LMP detail links",
+  purpose: "Production compact multi-ISO DA/RT/DART Power Settles summary cards with LMP, heat-rate, and spark detail links",
   p95TargetMs: 1_500,
-  freshnessSource: "power LMP source-table updated_at fields",
+  freshnessSource: "power LMP and ICE next-day gas source-table updated_at fields",
 } as const;
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
@@ -36,7 +38,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const key = normalizedSearchCacheKey(searchParams);
 
   const { value, cacheStatus } = await getCachedRouteValue<ObservedRouteResult>({
-    namespace: "power-settles-dashboard",
+    namespace: CACHE_NAMESPACE,
     key,
     ttlMs: CACHE_TTL_SECONDS * 1000,
     staleIfErrorMs: CACHE_TTL_SECONDS * 1000,
@@ -47,6 +49,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
         lookbackDays: parsePowerSettlesLookbackDays(searchParams.get("lookbackDays")),
         rtSource: parsePowerSettlesRtSource(searchParams.get("rtSource")),
         component: parsePowerSettlesComponent(searchParams.get("component")),
+        sparkHeatRate: parsePowerSettlesSparkHeatRate(searchParams.get("sparkHeatRate")),
       }),
   });
 

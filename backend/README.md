@@ -501,6 +501,27 @@ telemetry to `ops.api_fetch_log`. The scheduled short-term group includes PJM,
 ERCOT, western power daily, eastern power daily, gas next-day, and gas BALMO
 settlement symbols.
 
+Williams Transco gas EBB notices use the public Williams 1Line portal and do
+not require credentials. The promoted backend-only canary lives under
+`backend.scrapes.gas_ebbs.williams_transco`, with orchestration at
+`backend.orchestration.gas_ebbs.williams_transco`. It writes listing lifecycle
+rows to `gas_ebbs.notices`, content-hash revisions to
+`gas_ebbs.notice_revisions`, cleaned detail payloads to
+`gas_ebbs.notice_details`, and conservative derived outage rows to
+`gas_ebbs.planned_outages`. The source grain is
+`source_family x pipeline_key x source_notice_id`; safe reruns upsert listing
+state and insert one revision per source content hash rather than one revision
+per poll. The scheduled path pulls both critical and non-critical Transco
+`buid=80` `archive=N` listing streams every 15 minutes, fetches detail pages
+only for new/listing-changed notices subject to a per-run cap, writes
+stage-level telemetry to `ops.api_fetch_log` with
+`provider = 'gas_ebb'` and `pipeline_name = 'gas_ebb_williams_transco'`, and
+marks notices stale only after both listing streams succeed. Detail failures
+are logged and recorded on the notice row, but they do not clear listing data
+or demote current notices. Apply the operator SQL under
+`dbt/azure_postgres/reference_sql/ddl/gas_ebbs/williams_transco/` with
+`helios_admin` before enabling the Linux VM timer.
+
 ICE trade blotter helpers are local manual-file workflows. They live under
 `backend.scrapes.ice_trade_blotters` and
 `backend.orchestration.ice_trade_blotters`, parse manually downloaded ICE Deal

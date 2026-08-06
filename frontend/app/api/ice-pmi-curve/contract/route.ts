@@ -1,5 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
+import { isIcePowerTermProductRoot } from "@/lib/icePowerTerm/products";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -10,7 +11,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "ICE PMI contract settlement history detail",
+  purpose: "ICE power contract settlement history detail",
   p95TargetMs: 1_500,
   freshnessSource: "ice_python.settlements trade_date",
 } as const;
@@ -46,7 +47,8 @@ function toDateString(value: unknown): string | null {
 
 function normalizeSymbol(value: string | null): string {
   const symbol = (value ?? "").trim().toUpperCase();
-  if (!/^(PMI|OPJ|NEP|ERN|ECI) [FGHJKMNQUVXZ][0-9]{2}-IUS$/.test(symbol)) {
+  const match = symbol.match(/^([A-Z0-9]{3}) [FGHJKMNQUVXZ][0-9]{2}-IUS$/);
+  if (!match || !isIcePowerTermProductRoot(match[1])) {
     throw new Error("Invalid ICE power symbol.");
   }
   return symbol;

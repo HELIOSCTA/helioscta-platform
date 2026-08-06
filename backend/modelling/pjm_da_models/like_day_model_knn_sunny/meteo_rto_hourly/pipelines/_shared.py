@@ -23,7 +23,7 @@ from ...pipeline_shared import (
     resolve_date,
     run_single_day_forecast,
 )
-from ...pjm_rto_hourly import forecast
+from ...pjm_rto_hourly import forecast, printers as legacy_printers
 from ..builder import (
     build_horizon_query_rows,
     build_pool,
@@ -285,7 +285,7 @@ def run_latest_horizon(
                     for target in target_dates:
                         key = target.isoformat()
                         result = results_by_date[key]
-                        knn_reporting.print_single_day_report(
+                        legacy_printers.print_single_day_report(
                             logger,
                             title=f"KNN SUNNY METEO RTO | {hub} ($/MWh) | {target}",
                             target_date=target,

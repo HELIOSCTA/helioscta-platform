@@ -7,13 +7,15 @@ export type PjmDaSqlArtifact =
   | "available_target_dates"
   | "meteo_da_price_forecast_hourly"
   | "actual_da_lmps_hourly"
-  | "ice_python_next_day_gas";
+  | "ice_python_next_day_gas"
+  | "ice_python_next_day_gas_hourly";
 
 const ARTIFACT_FILES: Record<PjmDaSqlArtifact, string> = {
   available_target_dates: "available_target_dates.sql",
   meteo_da_price_forecast_hourly: "meteo_da_price_forecast_hourly.sql",
   actual_da_lmps_hourly: "actual_da_lmps_hourly.sql",
   ice_python_next_day_gas: "ice_python_next_day_gas.sql",
+  ice_python_next_day_gas_hourly: "ice_python_next_day_gas_hourly.sql",
 };
 
 const sqlCache = new Map<string, string>();

@@ -662,10 +662,58 @@ def test_pjm_old_style_report_sections_are_printed(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert "FORECAST CONFIGURATION" in output
+    assert "Analog Selection" in output
+    assert "Pre-Filtering" in output
     assert "POOL SUMMARY" in output
     assert "LIKE-DAY ANALOGS" in output
+    assert "Date rank / weight / weighted avg use OnPeak HE8-23" in output
+    assert "HE strip rank: full<=5  med<=15  light>15  dot=miss" in output
     assert "DA LMP LIKE-DAY FORECAST" in output
     assert "Quantile Bands" in output
+    assert "Analog Match LMPs" not in output
+
+
+def test_knn_meteo_tomorrow_uses_legacy_single_day_report(monkeypatch, capsys):
+    monkeypatch.setattr(knn_meteo_shared.loader, "today_ept", lambda: RUN_DATE)
+    monkeypatch.setattr(
+        knn_meteo_shared.loader,
+        "default_cutoff_utc",
+        lambda *_args, **_kwargs: CUTOFF_UTC,
+    )
+    monkeypatch.setattr(knn_meteo_shared, "build_pool", lambda **_kwargs: _pool_frame())
+    monkeypatch.setattr(
+        knn_meteo_shared,
+        "build_horizon_query_rows",
+        lambda target_dates, **_kwargs: {
+            target: _query_frame(target) for target in target_dates
+        },
+    )
+    monkeypatch.setattr(
+        pipeline_shared.forecast,
+        "run_forecast",
+        lambda **kwargs: _knn_forecast_result(
+            kwargs["target_date"],
+            has_actuals=False,
+        ),
+    )
+
+    knn_meteo_tomorrow.run(
+        target_date=TARGET_DATE,
+        run_date=RUN_DATE,
+        include_actuals=False,
+        quiet=False,
+    )
+
+    output = capsys.readouterr().out
+    assert "KNN SUNNY METEO RTO" in output
+    assert "FORECAST CONFIGURATION" in output
+    assert "Analog Selection" in output
+    assert "Pre-Filtering" in output
+    assert "POOL SUMMARY" in output
+    assert "Date rank / weight / weighted avg use OnPeak HE8-23" in output
+    assert "DA LMP LIKE-DAY FORECAST" in output
+    assert "Quantile Bands" in output
+    assert "Analog Match LMPs" not in output
 
 
 def test_knn_meteo_horizon_returns_envelope_and_results_by_date(monkeypatch):

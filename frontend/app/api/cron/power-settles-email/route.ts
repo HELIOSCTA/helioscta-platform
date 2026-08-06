@@ -4,10 +4,12 @@ import { NextResponse } from "next/server";
 import {
   buildPowerSettlesDashboardPayload,
   defaultPowerSettlesDashboardDate,
+  POWER_SETTLES_EMAIL_REPORT_ISOS,
   parseDate,
   parsePowerSettlesComponent,
   parsePowerSettlesLookbackDays,
   parsePowerSettlesRtSource,
+  parsePowerSettlesSparkHeatRate,
   type PowerSettlesDashboardPayload,
 } from "@/lib/server/powerLmps";
 import {
@@ -43,6 +45,7 @@ export async function GET(request: Request): Promise<Response> {
   );
   const component = parsePowerSettlesComponent(url.searchParams.get("component"));
   const lookbackDays = parsePowerSettlesLookbackDays(url.searchParams.get("lookbackDays"));
+  const sparkHeatRate = parsePowerSettlesSparkHeatRate(url.searchParams.get("sparkHeatRate"));
   const queuedAt = new Date().toISOString();
   const reportUrl = buildPowerSettlesDashboardReportUrl({
     baseUrl: frontendBaseUrl(request),
@@ -50,6 +53,7 @@ export async function GET(request: Request): Promise<Response> {
     rtSource,
     component,
     lookbackDays,
+    sparkHeatRate,
   });
 
   try {
@@ -58,6 +62,8 @@ export async function GET(request: Request): Promise<Response> {
       lookbackDays,
       rtSource,
       component,
+      sparkHeatRate,
+      dashboardIsos: POWER_SETTLES_EMAIL_REPORT_ISOS,
     });
     const readiness = powerSettlesEmailReadiness(reportResult.payload);
 
@@ -68,6 +74,7 @@ export async function GET(request: Request): Promise<Response> {
         rtSource,
         component,
         lookbackDays,
+        sparkHeatRate,
         recipientEmail,
       });
       const message: PowerSettlesEmailQueueMessage = {
@@ -76,6 +83,7 @@ export async function GET(request: Request): Promise<Response> {
         rtSource,
         component,
         lookbackDays,
+        sparkHeatRate,
         reportUrl,
         idempotencyKey,
         queuedAt,
@@ -104,6 +112,7 @@ export async function GET(request: Request): Promise<Response> {
         rt_source: rtSource,
         component,
         lookback_days: lookbackDays,
+        spark_heat_rate: sparkHeatRate,
         recipient_count: results.length,
         queued_count: results.filter((result) => result.status === "queued").length,
         duplicate_count: results.filter((result) => result.status === "duplicate").length,
@@ -119,6 +128,7 @@ export async function GET(request: Request): Promise<Response> {
       rtSource,
       component,
       lookbackDays,
+      sparkHeatRate,
       reportUrl,
       readiness,
       results,
@@ -133,6 +143,7 @@ export async function GET(request: Request): Promise<Response> {
         rt_source: rtSource,
         component,
         lookback_days: lookbackDays,
+        spark_heat_rate: sparkHeatRate,
         error: detail,
       }),
     );

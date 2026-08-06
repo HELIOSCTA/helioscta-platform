@@ -1,7 +1,10 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
+import { parsePowerLmpSparkHeatRate } from "@/lib/powerLmpHeatRate";
 import {
   buildPowerLmpSettlesPayload,
   parseDate,
+  parsePowerLmpGasHub,
+  parsePowerLmpMetric,
   parsePowerIso,
   parseRtSource,
   type ComponentKey,
@@ -28,6 +31,17 @@ function parseComponent(value: string | null): ComponentKey {
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
   const forceRefresh = searchParams.get("refresh") === "1";
+  const gasHubParam = searchParams.get("gasHub");
+  const gasHub = parsePowerLmpGasHub(gasHubParam);
+  if (gasHubParam && !gasHub) {
+    return {
+      status: 400,
+      payload: { error: `Unknown gasHub: ${gasHubParam}` },
+      headers: { "Cache-Control": "no-store" },
+      rowCount: 0,
+      dataAsOf: null,
+    };
+  }
   const result = await buildPowerLmpSettlesPayload({
     iso: parsePowerIso(searchParams.get("iso")),
     start: parseDate(searchParams.get("start")),
@@ -35,6 +49,9 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     hub: searchParams.get("hub"),
     component: parseComponent(searchParams.get("component")),
     rtSource: parseRtSource(searchParams.get("rtSource")),
+    metric: parsePowerLmpMetric(searchParams.get("metric")),
+    gasHub,
+    sparkHeatRate: parsePowerLmpSparkHeatRate(searchParams.get("sparkHeatRate")),
   });
 
   return {

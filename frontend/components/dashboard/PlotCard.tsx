@@ -18,6 +18,7 @@ interface PlotCardProps {
   onToggleSeries: (key: string) => void;
   onShowAll?: () => void;
   onHideAll?: () => void;
+  seriesControlsExtra?: React.ReactNode;
   controls?: React.ReactNode;
   showSeriesControls?: boolean;
   children: React.ReactNode;
@@ -32,9 +33,10 @@ function SeriesControls({
   onToggleSeries,
   onShowAll,
   onHideAll,
+  seriesControlsExtra,
 }: Pick<
   PlotCardProps,
-  "series" | "hiddenSeries" | "onToggleSeries" | "onShowAll" | "onHideAll"
+  "series" | "hiddenSeries" | "onToggleSeries" | "onShowAll" | "onHideAll" | "seriesControlsExtra"
 >) {
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -61,6 +63,7 @@ function SeriesControls({
           </button>
         );
       })}
+      {seriesControlsExtra}
       {series.length >= 3 && onShowAll && onHideAll && (
         <>
           <button
@@ -91,6 +94,7 @@ export default function PlotCard({
   onToggleSeries,
   onShowAll,
   onHideAll,
+  seriesControlsExtra,
   controls,
   showSeriesControls = true,
   children,
@@ -153,6 +157,7 @@ export default function PlotCard({
                   onToggleSeries={onToggleSeries}
                   onShowAll={onShowAll}
                   onHideAll={onHideAll}
+                  seriesControlsExtra={seriesControlsExtra}
                 />
               ) : null}
               {controls}
@@ -191,6 +196,7 @@ export default function PlotCard({
                     onToggleSeries={onToggleSeries}
                     onShowAll={onShowAll}
                     onHideAll={onHideAll}
+                    seriesControlsExtra={seriesControlsExtra}
                   />
                 ) : null}
                 {controls}

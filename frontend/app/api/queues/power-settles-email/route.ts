@@ -1,15 +1,18 @@
 import { QueueClient } from "@vercel/queue";
 
 import { sendMailViaMicrosoftGraph } from "@/lib/server/microsoftGraphMail";
-import { buildPowerSettlesDashboardPayload, parsePowerSettlesComponent } from "@/lib/server/powerLmps";
+import {
+  buildPowerSettlesDashboardPayload,
+  POWER_SETTLES_EMAIL_REPORT_ISOS,
+  parsePowerSettlesComponent,
+  parsePowerSettlesSparkHeatRate,
+} from "@/lib/server/powerLmps";
 import {
   buildPowerSettlesEmailSubject,
   isAllowedPowerSettlesEmailRecipient,
   normalizePowerSettlesEmailRecipient,
-  powerSettlesAttachmentName,
   renderPowerSettlesInlineEmailHtml,
   renderPowerSettlesPlainTextEmail,
-  renderPowerSettlesStandaloneHtml,
   type PowerSettlesEmailQueueMessage,
 } from "@/lib/server/powerSettlesEmail";
 
@@ -42,6 +45,8 @@ const queuePost = handleCallback<unknown>(
       lookbackDays: parsed.lookbackDays,
       rtSource: parsed.rtSource,
       component: parsed.component ?? "total",
+      sparkHeatRate: parsed.sparkHeatRate,
+      dashboardIsos: POWER_SETTLES_EMAIL_REPORT_ISOS,
     });
     const payload = result.payload;
     const subject = buildPowerSettlesEmailSubject(payload);
@@ -53,23 +58,12 @@ const queuePost = handleCallback<unknown>(
       payload,
       reportUrl: parsed.reportUrl,
     });
-    const attachmentHtml = renderPowerSettlesStandaloneHtml({
-      payload,
-      reportUrl: parsed.reportUrl,
-    });
 
     await sendMailViaMicrosoftGraph({
       recipientEmail,
       subject,
       bodyText,
       bodyHtml,
-      attachments: [
-        {
-          name: powerSettlesAttachmentName(payload),
-          contentType: "text/html",
-          content: attachmentHtml,
-        },
-      ],
     });
 
     console.info(
@@ -83,6 +77,7 @@ const queuePost = handleCallback<unknown>(
         rt_source: parsed.rtSource,
         component: parsed.component ?? "total",
         lookback_days: parsed.lookbackDays,
+        spark_heat_rate: parsed.sparkHeatRate,
         data_as_of: result.dataAsOf,
         row_count: result.rowCount,
       }),
@@ -125,6 +120,7 @@ function parsePowerSettlesEmailQueueMessage(value: unknown): PowerSettlesEmailQu
   const component =
     typeof value.component === "string" ? parsePowerSettlesComponent(value.component) : "total";
   const lookbackDays = numberField(value, "lookbackDays");
+  const sparkHeatRate = parsePowerSettlesSparkHeatRate(optionalNumberField(value, "sparkHeatRate"));
   const reportUrl = stringField(value, "reportUrl");
   const idempotencyKey = stringField(value, "idempotencyKey");
   const queuedAt = stringField(value, "queuedAt");
@@ -150,6 +146,7 @@ function parsePowerSettlesEmailQueueMessage(value: unknown): PowerSettlesEmailQu
     rtSource,
     component,
     lookbackDays,
+    sparkHeatRate,
     reportUrl,
     idempotencyKey,
     queuedAt,
@@ -181,4 +178,19 @@ function numberField(value: Record<string, unknown>, field: string): number {
     throw new PermanentPowerSettlesQueueError(`Power Settles queue message ${field} must be a finite number.`);
   }
   return Math.trunc(raw);
+}
+
+function optionalNumberField(
+  value: Record<string, unknown>,
+  field: string,
+): number | string | null {
+  const raw = value[field];
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (
+    (typeof raw === "number" && Number.isFinite(raw)) ||
+    (typeof raw === "string" && raw.trim() !== "" && Number.isFinite(Number(raw)))
+  ) {
+    return raw;
+  }
+  throw new PermanentPowerSettlesQueueError(`Power Settles queue message ${field} must be a finite number.`);
 }

@@ -44,8 +44,8 @@ The Azure SQL helper also accepts local alias names:
 `AZURE_SQL_SERVER`, `AZURE_SQL_DATABASE`, `AZURE_SQL_USER`, and
 `AZURE_SQL_PASSWORD`.
 
-The local DEV-only GTN Balance page reads directly from Criterion Snowflake.
-Set these server-only variables for local development:
+The local DEV-only Criterion Noms and GTN Balance pages read directly from
+Criterion Snowflake. Set these server-only variables for local development:
 
 ```text
 CRITERION_SNOWFLAKE_ACCOUNT=
@@ -77,14 +77,17 @@ The production route is `/`. The active compatibility API routes are:
 ```text
 GET /api/ops/readiness
 GET /api/power-lmps?iso=pjm&product=da&date=YYYY-MM-DD
+GET /api/power-lmps?iso=pjm&product=da&date=YYYY-MM-DD&metric=heat-rate&gasHub=gas_m3
+GET /api/power-lmps?iso=ercot&product=da&date=YYYY-MM-DD&metric=heat-rate&gasHub=gas_hsc
 GET /api/power-lmps?iso=ercot&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmps?iso=isone&product=rt&date=YYYY-MM-DD&source=verified
 GET /api/power-lmps?iso=caiso&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmps?iso=miso&product=rt&date=YYYY-MM-DD&source=unverified
-GET /api/power-lmps?iso=spp&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmps?iso=nyiso&product=rt&date=YYYY-MM-DD&source=unverified
 GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
-GET /api/power-lmp-adders?iso=pjm&dataset=pjm-rt-ancillary-services&date=YYYY-MM-DD
+GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified&metric=heat-rate&gasHub=gas_m3
+GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified&metric=spark-spread&gasHub=gas_m3&sparkHeatRate=7
+GET /api/power-lmp-settles?iso=miso&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=INDIANA.HUB&component=total&rtSource=unverified&metric=heat-rate&gasHub=gas_chicago
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
@@ -107,6 +110,10 @@ GET /api/map/locations?pipeline=TRANSCO&limit=25
 GET /api/genscape-noms/filters?pipelines=TRANSCO
 GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=50&includeCount=false
 GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=200
+GET /api/criterion/noms?date=YYYY-MM-DD&states=PA,OH&limit=1000
+GET /api/criterion/noms?date=YYYY-MM-DD&watchlistId=1&limit=1000
+GET /api/criterion/watchlists
+GET /api/criterion/watchlists/1
 GET /api/criterion/gtn-pipeline-balance?date=YYYY-MM-DD&refresh=1
 GET /api/nav-positions?productGroup=Power&productRegion=PJM
 GET /api/nav-positions/drilldown?productGroup=Power&productRegion=PJM&limit=100&drilldown=<json>
@@ -125,11 +132,12 @@ view:
 
 The Power LMPs page accepts `iso=pjm|ercot|isone|caiso|miso|spp|nyiso` and exposes
 ISO tabs in the order `PJM | ERCOT | ISO-NE | CAISO | MISO | SPP | NYISO` before the
-`DA LMPs | RT | DART` product tabs. PJM links without `iso` still default to PJM.
-ERCOT uses total settlement point prices only, so component controls are constrained
-to `Total`; ERCOT RT is hourly-averaged from promoted 15-minute settlement point
-prices. ISO-NE RT maps `source=verified` to final hourly LMPs and `source=unverified`
-to preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
+`DA LMPs | RT | DART` product tabs.
+PJM links without `iso` still default to PJM. ERCOT uses total settlement point
+prices only, so component controls are constrained to `Total`; ERCOT RT is
+hourly-averaged from promoted 15-minute settlement point prices. ISO-NE RT
+maps `source=verified` to final hourly LMPs and `source=unverified` to
+preliminary hourly LMPs. CAISO reads `caiso.da_lmps` and `caiso.rt_lmps` for
 SP15/NP15 trading hubs; CAISO RT is hourly-averaged from promoted five-minute
 OASIS intervals. MISO reads `miso.da_lmps`, `miso.rt_lmps_prelim`, and
 `miso.rt_lmps_final` for Indiana Hub and the ICE-traded MISO hub family; MISO
@@ -137,10 +145,55 @@ RT maps `source=verified` to final hourly LMPs and `source=unverified` to
 preliminary hourly LMPs. SPP reads `spp.da_lmps` and `spp.rt_lmps_prelim`.
 NYISO reads `nyiso.da_lmps` and `nyiso.rt_lmps_prelim` for the promoted load
 zones; NYISO RT is hourly-averaged from preliminary five-minute LBMP rows.
+DA and RT LMP routes also accept `metric=heat-rate` for every promoted ISO.
+Heat Rate mode divides the selected LMP component by the selected gas price,
+uses `MMBtu/MWh`, and joins promoted long-form `ice_python_next_day_gas`
+rows by ICE symbol and physical gas day. Market hours are converted from the
+ISO market timezone to the 9:00 AM America/Chicago gas-day boundary. Heat-rate
+payloads keep gas-day/trade-date/source metadata in `heatRateMetadata` and
+leave DART and Compare Hubs price-only for v1.
 
-The LMP Adders page (`/?section=power-lmp-adders`) accepts `iso=pjm|ercot` and dataset params. PJM exposes `DA Reserves`, `RT Reserves`, and `RT Ancillary`; `RT Ancillary` reads current rows from `pjm.ancillary_services`, defaults the Metric filter to price rows, and leaves `RTO Mileage Ratio` opt-in because it is a ratio rather than a dollar price.
+Daily Settles also accepts `metric=spark-spread` with `sparkHeatRate`, default
+`7.0` MMBtu/MWh. Spark Spread is calculated as total LMP minus gas price times
+the selected heat-rate assumption, returns `$/MWh`, allows negative values, and
+keeps the same gas metadata in `heatRateMetadata`. Spark Spread is daily-settles
+only; direct `/api/power-lmps?metric=spark-spread` requests return `400`.
 
-`buildPowerLmpAddersReportSummary` keeps Power Settles-facing adders and reserve rows price-only, so reserve MW fields and `RTO Mileage Ratio` remain available on the Adders page but excluded from that summary.
+Supported heat-rate gas hubs by ISO:
+
+```text
+PJM: Tetco M3, Dominion South, Columbia TCO, Transco Z6 NY, Henry Hub, Tetco M2, Transco Z5 South, Transco Z5 North, Tennessee Z4 Marcellus, Transco Leidy, Chicago Citygate, MichCon
+ERCOT: Houston Ship Channel, Waha, NGPL TX/OK, Henry Hub
+ISO-NE: Algonquin Citygates, Iroquois Zone 2, Transco Z6 NY
+CAISO: SoCal Citygate, PG&E Citygate
+MISO: Chicago Citygate, MichCon, Northern Ventura, NGPL Midcontinent, Henry Hub, Houston Ship Channel, Waha, NGPL TX/OK, Columbia Gulf Mainline, ANR SE-T, Pine Prairie, Tetco WLA
+SPP: NGPL Midcontinent, NGPL TX/OK, Waha, CIG Mainline
+NYISO: Transco Z6 NY, Iroquois Zone 2, Algonquin Citygates, Tetco M3, Columbia TCO
+```
+
+Default gas-hub resolution is ISO-aware and may use the selected power hub when
+there is a clear dashboard mapping: PJM Chicago/N Illinois/Chicago Gen map to
+Chicago Citygate, AEP-Dayton/Ohio/AEP Gen and West Int map to Columbia TCO,
+ATSI Gen maps to MichCon, Dominion maps to Transco Z5 South, Western maps to
+Dominion South, and Eastern/New Jersey map to Transco Z6 NY; ERCOT North maps
+to NGPL TX/OK, ERCOT South/Houston to HSC, ERCOT West to Waha; CAISO SP15 to
+SoCal Citygate and NP15 to PG&E Citygate; MISO Indiana/Illinois to Chicago,
+Arkansas to NGPL Midcontinent, Louisiana to Henry Hub, Michigan to MichCon,
+Minnesota to Northern Ventura, and Texas to HSC; SPP North to NGPL Midcontinent
+and South to NGPL TX/OK; NYISO southeast zones to Transco Z6 NY and remaining
+zones to Iroquois Zone 2. PJM Eastern Hub, New Jersey Hub, and West Int Hub are
+single-hub approximations for now because Platts/PJM split those locations
+across more specific gas locations. Explicit `gasHub` query params still
+override these defaults; when `gasHub` is omitted, `/api/power-lmps` may use
+optional `hub` and `/api/power-lmp-settles` uses the selected settles hub for
+default gas resolution.
+
+ERCOT gas-default confidence is strongest for `HB_HOUSTON -> Houston Ship
+Channel` and `HB_WEST -> Waha`. `HB_NORTH -> NGPL TX/OK` is medium-confidence
+as the promoted North Texas proxy. `HB_SOUTH -> Houston Ship Channel` remains a
+single-hub approximation because the reviewed gas-location methodology defines
+more specific South Texas, Katy, and East Texas locations that are not promoted
+as app gas hubs yet.
 
 ## Power Settles Dashboard Source Contract
 
@@ -151,27 +204,70 @@ dashboard hub sets: all promoted PJM hubs (`WESTERN HUB`, `EASTERN HUB`,
 `AEP-DAYTON HUB`, `DOMINION HUB`, `NEW JERSEY HUB`, `CHICAGO HUB`, `OHIO HUB`,
 `N ILLINOIS HUB`, `AEP GEN HUB`, `ATSI GEN HUB`, `CHICAGO GEN HUB`,
 `WEST INT HUB`); ERCOT `HB_NORTH`, `HB_SOUTH`, `HB_WEST`, `HB_HOUSTON`; ISO-NE
-`.H.INTERNAL_HUB`; and CAISO `TH_SP15_GEN-APND`, `TH_NP15_GEN-APND`. ERCOT
+`.H.INTERNAL_HUB`; CAISO `TH_SP15_GEN-APND`, `TH_NP15_GEN-APND`; MISO
+`INDIANA.HUB`, `ARKANSAS.HUB`, `ILLINOIS.HUB`, `LOUISIANA.HUB`,
+`MICHIGAN.HUB`, `MINN.HUB`, `TEXAS.HUB`; SPP `SPPNORTH_HUB`,
+`SPPSOUTH_HUB`; NYISO `WEST`, `GENESE`, `CENTRL`, `NORTH`, `MHK VL`,
+`CAPITL`, `HUD VL`, `MILLWD`, `DUNWOD`, `N.Y.C.`, `LONGIL`. ERCOT
 settlement point prices currently expose Total only, so ERCOT falls back to
 Total when a component leg is selected.
 
 The route `GET /api/power-settles-dashboard` accepts bounded params
 `date=YYYY-MM-DD`, `rtSource=verified|unverified`,
-`component=total|energy|congestion|loss`, `lookbackDays=1..14`, and `refresh=1`.
-Without `date`, the route defaults to the previous UTC calendar date. Without
-`rtSource`, Power Settles defaults to verified RT. For PJM and ISO-NE, a hub
-falls back to unverified RT when verified RT is unavailable or less complete
-for the selected date; ERCOT and CAISO display their single promoted RT source.
+`component=total|energy|congestion|loss`, `lookbackDays=1..14`,
+`sparkHeatRate=4.0..20.0`, and `refresh=1`.
+Without `date`, the route defaults to the previous America/Denver calendar
+date. Without `rtSource`, Power Settles defaults to verified RT. Without
+`sparkHeatRate`, Spark summaries default to `7.0` MMBtu/MWh. For PJM,
+ISO-NE, and MISO, a hub falls back to unverified/preliminary RT when
+verified/final RT is unavailable or less complete for the selected date; ERCOT,
+CAISO, SPP, and NYISO display their single promoted RT source.
 DART is derived as matched hourly `DA - RT` before OnPk, OffPeak, flat, and
 peak-hour summaries are calculated. The payload includes one compact row per
 dashboard hub, latest DA/RT source dates, source-table names, effective RT
 source metadata, as-of timestamps, status, and detail links into the Power LMP
 Daily Settles view with `iso`, `date`, `hub`, RT source, and effective
 component in the URL. The dashboard renders compact ISO summary cards with hub
-rows and LMP links, preceded by a one-main-hub-per-ISO summary for PJM
-`WESTERN HUB`, ERCOT `HB_NORTH`, ISO-NE `.H.INTERNAL_HUB`, and CAISO
-`TH_SP15_GEN-APND`. Hourly profiles and hub exploration stay in the LMP page,
-and the dashboard intentionally does not render a Recent Daily Flat surface.
+rows and LMP links as an ordered report-card body: PJM first, ERCOT second,
+then the remaining dashboard ISOs in payload order. Each ISO card is
+collapsible and opens by default. A standalone Summary card renders before PJM
+with report date, ISO count, hub coverage, fallback and
+single-source RT counts, plus per-ISO coverage chips so newly included
+dashboard ISOs are visible before the ISO cards. The Summary card also renders
+one representative hub per ISO, except CAISO renders both dashboard hubs. The
+Summary card splits those rows into separate LMP and HR table bands: LMPs show
+OnPk/OffPeak DA, RT, and DART; HRs show OnPk/OffPeak DA HR, RT HR, and Gas;
+Sparks show OnPk/OffPeak DA Spark, RT Spark, and Gas with the active Spark HR.
+LMP, HR, and Spark inputs render as separate content-sized table bands on one
+horizontal row inside the ISO card, with clear space between table sections.
+The ISO card body scrolls horizontally for wide table sets. Future dashboard
+ISOs returned by the route appear after ERCOT
+automatically. Hourly profiles and hub exploration stay in the LMP page, and
+the dashboard intentionally does not render a Recent Daily Flat surface or
+adders/reserves surface.
+
+Each dashboard row also includes an `inputs` block for the row's default
+heat-rate gas hub. The block carries the gas hub key/label/symbol, gas metadata
+status, latest gas day/trade date/as-of fields, OnPk/OffPeak/flat gas price
+summaries, and DA/RT heat-rate summaries derived from the same hourly power
+prices used in the row, plus DA/RT Spark summaries in `$/MWh`. Spark uses
+total LMP regardless of the selected Power Settles component, allows negative
+values, and uses the row's mapped gas hub and active `sparkHeatRate`. The live
+dashboard keeps LMP cells price-only and renders DA HR, RT HR, and Gas in
+separate HR table bands, plus DA Spark, RT Spark, and Gas in separate Spark
+bands. LMP tables link to price Daily Settles, HR tables link to Daily Settles
+in heat-rate mode with the row's default gas hub, and Spark tables link to
+Daily Settles with `metric=spark-spread`, `component=total`, the row's default
+gas hub, and the active `sparkHeatRate`. The daily email body renders only the
+representative Summary LMP, HR, and Spark table bands, plus the full Vercel
+dashboard report link for per-ISO sections and all dashboard hubs. LMP tables
+stay price-only, HR tables show DA HR, RT HR, Gas, Gas Hub label, and HR
+links, Spark tables show DA Spark, RT Spark, Gas, Gas Hub label, Spark HR, and
+Spark links, and email HR and Spark tables do not show ICE gas symbols or a Gas
+As Of column. Email HTML omits source and status columns, RT-source badges and
+completeness status details. Adders and reserves remain owned by the Power LMPs
+Adders & Reserves view and are intentionally excluded from the Power Settles
+dashboard payload and page.
 
 The route uses `observedJsonRoute`, process-local route caching, and
 `Cache-Control: public, s-maxage=300, stale-while-revalidate=60`. It does not
@@ -179,36 +275,46 @@ read protected Back Office data, create cache tables, add credentials, or
 mount the full LMP dashboard multiple times.
 
 `GET /api/power-settles-dashboard/email-html` accepts the same bounded report
-params and returns standalone `text/html` suitable for an HTML attachment or
-browser download.
+params plus optional `surface=inline|attachment` and returns `text/html` for
+previewing the actual daily inline email body without sending or queueing email.
+`surface=inline` remains accepted. Legacy `surface=attachment` requests return
+the same inline body with `X-Helios-Email-Surface: inline`; there is no
+standalone HTML attachment preview.
+
+```text
+GET /api/power-settles-dashboard/email-html?refresh=1&surface=attachment
+GET /api/power-settles-dashboard/email-html?refresh=1&surface=inline
+```
 
 Vercel owns the scheduled Power Settles email workflow. `GET
 /api/cron/power-settles-email` is invoked by Vercel Cron, verifies
 `Authorization: Bearer ${CRON_SECRET}`, builds the report with verified RT by
-default, and lets the Power Settles data builder fall back to unverified RT per
-hub when verified data is unavailable or less complete. The cron route always
+default, and lets the Power Settles data builder fall back to the
+unverified/preliminary RT source per hub when verified/final data is unavailable
+or less complete. The cron route always
 publishes to the `power-settles-email` Vercel Queue topic after the report
-payload builds; dashboard completeness is delivery metadata in the email and
-attachment, not a send gate. The Vercel Cron schedule runs once daily at
+payload builds; dashboard completeness is delivery metadata in the email body,
+not a send gate. The Vercel Cron schedule runs once daily at
 `11:00` UTC (`5:00 AM MDT` / `4:00 AM MST`), after the overnight VM RT LMP
 polling window has closed. The cron route queues at most one email for the
 report date; the deterministic queue idempotency key remains a
 duplicate-delivery guard.
 `POST
 /api/queues/power-settles-email` is a private queue consumer configured through
-`vercel.json`; it renders the inline email and standalone HTML attachment, then
-sends through Microsoft Graph. The inline email body uses the one-main-hub-per-ISO
-summary; the standalone HTML attachment includes a Main Hubs summary followed
-by separate PJM, ERCOT, ISO-NE, and CAISO hub tables, with the same `OnPk`
-`DA | RT | DART` then `OffPeak` `DA | RT | DART` column grouping as the
-frontend dashboard. This workflow does not use
+`vercel.json`; it renders the summary-only inline email body, then sends
+through Microsoft Graph without HTML attachments. The daily email payload uses
+the same dashboard ISO set (`PJM`, `ERCOT`, `ISO-NE`, `CAISO`, `MISO`, `SPP`,
+`NYISO`). The email body renders only representative Summary LMP, HR, and Spark
+table bands. Per-ISO hub sections live in the full Vercel dashboard report
+linked from the email CTA.
+This workflow does not use
 `ops.email_notification_outbox`.
 
 The current Power Settles email recipient is intentionally pinned to
 `aidan.keaveny@helioscta.com`; `HELIOS_EMAIL_RECIPIENTS` is not used for this
 Vercel workflow until the audience is deliberately widened. The deterministic
 queue idempotency key is
-`power-settles:<date-or-latest>:<rtSource>:<component>:<lookbackDays>:<recipient>`.
+`power-settles:<date-or-latest>:<rtSource>:<component>:<lookbackDays>:<sparkHeatRate>:<recipient>`.
 
 ## Local DEV PJM DA Model Runtime
 
@@ -261,7 +367,7 @@ GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm
 GET /api/ice-trade-blotter/product-dictionary?scope=short_pjm
 GET /api/pjm-da-meteo-baseline-price?horizon=tomorrow
 GET /api/gas-daily-prices?tradeDate=YYYY-MM-DD
-GET /api/salts/wx-adj-scrapes?season=summer&month=7&weatherMetric=southcentral_population_cdd&saltsMetric=salts_total
+GET /api/salts/wx-adj-scrapes?season=summer&month=7&weatherMetric=conus_population_cdd&saltsMetric=salts_total
 GET /api/pjm-price-duration-curves?hub=WESTERN%20HUB&month=7&years=2021,2022,2023,2024,2025&hourFilter=weekday_onpeak
 GET /api/eia-generation?region=US48&season=summer&date=YYYY-MM-DD
 GET /api/pjm-generation?endDate=YYYY-MM-DD&lookbackDays=7
@@ -269,6 +375,8 @@ GET /api/pjm-tightness-lookback?date=YYYY-MM-DD
 GET /api/weather/hourly-temps?region=PJM&observedLookbackDays=3&forecastRun=primary
 GET /api/weather/hourly-forecast?region=PJM&station=PJM&forecastRun=primary
 GET /api/weather/wsi-forecast-map?region=PJM&date=YYYY-MM-DD&forecastRun=primary
+GET /api/weather/wsi-wdd-forecast-changes?region=CONUS&metric=gas_hdd
+GET /api/weather/wsi-wdd-forecast-changes?region=CONUS&metric=population_cdd&periodMode=eiaWeeks&report=1
 GET /api/pjm-net-load-forecast-explorer?source=pjm
 GET /api/pjm-net-load-forecast-explorer?source=meteologica
 GET /api/pjm-net-load-forecast-differences?source=pjm&area=RTO&date=YYYY-MM-DD&lookbackHours=72
@@ -677,11 +785,14 @@ daily, weekly, and weekend contract codes. The route
 settle rows and metadata. The product dictionary route exposes the rules used
 for mapping trade-blotter product codes to settlement sources.
 
-The Term page renders only the PMI and OPJ monthly matrices. It reuses
-`GET /api/ice-pmi-curve` with the existing PMI default product and the OPJ
-`PJM_WH_RT_OFFPEAK_TETCO_M3_7X` product definition, and it reuses
-`GET /api/ice-pmi-curve/contract?symbol=<ICE symbol>` for matrix cell
-contract-detail charts.
+The Term page renders direct scraped monthly futures matrices by market: PJM
+`PMI`/`OPJ`, ERCOT `ERN`/`ECI`, ISO-NE `NEP`, CAISO `SPM`/`NPM`, and Mid-C
+`MDC`. It reuses `GET /api/ice-pmi-curve?mode=power&powerProduct=<ICE root>`
+with the existing PMI default product. Legacy `sparkProduct` aliases remain
+accepted for existing links. Matrix cells reuse
+`GET /api/ice-pmi-curve/contract?symbol=<ICE symbol>` for contract-detail
+charts. MISO, SPP, and NYISO are not shown until matching direct monthly
+futures are present in the active symbol registries.
 
 The copied trade-level matching routes still expect the legacy
 `ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI
@@ -824,8 +935,6 @@ Forecast points in the Load Growth chart use latest-vintage
 `weather.wsi_hourly_forecasts` for the selected station on EPT/local hour. The
 daily forecast series applies the same load shape and weekday/weekend filters as
 the actual daily series and is plotted as a separate non-fit overlay.
-
-## WSI Weather Source Contract
 
 ## PJM Meteologica Load Forecast Source Contract
 
@@ -1024,6 +1133,68 @@ the promoted WSI station metadata in
 `frontend/lib/weather/wsiStationMetadata.ts`. The synthetic `PJM` station is
 kept for aggregate charting but is not rendered as a map marker.
 
+## WSI Weather Source Contract
+
+The local DEV WSI Weather page (`/?section=wsi-weather`) reads weighted
+degree-day forecast rows from
+`weather.wsi_daily_weighted_degree_day_forecasts` with `helios_readonly`.
+The endpoint is `GET /api/weather/wsi-wdd-forecast-changes`; it is hidden
+outside local Next.js runs and returns `404` on Vercel.
+
+Source system: WSI Trader `GetWeightedDegreeDayForecast`.
+
+Promoted table grain:
+`source_issue_key x model x forecast_type x request_region x entity_id x forecast_date x metric_name`.
+
+The route accepts bounded params `region`, `metric`, `models`, `cycle`,
+`periodMode`, and `refresh=1`. `region` is one of the nine promoted WDD
+entities, defaulting to `CONUS`. `metric` is one of the eight promoted WDD
+families or derived `tdd`; omitted metrics default to `population_cdd` in
+April-October and `gas_hdd` in November-March. `tdd` is derived on read as
+`population_cdd + gas_hdd`; no source `tdd` metric row is expected. `models`
+defaults to WSI plus `GFS_OP`, `GFS_ENS`, `ECMWF_OP`, `ECMWF_ENS`, `AIFS`,
+and `AIFS_ENS`. `cycle` accepts canonical `latest`, `00Z`, or `12Z`; the route
+also maps current WSI wording so `first forecast` means `00Z` and
+`other forecast` means `12Z`. Explicit cycles use canonicalized
+`model_run_cycle` / `source_init_cycle` when populated and fall back only for
+older null-metadata issue rows. `periodMode` accepts `dayBuckets` or
+`eiaWeeks`.
+
+The response returns selected filter metadata, per-model issue status and
+completeness, daily rows, period rows, and normal-source metadata. Forecast is
+read from `<metric>`, or summed from `population_cdd` and `gas_hdd` for `tdd`.
+Normal values prefer the 10-year normal from
+`weather.wsi_daily_weighted_degree_day_10yr_normals`; if that table has not
+been applied/backfilled locally, the route computes the same bounded 10-year
+normal from `weather.wsi_daily_weighted_degree_day_observations`. The legacy
+`<metric>_normal_30yr` and `<metric>_dfn_30yr` fields are visible fallback
+sources only. WSI 24-hour change uses `<metric>_difference`; for `tdd`, change
+fields are summed across Pop CDD and Gas HDD. Model-run changes use available
+`<metric>_6hr_difference` through `<metric>_36hr_difference` fields, with
+optional `<metric>_48hr_difference` and
+`<metric>_72hr_difference` rows surfaced when present. No frontend route writes
+telemetry to `ops.api_fetch_log`.
+
+The local DEV WSI Report page (`/?section=wsi-weather-report`) calls the same
+endpoint with `report=1`. The default table payload stays intact, and the
+extra `report` object is attached only for report requests. The report renders
+one active WDD region at a time through tabs for `CONUS`, `EAST`, `MIDWEST`,
+`SOUTHCENTRAL`, `MOUNTAIN`, `PACIFIC`, `GASCONSEAST`, `GASCONSWEST`, and
+`GASPRODUCING`. Report requests always use the full promoted model set in
+WSI-first order for the model-change matrix, regardless of a `models` query
+param. WSI remains the primary forecast model and baseline for EIA week plus
+Days 1-5 / 6-10 / 11-15 summary rows. The report-only `modelChanges` rows carry
+model status, issue/cycle metadata, 15-day forecast total, vs-WSI forecast, and
+12h/24h/48h/72h changes. WSI 24h change uses `<metric>_difference`; WSI
+12h/48h/72h changes are only non-null when the source rows include
+`<metric>_<hour>hr_difference`. Supporting models use their model-run
+`<metric>_<hour>hr_difference` fields. Prior-year actuals are read from
+`weather.wsi_daily_weighted_degree_day_observations` by matching each forecast
+date to the prior calendar year's month/day, ignoring Feb 29; `tdd` prior-year
+actuals and displayed model-change numbers are `population_cdd + gas_hdd`, with
+thermal coloring based on `population_cdd` departure/change minus `gas_hdd`
+departure/change.
+
 Production routes should expose:
 
 - Bounded inputs for any date range, execution count, or large-result selector.
@@ -1078,19 +1249,64 @@ fallback. The writer user must be `helios_admin` and the database must be
 RT selections can still be handed to Noms through session storage or direct
 `locationRoleId` URL params for ad hoc work.
 
+## Criterion Noms Source Contract
+
+The Criterion Noms page (`/?section=criterion-noms`) is local-dev only while
+the Criterion workflow is staged. It is hidden from Vercel navigation, direct
+section routing is disabled on Vercel, and `/api/criterion/noms` plus
+`/api/criterion/watchlists/*` return 404 outside local Next.js runs.
+
+Source system: Criterion Snowflake `PRODUCTION.PIPELINES`.
+
+Primary source tables:
+
+- `PIPELINES.METADATA`
+- `PIPELINES.NOMINATION_POINTS`
+
+The nominations route selects Criterion metadata rows where
+`CATEGORY_SHORT = 'Power'` and the point is a delivery point
+(`LOC_QTI_SHORT = 'DPQ'` or `REC_DEL_SIGN = -1`). The default state filter is
+the staged PJM-state proxy. Explicit saved watchlist points are canonical and
+`filter_config` is only UI/default context.
+
+Saved Criterion watchlists are app-owned data in Azure Postgres under
+`helioscta_app`:
+
+- `helioscta_app.criterion_watchlists`
+- `helioscta_app.criterion_watchlist_items`
+
+Apply
+`dbt/azure_postgres/reference_sql/ddl/frontend/criterion_watchlists/table_criterion_watchlists.sql`
+as `helios_admin` before enabling Criterion watchlist writes, then run the
+matching `verify_criterion_watchlists.sql`. The parent table stores
+`watchlist_type`, currently `pjm_power_plants`; the item table stores
+`entity_type`, currently `nomination_point`, plus `source_table`, `source_key`,
+typed `tsp_short` / `metadata_id` keys, and JSON display/source snapshots. The
+frontend exposes local-only mutation routes under `/api/criterion/watchlists`
+using the same writer connection rules as Genscape watchlists:
+`HELIOS_POSTGRES_WRITER_URL` or `HELIOS_POSTGRES_WRITER_*`, with
+`AZURE_POSTGRES_WRITER_*` as fallback. The writer user must be `helios_admin`
+and the database must be `helios_prod`.
+
+`GET /api/criterion/noms` accepts bounded params `date=YYYY-MM-DD`,
+`states=<csv>`, `state=<state>`, `watchlistId=<id>`, `includeZero=1`,
+`limit=1..1000`, and `refresh=1`. Rows expose `sourceTable`, `tspShort`, and
+`metadataId` so UI-selected plant points can be validated against Snowflake
+metadata before writing to Postgres.
+
 ## Local DEV Salts Source Contract
 
-The Salt Model page (`/?section=salts`) is local-dev only while the legacy
+The Salts page (`/?section=salts`) is local-dev only while the legacy
 salts dashboards are being migrated. It is hidden from Vercel navigation,
 direct section routing is disabled on Vercel, and
 `GET /api/salts/wx-adj-scrapes` returns 404 outside local Next.js runs.
 
-The default Salt Model tab is the promoted weather-adjusted salts view. It
+The default Salts Home tab (`view=gas-salt-model`) is the promoted weather-adjusted salts view. It
 reads the bounded `/api/salts/wx-adj-scrapes` payload and uses the promoted
 GenscapeDataFeed salt nomination flow columns for daily, weekly, and monthly
 table heatmaps plus the full selected season/month weather-adjusted plot grid.
 
-The Salt Plots tab recreates the reference facility seasonality and
+The Salts Inv tab (`view=gas-salt-plots`) recreates the reference facility seasonality and
 injection/withdrawal plot page. It requests `includeInventory=1` and reads the
 promoted compiled dbt SQL at
 `frontend/sql/salts/marts/marts_v1_salt_inventories.sql` against Azure SQL
@@ -1102,14 +1318,15 @@ seasonal small multiples, focused inventory/flow drilldowns, flow-window small
 multiples, and a facility scoreboard for Golden Triangle, Pine Prairie,
 Perryville, Southern Pines, and Eminence.
 
-The Salt Model tab reads the promoted compiled dbt SQL at
+The Salts Home tab reads the promoted compiled dbt SQL at
 `frontend/sql/salts/marts/marts_v1_salt_facilities_bcf.sql` against Azure SQL
 `GenscapeDataFeed.natgas` raw tables, then joins those salts rows in the route
 process by gas day/date to `helios_prod` daily weather rows from
-`weather.wsi_daily_weighted_degree_day_observations` and to promoted
-long-form `ice_python_next_day_gas` next-day physical gas cash prices from
-`ice_python.settlements`, keyed by `gas_day x symbol` for all active
-next-day symbols in the ICE gas registry. The source dbt models are
+`weather.wsi_daily_weighted_degree_day_observations` plus current-day WSI daily
+forecast coalesces from `weather.wsi_daily_weighted_degree_day_forecasts`, and
+to promoted long-form `ice_python_next_day_gas` next-day physical gas cash
+prices from `ice_python.settlements`, keyed by `gas_day x symbol` for all
+active next-day symbols in the ICE gas registry. The source dbt models are
 `dbt/dbt_azure_sql/models/salts/marts/marts_v1_salt_facilities_bcf.sql` for
 salts and
 `dbt/azure_postgres/models/pjm_da_model/ice_python/settlements/ice_python_next_day_gas.sql`
@@ -1117,25 +1334,56 @@ for gas-day cash prices. EIA fields from the legacy dashboard are not part of
 this first tab; future tabs should use `helios_prod` contracts for non-salts
 data.
 
+The same route also returns month-scoped `gasPromptPlots` for Henry Hub and
+St 85 cash-minus-BalMo weather scatters. The Salts Home UI renders these in a
+separate `Cash-BalMo vs Weather` card before the salts weather-adjusted plot
+card, defaults the card to the current calendar month and matching season, and
+allows selected-month inspection with independent season, month,
+lookback-year, highlight-day, collapse, loading/error, and legend visibility
+state. One selected Cash-BalMo weather metric controls both hub plots; winter
+options include South Central Gas HDD, CONUS Gas HDD, South Central TDD, and
+CONUS TDD, while summer options include South Central Population CDD, CONUS
+Population CDD, South Central TDD, and CONUS TDD. Cash uses the promoted
+`ice_python_next_day_gas` gas-day mapping; BalMo uses the verified ICE registry
+symbols `HHD B0-IUS` and `TRW B0-IUS` from `ice_python.settlements`, joined to
+the same ICE trade date that produced the gas-day cash strip.
+
 Primary grain: one gas day after the route-level date join.
 
 The route accepts bounded params `season=winter|summer`, `month=1..12`
 constrained to the selected season, `weatherMetric`, `saltsMetric`,
 `lookbackYears=1..7`, `recentDays=1..31`, optional
 `tableLookbackMonths=12..84`, legacy optional `modelDaily=1`, optional
-`includeInventory=1`, and optional `saltPlotLookbackDays=365..3650`.
+`includeInventory=1`, optional `includeGasPrompt=0`, optional
+`gasPromptOnly=1`, and optional `saltPlotLookbackDays=365..3650`.
 `modelDaily=1`
 keeps direct daily-flow checks honest by returning HTTP 422 with
 `Salt query returned no rows for the selected window.` when the selected daily
-flow window has no joined rows. `includeInventory=1` appends the Salt Plots
-inventory payload from the promoted inventory mart. Winter weather metrics are
-`southcentral_gas_hdd` and `conus_gas_hdd`; summer weather metrics are
-`southcentral_population_cdd` and `conus_population_cdd`; salts metrics are
-`salts_total`, `salts_tx`, `salts_la`, `salts_ms`, and `salts_al`.
-The current tab renders the full selected season/month grid: 2 weather metrics
-by 5 salts metrics, for 10 plots from one API/database fetch.
+flow window has no joined rows. `includeInventory=1` appends the Salts Inv
+inventory payload from the promoted inventory mart. `includeGasPrompt=0` lets
+the main Salts Home fetch skip Cash-BalMo query work. When gas-prompt data is
+included, route responses include selected-month Cash-BalMo plots only.
+`gasPromptOnly=1` returns only those month-scoped `gasPromptPlots` and
+gas-prompt summary fields, with salts/table/inventory arrays empty, for the
+independent Cash-BalMo card. Winter weather metrics are
+`southcentral_gas_hdd`, `conus_gas_hdd`, `southcentral_tdd`, and `conus_tdd`;
+summer weather metrics are `southcentral_population_cdd`,
+`conus_population_cdd`, `southcentral_tdd`, and `conus_tdd`; salts metrics are
+`salts_total`, `salts_tx`, `salts_la`, `salts_ms`, and `salts_al`. Omitted or
+invalid `weatherMetric` values default to `conus_gas_hdd` in winter and
+`conus_population_cdd` in summer.
+The current tab renders 5 salts metrics across selected-month and full-season
+plot scopes for the selected weather metric, for 10 plots from one
+API/database fetch, plus a separate fixed Henry Hub and St 85 Cash-BalMo card
+with one selected-month weather scatter per hub for the selected Cash-BalMo
+weather metric. Cash-BalMo does not render a full-season plot scope.
+Scatter seasons use the shared standardized seasonal year palette, and the
+highlight window marks both the latest selected lookback period and the same
+calendar period one year earlier. Highlight markers use the season color and
+scale by recency within each highlighted season window, with the most recent
+date largest.
 
-The Salt Model tab also uses the same route's bounded 36-month joined row
+The Salts Home tab also uses the same route's bounded 36-month joined row
 set for the first table migration pass. The frontend renders one collapsible
 `Tables - Genscape Scrapes + Cash Gas` pivot table above the plot grid from
 the promoted BCF total/regional/facility-flow columns and the promoted
@@ -1209,6 +1457,11 @@ GET /api/map/locations?locationRoleId=1,2&limit=1..5000
 GET /api/genscape-noms/filters?pipelines=<short_name>
 GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..5000&includeCount=false
 GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=<short_name>&limit=1..3000
+GET /api/criterion/noms?date=YYYY-MM-DD&watchlistId=<id>&limit=1..1000
+GET /api/criterion/watchlists
+POST /api/criterion/watchlists
+POST /api/criterion/watchlists/<id>/points
+DELETE /api/criterion/watchlists/<id>/points
 GET /api/criterion/gtn-pipeline-balance?date=YYYY-MM-DD&refresh=1
 ```
 
@@ -1262,19 +1515,21 @@ to be handled by Vercel Authentication, SSO, or project access, not app-level
 auth.
 
 The Vercel project production branch is `main`. The canonical production URL is
-`https://frontend-helioscta.vercel.app`. Do not manually repoint domains with
-`vercel alias set` for normal production promotion. Promotion should come from
-GitHub pushes or GitHub/Vercel redeploys of the `main` branch.
+`https://frontend-helioscta.vercel.app`. Every successful production deployment
+from GitHub `main` should publish to that URL directly. Do not treat
+`frontend-git-main-helioscta.vercel.app`, generated deployment URLs, or manual
+`vercel alias set` commands as the production promotion path. Promotion should
+come from GitHub pushes or GitHub/Vercel redeploys of the `main` branch.
 
-After a production push, verify the canonical production domain:
+After a production push, verify the production domain:
 
 ```bash
 npm run check:vercel-production
 ```
 
-If the check fails because the canonical production domain has not reached the latest
-`origin/main` commit, wait for the deployment to finish or redeploy from
-GitHub/Vercel. Do not repair the mismatch with a manual alias.
+If the check fails because `https://frontend-helioscta.vercel.app` has not
+reached the latest `origin/main` commit, wait for the deployment to finish or
+redeploy from GitHub/Vercel. Do not repair the mismatch with a manual alias.
 
 Power Settles Vercel email delivery requires these server-only Vercel
 environment variables:

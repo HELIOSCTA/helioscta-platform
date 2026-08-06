@@ -1,14 +1,15 @@
 import {
   buildPowerSettlesDashboardPayload,
+  POWER_SETTLES_EMAIL_REPORT_ISOS,
   parseDate,
   parsePowerSettlesComponent,
   parsePowerSettlesLookbackDays,
   parsePowerSettlesRtSource,
+  parsePowerSettlesSparkHeatRate,
 } from "@/lib/server/powerLmps";
 import {
   buildPowerSettlesDashboardReportUrl,
-  powerSettlesAttachmentName,
-  renderPowerSettlesStandaloneHtml,
+  renderPowerSettlesInlineEmailHtml,
 } from "@/lib/server/powerSettlesEmail";
 import {
   getCachedRouteValue,
@@ -30,11 +31,14 @@ export async function GET(request: Request): Promise<Response> {
   const rtSource = parsePowerSettlesRtSource(searchParams.get("rtSource"));
   const component = parsePowerSettlesComponent(searchParams.get("component"));
   const lookbackDays = parsePowerSettlesLookbackDays(searchParams.get("lookbackDays"));
+  const sparkHeatRate = parsePowerSettlesSparkHeatRate(searchParams.get("sparkHeatRate"));
   const forceRefresh = searchParams.get("refresh") === "1";
-  const key = normalizedSearchCacheKey(searchParams);
+  const payloadSearchParams = new URLSearchParams(searchParams);
+  payloadSearchParams.delete("surface");
+  const key = normalizedSearchCacheKey(payloadSearchParams);
 
   const { value, cacheStatus } = await getCachedRouteValue({
-    namespace: "power-settles-dashboard-email-html",
+    namespace: "power-settles-dashboard-email-html-v2",
     key,
     ttlMs: CACHE_TTL_SECONDS * 1000,
     staleIfErrorMs: CACHE_TTL_SECONDS * 1000,
@@ -45,6 +49,8 @@ export async function GET(request: Request): Promise<Response> {
         lookbackDays,
         rtSource,
         component,
+        sparkHeatRate,
+        dashboardIsos: POWER_SETTLES_EMAIL_REPORT_ISOS,
       }),
   });
 
@@ -55,13 +61,16 @@ export async function GET(request: Request): Promise<Response> {
     rtSource,
     lookbackDays,
     component,
+    sparkHeatRate,
   });
-  const html = renderPowerSettlesStandaloneHtml({ payload, reportUrl });
+  const html = renderPowerSettlesInlineEmailHtml({ payload, reportUrl });
+  const previewFilename = `power-settles-${payload.requestedDate ?? payload.defaultDate}-${payload.component}-${payload.rtSource}-inline.html`;
   const headers = new Headers({
     "Content-Type": "text/html; charset=utf-8",
-    "Content-Disposition": `inline; filename="${powerSettlesAttachmentName(payload)}"`,
+    "Content-Disposition": `inline; filename="${previewFilename}"`,
     "Cache-Control": forceRefresh ? "no-store" : CACHE_HEADER,
     "X-Helios-Route": "/api/power-settles-dashboard/email-html",
+    "X-Helios-Email-Surface": "inline",
     "X-Helios-Cache-Policy": forceRefresh
       ? "no-store"
       : "s-maxage=300, stale-while-revalidate=60, process-cache=300",

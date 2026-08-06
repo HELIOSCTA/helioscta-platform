@@ -12,8 +12,8 @@ import pandas as pd
 from ..logging_utils import init_logging
 from ..result_envelope import build_result_envelope, canonical_log_name, max_timestamp
 from ..runtime import DEFAULT_LOG_DIR
-from . import configs, loader, reporting as knn_reporting
-from .pjm_rto_hourly import forecast
+from . import configs, loader
+from .pjm_rto_hourly import forecast, printers as legacy_printers
 
 MODEL_FAMILY = "like_day_knn_sunny"
 
@@ -286,7 +286,7 @@ def run_single_day_forecast(
 
         if not quiet:
             with logger.timer("print report"):
-                knn_reporting.print_single_day_report(
+                legacy_printers.print_single_day_report(
                     logger,
                     title=(
                         f"KNN SUNNY {source_label.upper()} | "

@@ -44,8 +44,8 @@ A backend workflow is production-ready when it has:
 | RT verified five-minute HRL LMP schedule | In place | `helios-pjm-rt-fivemin-hrl-lmps.timer` runs daily at `09:30 UTC`. |
 | RT verified hourly LMP schedule | In place | `helios-pjm-rt-hrl-lmps.timer` starts on business days at `11:30 America/New_York`, polls for up to 5 hours, and waits 5 minutes between attempts. |
 | DA transmission constraints schedule | In place | `helios-pjm-da-transconstraints.timer` runs daily at `16:30 UTC`, one hour after the DA LMP timer starts, and polls every 5 minutes for up to 4 hours. |
-| DA marginal value schedule | Promoted for VM install | `helios-pjm-da-marginal-value.timer` runs daily at `17:00 UTC`, polls for the next PJM/Eastern market date for up to 4 hours, and emits constraint-contingency readiness. |
-| RT marginal value schedule | Promoted for VM install | `helios-pjm-rt-marginal-value.timer` runs at `00:20` and `04:20 America/New_York`, targets the PJM/Eastern market date two days back, and polls a rolling five-day window. |
+| DA marginal value schedule | In place | `helios-pjm-da-marginal-value.timer` runs daily at `17:00 UTC`, polls for the next PJM/Eastern market date for up to 4 hours, and emits constraint-contingency readiness. |
+| RT marginal value schedule | In place | `helios-pjm-rt-marginal-value.timer` runs at `00:20` and `04:20 America/New_York`, targets the PJM/Eastern market date two days back, and polls a rolling five-day window. |
 | ERCOT DAM SPP schedule | In place | `helios-ercot-dam-stlmnt-pnt-prices.timer` runs daily at `11:15 America/Chicago` and polls for complete next-day DAM hub prices. |
 | CAISO DA LMP schedule | In place | `helios-caiso-da-lmps.timer` runs daily at `12:00 America/Los_Angeles` and polls for CAISO's day-ahead OASIS publication. |
 | CAISO RT LMP schedule | In place | `helios-caiso-rt-lmps.timer` runs daily at `09:20 America/Los_Angeles` for the previous complete Pacific trading date. |

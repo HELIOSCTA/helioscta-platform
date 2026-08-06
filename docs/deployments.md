@@ -2157,7 +2157,7 @@ LIMIT 20;
 
 ## helios-pjm-da-marginal-value
 
-- Status: promoted for VM deployment; timer not yet VM-verified.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled on `2026-08-06`.
 - Workflow: PJM day-ahead marginal value publication polling.
 - Runtime module: `backend.orchestration.power.pjm.da_marginal_value`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.da_marginal_value`.
@@ -2180,6 +2180,12 @@ LIMIT 20;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Safe rerun story: upsert on
   `(datetime_beginning_utc, monitored_facility, contingency_facility)`.
+- Deployed commit: `e2b34c8` on `/opt/helioscta-platform`.
+- VM activation: unit files copied to `/etc/systemd/system/`,
+  `systemctl daemon-reload` completed, and
+  `helios-pjm-da-marginal-value.timer` enabled with next run observed at
+  `2026-08-06 17:00:04 UTC`. The first dedicated scheduled service run should
+  be checked after that publication window.
 
 Verification SQL for table freshness:
 
@@ -2235,7 +2241,8 @@ LIMIT 10;
 
 ## helios-pjm-rt-marginal-value
 
-- Status: promoted for VM deployment; timer not yet VM-verified.
+- Status: deployed on `helioscta-prod-vm-01`; timer enabled and manual
+  recovery run succeeded on `2026-08-06`.
 - Workflow: PJM real-time marginal value release/repair polling.
 - Runtime module: `backend.orchestration.power.pjm.rt_marginal_value`.
 - Lower-level scrape module: `backend.scrapes.power.pjm.rt_marginal_value`.
@@ -2259,6 +2266,18 @@ LIMIT 10;
 - Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
 - Safe rerun story: upsert on
   `(datetime_beginning_utc, monitored_facility, contingency_facility)`.
+- Deployed commit: `e2b34c8` on `/opt/helioscta-platform`.
+- VM activation: unit files copied to `/etc/systemd/system/`,
+  `systemctl daemon-reload` completed, and
+  `helios-pjm-rt-marginal-value.timer` enabled with next run observed at
+  `2026-08-07 04:20:31 UTC`.
+- Recovery verification: manual `systemctl start
+  helios-pjm-rt-marginal-value.service` on `2026-08-06 14:01 UTC` targeted
+  PJM/Eastern market date `2026-08-04`, exited `status=0/SUCCESS`, upserted
+  `2,081` rolling-window rows, and emitted complete readiness events including
+  `pjm_rt_marginal_value:data_ready:2026-08-04:constraint_contingency`.
+  Read-only SQL verified `468` `pjm.rt_marginal_value` rows for market date
+  `2026-08-04`.
 
 Verification SQL for table freshness:
 

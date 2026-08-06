@@ -300,6 +300,34 @@ Before enabling the timer, apply the required table and index DDL for
 
 The service uses `flock` with `/tmp/helios-pjm-transmission-outages.lock`.
 
+## Williams Transco Gas EBB Notices
+
+The Williams Transco gas EBB canary has its own current-listing timer:
+
+```text
+helios-gas-ebb-williams-transco.service
+helios-gas-ebb-williams-transco.timer
+```
+
+It runs `backend.orchestration.gas_ebbs.williams_transco`, pulls the public
+Williams 1Line Transco critical and non-critical notice listings for
+`buid=80` with `archive=N`, upserts current/stale lifecycle rows into
+`gas_ebbs.notices`, fetches detail pages only for new or listing-changed
+notices subject to a per-run cap, inserts content-hash revisions and cleaned
+details, and writes stage-level telemetry to `ops.api_fetch_log` with
+`provider = 'gas_ebb'` and `pipeline_name = 'gas_ebb_williams_transco'`.
+Missing notices are marked stale only after both listing streams succeed in
+the same run; detail failures are logged without clearing listing data.
+
+The timer runs every 15 minutes at `:00`, `:15`, `:30`, and `:45` UTC with
+`Persistent=false`, `RandomizedDelaySec=2min`, and `AccuracySec=1min`. The
+service uses `flock` with `/tmp/helios-gas-ebb-williams-transco.lock` and has
+`TimeoutStartSec=20min`.
+
+Before enabling the timer, apply the required table and index DDL under
+`dbt/azure_postgres/reference_sql/ddl/gas_ebbs/williams_transco/` with
+`helios_admin`.
+
 ## PJM Generation Outages By Type
 
 The PJM seven-day generation outage by type feed has its own daily timer:
@@ -1401,6 +1429,14 @@ For the PJM eDART transmission outage raw refresh:
 systemctl status helios-pjm-transmission-outages.service
 systemctl status helios-pjm-transmission-outages.timer
 journalctl -u helios-pjm-transmission-outages.service -n 200 --no-pager
+```
+
+For the Williams Transco gas EBB notice refresh:
+
+```bash
+systemctl status helios-gas-ebb-williams-transco.service
+systemctl status helios-gas-ebb-williams-transco.timer
+journalctl -u helios-gas-ebb-williams-transco.service -n 200 --no-pager
 ```
 
 For the PJM hourly preliminary load refresh:

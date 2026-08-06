@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 export interface ForecastMetricDefinition<K extends string> {
   key: K;
@@ -204,6 +204,154 @@ export function ForecastHeatmapToggle({
     >
       Heatmap
     </button>
+  );
+}
+
+export interface ForecastSegmentOption<T extends string> {
+  value: T;
+  label: string;
+  title?: string;
+}
+
+export function ForecastFilterCard({
+  summary,
+  children,
+}: {
+  summary?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
+          Forecast Filters
+        </h2>
+        <span className="h-px flex-1 bg-gray-800" />
+        {summary && (
+          <span className="truncate text-xs font-semibold text-gray-500">
+            {summary}
+          </span>
+        )}
+      </div>
+      <div className="space-y-3">{children}</div>
+    </section>
+  );
+}
+
+export function ForecastControlGroup({
+  label,
+  children,
+  className = "",
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`flex min-w-0 items-center gap-2 ${className}`}>
+      <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        {label}
+      </span>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+export function ForecastStaticToken({
+  label,
+  value,
+  title,
+}: {
+  label: string;
+  value: string;
+  title?: string;
+}) {
+  return (
+    <ForecastControlGroup label={label}>
+      <span
+        title={title}
+        className="inline-flex h-8 shrink-0 items-center rounded-md border border-gray-800 bg-gray-950/70 px-3 text-xs font-semibold text-sky-100"
+      >
+        {value}
+      </span>
+    </ForecastControlGroup>
+  );
+}
+
+export function ForecastSegmentedControl<T extends string>({
+  options,
+  value,
+  onChange,
+  ariaLabel,
+  className = "",
+}: {
+  options: Array<ForecastSegmentOption<T>>;
+  value: T;
+  onChange: (value: T) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`inline-flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap rounded-md border border-gray-800 bg-gray-950/70 p-0.5 ${className}`}
+      role="tablist"
+      aria-label={ariaLabel}
+    >
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            title={option.title}
+            onClick={() => {
+              if (!active) onChange(option.value);
+            }}
+            className={`h-7 shrink-0 rounded px-2.5 text-center text-xs font-semibold transition-colors ${
+              active
+                ? "bg-sky-500/15 text-white shadow-sm ring-1 ring-inset ring-sky-400/30"
+                : "text-gray-500 hover:bg-gray-900 hover:text-gray-200"
+            }`}
+          >
+            <span className="whitespace-nowrap">{option.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function ForecastSelectControl({
+  label,
+  value,
+  options,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  value: string;
+  options: string[];
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <ForecastControlGroup label={label}>
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-8 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-xs text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+      >
+        {!options.length && <option value="">--</option>}
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option.slice(0, 10)}
+          </option>
+        ))}
+      </select>
+    </ForecastControlGroup>
   );
 }
 

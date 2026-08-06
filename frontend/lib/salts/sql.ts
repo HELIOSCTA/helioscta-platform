@@ -18,6 +18,14 @@ const SALT_INVENTORIES_DBT_COMPILED_PATH =
 
 const SOURCE_DATE_FILTER = "WHERE noms.gas_day >= '2020-01-01'";
 const FINAL_SELECT_PATTERN = /SELECT\s+\*\s+FROM\s+FINAL\s*;?\s*$/i;
+type SaltFacilitiesWxAdjSeason = "WINTER" | "SUMMER";
+const SALT_FACILITIES_WX_ADJ_MONTHS_BY_SEASON: Record<
+  SaltFacilitiesWxAdjSeason,
+  readonly number[]
+> = {
+  WINTER: [11, 12, 1, 2, 3],
+  SUMMER: [4, 5, 6, 7, 8, 9, 10],
+};
 const SALT_FACILITIES_WX_ADJ_COLUMNS = [
   "salts_total",
   "salts_tx",
@@ -205,12 +213,24 @@ ORDER BY gas_day ASC`,
   );
 }
 
-export function buildSaltFacilitiesWxAdjSql(promotedSql: string): string {
+function wxAdjSeasonMonthPredicate(season: SaltFacilitiesWxAdjSeason): string {
+  const months = SALT_FACILITIES_WX_ADJ_MONTHS_BY_SEASON[season];
+  if (!months?.length) {
+    throw new Error("Salt facilities weather-adjusted season was not recognized.");
+  }
+
+  return `DATEPART(month, CAST(noms.gas_day AS DATE)) IN (${months.join(", ")})`;
+}
+
+export function buildSaltFacilitiesWxAdjSql(
+  promotedSql: string,
+  season: SaltFacilitiesWxAdjSeason,
+): string {
   const boundedPromotedSql = replaceSourceDateFilter(
     promotedSql,
     `WHERE noms.gas_day >= DATEFROMPARTS(@startYear, 1, 1)
       AND noms.gas_day <= CAST(GETDATE() AS DATE)
-      AND DATEPART(month, CAST(noms.gas_day AS DATE)) = @month`,
+      AND ${wxAdjSeasonMonthPredicate(season)}`,
   );
 
   return replaceFinalSelect(boundedPromotedSql, SALT_FACILITIES_WX_ADJ_COLUMNS);

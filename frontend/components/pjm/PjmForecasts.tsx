@@ -23,8 +23,13 @@ import {
   FORECAST_POPUP_PINNED_SHADOW,
   FORECAST_POPUP_PINNED_LEFT_CLASSES,
   FORECAST_POPUP_TABLE_CLASS,
+  ForecastControlGroup,
+  ForecastFilterCard,
   ForecastHeatmapToggle,
   ForecastPopupColGroup,
+  ForecastSegmentedControl,
+  ForecastSelectControl,
+  ForecastStaticToken,
   autoscaledYAxisDomain,
   compareDeltaCellStyle,
   compareLevelCellStyle,
@@ -35,7 +40,9 @@ import {
 } from "@/components/pjm/forecastShared";
 import PjmNetLoadForecast, {
   type ComponentKey as NetLoadComponentKey,
+  type NetLoadChangeWindowKey,
   type PjmNetLoadForecastFreshnessSummary,
+  type NetLoadForecastViewMode,
   type NetLoadForecastTab,
   type StatisticKey as NetLoadStatisticKey,
 } from "@/components/pjm/PjmNetLoadForecast";
@@ -157,6 +164,7 @@ type ExplorerMetric =
   | "offPeakAvg";
 type ExplorerViewMode = "latest" | "change";
 type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
+type CompareProfileMode = "levels" | "ramps";
 type AreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 type CompareChartRow = Record<string, number | null>;
 type CompareYAxisDomain = [number, number];
@@ -178,6 +186,20 @@ const EXPLORER_METRICS: Array<{ key: ExplorerMetric; label: string; signed: bool
   { key: "peakMw", label: "Peak", signed: false },
   { key: "onPeakAvg", label: "OnPeak", signed: false },
   { key: "offPeakAvg", label: "OffPeak", signed: false },
+];
+const EXPLORER_VIEW_OPTIONS: Array<{ value: ExplorerViewMode; label: string }> = [
+  { value: "latest", label: "Latest" },
+  { value: "change", label: "Change" },
+];
+const NET_LOAD_STATISTIC_OPTIONS: Array<{ value: NetLoadStatisticKey; label: string }> = [
+  { value: "peak", label: "Peak" },
+  { value: "onPeak", label: "OnPeak" },
+  { value: "offPeak", label: "OffPeak" },
+  { value: "flat", label: "Flat" },
+];
+const COMPARE_PROFILE_OPTIONS: Array<{ value: CompareProfileMode; label: string }> = [
+  { value: "levels", label: "Levels" },
+  { value: "ramps", label: "Ramps" },
 ];
 const CHANGE_WINDOWS: Array<{ key: ChangeWindowKey; label: string; hours: number }> = [
   { key: "1h", label: "1h", hours: 1 },
@@ -623,14 +645,6 @@ function SectionCard({
   );
 }
 
-function forecastSegmentButtonClass(active: boolean): string {
-  return `min-h-9 rounded px-3 py-1.5 text-center text-xs font-semibold transition-colors ${
-    active
-      ? "bg-sky-500/15 text-white shadow-sm ring-1 ring-inset ring-sky-400/30"
-      : "text-gray-500 hover:bg-gray-900 hover:text-gray-200"
-  }`;
-}
-
 export default function PjmForecasts({
   initialForecastType = "load",
   initialMode = "outright",
@@ -660,6 +674,16 @@ export default function PjmForecasts({
   const [sourceMode, setSourceMode] = useState<ForecastSourceMode>(initialSourceMode);
   const [explorerMetric, setExplorerMetric] = useState<ExplorerMetric>("peakMw");
   const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
+  const [netLoadViewMode, setNetLoadViewMode] = useState<NetLoadForecastViewMode>("latest");
+  const [netLoadStatistic, setNetLoadStatistic] = useState<NetLoadStatisticKey>(
+    initialNetLoadStatistic ?? "peak",
+  );
+  const [netLoadChangeWindow, setNetLoadChangeWindow] =
+    useState<NetLoadChangeWindowKey>("24h");
+  const [netLoadCompareBaseDate, setNetLoadCompareBaseDate] = useState<string | null>(null);
+  const [netLoadCompareTargetDate, setNetLoadCompareTargetDate] = useState<string | null>(null);
+  const [netLoadCompareRampingEnabled, setNetLoadCompareRampingEnabled] = useState(false);
+  const [netLoadCompareDateOptions, setNetLoadCompareDateOptions] = useState<string[]>([]);
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [explorerData, setExplorerData] = useState<PjmForecastExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<PjmForecastDifferencesPayload | null>(null);
@@ -698,6 +722,15 @@ export default function PjmForecasts({
     setChangeWindow(windowKey);
     setLookbackHours(window.hours);
   };
+
+  const selectNetLoadChangeWindow = (windowKey: NetLoadChangeWindowKey) => {
+    setNetLoadViewMode("change");
+    setNetLoadChangeWindow(windowKey);
+  };
+
+  useEffect(() => {
+    if (forecastType !== "netLoad") setNetLoadCompareDateOptions([]);
+  }, [forecastType]);
 
   useEffect(() => {
     if (previousSourceMode.current === sourceMode) return;
@@ -1148,11 +1181,6 @@ export default function PjmForecasts({
   const selectedMetric = EXPLORER_METRICS.find((item) => item.key === explorerMetric)!;
   const selectedWindow = CHANGE_WINDOWS.find((item) => item.key === changeWindow)!;
   const selectedMetricIsSigned = explorerViewMode === "change";
-  const explorerSubtitle = explorerData
-    ? `${explorerData.cellCount.toLocaleString()} area/date cells | as of ${fmtDateTime(
-        explorerData.asOf,
-      )}`
-    : undefined;
   const compareDateOptions = explorerData?.forecastDates ?? [];
   const compareDataList = visibleAreas
     .map((area) => compareDataByArea[area])
@@ -1577,87 +1605,24 @@ export default function PjmForecasts({
 
     return (
       <SectionCard title="Forecast Date Compare" subtitle={loadCompareSubtitle}>
-        <div className="mb-3 grid gap-3 lg:grid-cols-[170px_170px_130px_1fr] lg:items-end">
-          <label>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Date A
-            </span>
-            <select
-              value={compareBaseDate ?? ""}
-              disabled={!compareDateOptions.length}
-              onChange={(event) => {
-                const nextDate = event.target.value || null;
-                startTransition(() => setCompareBaseDate(nextDate));
-              }}
-              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-            >
-              {!compareDateOptions.length && <option value="">--</option>}
-              {compareDateOptions.map((date) => (
-                <option key={date} value={date}>
-                  {fmtDate(date)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Date B
-            </span>
-            <select
-              value={compareTargetDate ?? ""}
-              disabled={!compareDateOptions.length}
-              onChange={(event) => {
-                const nextDate = event.target.value || null;
-                startTransition(() => setCompareTargetDate(nextDate));
-              }}
-              className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
-            >
-              {!compareDateOptions.length && <option value="">--</option>}
-              {compareDateOptions.map((date) => (
-                <option key={date} value={date}>
-                  {fmtDate(date)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Mode
-            </span>
-            <button
-              type="button"
-              aria-pressed={compareRampingEnabled}
-              onClick={() => {
-                startTransition(() => setCompareRampingEnabled((enabled) => !enabled));
-              }}
-              className={`w-full rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-                compareRampingEnabled
-                  ? "border-sky-500/50 bg-sky-500/10 text-white"
-                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-              }`}
-            >
-              Ramping
-            </button>
-          </div>
-          <div className="flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-4 rounded-sm bg-[#60a5fa]" />
-              {compareBaseDateLabel}
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="h-2 w-4 rounded-sm bg-[#fb923c]" />
-              {compareTargetDateLabel}
-            </span>
-            {compareLatestUpdate && (
-              <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>
-            )}
-            <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
-              Expand all
-            </button>
-            <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
-              Collapse all
-            </button>
-          </div>
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] font-semibold text-gray-400">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm bg-[#60a5fa]" />
+            {compareBaseDateLabel}
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm bg-[#fb923c]" />
+            {compareTargetDateLabel}
+          </span>
+          {compareLatestUpdate && (
+            <span className="text-gray-500">Updated {fmtDateTime(compareLatestUpdate)}</span>
+          )}
+          <button type="button" onClick={expandAllCompareCards} className={compareCardControlClass}>
+            Expand all
+          </button>
+          <button type="button" onClick={collapseAllCompareCards} className={compareCardControlClass}>
+            Collapse all
+          </button>
         </div>
 
         {compareError && (
@@ -2173,112 +2138,230 @@ export default function PjmForecasts({
     });
   }, [onFreshnessChange]);
 
+  const sourceFilterLabel =
+    FORECAST_SOURCE_TABS.find((tab) => tab.key === sourceMode)?.label ?? sourceMode;
+  const forecastTypeFilterLabel =
+    FORECAST_TYPE_TABS.find((tab) => tab.key === forecastType)?.label ?? forecastType;
+  const forecastModeFilterLabel =
+    FORECAST_MODE_TABS.find((tab) => tab.key === forecastMode)?.label ?? forecastMode;
+  const filterSummary = `${sourceFilterLabel} / ${forecastTypeFilterLabel} / ${forecastModeFilterLabel}`;
+  const sourceOptions = FORECAST_SOURCE_TABS.map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+    title: tab.scope,
+  }));
+  const forecastTypeOptions = FORECAST_TYPE_TABS.map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+    title: tab.scope,
+  }));
+  const forecastModeOptions = FORECAST_MODE_TABS.map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+    title: tab.scope,
+  }));
+  const explorerMetricOptions = EXPLORER_METRICS.map((metric) => ({
+    value: metric.key,
+    label: metric.label,
+  }));
+  const changeWindowOptions = CHANGE_WINDOWS.map((window) => ({
+    value: window.key,
+    label: window.label,
+  }));
+  const compareProfileMode: CompareProfileMode = compareRampingEnabled ? "ramps" : "levels";
+  const netLoadCompareProfileMode: CompareProfileMode = netLoadCompareRampingEnabled
+    ? "ramps"
+    : "levels";
+
+  const renderForecastFilterCard = () => (
+    <ForecastFilterCard summary={filterSummary}>
+      <div className="space-y-2">
+        <ForecastStaticToken label="ISO" value="PJM" />
+        <ForecastControlGroup label="Source">
+          <ForecastSegmentedControl
+            options={sourceOptions}
+            value={sourceMode}
+            onChange={(nextSourceMode) => {
+              startTransition(() => setSourceMode(nextSourceMode));
+            }}
+            ariaLabel="Forecast source"
+          />
+        </ForecastControlGroup>
+        <ForecastControlGroup label="Forecast">
+          <ForecastSegmentedControl
+            options={forecastTypeOptions}
+            value={forecastType}
+            onChange={(nextForecastType) => {
+              startTransition(() => {
+                setForecastType(nextForecastType);
+                setSelectedExplorerCell(null);
+              });
+            }}
+            ariaLabel="Forecast type"
+          />
+        </ForecastControlGroup>
+        <ForecastControlGroup label="View">
+          <ForecastSegmentedControl
+            options={forecastModeOptions}
+            value={forecastMode}
+            onChange={(nextForecastMode) => {
+              startTransition(() => {
+                setForecastMode(nextForecastMode);
+                if (nextForecastMode === "compareDay") setSelectedExplorerCell(null);
+              });
+            }}
+            ariaLabel="Forecast view"
+          />
+        </ForecastControlGroup>
+      </div>
+
+      <div className="space-y-2 border-t border-gray-800 pt-2">
+        {forecastMode === "compareDay" ? (
+          <>
+            <ForecastSelectControl
+              label="Date A"
+              value={
+                forecastType === "netLoad"
+                  ? netLoadCompareBaseDate ?? ""
+                  : compareBaseDate ?? ""
+              }
+              options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
+              disabled={
+                forecastType === "netLoad"
+                  ? !netLoadCompareDateOptions.length
+                  : !compareDateOptions.length
+              }
+              onChange={(nextDate) => {
+                const value = nextDate || null;
+                if (forecastType === "netLoad") setNetLoadCompareBaseDate(value);
+                else startTransition(() => setCompareBaseDate(value));
+              }}
+            />
+            <ForecastSelectControl
+              label="Date B"
+              value={
+                forecastType === "netLoad"
+                  ? netLoadCompareTargetDate ?? ""
+                  : compareTargetDate ?? ""
+              }
+              options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
+              disabled={
+                forecastType === "netLoad"
+                  ? !netLoadCompareDateOptions.length
+                  : !compareDateOptions.length
+              }
+              onChange={(nextDate) => {
+                const value = nextDate || null;
+                if (forecastType === "netLoad") setNetLoadCompareTargetDate(value);
+                else startTransition(() => setCompareTargetDate(value));
+              }}
+            />
+            <ForecastControlGroup label="Profile">
+              <ForecastSegmentedControl
+                options={COMPARE_PROFILE_OPTIONS}
+                value={forecastType === "netLoad" ? netLoadCompareProfileMode : compareProfileMode}
+                onChange={(nextProfileMode) => {
+                  const enabled = nextProfileMode === "ramps";
+                  if (forecastType === "netLoad") setNetLoadCompareRampingEnabled(enabled);
+                  else startTransition(() => setCompareRampingEnabled(enabled));
+                }}
+                ariaLabel="Compare profile"
+              />
+            </ForecastControlGroup>
+          </>
+        ) : forecastType === "netLoad" ? (
+          <>
+            <ForecastControlGroup label="Mode">
+              <ForecastSegmentedControl
+                options={EXPLORER_VIEW_OPTIONS}
+                value={netLoadViewMode}
+                onChange={setNetLoadViewMode}
+                ariaLabel="Net load explorer view"
+              />
+            </ForecastControlGroup>
+            <ForecastControlGroup label="Statistic">
+              <ForecastSegmentedControl
+                options={NET_LOAD_STATISTIC_OPTIONS}
+                value={netLoadStatistic}
+                onChange={setNetLoadStatistic}
+                ariaLabel="Net load statistic"
+              />
+            </ForecastControlGroup>
+            <ForecastControlGroup label="Window">
+              <ForecastSegmentedControl
+                options={changeWindowOptions}
+                value={netLoadChangeWindow}
+                onChange={selectNetLoadChangeWindow}
+                ariaLabel="Net load change window"
+              />
+            </ForecastControlGroup>
+          </>
+        ) : (
+          <>
+            <ForecastControlGroup label="Mode">
+              <ForecastSegmentedControl
+                options={EXPLORER_VIEW_OPTIONS}
+                value={explorerViewMode}
+                onChange={(nextViewMode) => {
+                  setExplorerViewMode(nextViewMode);
+                  if (nextViewMode === "change") setLookbackHours(selectedWindow.hours);
+                }}
+                ariaLabel="Load explorer view"
+              />
+            </ForecastControlGroup>
+            <ForecastControlGroup label="Metric">
+              <ForecastSegmentedControl
+                options={explorerMetricOptions}
+                value={explorerMetric}
+                onChange={setExplorerMetric}
+                ariaLabel="Load explorer metric"
+              />
+            </ForecastControlGroup>
+            <ForecastControlGroup label="Window">
+              <ForecastSegmentedControl
+                options={changeWindowOptions}
+                value={changeWindow}
+                onChange={(nextWindow) => {
+                  setExplorerViewMode("change");
+                  selectChangeWindow(nextWindow);
+                }}
+                ariaLabel="Load change window"
+              />
+            </ForecastControlGroup>
+          </>
+        )}
+      </div>
+    </ForecastFilterCard>
+  );
+
   return (
     <div className="space-y-4">
-      <SectionCard title="Forecast Controls">
-        <div className="grid gap-3 md:grid-cols-[minmax(260px,320px)_minmax(220px,260px)_minmax(260px,320px)] md:items-end">
-          <div className="min-w-0">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Data Source
-            </span>
-            <div
-              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
-              role="tablist"
-              aria-label="Forecast source"
-            >
-              {FORECAST_SOURCE_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={sourceMode === tab.key}
-                  title={tab.scope}
-                  onClick={() => {
-                    if (sourceMode === tab.key) return;
-                    startTransition(() => setSourceMode(tab.key));
-                  }}
-                  className={forecastSegmentButtonClass(sourceMode === tab.key)}
-                >
-                  <span className="block truncate">{tab.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              Type
-            </span>
-            <div
-              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
-              role="tablist"
-              aria-label="Forecast type"
-            >
-              {FORECAST_TYPE_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={forecastType === tab.key}
-                  title={tab.scope}
-                  onClick={() => {
-                    if (forecastType === tab.key) return;
-                    startTransition(() => {
-                      setForecastType(tab.key);
-                      setSelectedExplorerCell(null);
-                    });
-                  }}
-                  className={forecastSegmentButtonClass(forecastType === tab.key)}
-                >
-                  <span className="block truncate">{tab.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="min-w-0">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-              View
-            </span>
-            <div
-              className="grid grid-cols-2 gap-1 rounded-md border border-gray-800 bg-gray-950/70 p-1"
-              role="tablist"
-              aria-label="Forecast view"
-            >
-              {FORECAST_MODE_TABS.map((tab) => (
-                <button
-                  key={tab.key}
-                  type="button"
-                  role="tab"
-                  aria-selected={forecastMode === tab.key}
-                  title={tab.scope}
-                  onClick={() => {
-                    if (forecastMode === tab.key) return;
-                    startTransition(() => {
-                      setForecastMode(tab.key);
-                      if (tab.key === "compareDay") setSelectedExplorerCell(null);
-                    });
-                  }}
-                  className={forecastSegmentButtonClass(forecastMode === tab.key)}
-                >
-                  <span className="block truncate">{tab.label}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </SectionCard>
+      {renderForecastFilterCard()}
 
       {forecastType === "netLoad" ? (
         <PjmNetLoadForecast
           refreshToken={refreshToken}
           sourceMode={sourceMode}
           activeTab={forecastMode as NetLoadForecastTab}
+          viewMode={netLoadViewMode}
+          onViewModeChange={setNetLoadViewMode}
+          changeWindow={netLoadChangeWindow}
+          onChangeWindowChange={setNetLoadChangeWindow}
+          selectedStatistic={netLoadStatistic}
+          onSelectedStatisticChange={setNetLoadStatistic}
+          compareBaseDate={netLoadCompareBaseDate}
+          onCompareBaseDateChange={setNetLoadCompareBaseDate}
+          compareTargetDate={netLoadCompareTargetDate}
+          onCompareTargetDateChange={setNetLoadCompareTargetDate}
+          compareRampingEnabled={netLoadCompareRampingEnabled}
+          onCompareRampingEnabledChange={setNetLoadCompareRampingEnabled}
+          onCompareDateOptionsChange={setNetLoadCompareDateOptions}
           initialArea={initialArea}
           initialDate={initialDate}
           initialComponent={initialNetLoadComponent}
           initialStatistic={initialNetLoadStatistic}
           embedded
+          filterControlsPlacement="external"
           onFreshnessChange={handleNetLoadFreshnessChange}
         />
       ) : forecastMode === "compareDay" ? (
@@ -2297,91 +2380,6 @@ export default function PjmForecasts({
         </>
       ) : (
         <>
-          <SectionCard title="Explorer Controls" subtitle={explorerSubtitle}>
-            <div className="grid gap-3 xl:grid-cols-[170px_1fr_300px] xl:items-end">
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  View
-                </span>
-                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Explorer view">
-                  {[
-                    ["latest", "Latest"],
-                    ["change", "Change"],
-                  ].map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      role="radio"
-                      aria-checked={explorerViewMode === key}
-                      onClick={() => {
-                        setExplorerViewMode(key as ExplorerViewMode);
-                        if (key === "change") setLookbackHours(selectedWindow.hours);
-                      }}
-                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                        explorerViewMode === key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Metric
-                </span>
-                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Explorer metric">
-                  {EXPLORER_METRICS.map((metric) => (
-                    <button
-                      key={metric.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={explorerMetric === metric.key}
-                      onClick={() => setExplorerMetric(metric.key)}
-                      className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
-                        explorerMetric === metric.key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {metric.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Window
-                </span>
-                <div className="grid grid-cols-5 gap-2" role="radiogroup" aria-label="Change window">
-                  {CHANGE_WINDOWS.map((window) => (
-                    <button
-                      key={window.key}
-                      type="button"
-                      role="radio"
-                      aria-checked={changeWindow === window.key}
-                      onClick={() => {
-                        setExplorerViewMode("change");
-                        selectChangeWindow(window.key);
-                      }}
-                      className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${
-                        changeWindow === window.key
-                          ? "border-sky-500/50 bg-sky-500/10 text-white"
-                          : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-                      }`}
-                    >
-                      {window.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-
           {explorerError && (
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
               {explorerError}

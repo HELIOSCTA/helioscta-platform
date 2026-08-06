@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 export type ActiveSection =
   | "power-settles-dashboard"
   | "pjm-da-lmps"
-  | "power-lmp-adders"
   | "pjm-term-bible"
   | "pjm-historical-settlements"
   | "backoffice-home"
@@ -22,6 +21,7 @@ export type ActiveSection =
   | "spark-spreads"
   | "map"
   | "noms"
+  | "criterion-noms"
   | "gtn-balance"
   | "gas-prices"
   | "gas-outright"
@@ -39,7 +39,9 @@ export type ActiveSection =
   | "pjm-constraints"
   | "pjm-weather"
   | "pjm-da-model"
-  | "weather-short-term";
+  | "weather-short-term"
+  | "wsi-weather"
+  | "wsi-weather-report";
 
 interface SidebarProps {
   activeSection: ActiveSection;
@@ -74,6 +76,14 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
   const sections: TopSection[] = [];
 
   sections.push({
+    key: "reports",
+    label: "Reports",
+    navItems: [
+      { id: "power-settles-dashboard", label: "Power Settles", description: "HR & Sparks" },
+    ],
+  });
+
+  sections.push({
     key: "pricing",
     label: "Pricing",
     navItems: [
@@ -89,12 +99,19 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "power",
     label: "Power",
     navItems: [
-      { id: "pjm-da-lmps", label: "LMPs" },
-      { id: "power-lmp-adders", label: "LMP Adders" },
+      { id: "pjm-da-lmps", label: "LMPs", description: "HR & Sparks" },
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
       { id: "pjm-ops-summary", label: "Ops Sum" },
-      { id: "pjm-outages", label: "Outages" },
-      { id: "pjm-constraints", label: "Constraints", description: "Constraints + transmission outages" },
+      {
+        id: "pjm-outages",
+        label: "Outages",
+        description: "Generation outages only",
+      },
+      {
+        id: "pjm-constraints",
+        label: "Constraints",
+        description: "Constraints + transmission outages",
+      },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
       { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
@@ -117,14 +134,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     ],
   });
 
-  sections.push({
-    key: "reports",
-    label: "Reports",
-    navItems: [
-      { id: "power-settles-dashboard", label: "Power Settles", description: "DA / RT / DART by ISO" },
-    ],
-  });
-
   if (showLocalDevFeatures) {
     sections.push({
       key: "dev",
@@ -133,11 +142,14 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "pjm-da-model", label: "PJM DA Model", description: "Meteo baseline DA forecast staging" },
         { id: "map", label: "Gas RT" },
         { id: "noms", label: "Gas Noms" },
+        { id: "criterion-noms", label: "Criterion Noms", description: "PJM-state plant noms" },
         { id: "gtn-balance", label: "GTN Balance" },
-        { id: "salts", label: "Salt Model" },
+        { id: "salts", label: "Salts" },
         { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "pjm-forecast-reports", label: "Forecast Reports" },
+        { id: "wsi-weather", label: "WSI Weather" },
+        { id: "wsi-weather-report", label: "WSI Report" },
         { id: "weather-short-term", label: "Short-Term Weather" },
         { id: "positions-home", label: "Old Positions Home" },
         { id: "nav-positions", label: "Old NAV Positions" },

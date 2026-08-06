@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -21,6 +21,20 @@ import LmpColumnFilterMenu, {
 } from "@/components/pjm/LmpColumnFilterMenu";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import { buildPjmDaSingleDateReport } from "@/lib/pjm-da-lmps/single-date-view";
+import {
+  defaultPowerLmpGasHubForIso,
+  DEFAULT_POWER_LMP_SPARK_HEAT_RATE,
+  isPowerLmpGasHubAllowedForIso,
+  MAX_POWER_LMP_SPARK_HEAT_RATE,
+  MIN_POWER_LMP_SPARK_HEAT_RATE,
+  normalizePowerLmpSparkHeatRate,
+  parsePjmHeatRateGasHubKey,
+  powerLmpGasHubConfig,
+  powerLmpGasHubOptionsForIso,
+  type PjmHeatRateGasHubKey,
+  type PowerLmpGasHubConfig,
+  type PowerLmpMetricMode,
+} from "@/lib/powerLmpHeatRate";
 
 interface HourlyLmp {
   hourEnding: number;
@@ -29,6 +43,42 @@ interface HourlyLmp {
   systemEnergy: number | null;
   congestion: number | null;
   marginalLoss: number | null;
+  gasMetadata?: PjmHeatRateGasHourMetadata;
+}
+
+interface PjmHeatRateGasHourMetadata {
+  date: string;
+  hourEnding: number;
+  gasDay: string | null;
+  tradeDate: string | null;
+  gasHub: PjmHeatRateGasHubKey;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus?: string;
+  gasReviewStatus?: string;
+  gasSourceHubName: string | null;
+  gasPrice: number | null;
+  gasPriceSource: string | null;
+  latestTradeDate: string | null;
+  updatedAt: string | null;
+  contractDatesUpdatedAt: string | null;
+  sourceTable: "ice_python_next_day_gas";
+}
+
+interface PjmHeatRateMetadata {
+  units: "MMBtu/MWh";
+  gasHub: PjmHeatRateGasHubKey;
+  gasHubLabel: string;
+  gasSymbol: string;
+  gasMetadataStatus?: string;
+  gasReviewStatus?: string;
+  gasPriceColumn: string;
+  sourceTable: "ice_python_next_day_gas";
+  latestGasDay: string | null;
+  latestTradeDate: string | null;
+  latestAsOf: string | null;
+  missingGasHourCount: number;
+  hourly: PjmHeatRateGasHourMetadata[];
 }
 
 interface HubLmpSummary {
@@ -46,6 +96,9 @@ interface PjmLmpsPayload {
   isoLabel: string;
   defaultHub?: string;
   supportsComponents?: boolean;
+  metricMode?: PowerLmpMetricMode;
+  units?: string;
+  heatRateMetadata?: PjmHeatRateMetadata;
   targetDate: string;
   latestDate: string | null;
   asOf: string | null;
@@ -101,7 +154,7 @@ function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
 type SettleDayType = "all" | "weekday" | "weekend" | "holiday";
 type SettleSortDirection = "asc" | "desc";
 // Sort/selection column keys for the daily settles grid: the three period summaries
-// plus one per hour-ending ("he1" â€¦ "he24"). "date" sorts the leading column.
+// plus one per hour-ending ("he1" … "he24"). "date" sorts the leading column.
 type SettleColumnKey = "onpeak" | "offpeak" | "flat" | `he${number}`;
 type SettleSortKey = "date" | SettleColumnKey;
 type SettleFilterKey = "dayType" | SettleSortKey;
@@ -145,6 +198,19 @@ interface ComponentRow {
   max: number;
 }
 
+interface InputValueSeries {
+  hourly: Array<number | null>;
+  onPeak: number | null;
+  offPeak: number | null;
+  flat: number | null;
+}
+
+interface MetricInputLine {
+  label: "Pwr" | "Gas";
+  value: number | null;
+  title: string;
+}
+
 interface LmpSourceFeed {
   iso: PowerIso;
   market: string;
@@ -158,20 +224,27 @@ interface PjmLmpSettleDayRow {
   isWeekend: boolean;
   isNercHoliday: boolean;
   holidayName: string | null;
-  // 24-element arrays indexed by hour-ending (HE1 at index 0 â€¦ HE24 at index 23),
+  // 24-element arrays indexed by hour-ending (HE1 at index 0 … HE24 at index 23),
   // carrying the selected component's value for that hour.
   daHourly: Array<number | string | null>;
   rtHourly: Array<number | string | null>;
   daAsOf: string | null;
   rtAsOf: string | null;
+  gasHourly?: PjmHeatRateGasHourMetadata[];
 }
 
 interface PjmLmpSettlesPayload {
   startDate: string;
   endDate: string;
   hub: string;
+  defaultGasHub?: PjmHeatRateGasHubKey;
   component: ComponentKey;
   rtSource: RtLmpSource | "best";
+  metricMode?: PowerLmpMetricMode;
+  units?: string;
+  sparkHeatRate?: number;
+  source?: string;
+  heatRateMetadata?: PjmHeatRateMetadata;
   rowCount: number;
   summary: {
     rowCount: number;
@@ -435,6 +508,44 @@ function fmtPrice(value: number | null): string {
   return `$${value.toFixed(2)}`;
 }
 
+function fmtInputPrice(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function fmtHeatRate(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) return "-";
+  return value.toFixed(2);
+}
+
+function fmtMetricValue(value: number | null, metricMode: PowerLmpMetricMode): string {
+  return metricMode === "heat-rate" ? fmtHeatRate(value) : fmtPrice(value);
+}
+
+function metricUnitLabel(metricMode: PowerLmpMetricMode): string {
+  return metricMode === "heat-rate" ? "MMBtu/MWh" : "$/MWh";
+}
+
+function isGasLinkedMetricMode(metricMode: PowerLmpMetricMode): boolean {
+  return metricMode === "heat-rate" || metricMode === "spark-spread";
+}
+
+function metricProductLabel(
+  product: Exclude<LmpProduct, "dart">,
+  metricMode: PowerLmpMetricMode,
+): string {
+  if (metricMode === "heat-rate") return product === "rt" ? "RT Heat Rate" : "DA Heat Rate";
+  if (metricMode === "spark-spread") return product === "rt" ? "RT Spark" : "DA Spark";
+  return PRODUCT_LABELS[product];
+}
+
+function metricAxisTick(value: unknown, metricMode: PowerLmpMetricMode): string {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return "";
+  return metricMode === "heat-rate" ? parsed.toFixed(1) : `$${parsed}`;
+}
+
 function toNumber(value: number | string | null | undefined): number | null {
   if (value === null || value === undefined) return null;
   const parsed = typeof value === "number" ? value : Number(value);
@@ -465,17 +576,25 @@ function buildLmpsApiUrl({
   product,
   date,
   rtSource,
+  metricMode,
+  gasHub,
   refresh = false,
 }: {
   iso: PowerIso;
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
+  metricMode: PowerLmpMetricMode;
+  gasHub: PjmHeatRateGasHubKey;
   refresh?: boolean;
 }): string {
   const params = new URLSearchParams({ iso, product: product === "dart" ? "da" : product });
   if (date) params.set("date", date);
   if (product === "rt") params.set("source", rtSource);
+  if (metricMode === "heat-rate" && product !== "dart") {
+    params.set("metric", "heat-rate");
+    params.set("gasHub", gasHub);
+  }
   if (refresh) params.set("refresh", "1");
 
   const query = params.toString();
@@ -487,12 +606,28 @@ function buildLmpsCacheKey({
   product,
   date,
   rtSource,
+  metricMode,
+  gasHub,
 }: {
   iso: PowerIso;
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
+  metricMode: PowerLmpMetricMode;
+  gasHub: PjmHeatRateGasHubKey;
 }): string {
+  if (metricMode === "heat-rate" && product !== "dart") {
+    return [
+      "api:power",
+      iso,
+      product,
+      "lmps",
+      rtSource,
+      date ?? "latest",
+      "heat-rate",
+      gasHub,
+    ].join(":");
+  }
   return `api:power-${iso}-${product}-lmps:${product === "rt" ? rtSource : "hourly"}:${date ?? "latest"}`;
 }
 
@@ -503,6 +638,9 @@ function buildSettlesApiUrl({
   hub,
   component,
   rtSource,
+  metricMode,
+  gasHub,
+  sparkHeatRate,
   refresh = false,
 }: {
   iso: PowerIso;
@@ -511,6 +649,9 @@ function buildSettlesApiUrl({
   hub: string;
   component: ComponentKey;
   rtSource: RtLmpSource;
+  metricMode: PowerLmpMetricMode;
+  gasHub: PjmHeatRateGasHubKey;
+  sparkHeatRate: number;
   refresh?: boolean;
 }): string {
   const params = new URLSearchParams({
@@ -521,6 +662,14 @@ function buildSettlesApiUrl({
     component,
     rtSource,
   });
+  if (metricMode === "heat-rate") {
+    params.set("metric", "heat-rate");
+    params.set("gasHub", gasHub);
+  } else if (metricMode === "spark-spread") {
+    params.set("metric", "spark-spread");
+    params.set("gasHub", gasHub);
+    params.set("sparkHeatRate", sparkHeatRate.toFixed(1));
+  }
   if (refresh) params.set("refresh", "1");
   return `/api/power-lmp-settles?${params.toString()}`;
 }
@@ -609,6 +758,16 @@ function settlePeriodAverages(
   };
 }
 
+function buildInputValueSeries(iso: PowerIso, hourly: Array<number | null>): InputValueSeries {
+  const periods = settlePeriodAverages(iso, hourly);
+  return {
+    hourly,
+    onPeak: periods.onPeak,
+    offPeak: periods.offPeak,
+    flat: periods.flat,
+  };
+}
+
 function settleDayAsOf(row: PjmLmpSettleDayRow, product: LmpProduct): string | null {
   if (product === "da") return row.daAsOf;
   if (product === "rt") return row.rtAsOf;
@@ -632,6 +791,13 @@ function settleColumnValue(
   return Number.isFinite(hour) ? day.hourly[hour - 1] ?? null : null;
 }
 
+function inputSeriesColumnValue(
+  series: InputValueSeries | null | undefined,
+  column: SettleColumnKey
+): number | null {
+  return series ? settleColumnValue(series, column) : null;
+}
+
 function settleDayTypeLabels(day: {
   isWeekend: boolean;
   isNercHoliday: boolean;
@@ -651,10 +817,11 @@ function settleFilterValue(
     flat: number | null;
     hourly: Array<number | null>;
   },
-  key: SettleSortKey
+  key: SettleSortKey,
+  metricMode: PowerLmpMetricMode,
 ): string {
   if (key === "date") return day.date;
-  return fmtPrice(settleColumnValue(day, key));
+  return fmtMetricValue(settleColumnValue(day, key), metricMode);
 }
 
 function componentRowColumnValue(row: ComponentRow, column: SettleColumnKey): number | null {
@@ -731,6 +898,123 @@ function buildTableRow({
     min: nums.length > 0 ? Math.min(...nums) : 0,
     max: nums.length > 0 ? Math.max(...nums) : 0,
   };
+}
+
+function hourlyValuesMap(values: Array<number | null>): Map<number, number | null> {
+  return new Map(HOURS.map((hour, index) => [hour, values[index] ?? null] as const));
+}
+
+function componentHourlyValues(
+  hub: HubLmpSummary | null | undefined,
+  component: ComponentConfig
+): Array<number | null> {
+  const byHour = new Map(
+    (hub?.hourly ?? []).map((row) => [row.hourEnding, component.getValue(row)] as const)
+  );
+  return HOURS.map((hour) => byHour.get(hour) ?? null);
+}
+
+function gasHourlyValuesFromHub(hub: HubLmpSummary | null | undefined): Array<number | null> {
+  const byHour = new Map(
+    (hub?.hourly ?? []).map((row) => [row.hourEnding, row.gasMetadata?.gasPrice ?? null] as const)
+  );
+  return HOURS.map((hour) => byHour.get(hour) ?? null);
+}
+
+function gasHourlyValuesFromMetadata(
+  metadata: PjmHeatRateGasHourMetadata[] | undefined
+): Array<number | null> {
+  const byHour = new Map(
+    (metadata ?? []).map((row) => [row.hourEnding, row.gasPrice] as const)
+  );
+  return HOURS.map((hour) => byHour.get(hour) ?? null);
+}
+
+function buildComponentInputRows(
+  iso: PowerIso,
+  hub: HubLmpSummary | null | undefined
+): Map<string, ComponentRow> {
+  const rows = COMPONENTS.map((component) =>
+    buildTableRow({
+      key: component.key,
+      label: component.label,
+      color: component.color,
+      values: hourlyValuesMap(componentHourlyValues(hub, component)),
+      iso,
+    })
+  );
+  return new Map(rows.map((row) => [row.key, row] as const));
+}
+
+function buildComparisonInputRows({
+  iso,
+  baseLabel,
+  compareLabel,
+  baseHourly,
+  compareHourly,
+}: {
+  iso: PowerIso;
+  baseLabel: string;
+  compareLabel: string;
+  baseHourly: Array<number | null>;
+  compareHourly: Array<number | null>;
+}): Map<string, ComponentRow> {
+  const deltaHourly = HOURS.map((_, index) =>
+    subtractValue(baseHourly[index] ?? null, compareHourly[index] ?? null)
+  );
+  const rows = [
+    buildTableRow({
+      key: "base",
+      label: baseLabel,
+      color: COMPARISON_COLORS.reference,
+      values: hourlyValuesMap(baseHourly),
+      iso,
+    }),
+    buildTableRow({
+      key: "compare",
+      label: compareLabel,
+      color: COMPARISON_COLORS.compare,
+      values: hourlyValuesMap(compareHourly),
+      iso,
+    }),
+    buildTableRow({
+      key: "delta",
+      label: "Delta",
+      color: COMPARISON_COLORS.delta,
+      values: hourlyValuesMap(deltaHourly),
+      iso,
+    }),
+  ];
+  return new Map(rows.map((row) => [row.key, row] as const));
+}
+
+function metricInputLines({
+  showPowerInput,
+  showGasInput,
+  powerValue,
+  gasValue,
+}: {
+  showPowerInput: boolean;
+  showGasInput: boolean;
+  powerValue: number | null;
+  gasValue: number | null;
+}): MetricInputLine[] {
+  const lines: MetricInputLine[] = [];
+  if (showPowerInput) {
+    lines.push({
+      label: "Pwr",
+      value: powerValue,
+      title: "Underlying LMP ($/MWh)",
+    });
+  }
+  if (showGasInput) {
+    lines.push({
+      label: "Gas",
+      value: gasValue,
+      title: "Selected gas hub price ($/MMBtu)",
+    });
+  }
+  return lines;
 }
 
 function heatStyle(value: number | null, min: number, max: number): React.CSSProperties {
@@ -860,6 +1144,8 @@ function fetchDirectLmpsPayload({
   product,
   date,
   rtSource,
+  metricMode,
+  gasHub,
   signal,
   cacheMode = "default",
   forceRefresh = false,
@@ -868,13 +1154,23 @@ function fetchDirectLmpsPayload({
   product: Exclude<LmpProduct, "dart">;
   date?: string | null;
   rtSource: RtLmpSource;
+  metricMode: PowerLmpMetricMode;
+  gasHub: PjmHeatRateGasHubKey;
   signal?: AbortSignal;
   cacheMode?: RequestCache;
   forceRefresh?: boolean;
 }): Promise<PjmLmpsPayload> {
   return fetchJsonWithCache<PjmLmpsPayload>({
-    key: buildLmpsCacheKey({ iso, product, date, rtSource }),
-    url: buildLmpsApiUrl({ iso, product, date, rtSource, refresh: forceRefresh }),
+    key: buildLmpsCacheKey({ iso, product, date, rtSource, metricMode, gasHub }),
+    url: buildLmpsApiUrl({
+      iso,
+      product,
+      date,
+      rtSource,
+      metricMode,
+      gasHub,
+      refresh: forceRefresh,
+    }),
     ttlMs: API_CACHE_TTL_MS,
     signal,
     cacheMode,
@@ -887,6 +1183,8 @@ async function fetchLmpsPayload({
   product,
   date,
   rtSource,
+  metricMode,
+  gasHub,
   signal,
   cacheMode = "default",
   forceRefresh = false,
@@ -895,6 +1193,8 @@ async function fetchLmpsPayload({
   product: LmpProduct;
   date?: string | null;
   rtSource: RtLmpSource;
+  metricMode: PowerLmpMetricMode;
+  gasHub: PjmHeatRateGasHubKey;
   signal?: AbortSignal;
   cacheMode?: RequestCache;
   forceRefresh?: boolean;
@@ -905,6 +1205,8 @@ async function fetchLmpsPayload({
       product,
       date,
       rtSource,
+      metricMode,
+      gasHub,
       signal,
       cacheMode,
       forceRefresh,
@@ -916,6 +1218,8 @@ async function fetchLmpsPayload({
     product: "rt",
     date,
     rtSource,
+    metricMode: "price",
+    gasHub,
     signal,
     cacheMode,
     forceRefresh,
@@ -927,6 +1231,8 @@ async function fetchLmpsPayload({
       product: "da",
       date: targetDate,
       rtSource,
+      metricMode: "price",
+      gasHub,
       signal,
       cacheMode,
       forceRefresh,
@@ -938,6 +1244,8 @@ async function fetchLmpsPayload({
           product: "rt",
           date: targetDate,
           rtSource,
+          metricMode: "price",
+          gasHub,
           signal,
           cacheMode,
           forceRefresh,
@@ -1014,6 +1322,103 @@ function TableHeatmapToggle({
       />
       Heatmap
     </button>
+  );
+}
+
+function HeatRateInputToggles({
+  showPowerInput,
+  showGasInput,
+  powerLoading,
+  powerError,
+  onTogglePower,
+  onToggleGas,
+}: {
+  showPowerInput: boolean;
+  showGasInput: boolean;
+  powerLoading: boolean;
+  powerError: string | null;
+  onTogglePower: () => void;
+  onToggleGas: () => void;
+}) {
+  const powerClass = powerError
+    ? "border-red-500/40 bg-red-500/10 text-red-200"
+    : showPowerInput
+      ? "border-sky-500/40 bg-sky-500/10 text-sky-200"
+      : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300";
+  const gasClass = showGasInput
+    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+    : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300";
+
+  return (
+    <div className="inline-flex flex-wrap items-center gap-1" aria-label="Heat-rate input lines">
+      <button
+        type="button"
+        aria-pressed={showPowerInput}
+        aria-busy={powerLoading || undefined}
+        onClick={onTogglePower}
+        title={powerError ?? "Show underlying LMP in $/MWh"}
+        className={`inline-flex min-w-[64px] items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${powerClass}`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${
+            powerError
+              ? "bg-red-300"
+              : powerLoading
+                ? "animate-pulse bg-sky-300"
+                : showPowerInput
+                  ? "bg-sky-300"
+                  : "bg-gray-600"
+          }`}
+          aria-hidden="true"
+        />
+        Power
+      </button>
+      <button
+        type="button"
+        aria-pressed={showGasInput}
+        onClick={onToggleGas}
+        title="Show selected gas hub price in $/MMBtu"
+        className={`inline-flex min-w-[54px] items-center justify-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${gasClass}`}
+      >
+        <span
+          className={`h-1.5 w-1.5 rounded-full ${showGasInput ? "bg-amber-300" : "bg-gray-600"}`}
+          aria-hidden="true"
+        />
+        Gas
+      </button>
+    </div>
+  );
+}
+
+function MetricCellDisplay({
+  value,
+  metricMode,
+  inputLines = [],
+}: {
+  value: number | null;
+  metricMode: PowerLmpMetricMode;
+  inputLines?: MetricInputLine[];
+}) {
+  const primary = fmtMetricValue(value, metricMode);
+  if (inputLines.length === 0) {
+    return <>{primary}</>;
+  }
+
+  return (
+    <span className="inline-flex flex-col items-end gap-0.5 leading-tight">
+      <span className="font-semibold text-inherit">
+        {primary}
+      </span>
+      {inputLines.map((line) => (
+        <span
+          key={line.label}
+          title={line.title}
+          className="whitespace-nowrap text-[10px] font-medium tabular-nums text-gray-400"
+        >
+          {line.label} {fmtInputPrice(line.value)}
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -1110,6 +1515,95 @@ function RtDatasetCard({
         })}
       </div>
     </SectionCard>
+  );
+}
+
+function GasHubSelector({
+  value,
+  metadata,
+  options,
+  onChange,
+}: {
+  value: PjmHeatRateGasHubKey;
+  metadata?: PjmHeatRateMetadata;
+  options: PowerLmpGasHubConfig[];
+  onChange: (value: PjmHeatRateGasHubKey) => void;
+}) {
+  const selectedConfig = powerLmpGasHubConfig(value);
+  const legacyMetadata =
+    (metadata?.gasMetadataStatus ?? selectedConfig.metadataStatus) !==
+    "ice_product_url_verified";
+  const metadataLabel = metadata
+    ? `${metadata.gasHubLabel} / ${metadata.gasSymbol} / gas day ${metadata.latestGasDay ?? "-"}`
+    : selectedConfig.symbol;
+
+  return (
+    <div className="space-y-2 border-t border-gray-800 pt-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+          Gas Hub
+        </span>
+        <span className="h-px flex-1 bg-gray-800" />
+        <span className="text-[11px] tabular-nums text-gray-500">
+          {metadataLabel}
+          {legacyMetadata ? " / legacy ICE metadata" : ""}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Heat-rate gas hub">
+        {options.map((hub) => {
+          const selected = value === hub.key;
+          return (
+            <button
+              key={hub.key}
+              type="button"
+              role="radio"
+              aria-checked={selected}
+              onClick={() => onChange(hub.key)}
+              className={`inline-flex items-center gap-2 rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${
+                selected
+                  ? "border-sky-500/50 bg-sky-500/10 text-white"
+                  : "border-gray-800 bg-gray-950/40 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+              }`}
+            >
+              <span>{hub.label}</span>
+              <span className="text-[10px] text-gray-500">{hub.symbol}</span>
+              {hub.metadataStatus !== "ice_product_url_verified" && (
+                <span className="text-[10px] text-amber-300/80">legacy</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SparkHeatRateInput({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 border-t border-gray-800 pt-3">
+      <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+        Spark HR
+      </span>
+      <input
+        type="number"
+        min={MIN_POWER_LMP_SPARK_HEAT_RATE}
+        max={MAX_POWER_LMP_SPARK_HEAT_RATE}
+        step={0.1}
+        value={value.toFixed(1)}
+        onChange={(event) => {
+          if (event.target.value === "") return;
+          onChange(Number(event.target.value));
+        }}
+        className="h-8 w-24 rounded-md border border-gray-700 bg-gray-900 px-2 text-xs tabular-nums text-gray-200 focus:border-gray-500 focus:outline-none"
+      />
+      <span className="text-[11px] text-gray-500">MMBtu/MWh</span>
+    </div>
   );
 }
 
@@ -1260,7 +1754,7 @@ function SelectedLmpSource({
 }
 
 // Sortable column header for the daily settles grid: click to sort, arrow shows the
-// active key + direction (â†• = inactive).
+// active key + direction (↕ = inactive).
 function SettleHeaderButton({
   label,
   sortKey,
@@ -1281,7 +1775,7 @@ function SettleHeaderButton({
     >
       {label}
       <span className={`text-[9px] ${active ? "text-sky-300" : "text-gray-700"}`} aria-hidden="true">
-        {active ? (activeSort.direction === "asc" ? "â–²" : "â–¼") : "â†•"}
+        {active ? (activeSort.direction === "asc" ? "▲" : "▼") : "↕"}
       </span>
     </button>
   );
@@ -1335,6 +1829,8 @@ function SettleCell({
   value,
   date,
   column,
+  metricMode,
+  inputLines,
   selected,
   heatmapEnabled,
   heatRange,
@@ -1344,6 +1840,8 @@ function SettleCell({
   value: number | null;
   date: string;
   column: SettleColumnKey;
+  metricMode: PowerLmpMetricMode;
+  inputLines?: MetricInputLine[];
   selected: boolean;
   heatmapEnabled: boolean;
   heatRange: { min: number; max: number };
@@ -1368,13 +1866,15 @@ function SettleCell({
       className={`cursor-pointer select-none px-2 py-2 text-right tabular-nums transition-colors ${extraClass} ${stateClass}`}
       style={!selected && heatmapEnabled ? heatStyle(value, heatRange.min, heatRange.max) : undefined}
     >
-      {fmtPrice(value)}
+      <MetricCellDisplay value={value} metricMode={metricMode} inputLines={inputLines} />
     </td>
   );
 }
 
 function SelectableMetricCell({
   value,
+  metricMode,
+  inputLines,
   selected,
   heatmapEnabled,
   heatStyleValue,
@@ -1382,6 +1882,8 @@ function SelectableMetricCell({
   extraClass = "",
 }: {
   value: number | null;
+  metricMode: PowerLmpMetricMode;
+  inputLines?: MetricInputLine[];
   selected: boolean;
   heatmapEnabled: boolean;
   heatStyleValue: React.CSSProperties;
@@ -1407,18 +1909,20 @@ function SelectableMetricCell({
       className={`cursor-pointer select-none px-2 py-2 text-right tabular-nums transition-colors ${extraClass} ${stateClass}`}
       style={!selected && heatmapEnabled ? heatStyleValue : undefined}
     >
-      {fmtPrice(value)}
+      <MetricCellDisplay value={value} metricMode={metricMode} inputLines={inputLines} />
     </td>
   );
 }
 
 function SelectionStatsBar({
   label,
+  metricMode,
   stats,
   onClear,
   extra,
 }: {
   label: string;
+  metricMode: PowerLmpMetricMode;
   stats: SelectionStats;
   onClear: () => void;
   extra?: React.ReactNode;
@@ -1435,19 +1939,27 @@ function SelectionStatsBar({
         </span>
         <span>
           <span className="text-gray-500">Avg:</span>{" "}
-          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.avg)}</span>
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtMetricValue(stats.avg, metricMode)}
+          </span>
         </span>
         <span>
           <span className="text-gray-500">Sum:</span>{" "}
-          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.sum)}</span>
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtMetricValue(stats.sum, metricMode)}
+          </span>
         </span>
         <span>
           <span className="text-gray-500">Min:</span>{" "}
-          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.min)}</span>
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtMetricValue(stats.min, metricMode)}
+          </span>
         </span>
         <span>
           <span className="text-gray-500">Max:</span>{" "}
-          <span className="font-semibold tabular-nums text-gray-100">{fmtPrice(stats.max)}</span>
+          <span className="font-semibold tabular-nums text-gray-100">
+            {fmtMetricValue(stats.max, metricMode)}
+          </span>
         </span>
         <span>
           <span className="text-gray-500">Cells:</span>{" "}
@@ -1476,7 +1988,18 @@ export default function PjmDaLmps({
   initialRtSource = null,
   initialHub = null,
   initialComponent = null,
+  initialMetricMode = null,
+  initialGasHub = null,
+  initialGasHubExplicit = false,
+  metricMode: controlledMetricMode,
+  gasHub: controlledGasHub,
+  sparkHeatRate: controlledSparkHeatRate,
+  showIsoTabs = true,
+  showProductTabs = true,
   refreshToken = 0,
+  onProductChange,
+  onGasHubChange,
+  onSparkHeatRateChange,
   onFreshnessChange,
 }: {
   initialIso?: PowerIso | null;
@@ -1486,7 +2009,18 @@ export default function PjmDaLmps({
   initialRtSource?: RtLmpSource | null;
   initialHub?: string | null;
   initialComponent?: ComponentSelection | null;
+  initialMetricMode?: PowerLmpMetricMode | null;
+  initialGasHub?: PjmHeatRateGasHubKey | string | null;
+  initialGasHubExplicit?: boolean;
+  metricMode?: PowerLmpMetricMode;
+  gasHub?: PjmHeatRateGasHubKey;
+  sparkHeatRate?: number;
+  showIsoTabs?: boolean;
+  showProductTabs?: boolean;
   refreshToken?: number;
+  onProductChange?: (product: LmpProduct) => void;
+  onGasHubChange?: (gasHub: PjmHeatRateGasHubKey) => void;
+  onSparkHeatRateChange?: (sparkHeatRate: number) => void;
   onFreshnessChange?: (freshness: PjmDaLmpsFreshnessSummary) => void;
 }) {
   const initialSettlesComponent: ComponentKey =
@@ -1519,7 +2053,7 @@ export default function PjmDaLmps({
   const [selectedMetricCells, setSelectedMetricCells] = useState<Set<string>>(() => new Set());
   const [lastSelectedMetricCell, setLastSelectedMetricCell] = useState<LastMetricCell | null>(null);
   // Seed the settles range to the latest available date once, the first time PJM data
-  // loads â€” so we don't land on an empty "today" window before settles are posted.
+  // loads — so we don't land on an empty "today" window before settles are posted.
   const settlesRangeSeededRef = useRef(Boolean(initialDate));
   const isoInitializedRef = useRef(false);
   const [singleComponent, setSingleComponent] = useState<ComponentSelection>(
@@ -1535,10 +2069,37 @@ export default function PjmDaLmps({
   const [compareHubA, setCompareHubA] = useState(ISO_DEFAULT_HUBS[activeIso]);
   const [compareHubB, setCompareHubB] = useState(ISO_DEFAULT_HUBS[activeIso]);
   const [compareHubComponent, setCompareHubComponent] = useState<ComponentKey>("total");
+  const metricMode = controlledMetricMode ?? initialMetricMode ?? "price";
+  const [internalGasHub, setInternalGasHub] = useState<PjmHeatRateGasHubKey>(() =>
+    parsePjmHeatRateGasHubKey(
+      typeof initialGasHub === "string" ? initialGasHub : initialGasHub ?? null,
+    ),
+  );
+  const gasHub = controlledGasHub ?? internalGasHub;
+  const [internalSparkHeatRate, setInternalSparkHeatRate] = useState(
+    DEFAULT_POWER_LMP_SPARK_HEAT_RATE,
+  );
+  const sparkHeatRate = normalizePowerLmpSparkHeatRate(
+    controlledSparkHeatRate ?? internalSparkHeatRate,
+  );
+  const defaultGasHubForSelectedHub = defaultPowerLmpGasHubForIso(activeIso, selectedHub);
+  const gasHubManuallySelectedRef = useRef(initialGasHubExplicit);
   const [latestRefreshToken, setLatestRefreshToken] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
+  const [showPowerInput, setShowPowerInput] = useState(false);
+  const [showGasInput, setShowGasInput] = useState(false);
+  const [settlesPowerData, setSettlesPowerData] = useState<PjmLmpSettlesPayload | null>(null);
+  const [settlesPowerLoading, setSettlesPowerLoading] = useState(false);
+  const [settlesPowerError, setSettlesPowerError] = useState<string | null>(null);
+  const [singlePowerData, setSinglePowerData] = useState<PjmLmpsPayload | null>(null);
+  const [singlePowerLoading, setSinglePowerLoading] = useState(false);
+  const [singlePowerError, setSinglePowerError] = useState<string | null>(null);
+  const [comparePowerBaseData, setComparePowerBaseData] = useState<PjmLmpsPayload | null>(null);
+  const [comparePowerData, setComparePowerData] = useState<PjmLmpsPayload | null>(null);
+  const [comparePowerLoading, setComparePowerLoading] = useState(false);
+  const [comparePowerError, setComparePowerError] = useState<string | null>(null);
   const [sourceLinksOpen, setSourceLinksOpen] = useState(false);
   const [hiddenPlotSeries, setHiddenPlotSeries] = useState<Set<string>>(() => new Set());
   const [hiddenCompareSeries, setHiddenCompareSeries] = useState<Set<string>>(() => new Set());
@@ -1551,6 +2112,17 @@ export default function PjmDaLmps({
     () => (supportsComponents ? COMPONENTS : [TOTAL_COMPONENT]),
     [supportsComponents],
   );
+  const valueMetricMode: PowerLmpMetricMode = activeProduct === "dart" ? "price" : metricMode;
+  const seedMetricMode: PowerLmpMetricMode =
+    valueMetricMode === "spark-spread" ? "price" : valueMetricMode;
+  const gasLinkedMetricMode = isGasLinkedMetricMode(valueMetricMode);
+  const gasHubOptions = useMemo(() => powerLmpGasHubOptionsForIso(activeIso), [activeIso]);
+  const activeGasHub =
+    gasLinkedMetricMode && !isPowerLmpGasHubAllowedForIso(activeIso, gasHub)
+      ? defaultPowerLmpGasHubForIso(activeIso, selectedHub)
+      : gasHub;
+  const effectiveSettlesComponent: ComponentKey =
+    valueMetricMode === "spark-spread" ? "total" : settlesComponent;
 
   useEffect(() => {
     if (!supportsComponents) {
@@ -1560,6 +2132,56 @@ export default function PjmDaLmps({
       setCompareHubComponent("total");
     }
   }, [supportsComponents]);
+
+  const setProduct = useCallback((nextProduct: LmpProduct) => {
+    setActiveProduct(nextProduct);
+    onProductChange?.(nextProduct);
+  }, [onProductChange]);
+
+  const applyGasHubChange = useCallback((nextGasHub: PjmHeatRateGasHubKey) => {
+    if (controlledGasHub === undefined) {
+      setInternalGasHub(nextGasHub);
+    }
+    onGasHubChange?.(nextGasHub);
+  }, [controlledGasHub, onGasHubChange]);
+
+  const handleGasHubChange = useCallback((nextGasHub: PjmHeatRateGasHubKey) => {
+    gasHubManuallySelectedRef.current = true;
+    applyGasHubChange(nextGasHub);
+  }, [applyGasHubChange]);
+
+  const handleSparkHeatRateChange = useCallback((nextSparkHeatRate: number) => {
+    const normalized = normalizePowerLmpSparkHeatRate(nextSparkHeatRate);
+    if (controlledSparkHeatRate === undefined) {
+      setInternalSparkHeatRate(normalized);
+    }
+    onSparkHeatRateChange?.(normalized);
+  }, [controlledSparkHeatRate, onSparkHeatRateChange]);
+
+  useEffect(() => {
+    if (!isGasLinkedMetricMode(metricMode)) return;
+    if (isPowerLmpGasHubAllowedForIso(activeIso, gasHub)) return;
+    gasHubManuallySelectedRef.current = false;
+    applyGasHubChange(defaultGasHubForSelectedHub);
+  }, [activeIso, applyGasHubChange, defaultGasHubForSelectedHub, gasHub, metricMode]);
+
+  useEffect(() => {
+    if (!isGasLinkedMetricMode(metricMode)) return;
+    if (gasHubManuallySelectedRef.current) return;
+    if (gasHub === defaultGasHubForSelectedHub) return;
+    applyGasHubChange(defaultGasHubForSelectedHub);
+  }, [applyGasHubChange, defaultGasHubForSelectedHub, gasHub, metricMode]);
+
+  useEffect(() => {
+    if (metricMode === "price") return;
+    if (activeProduct === "dart") setProduct("da");
+    if (metricMode === "spark-spread") {
+      if (activeView !== "daily-settles") setActiveView("daily-settles");
+      if (settlesComponent !== "total") setSettlesComponent("total");
+      return;
+    }
+    if (activeView === "compare-hubs") setActiveView("single-day");
+  }, [activeProduct, activeView, metricMode, setProduct, settlesComponent]);
 
   useEffect(() => {
     if (!isoInitializedRef.current) {
@@ -1595,6 +2217,8 @@ export default function PjmDaLmps({
       product: activeProduct,
       date,
       rtSource,
+      metricMode: seedMetricMode,
+      gasHub: activeGasHub,
       signal: controller.signal,
       cacheMode: effectiveRefreshToken > 0 ? "no-store" : "default",
       forceRefresh: effectiveRefreshToken > 0,
@@ -1639,7 +2263,7 @@ export default function PjmDaLmps({
       active = false;
       controller.abort();
     };
-  }, [activeIso, activeProduct, date, effectiveRefreshToken, rtSource]);
+  }, [activeGasHub, activeIso, activeProduct, date, effectiveRefreshToken, rtSource, seedMetricMode]);
 
   useEffect(() => {
     if (activeView !== "daily-settles") return;
@@ -1654,15 +2278,23 @@ export default function PjmDaLmps({
       startDate: settlesStartDate,
       endDate: settlesEndDate,
       hub: selectedHub,
-      component: settlesComponent,
+      component: effectiveSettlesComponent,
       rtSource,
+      metricMode: valueMetricMode,
+      gasHub: activeGasHub,
+      sparkHeatRate,
       refresh: effectiveRefreshToken > 0,
     });
 
     setSettlesLoading(true);
     setSettlesError(null);
     fetchJsonWithCache<PjmLmpSettlesPayload>({
-      key: `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${settlesComponent}:${rtSource}`,
+      key:
+        valueMetricMode === "heat-rate"
+          ? `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:heat-rate:${activeGasHub}`
+          : valueMetricMode === "spark-spread"
+            ? `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:total:${rtSource}:spark-spread:${activeGasHub}:${sparkHeatRate.toFixed(1)}`
+          : `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}`,
       url,
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
@@ -1691,11 +2323,146 @@ export default function PjmDaLmps({
     activeView,
     activeIso,
     effectiveRefreshToken,
+    activeGasHub,
     rtSource,
     selectedHub,
-    settlesComponent,
+    effectiveSettlesComponent,
+    sparkHeatRate,
     settlesEndDate,
     settlesStartDate,
+    valueMetricMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "daily-settles" ||
+      valueMetricMode !== "heat-rate" ||
+      !showPowerInput ||
+      !settlesStartDate ||
+      !settlesEndDate
+    ) {
+      setSettlesPowerData(null);
+      setSettlesPowerLoading(false);
+      setSettlesPowerError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    const url = buildSettlesApiUrl({
+      iso: activeIso,
+      startDate: settlesStartDate,
+      endDate: settlesEndDate,
+      hub: selectedHub,
+      component: effectiveSettlesComponent,
+      rtSource,
+      metricMode: "price",
+      gasHub: activeGasHub,
+      sparkHeatRate,
+      refresh: effectiveRefreshToken > 0,
+    });
+
+    setSettlesPowerLoading(true);
+    setSettlesPowerError(null);
+    fetchJsonWithCache<PjmLmpSettlesPayload>({
+      key: `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:power-input`,
+      url,
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: effectiveRefreshToken > 0 ? "no-store" : "default",
+      forceRefresh: effectiveRefreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setSettlesPowerData(payload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setSettlesPowerError(err.message ?? "Failed to load power input values");
+        }
+      })
+      .finally(() => {
+        if (active) setSettlesPowerLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    activeIso,
+    activeView,
+    effectiveRefreshToken,
+    activeGasHub,
+    rtSource,
+    selectedHub,
+    effectiveSettlesComponent,
+    sparkHeatRate,
+    settlesEndDate,
+    settlesStartDate,
+    showPowerInput,
+    valueMetricMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "single-day" ||
+      valueMetricMode !== "heat-rate" ||
+      !showPowerInput ||
+      !data ||
+      activeProduct === "dart"
+    ) {
+      setSinglePowerData(null);
+      setSinglePowerLoading(false);
+      setSinglePowerError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+
+    setSinglePowerLoading(true);
+    setSinglePowerError(null);
+    fetchLmpsPayload({
+      iso: activeIso,
+      product: activeProduct,
+      date: data.targetDate,
+      rtSource,
+      metricMode: "price",
+      gasHub: activeGasHub,
+      signal: controller.signal,
+      cacheMode: effectiveRefreshToken > 0 ? "no-store" : "default",
+      forceRefresh: effectiveRefreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setSinglePowerData(payload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setSinglePowerError(err.message ?? "Failed to load power input values");
+        }
+      })
+      .finally(() => {
+        if (active) setSinglePowerLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    activeIso,
+    activeProduct,
+    activeView,
+    data,
+    effectiveRefreshToken,
+    activeGasHub,
+    rtSource,
+    showPowerInput,
+    valueMetricMode,
   ]);
 
   // A new settles payload invalidates any prior cell selection (dates/values changed).
@@ -1705,7 +2472,7 @@ export default function PjmDaLmps({
   }, [settlesData]);
 
   // Default the settles window to end on the latest available market date (start = 30
-  // days prior), seeded once from the PJM single-day payload's latestDate â€” which is
+  // days prior), seeded once from the PJM single-day payload's latestDate — which is
   // already fetched for the hub grid, so the settles request goes out a single time
   // with a valid range (the API skips its own latest-date lookup). Runs before the
   // user touches the inputs; after that their range is preserved.
@@ -1750,6 +2517,18 @@ export default function PjmDaLmps({
           ),
     [activeComponents, componentRows, singleComponent]
   );
+  const singlePowerHub = useMemo(
+    () => singlePowerData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
+    [selectedHub, singlePowerData]
+  );
+  const singlePowerComponentRowsByKey = useMemo(
+    () => buildComponentInputRows(activeIso, singlePowerHub),
+    [activeIso, singlePowerHub]
+  );
+  const singleGasInputSeries = useMemo(
+    () => (selected ? buildInputValueSeries(activeIso, gasHourlyValuesFromHub(selected)) : null),
+    [activeIso, selected]
+  );
   const singlePlotSeries = useMemo(
     () =>
       singleComponent === "all"
@@ -1775,9 +2554,9 @@ export default function PjmDaLmps({
     const productLabel =
       activeProduct === "dart"
         ? `${ISO_LABELS[activeIso]} DART ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
-        : activeProduct === "rt"
-        ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
-        : `${ISO_LABELS[activeIso]} DA`;
+        : valueMetricMode === "price" && activeProduct === "rt"
+          ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
+          : `${ISO_LABELS[activeIso]} ${metricProductLabel(activeProduct, valueMetricMode)}`;
     return {
       status: freshnessStatus,
       statusClass: freshnessClass,
@@ -1786,7 +2565,7 @@ export default function PjmDaLmps({
       latestDateLabel: data.latestDate ?? "--",
       latestUpdateLabel: fmtStamp(data.asOf),
     };
-  }, [activeIso, activeProduct, data, freshnessClass, freshnessStatus, rtSource]);
+  }, [activeIso, activeProduct, data, freshnessClass, freshnessStatus, rtSource, valueMetricMode]);
 
   useEffect(() => {
     if (freshnessSummary) {
@@ -1795,7 +2574,12 @@ export default function PjmDaLmps({
   }, [freshnessSummary, onFreshnessChange]);
 
   useEffect(() => {
-    if (activeView !== "compare-dates" || !compareBaseDate || !compareDate) return;
+    if (
+      activeView !== "compare-dates" ||
+      valueMetricMode === "spark-spread" ||
+      !compareBaseDate ||
+      !compareDate
+    ) return;
 
     const controller = new AbortController();
     let active = true;
@@ -1811,6 +2595,8 @@ export default function PjmDaLmps({
         product: activeProduct,
         date: targetDate,
         rtSource,
+        metricMode: valueMetricMode,
+        gasHub: activeGasHub,
         signal: controller.signal,
       });
 
@@ -1834,7 +2620,81 @@ export default function PjmDaLmps({
       active = false;
       controller.abort();
     };
-  }, [activeIso, activeProduct, activeView, compareBaseDate, compareDate, rtSource]);
+  }, [
+    activeIso,
+    activeProduct,
+    activeView,
+    compareBaseDate,
+    compareDate,
+    activeGasHub,
+    rtSource,
+    valueMetricMode,
+  ]);
+
+  useEffect(() => {
+    if (
+      activeView !== "compare-dates" ||
+      valueMetricMode !== "heat-rate" ||
+      !showPowerInput ||
+      !compareBaseDate ||
+      !compareDate ||
+      activeProduct === "dart"
+    ) {
+      setComparePowerBaseData(null);
+      setComparePowerData(null);
+      setComparePowerLoading(false);
+      setComparePowerError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    const fetchDate = (targetDate: string) =>
+      fetchLmpsPayload({
+        iso: activeIso,
+        product: activeProduct,
+        date: targetDate,
+        rtSource,
+        metricMode: "price",
+        gasHub: activeGasHub,
+        signal: controller.signal,
+      });
+
+    setComparePowerLoading(true);
+    setComparePowerError(null);
+    setComparePowerBaseData(null);
+    setComparePowerData(null);
+    Promise.all([fetchDate(compareBaseDate), fetchDate(compareDate)])
+      .then(([basePayload, comparePayload]) => {
+        if (!active) return;
+        setComparePowerBaseData(basePayload);
+        setComparePowerData(comparePayload);
+      })
+      .catch((err) => {
+        if (!active) return;
+        if (err.name !== "AbortError") {
+          setComparePowerError(err.message ?? "Failed to load power input values");
+        }
+      })
+      .finally(() => {
+        if (active) setComparePowerLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    activeIso,
+    activeProduct,
+    activeView,
+    compareBaseDate,
+    compareDate,
+    activeGasHub,
+    rtSource,
+    showPowerInput,
+    valueMetricMode,
+  ]);
 
   const applyDate = () => {
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
@@ -1857,6 +2717,14 @@ export default function PjmDaLmps({
   const compareHub = useMemo(
     () => compareData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
     [compareData, selectedHub]
+  );
+  const comparePowerBaseHub = useMemo(
+    () => comparePowerBaseData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
+    [comparePowerBaseData, selectedHub]
+  );
+  const comparePowerHub = useMemo(
+    () => comparePowerData?.hubs.find((hub) => hub.hub === selectedHub) ?? null,
+    [comparePowerData, selectedHub]
   );
   const compareChartData = useMemo(
     () =>
@@ -1899,6 +2767,28 @@ export default function PjmDaLmps({
       }),
     ],
     [activeIso, compareChartData, compareBaseDate, compareDate]
+  );
+  const comparePowerRowsByKey = useMemo(
+    () =>
+      buildComparisonInputRows({
+        iso: activeIso,
+        baseLabel: compareBaseDate || "Reference Date",
+        compareLabel: compareDate || "Compare Date",
+        baseHourly: componentHourlyValues(comparePowerBaseHub, compareConfig),
+        compareHourly: componentHourlyValues(comparePowerHub, compareConfig),
+      }),
+    [activeIso, compareBaseDate, compareConfig, compareDate, comparePowerBaseHub, comparePowerHub]
+  );
+  const compareGasRowsByKey = useMemo(
+    () =>
+      buildComparisonInputRows({
+        iso: activeIso,
+        baseLabel: compareBaseDate || "Reference Date",
+        compareLabel: compareDate || "Compare Date",
+        baseHourly: gasHourlyValuesFromHub(compareBaseHub),
+        compareHourly: gasHourlyValuesFromHub(compareHub),
+      }),
+    [activeIso, compareBaseDate, compareDate, compareBaseHub, compareHub]
   );
   const compareSeries: PlotSeries[] = [
     {
@@ -1984,9 +2874,17 @@ export default function PjmDaLmps({
   ];
   const settleRows = useMemo(() => settlesData?.rows ?? [], [settlesData]);
   const settleComponentConfig =
-    activeComponents.find((component) => component.key === settlesComponent) ?? TOTAL_COMPONENT;
+    activeComponents.find((component) => component.key === effectiveSettlesComponent) ?? TOTAL_COMPONENT;
   const settleMetricLabel =
-    activeProduct === "dart" ? "DART (DA - RT)" : activeProduct === "rt" ? "RT" : "DA";
+    activeProduct === "dart"
+      ? "DART (DA - RT)"
+      : metricProductLabel(activeProduct, valueMetricMode);
+  const settleMetricContext =
+    valueMetricMode === "heat-rate"
+      ? `Heat Rate | ${metricUnitLabel(valueMetricMode)} | Gas Hub ${powerLmpGasHubConfig(activeGasHub).label}`
+      : valueMetricMode === "spark-spread"
+        ? `Spark Spread | ${metricUnitLabel(valueMetricMode)} | Spark HR ${sparkHeatRate.toFixed(1)}`
+        : `${settleMetricLabel} | ${metricUnitLabel(valueMetricMode)}`;
   // One enriched record per day: the active product's hourly values for the selected
   // component, plus that day's on-peak / off-peak / flat averages.
   const settleDays = useMemo(
@@ -2009,7 +2907,88 @@ export default function PjmDaLmps({
       }),
     [activeIso, activeProduct, settleRows]
   );
-  // Shared color scale across the whole dayÃ—hour grid so magnitudes are comparable
+  const settlePowerDaysByDate = useMemo(() => {
+    const rows =
+      settlesPowerData?.rows.map((row) => {
+        const hourly = settleHourlyForProduct(row, activeProduct);
+        return [row.date, buildInputValueSeries(activeIso, hourly)] as const;
+      }) ?? [];
+    return new Map(rows);
+  }, [activeIso, activeProduct, settlesPowerData]);
+  const settleGasDaysByDate = useMemo(() => {
+    const rows = settleRows.map((row) => [
+      row.date,
+      buildInputValueSeries(activeIso, gasHourlyValuesFromMetadata(row.gasHourly)),
+    ] as const);
+    return new Map(rows);
+  }, [activeIso, settleRows]);
+  const activePowerInputLoading =
+    valueMetricMode === "heat-rate" &&
+    showPowerInput &&
+    (activeView === "daily-settles"
+      ? settlesPowerLoading
+      : activeView === "single-day"
+        ? singlePowerLoading
+        : activeView === "compare-dates"
+          ? comparePowerLoading
+          : false);
+  const activePowerInputError =
+    valueMetricMode === "heat-rate" && showPowerInput
+      ? activeView === "daily-settles"
+        ? settlesPowerError
+        : activeView === "single-day"
+          ? singlePowerError
+          : activeView === "compare-dates"
+            ? comparePowerError
+            : null
+      : null;
+  const heatRateInputToggles =
+    valueMetricMode === "heat-rate" ? (
+      <HeatRateInputToggles
+        showPowerInput={showPowerInput}
+        showGasInput={showGasInput}
+        powerLoading={activePowerInputLoading}
+        powerError={activePowerInputError}
+        onTogglePower={() => setShowPowerInput((value) => !value)}
+        onToggleGas={() => setShowGasInput((value) => !value)}
+      />
+    ) : null;
+  const tableDisplayAction = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      {heatRateInputToggles}
+      {tableHeatmapAction}
+    </div>
+  );
+  const showHrPowerInput = valueMetricMode === "heat-rate" && showPowerInput;
+  const showHrGasInput = valueMetricMode === "heat-rate" && showGasInput;
+  const buildHrInputLines = (powerValue: number | null, gasValue: number | null) =>
+    metricInputLines({
+      showPowerInput: showHrPowerInput,
+      showGasInput: showHrGasInput,
+      powerValue,
+      gasValue,
+    });
+  const settleTableInputLines = (dateKey: string, column: SettleColumnKey) =>
+    buildHrInputLines(
+      inputSeriesColumnValue(settlePowerDaysByDate.get(dateKey), column),
+      inputSeriesColumnValue(settleGasDaysByDate.get(dateKey), column)
+    );
+  const singleTableInputLines = (rowKey: string, column: SettleColumnKey) => {
+    const powerRow = singlePowerComponentRowsByKey.get(rowKey);
+    return buildHrInputLines(
+      powerRow ? componentRowColumnValue(powerRow, column) : null,
+      inputSeriesColumnValue(singleGasInputSeries, column)
+    );
+  };
+  const compareTableInputLines = (rowKey: string, column: SettleColumnKey) => {
+    const powerRow = comparePowerRowsByKey.get(rowKey);
+    const gasRow = compareGasRowsByKey.get(rowKey);
+    return buildHrInputLines(
+      powerRow ? componentRowColumnValue(powerRow, column) : null,
+      gasRow ? componentRowColumnValue(gasRow, column) : null
+    );
+  };
+  // Shared color scale across the whole day x hour grid so magnitudes are comparable
   // between days (a per-row scale would flatten every day to the same gradient).
   const settleHeatRange = useMemo(() => {
     const nums = settleDays
@@ -2028,20 +3007,26 @@ export default function PjmDaLmps({
         SETTLE_DAY_TYPE_LABELS.holiday,
       ],
       date: uniqueColumnOptions(settleDays.map((day) => day.date)),
-      onpeak: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.onPeak))),
-      offpeak: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.offPeak))),
-      flat: uniqueColumnOptions(settleDays.map((day) => fmtPrice(day.flat))),
+      onpeak: uniqueColumnOptions(
+        settleDays.map((day) => fmtMetricValue(day.onPeak, valueMetricMode)),
+      ),
+      offpeak: uniqueColumnOptions(
+        settleDays.map((day) => fmtMetricValue(day.offPeak, valueMetricMode)),
+      ),
+      flat: uniqueColumnOptions(
+        settleDays.map((day) => fmtMetricValue(day.flat, valueMetricMode)),
+      ),
       ...Object.fromEntries(
         HOURS.map((hour) => [
           `he${hour}`,
           uniqueColumnOptions(
-            settleDays.map((day) => fmtPrice(day.hourly[hour - 1] ?? null)),
+            settleDays.map((day) => fmtMetricValue(day.hourly[hour - 1] ?? null, valueMetricMode)),
           ),
         ]),
       ),
     } as Record<SettleFilterKey, string[]>;
     return options;
-  }, [settleDays]);
+  }, [settleDays, valueMetricMode]);
   const filteredSettleDays = useMemo(() => {
     const activeFilters = Object.entries(settleColumnFilters).filter(
       (entry): entry is [SettleFilterKey, string[]] =>
@@ -2055,10 +3040,10 @@ export default function PjmDaLmps({
           const labels = settleDayTypeLabels(day);
           return selected.some((value) => labels.includes(value));
         }
-        return matchesColumnFilter(settleFilterValue(day, key), selected);
+        return matchesColumnFilter(settleFilterValue(day, key, valueMetricMode), selected);
       })
     );
-  }, [settleColumnFilters, settleDays]);
+  }, [settleColumnFilters, settleDays, valueMetricMode]);
   const displayedSettleDays = useMemo(() => {
     const direction = settlesSort.direction === "asc" ? 1 : -1;
     const rows = [...filteredSettleDays];
@@ -2224,6 +3209,8 @@ export default function PjmDaLmps({
     compareHubB,
     compareHubComponent,
     data?.targetDate,
+    gasHub,
+    metricMode,
     rtSource,
     selectedHub,
     singleComponent,
@@ -2275,7 +3262,7 @@ export default function PjmDaLmps({
             yAxisId="lmp"
             stroke="#9ca3af"
             tick={{ fill: "#9ca3af", fontSize: 11 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => metricAxisTick(value, valueMetricMode)}
           />
           <Tooltip
             contentStyle={{
@@ -2285,7 +3272,7 @@ export default function PjmDaLmps({
               color: "#e5e7eb",
             }}
             formatter={(value) =>
-              typeof value === "number" ? [`$${value.toFixed(2)}`, ""] : [value, ""]
+              typeof value === "number" ? [fmtMetricValue(value, valueMetricMode), ""] : [value, ""]
             }
             labelFormatter={(value) => `HE ${value}`}
           />
@@ -2365,7 +3352,7 @@ export default function PjmDaLmps({
             yAxisId="lmp"
             stroke="#9ca3af"
             tick={{ fill: "#9ca3af", fontSize: 11 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => metricAxisTick(value, valueMetricMode)}
           />
           <Tooltip
             contentStyle={{
@@ -2375,7 +3362,7 @@ export default function PjmDaLmps({
               color: "#e5e7eb",
             }}
             formatter={(value) =>
-              typeof value === "number" ? [`$${value.toFixed(2)}`, ""] : [value, ""]
+              typeof value === "number" ? [fmtMetricValue(value, valueMetricMode), ""] : [value, ""]
             }
             labelFormatter={(value) => `HE ${value}`}
           />
@@ -2449,7 +3436,7 @@ export default function PjmDaLmps({
             yAxisId="lmp"
             stroke="#9ca3af"
             tick={{ fill: "#9ca3af", fontSize: 11 }}
-            tickFormatter={(value) => `$${value}`}
+            tickFormatter={(value) => metricAxisTick(value, "price")}
           />
           <Tooltip
             contentStyle={{
@@ -2506,9 +3493,9 @@ export default function PjmDaLmps({
   const activeProductLabel =
     activeProduct === "dart"
       ? `${ISO_LABELS[activeIso]} DART (${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]} RT)`
-      : activeProduct === "rt"
-      ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
-      : `${ISO_LABELS[activeIso]} ${PRODUCT_LABELS[activeProduct]}`;
+      : valueMetricMode === "price" && activeProduct === "rt"
+        ? `${ISO_LABELS[activeIso]} RT ${RT_SOURCE_LABELS_BY_ISO[activeIso][rtSource]}`
+        : `${ISO_LABELS[activeIso]} ${metricProductLabel(activeProduct, valueMetricMode)}`;
   const metricSelectionLabel =
     activeView === "single-day"
       ? `${selected?.hub ?? selectedHub} ${activeProductLabel} selection`
@@ -2538,14 +3525,28 @@ export default function PjmDaLmps({
     ["da", "rt", "dart"] as LmpProduct[]
   ).map((product) => ({
     value: product,
-    label: PRODUCT_LABELS[product],
+    label:
+      metricMode !== "price" && product !== "dart"
+        ? metricProductLabel(product, metricMode)
+        : PRODUCT_LABELS[product],
+    disabled: metricMode !== "price" && product === "dart",
   }));
-  const viewTabs: Array<DashboardTabOption<LmpView>> = LMP_VIEW_TABS;
+  const viewTabs: Array<DashboardTabOption<LmpView>> = LMP_VIEW_TABS.map((tab) => ({
+    ...tab,
+    disabled:
+      metricMode === "spark-spread"
+        ? tab.value !== "daily-settles"
+        : metricMode === "heat-rate" && tab.value === "compare-hubs",
+  }));
   const currentSourceFeeds = selectedLmpSourceFeeds({
     iso: activeIso,
     product: activeProduct,
     rtSource,
   });
+  const showGasHubSelector = isGasLinkedMetricMode(valueMetricMode);
+  const powerHubSelectionTitle = showGasHubSelector
+    ? "Power Hub Selection"
+    : "Hub Selection";
 
   return (
     <div className="space-y-4">
@@ -2560,22 +3561,26 @@ export default function PjmDaLmps({
         </div>
       )}
       <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
-        <div className="border-b border-gray-800 pb-2">
+        {showIsoTabs && (
+          <div className="border-b border-gray-800 pb-2">
+            <DashboardTabs
+              tabs={ISO_TABS}
+              activeValue={activeIso}
+              onChange={handleIsoChange}
+              ariaLabel="Power ISO"
+            />
+          </div>
+        )}
+        {showProductTabs && (
           <DashboardTabs
-            tabs={ISO_TABS}
-            activeValue={activeIso}
-            onChange={handleIsoChange}
-            ariaLabel="Power ISO"
+            tabs={productTabs}
+            activeValue={activeProduct}
+            onChange={setProduct}
+            ariaLabel="LMP products"
+            variant="secondary"
+            className="border-b border-gray-800 py-2"
           />
-        </div>
-        <DashboardTabs
-          tabs={productTabs}
-          activeValue={activeProduct}
-          onChange={setActiveProduct}
-          ariaLabel="LMP products"
-          variant="secondary"
-          className="border-b border-gray-800 py-2"
-        />
+        )}
         <DashboardTabs
           tabs={viewTabs}
           activeValue={activeView}
@@ -2618,31 +3623,49 @@ export default function PjmDaLmps({
             </div>
           </SectionCard>
 
-          <SectionCard title="Hub Selection" subtitle={`${selectedHub} selected`}>
-            <div className="flex flex-wrap gap-2">
-              {data.hubs.map((hub) => (
-                <button
-                  key={hub.hub}
-                  onClick={() => setSelectedHub(hub.hub)}
-                  className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    selectedHub === hub.hub
-                      ? "border-sky-500/50 bg-sky-500/10 text-white"
-                      : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
-                  }`}
-                >
-                  {hub.hub}
-                </button>
-              ))}
+          <SectionCard title={powerHubSelectionTitle} subtitle={`${selectedHub} selected`}>
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {data.hubs.map((hub) => (
+                  <button
+                    key={hub.hub}
+                    onClick={() => setSelectedHub(hub.hub)}
+                    className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                      selectedHub === hub.hub
+                        ? "border-sky-500/50 bg-sky-500/10 text-white"
+                        : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                    }`}
+                  >
+                    {hub.hub}
+                  </button>
+                ))}
+              </div>
+              {showGasHubSelector && (
+                <GasHubSelector
+                  value={activeGasHub}
+                  metadata={settlesData?.heatRateMetadata ?? data.heatRateMetadata}
+                  options={gasHubOptions}
+                  onChange={handleGasHubChange}
+                />
+              )}
+              {valueMetricMode === "spark-spread" && (
+                <SparkHeatRateInput
+                  value={sparkHeatRate}
+                  onChange={handleSparkHeatRateChange}
+                />
+              )}
             </div>
           </SectionCard>
 
-          <LmpComponentCard
-            value={settlesComponent}
-            components={activeComponents}
-            onChange={(value) => {
-              if (value !== "all") setSettlesComponent(value);
-            }}
-          />
+          {valueMetricMode !== "spark-spread" && (
+            <LmpComponentCard
+              value={settlesComponent}
+              components={activeComponents}
+              onChange={(value) => {
+                if (value !== "all") setSettlesComponent(value);
+              }}
+            />
+          )}
 
           {settlesError && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
@@ -2652,7 +3675,7 @@ export default function PjmDaLmps({
 
           <SectionCard
             title="Daily Hourly Settles"
-            subtitle={`${displayedSettleDays.length.toLocaleString()} of ${settleDays.length.toLocaleString()} dates | ${settleComponentConfig.label} | ${settleMetricLabel} | click cells to aggregate`}
+            subtitle={`${displayedSettleDays.length.toLocaleString()} of ${settleDays.length.toLocaleString()} dates | ${settleComponentConfig.label} | ${settleMetricContext} | click cells to aggregate`}
             action={
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
@@ -2667,6 +3690,7 @@ export default function PjmDaLmps({
                 >
                   Clear Filters
                 </button>
+                {heatRateInputToggles}
                 {tableHeatmapAction}
               </div>
             }
@@ -2791,7 +3815,7 @@ export default function PjmDaLmps({
                             </span>
                           ) : (
                             <span className="text-gray-700" aria-hidden="true">
-                              Â·
+                              ·
                             </span>
                           )}
                         </td>
@@ -2802,6 +3826,8 @@ export default function PjmDaLmps({
                           value={day.onPeak}
                           date={day.date}
                           column="onpeak"
+                          metricMode={valueMetricMode}
+                          inputLines={settleTableInputLines(day.date, "onpeak")}
                           selected={selectedSettleCells.has(settleCellKey(day.date, "onpeak"))}
                           heatmapEnabled={tableHeatmapEnabled}
                           heatRange={settleHeatRange}
@@ -2812,6 +3838,8 @@ export default function PjmDaLmps({
                           value={day.offPeak}
                           date={day.date}
                           column="offpeak"
+                          metricMode={valueMetricMode}
+                          inputLines={settleTableInputLines(day.date, "offpeak")}
                           selected={selectedSettleCells.has(settleCellKey(day.date, "offpeak"))}
                           heatmapEnabled={tableHeatmapEnabled}
                           heatRange={settleHeatRange}
@@ -2822,6 +3850,8 @@ export default function PjmDaLmps({
                           value={day.flat}
                           date={day.date}
                           column="flat"
+                          metricMode={valueMetricMode}
+                          inputLines={settleTableInputLines(day.date, "flat")}
                           selected={selectedSettleCells.has(settleCellKey(day.date, "flat"))}
                           heatmapEnabled={tableHeatmapEnabled}
                           heatRange={settleHeatRange}
@@ -2836,6 +3866,8 @@ export default function PjmDaLmps({
                               value={day.hourly[hour - 1] ?? null}
                               date={day.date}
                               column={column}
+                              metricMode={valueMetricMode}
+                              inputLines={settleTableInputLines(day.date, column)}
                               selected={selectedSettleCells.has(settleCellKey(day.date, column))}
                               heatmapEnabled={tableHeatmapEnabled}
                               heatRange={settleHeatRange}
@@ -2875,25 +3907,25 @@ export default function PjmDaLmps({
                 <span>
                   <span className="text-gray-500">Avg:</span>{" "}
                   <span className="font-semibold tabular-nums text-gray-100">
-                    {fmtPrice(settleSelectionStats.avg)}
+                    {fmtMetricValue(settleSelectionStats.avg, valueMetricMode)}
                   </span>
                 </span>
                 <span>
                   <span className="text-gray-500">Sum:</span>{" "}
                   <span className="font-semibold tabular-nums text-gray-100">
-                    {fmtPrice(settleSelectionStats.sum)}
+                    {fmtMetricValue(settleSelectionStats.sum, valueMetricMode)}
                   </span>
                 </span>
                 <span>
                   <span className="text-gray-500">Min:</span>{" "}
                   <span className="font-semibold tabular-nums text-gray-100">
-                    {fmtPrice(settleSelectionStats.min)}
+                    {fmtMetricValue(settleSelectionStats.min, valueMetricMode)}
                   </span>
                 </span>
                 <span>
                   <span className="text-gray-500">Max:</span>{" "}
                   <span className="font-semibold tabular-nums text-gray-100">
-                    {fmtPrice(settleSelectionStats.max)}
+                    {fmtMetricValue(settleSelectionStats.max, valueMetricMode)}
                   </span>
                 </span>
                 <span>
@@ -2948,40 +3980,55 @@ export default function PjmDaLmps({
         </div>
       </SectionCard>
 
-      <SectionCard title="Hub Selection" subtitle={selected ? `${selected.hub} selected` : undefined}>
-        <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
-          <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-            {data.hubs.map((hub) => (
-              <button
-                key={hub.hub}
-                onClick={() => setSelectedHub(hub.hub)}
-                className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
-                  selected?.hub === hub.hub
-                    ? "border-sky-500/50 bg-sky-500/10 text-white"
-                    : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
-                }`}
-              >
-                <span className="font-medium">{hub.hub}</span>
-                <span className="text-right text-gray-500">
-                  <span className="tabular-nums">OnPk: {fmtPrice(hub.onPeakAvg)}</span>
-                  <span className="ml-2 tabular-nums">
-                    {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+      <SectionCard
+        title={powerHubSelectionTitle}
+        subtitle={selected ? `${selected.hub} selected` : undefined}
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+              {data.hubs.map((hub) => (
+                <button
+                  key={hub.hub}
+                  onClick={() => setSelectedHub(hub.hub)}
+                  className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                    selected?.hub === hub.hub
+                      ? "border-sky-500/50 bg-sky-500/10 text-white"
+                      : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                  }`}
+                >
+                  <span className="font-medium">{hub.hub}</span>
+                  <span className="text-right text-gray-500">
+                    <span className="tabular-nums">
+                      OnPk: {fmtMetricValue(hub.onPeakAvg, valueMetricMode)}
+                    </span>
+                    <span className="ml-2 tabular-nums">
+                      {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+                    </span>
                   </span>
-                </span>
-              </button>
-            ))}
-          </div>
-          {selected && (
-            <div className="grid grid-cols-2 gap-2">
-              <StatTile label="OnPeak" value={fmtPrice(selected.onPeakAvg)} />
-              <StatTile label="OffPeak" value={fmtPrice(selected.offPeakAvg)} />
-              <StatTile label="Flat" value={fmtPrice(selected.flatAvg)} />
-              <StatTile
-                label="Peak Hour"
-                value={selected.peakHour ? `HE ${selected.peakHour}` : "-"}
-                sub={fmtPrice(selected.peakPrice)}
-              />
+                </button>
+              ))}
             </div>
+            {selected && (
+              <div className="grid grid-cols-2 gap-2">
+                <StatTile label="OnPeak" value={fmtMetricValue(selected.onPeakAvg, valueMetricMode)} />
+                <StatTile label="OffPeak" value={fmtMetricValue(selected.offPeakAvg, valueMetricMode)} />
+                <StatTile label="Flat" value={fmtMetricValue(selected.flatAvg, valueMetricMode)} />
+                <StatTile
+                  label="Peak Hour"
+                  value={selected.peakHour ? `HE ${selected.peakHour}` : "-"}
+                  sub={fmtMetricValue(selected.peakPrice, valueMetricMode)}
+                />
+              </div>
+            )}
+          </div>
+          {showGasHubSelector && (
+            <GasHubSelector
+              value={activeGasHub}
+              metadata={data.heatRateMetadata}
+              options={gasHubOptions}
+              onChange={handleGasHubChange}
+            />
           )}
         </div>
       </SectionCard>
@@ -2995,7 +4042,7 @@ export default function PjmDaLmps({
 
       <PlotCard
         title={`${selected?.hub ?? "Hub"} Plot`}
-        subtitle={`Hourly ${activeProductLabel} components`}
+        subtitle={`Hourly ${activeProductLabel} components | ${metricUnitLabel(valueMetricMode)}`}
         series={singlePlotSeries}
         hiddenSeries={hiddenPlotSeries}
         onToggleSeries={togglePlotSeries}
@@ -3008,8 +4055,8 @@ export default function PjmDaLmps({
 
       <SectionCard
         title="Hourly Table"
-        subtitle="Hourly component values"
-        action={tableHeatmapAction}
+        subtitle={`Hourly component values | ${metricUnitLabel(valueMetricMode)}`}
+        action={tableDisplayAction}
       >
         <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
           <table className="w-full min-w-[1080px] border-collapse text-xs text-gray-200">
@@ -3056,6 +4103,8 @@ export default function PjmDaLmps({
                   </td>
                   <SelectableMetricCell
                     value={row.onPeakAvg}
+                    metricMode={valueMetricMode}
+                    inputLines={singleTableInputLines(row.key, "onpeak")}
                     selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "onpeak"))}
                     heatmapEnabled={tableHeatmapEnabled}
                     heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
@@ -3064,6 +4113,8 @@ export default function PjmDaLmps({
                   />
                   <SelectableMetricCell
                     value={row.offPeakAvg}
+                    metricMode={valueMetricMode}
+                    inputLines={singleTableInputLines(row.key, "offpeak")}
                     selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "offpeak"))}
                     heatmapEnabled={tableHeatmapEnabled}
                     heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
@@ -3072,6 +4123,8 @@ export default function PjmDaLmps({
                   />
                   <SelectableMetricCell
                     value={row.flatAvg}
+                    metricMode={valueMetricMode}
+                    inputLines={singleTableInputLines(row.key, "flat")}
                     selected={selectedMetricCells.has(metricCellKey("single-day", row.key, "flat"))}
                     heatmapEnabled={tableHeatmapEnabled}
                     heatStyleValue={tableHeatStyle(row, row.flatAvg)}
@@ -3085,6 +4138,8 @@ export default function PjmDaLmps({
                       <SelectableMetricCell
                         key={hour}
                         value={value}
+                        metricMode={valueMetricMode}
+                        inputLines={singleTableInputLines(row.key, column)}
                         selected={selectedMetricCells.has(metricCellKey("single-day", row.key, column))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, value)}
@@ -3137,27 +4192,42 @@ export default function PjmDaLmps({
             </div>
           </SectionCard>
 
-          <SectionCard title="Hub Selection" subtitle={selected ? `${selected.hub} selected` : undefined}>
-            <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
-              {data.hubs.map((hub) => (
-                <button
-                  key={hub.hub}
-                  onClick={() => setSelectedHub(hub.hub)}
-                  className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
-                    selected?.hub === hub.hub
-                      ? "border-sky-500/50 bg-sky-500/10 text-white"
-                      : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
-                  }`}
-                >
-                  <span className="font-medium">{hub.hub}</span>
-                  <span className="text-right text-gray-500">
-                    <span className="tabular-nums">OnPk: {fmtPrice(hub.onPeakAvg)}</span>
-                    <span className="ml-2 tabular-nums">
-                      {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+          <SectionCard
+            title={powerHubSelectionTitle}
+            subtitle={selected ? `${selected.hub} selected` : undefined}
+          >
+            <div className="space-y-3">
+              <div className="grid max-h-[250px] grid-cols-1 gap-1 overflow-y-auto pr-1 sm:grid-cols-2 lg:grid-cols-3">
+                {data.hubs.map((hub) => (
+                  <button
+                    key={hub.hub}
+                    onClick={() => setSelectedHub(hub.hub)}
+                    className={`flex min-h-12 items-center justify-between rounded-md border px-3 py-2 text-left text-xs transition-colors ${
+                      selected?.hub === hub.hub
+                        ? "border-sky-500/50 bg-sky-500/10 text-white"
+                        : "border-gray-800 bg-gray-950/30 text-gray-400 hover:border-gray-700 hover:bg-gray-900 hover:text-gray-200"
+                    }`}
+                  >
+                    <span className="font-medium">{hub.hub}</span>
+                    <span className="text-right text-gray-500">
+                      <span className="tabular-nums">
+                        OnPk: {fmtMetricValue(hub.onPeakAvg, valueMetricMode)}
+                      </span>
+                      <span className="ml-2 tabular-nums">
+                        {hub.peakHour ? `| Peak HE ${hub.peakHour}` : "| Peak HE -"}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
+              {showGasHubSelector && (
+                <GasHubSelector
+                  value={activeGasHub}
+                  metadata={data.heatRateMetadata}
+                  options={gasHubOptions}
+                  onChange={handleGasHubChange}
+                />
+              )}
             </div>
           </SectionCard>
 
@@ -3182,7 +4252,7 @@ export default function PjmDaLmps({
           ) : (
             <PlotCard
               title={`${selectedHub} Comparison`}
-              subtitle={`${compareConfig.label}: ${compareBaseDate || "-"} vs ${compareDate || "-"}`}
+              subtitle={`${compareConfig.label}: ${compareBaseDate || "-"} vs ${compareDate || "-"} | ${metricUnitLabel(valueMetricMode)}`}
               series={compareSeries}
               hiddenSeries={hiddenCompareSeries}
               onToggleSeries={toggleCompareSeries}
@@ -3196,8 +4266,8 @@ export default function PjmDaLmps({
 
           <SectionCard
             title="Comparison Table"
-            subtitle={`${compareConfig.label} by hour`}
-            action={tableHeatmapAction}
+            subtitle={`${compareConfig.label} by hour | ${metricUnitLabel(valueMetricMode)}`}
+            action={tableDisplayAction}
           >
             <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
               <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
@@ -3258,6 +4328,8 @@ export default function PjmDaLmps({
                       </td>
                       <SelectableMetricCell
                         value={row.onPeakAvg}
+                        metricMode={valueMetricMode}
+                        inputLines={compareTableInputLines(row.key, "onpeak")}
                         selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "onpeak"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
@@ -3268,6 +4340,8 @@ export default function PjmDaLmps({
                       />
                       <SelectableMetricCell
                         value={row.offPeakAvg}
+                        metricMode={valueMetricMode}
+                        inputLines={compareTableInputLines(row.key, "offpeak")}
                         selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "offpeak"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
@@ -3278,6 +4352,8 @@ export default function PjmDaLmps({
                       />
                       <SelectableMetricCell
                         value={row.flatAvg}
+                        metricMode={valueMetricMode}
+                        inputLines={compareTableInputLines(row.key, "flat")}
                         selected={selectedMetricCells.has(metricCellKey("compare-dates", row.key, "flat"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.flatAvg)}
@@ -3293,6 +4369,8 @@ export default function PjmDaLmps({
                           <SelectableMetricCell
                             key={hour}
                             value={value}
+                            metricMode={valueMetricMode}
+                            inputLines={compareTableInputLines(row.key, column)}
                             selected={selectedMetricCells.has(
                               metricCellKey("compare-dates", row.key, column)
                             )}
@@ -3470,6 +4548,7 @@ export default function PjmDaLmps({
                       </td>
                       <SelectableMetricCell
                         value={row.onPeakAvg}
+                        metricMode="price"
                         selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "onpeak"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.onPeakAvg)}
@@ -3480,6 +4559,7 @@ export default function PjmDaLmps({
                       />
                       <SelectableMetricCell
                         value={row.offPeakAvg}
+                        metricMode="price"
                         selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "offpeak"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.offPeakAvg)}
@@ -3490,6 +4570,7 @@ export default function PjmDaLmps({
                       />
                       <SelectableMetricCell
                         value={row.flatAvg}
+                        metricMode="price"
                         selected={selectedMetricCells.has(metricCellKey("compare-hubs", row.key, "flat"))}
                         heatmapEnabled={tableHeatmapEnabled}
                         heatStyleValue={tableHeatStyle(row, row.flatAvg)}
@@ -3505,6 +4586,7 @@ export default function PjmDaLmps({
                           <SelectableMetricCell
                             key={hour}
                             value={value}
+                            metricMode="price"
                             selected={selectedMetricCells.has(
                               metricCellKey("compare-hubs", row.key, column)
                             )}
@@ -3535,6 +4617,7 @@ export default function PjmDaLmps({
       {metricSelectionStats && (
         <SelectionStatsBar
           label={metricSelectionLabel}
+          metricMode={activeView === "compare-hubs" ? "price" : valueMetricMode}
           stats={metricSelectionStats}
           onClear={clearMetricSelection}
         />
