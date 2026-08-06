@@ -17,6 +17,8 @@ import {
 import type {
   BackOfficeNavDailyPositionSheetAccountColumn,
   BackOfficeNavDailyPositionSheetAvailableDate,
+  BackOfficeNavDailyPositionSheetGasOptionScope,
+  BackOfficeNavDailyPositionSheetGasOptionScopeSummary,
   BackOfficeNavDailyPositionSheetGasCell,
   BackOfficeNavDailyPositionSheetGasRow,
   BackOfficeNavDailyPositionSheetMetric,
@@ -42,6 +44,17 @@ const DISPLAY_TIME_ZONE = "America/New_York";
 const SOURCE_CHECKS =
   "Sources: NAV Positions Frontend Contract; gas quantity and gas lots are derived upstream in dbt.";
 const GAS_PRODUCT_CODES = ["PHH", "NG", "HP", "HH", "H"] as const;
+const GAS_OPTION_SCOPE_DEFINITIONS: Array<{
+  scope: BackOfficeNavDailyPositionSheetGasOptionScope;
+  label: string;
+}> = [
+  { scope: "outright", label: "LN/PHE" },
+  { scope: "other", label: "Other Gas" },
+];
+const GAS_OPTION_SPREAD_MONTH_OFFSETS: Record<string, number> = {
+  G3: 3,
+  G4: 1,
+};
 const OPTION_DAILY_CHANGE_LOOKBACK_DAYS = 45;
 const ALL_TOTAL_KEY = "ALL";
 type PositionView = "gas" | "power";
@@ -67,6 +80,7 @@ interface MatrixBundleDbRow {
   power_option_positions: unknown;
   option_months: unknown;
   option_positions: unknown;
+  gas_option_scopes: unknown;
 }
 
 interface SummaryRow {
@@ -106,6 +120,7 @@ interface PowerFutureRow {
 interface OptionPositionRow {
   exchange: string | null;
   contract_yyyymm: string | null;
+  product_codes: unknown;
   strike: number | string | null;
   put_call: string | null;
   quantity: number | string | null;
@@ -124,6 +139,7 @@ interface OptionMonthAggregateRow {
   contract_yyyymm: string | null;
   quantity: number | string | null;
   row_count: number | string | null;
+  product_codes: unknown;
 }
 
 interface ParsedTextListFilter {
@@ -137,6 +153,7 @@ interface MetadataDbRow {
 
 type OptionRowAccumulator = BackOfficeNavDailyPositionSheetOptionRow & {
   accountQuantities: Record<string, number>;
+  productCodeSet: Set<string>;
   topAccountMagnitude: number;
 };
 
@@ -201,6 +218,10 @@ function parsePositionViewParam(value: string | null): PositionView {
   return value === "power" ? "power" : "gas";
 }
 
+function parseGasOptionScopeParam(value: string | null): BackOfficeNavDailyPositionSheetGasOptionScope {
+  return value === "other" ? "other" : "outright";
+}
+
 function parseBooleanParam(value: string | null, fallback = false): boolean {
   if (value == null) return fallback;
   const normalized = value.trim().toLowerCase();
@@ -249,6 +270,23 @@ function stringArray(value: unknown): string[] {
     : [];
 }
 
+function gasOptionScopes(value: unknown): BackOfficeNavDailyPositionSheetGasOptionScopeSummary[] {
+  const rowsByScope = new Map(
+    rowArray<Record<string, unknown>>(value).map((row) => [row.scope, row]),
+  );
+
+  return GAS_OPTION_SCOPE_DEFINITIONS.map(({ scope, label }) => {
+    const row = rowsByScope.get(scope);
+    return {
+      scope,
+      label: typeof row?.label === "string" ? row.label : label,
+      activeRows: toNumber(row?.activeRows),
+      monthCount: toNumber(row?.monthCount),
+      netQuantity: round(row?.netQuantity, 6),
+    };
+  });
+}
+
 function localIsoDate(now: Date): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: DISPLAY_TIME_ZONE,
@@ -292,6 +330,40 @@ function formatMonthLong(yyyymm: string): string {
     month: "short",
     year: "numeric",
   });
+}
+
+function addMonthsToYyyymm(yyyymm: string, offset: number): string | null {
+  const year = Number.parseInt(yyyymm.slice(0, 4), 10);
+  const month = Number.parseInt(yyyymm.slice(4, 6), 10);
+  if (!year || !month) return null;
+  const date = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return `${date.getUTCFullYear()}${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function optionContractLabelForProduct(yyyymm: string, productCode: string): string | undefined {
+  const normalizedProductCode = productCode.trim().toUpperCase();
+  if (!normalizedProductCode || normalizedProductCode === "LN" || normalizedProductCode === "PHE") {
+    return undefined;
+  }
+
+  const sourceMonth = formatMonth(yyyymm);
+  const spreadOffset = GAS_OPTION_SPREAD_MONTH_OFFSETS[normalizedProductCode];
+  if (spreadOffset) {
+    const farMonth = addMonthsToYyyymm(yyyymm, spreadOffset);
+    return farMonth ? `${sourceMonth} / ${formatMonth(farMonth)}` : sourceMonth;
+  }
+  return `${sourceMonth} ${normalizedProductCode}`;
+}
+
+function optionContractLabel(yyyymm: string, productCodes: string[]): string | undefined {
+  const otherProductCodes = [...new Set(productCodes.map((code) => code.trim().toUpperCase()))]
+    .filter((code) => code && code !== "LN" && code !== "PHE")
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  if (otherProductCodes.length === 0) return undefined;
+  if (otherProductCodes.length === 1) {
+    return optionContractLabelForProduct(yyyymm, otherProductCodes[0]);
+  }
+  return `${formatMonth(yyyymm)} ${otherProductCodes.join("/")}`;
 }
 
 function contractKey(yyyymm: string, contractDay: unknown): string {
@@ -436,6 +508,7 @@ async function loadOptionPositionsForDailyChange(
   selectedMonth: string | null,
   optionKind: PositionView,
   productRegionFilter: ParsedTextListFilter,
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope,
 ): Promise<OptionPositionRow[]> {
   if (!selectedMonth) return [];
 
@@ -479,7 +552,18 @@ async function loadOptionPositionsForDailyChange(
         AND contract_yyyymm = $2::text
         AND normalized_strike_price IS NOT NULL
         AND (
-          ($4::text = 'gas' AND product_code IN ('LN', 'PHE'))
+          (
+            $4::text = 'gas'
+            AND (
+              ($6::text = 'outright' AND product_code IN ('LN', 'PHE'))
+              OR (
+                $6::text = 'other'
+                AND product_group IN ('Gas', 'Basis')
+                AND product_code IS NOT NULL
+                AND product_code NOT IN ('LN', 'PHE')
+              )
+            )
+          )
           OR ($4::text = 'power' AND product_group = 'Power')
         )
         AND (
@@ -547,6 +631,9 @@ async function loadOptionPositionsForDailyChange(
           then coalesce(product_code, underlying_product_code, product_norm, 'UNKNOWN')
           else coalesce(product_code, underlying_product_code, 'UNKNOWN')
         end AS exchange,
+        array_agg(DISTINCT product_code ORDER BY product_code) FILTER (
+          WHERE product_code IS NOT NULL
+        ) AS product_codes,
         put_call,
         normalized_strike_price::double precision AS strike,
         contract_yyyymm,
@@ -604,6 +691,7 @@ async function loadOptionPositionsForDailyChange(
           )
           else with_previous.exchange
         end AS exchange,
+        with_previous.product_codes,
         with_previous.contract_yyyymm,
         with_previous.strike,
         with_previous.put_call,
@@ -670,6 +758,7 @@ async function loadOptionPositionsForDailyChange(
         selected_option_rows.exchange,
         selected_option_rows.contract_yyyymm,
         selected_option_rows.strike,
+        selected_option_rows.product_codes,
         selected_option_rows.put_call,
         selected_option_rows.quantity,
         selected_option_rows.settlement_price,
@@ -692,7 +781,14 @@ async function loadOptionPositionsForDailyChange(
     FROM FINAL
     ORDER BY contract_yyyymm, exchange, strike, put_call
     `,
-    [selectedDate, selectedMonth, OPTION_DAILY_CHANGE_LOOKBACK_DAYS, optionKind, productRegionFilter.sqlValues],
+    [
+      selectedDate,
+      selectedMonth,
+      OPTION_DAILY_CHANGE_LOOKBACK_DAYS,
+      optionKind,
+      productRegionFilter.sqlValues,
+      gasOptionScope,
+    ],
   );
 }
 
@@ -701,6 +797,7 @@ async function loadMatrixBundle(
   requestedOptionMonth: string | null,
   optionDetailKind: PositionView,
   productRegionFilter: ParsedTextListFilter,
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope,
   includeOptionDetail: boolean,
 ): Promise<MatrixBundleDbRow> {
   const promotedArtifact = await loadPromotedNavPositionsSql({ requestedDate });
@@ -719,6 +816,7 @@ async function loadMatrixBundle(
     [],
     null,
     null,
+    gasOptionScope,
   ];
   const rows = await query<MatrixBundleDbRow>(
     `
@@ -759,8 +857,24 @@ async function loadMatrixBundle(
             count(*) FILTER (
               WHERE put_call IS NOT NULL
                 AND NOT (
-                  coalesce(product_code, '') IN ('LN', 'PHE')
-                  OR product_group = 'Power'
+                  (
+                    product_code IS NOT NULL
+                    AND product_code IN ('LN', 'PHE')
+                    AND contract_yyyymm IS NOT NULL
+                    AND normalized_strike_price IS NOT NULL
+                  )
+                  OR (
+                    product_group IN ('Gas', 'Basis')
+                    AND product_code IS NOT NULL
+                    AND product_code NOT IN ('LN', 'PHE')
+                    AND contract_yyyymm IS NOT NULL
+                    AND normalized_strike_price IS NOT NULL
+                  )
+                  OR (
+                    product_group = 'Power'
+                    AND contract_yyyymm IS NOT NULL
+                    AND normalized_strike_price IS NOT NULL
+                  )
                 )
             )::integer AS excluded_option_count,
             count(*) FILTER (
@@ -774,9 +888,17 @@ async function loadMatrixBundle(
               normalized_strike_price::text
             )) FILTER (
               WHERE put_call IS NOT NULL
-                AND coalesce(product_code, '') IN ('LN', 'PHE')
                 AND contract_yyyymm IS NOT NULL
                 AND normalized_strike_price IS NOT NULL
+                AND (
+                  ($10::text = 'outright' AND product_code IN ('LN', 'PHE'))
+                  OR (
+                    $10::text = 'other'
+                    AND product_group IN ('Gas', 'Basis')
+                    AND product_code IS NOT NULL
+                    AND product_code NOT IN ('LN', 'PHE')
+                  )
+                )
             )::integer AS option_active_rows,
             count(DISTINCT concat_ws(
               '||',
@@ -808,6 +930,80 @@ async function loadMatrixBundle(
           )
         )
       ) AS metadata,
+      (
+        SELECT coalesce(jsonb_agg(jsonb_build_object(
+          'scope', scope,
+          'label', label,
+          'activeRows', active_rows,
+          'monthCount', month_count,
+          'netQuantity', net_quantity
+        ) ORDER BY sort_order), '[]'::jsonb)
+        FROM (
+          SELECT
+            0 AS sort_order,
+            'outright' AS scope,
+            'LN/PHE' AS label,
+            count(DISTINCT concat_ws(
+              '||',
+              coalesce(product_code, underlying_product_code, 'UNKNOWN'),
+              contract_yyyymm,
+              normalized_strike_price::text
+            )) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_code IN ('LN', 'PHE')
+            )::integer AS active_rows,
+            count(DISTINCT contract_yyyymm) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_code IN ('LN', 'PHE')
+            )::integer AS month_count,
+            coalesce(sum(coalesce(gas_qty, 0)) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_code IN ('LN', 'PHE')
+            ), 0)::double precision AS net_quantity
+          FROM selected_positions
+          UNION ALL
+          SELECT
+            1 AS sort_order,
+            'other' AS scope,
+            'Other Gas' AS label,
+            count(DISTINCT concat_ws(
+              '||',
+              coalesce(product_code, underlying_product_code, 'UNKNOWN'),
+              contract_yyyymm,
+              normalized_strike_price::text
+            )) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_group IN ('Gas', 'Basis')
+                AND product_code IS NOT NULL
+                AND product_code NOT IN ('LN', 'PHE')
+            )::integer AS active_rows,
+            count(DISTINCT contract_yyyymm) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_group IN ('Gas', 'Basis')
+                AND product_code IS NOT NULL
+                AND product_code NOT IN ('LN', 'PHE')
+            )::integer AS month_count,
+            coalesce(sum(coalesce(gas_qty, 0)) FILTER (
+              WHERE put_call IS NOT NULL
+                AND contract_yyyymm IS NOT NULL
+                AND normalized_strike_price IS NOT NULL
+                AND product_group IN ('Gas', 'Basis')
+                AND product_code IS NOT NULL
+                AND product_code NOT IN ('LN', 'PHE')
+            ), 0)::double precision AS net_quantity
+          FROM selected_positions
+        ) gas_scope_row
+      ) AS gas_option_scopes,
       (
         SELECT coalesce(jsonb_agg(to_jsonb(future_row) ORDER BY
           contract_yyyymm,
@@ -870,12 +1066,23 @@ async function loadMatrixBundle(
               '||',
               coalesce(product_code, underlying_product_code, 'UNKNOWN'),
               normalized_strike_price::text
-            ))::integer AS row_count
+            ))::integer AS row_count,
+            array_agg(DISTINCT product_code ORDER BY product_code) FILTER (
+              WHERE product_code IS NOT NULL
+            ) AS product_codes
           FROM selected_positions
           WHERE put_call IS NOT NULL
             AND contract_yyyymm IS NOT NULL
-            AND product_code IN ('LN', 'PHE')
             AND normalized_strike_price IS NOT NULL
+            AND (
+              ($10::text = 'outright' AND product_code IN ('LN', 'PHE'))
+              OR (
+                $10::text = 'other'
+                AND product_group IN ('Gas', 'Basis')
+                AND product_code IS NOT NULL
+                AND product_code NOT IN ('LN', 'PHE')
+              )
+            )
           GROUP BY contract_yyyymm
         ) option_month_row
       ) AS option_months,
@@ -913,6 +1120,7 @@ async function loadMatrixBundle(
     power_option_positions: [],
     option_months: [],
     option_positions: [],
+    gas_option_scopes: [],
   };
   const summary = objectRecord(bundle.summary) as unknown as SummaryRow;
   const monthRows = rowArray<OptionMonthAggregateRow>(bundle.option_months);
@@ -928,10 +1136,16 @@ async function loadMatrixBundle(
       : powerMonths[0]?.yyyymm ?? null;
   const optionPositions = includeOptionDetail && optionDetailKind === "gas"
     ? await measureRoutePhase("option-daily-change", () =>
-        loadOptionPositionsForDailyChange(summary.selected_date ?? requestedDate, selectedOptionMonth, "gas", {
-          displayValues: [],
-          sqlValues: [],
-        }),
+        loadOptionPositionsForDailyChange(
+          summary.selected_date ?? requestedDate,
+          selectedOptionMonth,
+          "gas",
+          {
+            displayValues: [],
+            sqlValues: [],
+          },
+          gasOptionScope,
+        ),
       )
     : [];
   const powerOptionPositions = includeOptionDetail && optionDetailKind === "power"
@@ -941,6 +1155,7 @@ async function loadMatrixBundle(
           selectedPowerOptionMonth,
           "power",
           productRegionFilter,
+          gasOptionScope,
         ),
       )
     : [];
@@ -1114,14 +1329,21 @@ function optionMonths(rows: OptionMonthAggregateRow[]): BackOfficeNavDailyPositi
   const months = new Map<string, BackOfficeNavDailyPositionSheetOptionMonth>();
   for (const row of rows) {
     if (!row.contract_yyyymm) continue;
+    const rowProductCodes = stringArray(row.product_codes);
     const existing = months.get(row.contract_yyyymm) ?? {
       yyyymm: row.contract_yyyymm,
       label: formatMonth(row.contract_yyyymm),
       netQuantity: 0,
       rowCount: 0,
+      productCodes: [],
     };
+    const productCodes = new Set([...(existing.productCodes ?? []), ...rowProductCodes]);
     existing.netQuantity = round(existing.netQuantity + toNumber(row.quantity), 6);
     existing.rowCount += toNumber(row.row_count);
+    existing.productCodes = [...productCodes].sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true }),
+    );
+    existing.contractLabel = optionContractLabel(row.contract_yyyymm, existing.productCodes);
     months.set(row.contract_yyyymm, existing);
   }
   return [...months.values()].sort((a, b) => a.yyyymm.localeCompare(b.yyyymm));
@@ -1138,6 +1360,7 @@ function optionRows(rows: OptionPositionRow[], selectedMonth: string | null): Ba
     const topQuantity = toOptionalNumber(row.top_account_quantity);
     const rowTopAccount = topAccountLabel(row.top_account, topQuantity);
     const rowTopMagnitude = Math.abs(topQuantity ?? 0);
+    const rowProductCodes = stringArray(row.product_codes);
     const existing =
       byStrike.get(key) ??
       {
@@ -1154,8 +1377,10 @@ function optionRows(rows: OptionPositionRow[], selectedMonth: string | null): Ba
         topAccount: rowTopAccount,
         accounts: [],
         accountQuantities: Object.fromEntries(ACCOUNT_COLUMNS.map((account) => [account.key, 0])),
+        productCodeSet: new Set<string>(),
         topAccountMagnitude: rowTopMagnitude,
       };
+    rowProductCodes.forEach((productCode) => existing.productCodeSet.add(productCode));
     const quantity = round(row.quantity, 6);
     if (row.put_call === "P") {
       existing.putQuantity = round(existing.putQuantity + quantity, 6);
@@ -1180,23 +1405,30 @@ function optionRows(rows: OptionPositionRow[], selectedMonth: string | null): Ba
   }
   return [...byStrike.values()]
     .sort((a, b) => a.exchange.localeCompare(b.exchange) || a.strike - b.strike)
-    .map((row) => ({
-      exchange: row.exchange,
-      strike: row.strike,
-      putQuantity: row.putQuantity,
-      callQuantity: row.callQuantity,
-      netQuantity: row.netQuantity,
-      putSettle: row.putSettle,
-      callSettle: row.callSettle,
-      putChange: row.putChange,
-      callChange: row.callChange,
-      settlePnl: row.settlePnl,
-      topAccount: row.topAccount,
-      accounts: ACCOUNT_COLUMNS.map((account) => ({
-        account: account.key,
-        quantity: row.accountQuantities[account.key] ?? 0,
-      })).filter((account) => account.quantity !== 0),
-    }));
+    .map((row) => {
+      const productCodes = [...row.productCodeSet].sort((left, right) =>
+        left.localeCompare(right, undefined, { numeric: true }),
+      );
+      return {
+        exchange: row.exchange,
+        strike: row.strike,
+        putQuantity: row.putQuantity,
+        callQuantity: row.callQuantity,
+        netQuantity: row.netQuantity,
+        putSettle: row.putSettle,
+        callSettle: row.callSettle,
+        putChange: row.putChange,
+        callChange: row.callChange,
+        settlePnl: row.settlePnl,
+        topAccount: row.topAccount,
+        accounts: ACCOUNT_COLUMNS.map((account) => ({
+          account: account.key,
+          quantity: row.accountQuantities[account.key] ?? 0,
+        })).filter((account) => account.quantity !== 0),
+        productCodes,
+        contractLabel: optionContractLabel(selectedMonth, productCodes),
+      };
+    });
 }
 
 function summarizeOptionDetail(
@@ -1231,11 +1463,13 @@ async function loadOptionDetailPayload({
   requestedOptionMonth,
   optionDetailKind,
   productRegionFilter,
+  gasOptionScope,
 }: {
   requestedDate: string | null;
   requestedOptionMonth: string | null;
   optionDetailKind: PositionView;
   productRegionFilter: ParsedTextListFilter;
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope;
 }): Promise<{
   payload: BackOfficeNavDailyPositionSheetOptionDetailPayload;
   rowCount: number;
@@ -1248,6 +1482,7 @@ async function loadOptionDetailPayload({
           requestedOptionMonth,
           optionDetailKind,
           productRegionFilter,
+          gasOptionScope,
         ),
       )
     : [];
@@ -1258,6 +1493,7 @@ async function loadOptionDetailPayload({
     generatedAt,
     selectedDate: requestedDate,
     positionView: optionDetailKind,
+    gasOptionScope,
     selectedMonth: requestedOptionMonth,
     selectedMonthLabel: requestedOptionMonth ? formatMonth(requestedOptionMonth) : "--",
     summary: summarizeOptionDetail(rows, requestedOptionMonth, rows.length),
@@ -1299,6 +1535,9 @@ export const GET = observedJsonRoute(
     const requestedDate = parseDateParam(url.searchParams.get("date"));
     const requestedOptionMonth = parseYyyymmParam(url.searchParams.get("optionMonth"));
     const requestedPositionView = parsePositionViewParam(url.searchParams.get("positionView"));
+    const requestedGasOptionScope = parseGasOptionScopeParam(url.searchParams.get("gasOptionScope"));
+    const effectiveGasOptionScope =
+      requestedPositionView === "gas" ? requestedGasOptionScope : "outright";
     const includeOptionDetail = parseBooleanParam(url.searchParams.get("optionDetail"), false);
     const productRegionFilter = parseTextListFilter(url.searchParams, "productRegion", 80);
     const forceRefresh = url.searchParams.has("refresh");
@@ -1319,6 +1558,7 @@ export const GET = observedJsonRoute(
             requestedOptionMonth,
             optionDetailKind: requestedPositionView,
             productRegionFilter,
+            gasOptionScope: effectiveGasOptionScope,
           }),
       });
 
@@ -1348,6 +1588,7 @@ export const GET = observedJsonRoute(
               requestedOptionMonth,
               requestedPositionView,
               productRegionFilter,
+              effectiveGasOptionScope,
               includeOptionDetail,
             ),
           ),
@@ -1364,6 +1605,7 @@ export const GET = observedJsonRoute(
         const months = optionMonths(rowArray<OptionMonthAggregateRow>(bundle.option_months));
         const powerOptionPositionRows = rowArray<OptionPositionRow>(bundle.power_option_positions);
         const powerMonths = optionMonths(rowArray<OptionMonthAggregateRow>(bundle.power_option_months));
+        const optionScopeSummaries = gasOptionScopes(bundle.gas_option_scopes);
         const selectedOptionMonth =
           requestedOptionMonth && months.some((month) => month.yyyymm === requestedOptionMonth)
             ? requestedOptionMonth
@@ -1384,6 +1626,8 @@ export const GET = observedJsonRoute(
         const payload: BackOfficeNavDailyPositionSheetPayload = {
           source: "backoffice-nav-daily-position-sheet",
           generatedAt,
+          positionView: requestedPositionView,
+          gasOptionScope: effectiveGasOptionScope,
           selectedDate,
           selectedDateLabel: formatDateOnly(selectedDate),
           latestDate,
@@ -1400,6 +1644,7 @@ export const GET = observedJsonRoute(
             productRegions: stringArray(metadata.product_regions),
           },
           metrics: metrics(summary),
+          gasOptionScopes: optionScopeSummaries,
           gasFutures: {
             productCodes: [...GAS_PRODUCT_CODES],
             accountColumns: ACCOUNT_COLUMNS,

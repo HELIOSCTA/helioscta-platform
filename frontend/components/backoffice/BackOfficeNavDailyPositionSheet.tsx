@@ -2,9 +2,11 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import type {
   BackOfficeNavDailyPositionSheetAccountColumn,
+  BackOfficeNavDailyPositionSheetGasOptionScope,
   BackOfficeNavDailyPositionSheetGasCell,
   BackOfficeNavDailyPositionSheetOptionDetailPayload,
   BackOfficeNavDailyPositionSheetOptionRow,
@@ -15,14 +17,22 @@ import type {
 
 const API_PATH = "/api/backoffice-nav-daily-position-sheet";
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
-const API_SCHEMA_VERSION = "power-options-accounts-v1";
+const API_SCHEMA_VERSION = "gas-option-scope-v1";
 const DEFAULT_POWER_PRODUCT_REGION_FILTERS: string[] = [];
+const GAS_OPTION_SCOPE_TABS: Array<{
+  value: BackOfficeNavDailyPositionSheetGasOptionScope;
+  label: string;
+}> = [
+  { value: "outright", label: "LN/PHE" },
+  { value: "other", label: "Other Gas" },
+];
 type ActivePositionView = "gas" | "power";
 
 function apiUrl(
   selectedDate: string,
   optionMonth: string,
   activePositionView: ActivePositionView,
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope,
   powerProductRegions: string[],
   refreshNonce: number,
 ): string {
@@ -30,6 +40,9 @@ function apiUrl(
   params.set("schema", API_SCHEMA_VERSION);
   params.set("positionView", activePositionView);
   params.set("optionDetail", "0");
+  if (activePositionView === "gas") {
+    params.set("gasOptionScope", gasOptionScope);
+  }
   if (activePositionView === "power") {
     [...powerProductRegions]
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
@@ -46,6 +59,7 @@ function optionDetailUrl(
   selectedDate: string,
   optionMonth: string,
   activePositionView: ActivePositionView,
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope,
   powerProductRegions: string[],
   refreshNonce: number,
 ): string {
@@ -54,6 +68,9 @@ function optionDetailUrl(
   params.set("detail", "option");
   params.set("optionDetail", "1");
   params.set("positionView", activePositionView);
+  if (activePositionView === "gas") {
+    params.set("gasOptionScope", gasOptionScope);
+  }
   if (activePositionView === "power") {
     [...powerProductRegions]
       .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
@@ -131,6 +148,8 @@ function mergeOptionDetailPayload(
   detail: BackOfficeNavDailyPositionSheetOptionDetailPayload,
 ): BackOfficeNavDailyPositionSheetPayload {
   if (current.selectedDate !== detail.selectedDate) return current;
+  if (current.positionView !== detail.positionView) return current;
+  if (current.gasOptionScope !== detail.gasOptionScope) return current;
   if (detail.positionView === "power") {
     if (current.powerOptionSummary.selectedMonth !== detail.selectedMonth) return current;
     return {
@@ -655,7 +674,7 @@ function topAccountClass(value: string | null): string {
 const OPTION_MONTH_CODES = ["F", "G", "H", "J", "K", "M", "N", "Q", "U", "V", "X", "Z"];
 
 function optionRowKey(row: BackOfficeNavDailyPositionSheetOptionRow): string {
-  return `${row.exchange}:${row.strike}`;
+  return `${row.exchange}:${row.contractLabel ?? ""}:${row.strike}`;
 }
 
 function optionSide(row: BackOfficeNavDailyPositionSheetOptionRow): "PUT" | "CALL" {
@@ -708,6 +727,10 @@ function OptionAccountsDetail({
 }) {
   const side = optionSide(row);
   const settle = optionSettle(row);
+  const contractDisplay = row.contractLabel ?? optionMonthLongLabel(selectedMonth);
+  const contractCodeDisplay = row.contractLabel
+    ? `${optionContractCode(selectedMonth)} | ${row.productCodes?.join("/") ?? row.exchange}`
+    : optionContractCode(selectedMonth);
 
   return (
     <tr className="bg-gray-950">
@@ -735,10 +758,10 @@ function OptionAccountsDetail({
         <div className="mt-3 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-gray-800 bg-gray-900/40 p-3">
           <div>
             <p className="text-xs font-bold uppercase text-gray-100">
-              {side} {optionMonthLongLabel(selectedMonth)} {fmtNumber(row.strike, false)}
+              {side} {contractDisplay} {fmtNumber(row.strike, false)}
             </p>
             <p className="mt-2 text-xs text-gray-500">
-              {optionContractCode(selectedMonth)} | {quantityLabel} {fmtNumber(row.netQuantity, false)} | Settle{" "}
+              {contractCodeDisplay} | {quantityLabel} {fmtNumber(row.netQuantity, false)} | Settle{" "}
               {fmtPrice(settle, priceDigits, fixedPrice)} | P&amp;L {fmtNumber(row.settlePnl, false)}
             </p>
           </div>
@@ -755,10 +778,14 @@ function OptionsLadder({
   quantityLabel = "Gas qty",
   priceDigits = 4,
   fixedPrice = false,
+  firstColumnLabel = "Exchange",
   months,
   summary,
   rows,
   setOptionMonth,
+  gasOptionScopes,
+  gasOptionScope,
+  setGasOptionScope,
   detailLoading = false,
   detailError = null,
 }: {
@@ -767,10 +794,14 @@ function OptionsLadder({
   quantityLabel?: string;
   priceDigits?: number;
   fixedPrice?: boolean;
+  firstColumnLabel?: string;
   months: BackOfficeNavDailyPositionSheetPayload["optionMonths"];
   summary: BackOfficeNavDailyPositionSheetPayload["optionSummary"];
   rows: BackOfficeNavDailyPositionSheetOptionRow[];
   setOptionMonth: (value: string) => void;
+  gasOptionScopes?: BackOfficeNavDailyPositionSheetPayload["gasOptionScopes"];
+  gasOptionScope?: BackOfficeNavDailyPositionSheetGasOptionScope;
+  setGasOptionScope?: (value: BackOfficeNavDailyPositionSheetGasOptionScope) => void;
   detailLoading?: boolean;
   detailError?: string | null;
 }) {
@@ -784,10 +815,15 @@ function OptionsLadder({
       : `${fmtNumber(summary.selectedMonthRowCount, false)} option rows`;
   const detailValue = (value: number, emptyZero = true) =>
     summary.detailLoaded ? fmtNumber(value, emptyZero) : detailPending ? "Loading" : "-";
+  const scopeTabs = GAS_OPTION_SCOPE_TABS.map((tab) => ({
+    ...tab,
+    label: gasOptionScopes?.find((scope) => scope.scope === tab.value)?.label ?? tab.label,
+  }));
+  const showScopeTabs = Boolean(gasOptionScope && setGasOptionScope);
 
   useEffect(() => {
     setExpandedOptionRowKey(null);
-  }, [summary.selectedMonth]);
+  }, [summary.selectedMonth, gasOptionScope]);
 
   return (
     <div className="rounded-2xl border border-gray-800 bg-gray-950/80 p-4">
@@ -796,10 +832,21 @@ function OptionsLadder({
           <p className="text-sm font-bold text-gray-100">{title}</p>
           <p className="mt-1 text-xs text-gray-500">{description}</p>
         </div>
-        <p className="text-xs text-gray-500">
-          {fmtNumber(summary.activeRows, false)} active rows |{" "}
-          {fmtNumber(summary.expiredHidden, false)} expired hidden
-        </p>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <p className="text-xs text-gray-500">
+            {fmtNumber(summary.activeRows, false)} active rows |{" "}
+            {fmtNumber(summary.expiredHidden, false)} expired hidden
+          </p>
+          {showScopeTabs && gasOptionScope && setGasOptionScope && (
+            <DashboardTabs
+              tabs={scopeTabs}
+              activeValue={gasOptionScope}
+              onChange={setGasOptionScope}
+              ariaLabel="Gas option scope"
+              variant="secondary"
+            />
+          )}
+        </div>
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
@@ -816,8 +863,14 @@ function OptionsLadder({
                   : "border-gray-800 bg-black/20 text-gray-400 hover:border-gray-600"
               }`}
             >
-              <span className="block font-bold">{optionMonthLongLabel(month.yyyymm)}</span>
-              <span className="block text-[10px] text-gray-500">{month.yyyymm}</span>
+              <span className="block font-bold">
+                {month.contractLabel ?? optionMonthLongLabel(month.yyyymm)}
+              </span>
+              <span className="block text-[10px] text-gray-500">
+                {month.contractLabel && month.productCodes?.length
+                  ? `${month.yyyymm} | ${month.productCodes.join("/")}`
+                  : month.yyyymm}
+              </span>
               <span className={`block tabular-nums ${valueClass(month.netQuantity)}`}>
                 Net {fmtNumber(month.netQuantity)}
               </span>
@@ -829,7 +882,10 @@ function OptionsLadder({
       <div className="mb-4 grid gap-3 md:grid-cols-4">
         <OptionStat
           label="Selected Month"
-          value={optionMonthLongLabel(summary.selectedMonth)}
+          value={
+            months.find((month) => month.yyyymm === summary.selectedMonth)?.contractLabel ??
+            optionMonthLongLabel(summary.selectedMonth)
+          }
           detail={detailRowText}
           className="text-gray-100"
         />
@@ -854,7 +910,7 @@ function OptionsLadder({
         <table className="min-w-[1200px] text-xs">
           <thead className="bg-black text-gray-400">
             <tr>
-              <th className="px-2 py-2 font-semibold text-left">Exchange</th>
+              <th className="px-2 py-2 font-semibold text-left">{firstColumnLabel}</th>
               <th className="px-2 py-2 font-semibold text-right">Strike</th>
               <th className="px-2 py-2 font-semibold text-right">Put Qty</th>
               <th className="px-2 py-2 font-semibold text-right">Call Qty</th>
@@ -887,7 +943,14 @@ function OptionsLadder({
                 return (
                   <Fragment key={rowKey}>
                     <tr className="border-t border-gray-900 odd:bg-gray-900/35 even:bg-gray-950">
-                      <td className="px-2 py-2 text-left font-bold text-gray-100">{row.exchange}</td>
+                      <td className="px-2 py-2 text-left font-bold text-gray-100">
+                        <span className="block">{row.exchange}</span>
+                        {row.contractLabel && (
+                          <span className="block text-[10px] font-semibold text-gray-500">
+                            {row.contractLabel}
+                          </span>
+                        )}
+                      </td>
                       <td className="px-2 py-2 text-right font-bold tabular-nums text-gray-100">
                         {fmtNumber(row.strike, false)}
                       </td>
@@ -962,6 +1025,8 @@ function OptionsLadder({
 export default function BackOfficeNavDailyPositionSheet() {
   const [payload, setPayload] = useState<BackOfficeNavDailyPositionSheetPayload | null>(null);
   const [activePositionView, setActivePositionView] = useState<ActivePositionView>("gas");
+  const [gasOptionScope, setGasOptionScope] =
+    useState<BackOfficeNavDailyPositionSheetGasOptionScope>("outright");
   const [selectedDate, setSelectedDate] = useState("");
   const [optionMonth, setOptionMonth] = useState("");
   const [powerProductRegions, setPowerProductRegions] = useState<string[]>(DEFAULT_POWER_PRODUCT_REGION_FILTERS);
@@ -972,8 +1037,16 @@ export default function BackOfficeNavDailyPositionSheet() {
   const [optionDetailError, setOptionDetailError] = useState<string | null>(null);
 
   const url = useMemo(
-    () => apiUrl(selectedDate, optionMonth, activePositionView, powerProductRegions, refreshNonce),
-    [activePositionView, optionMonth, powerProductRegions, refreshNonce, selectedDate],
+    () =>
+      apiUrl(
+        selectedDate,
+        optionMonth,
+        activePositionView,
+        gasOptionScope,
+        powerProductRegions,
+        refreshNonce,
+      ),
+    [activePositionView, gasOptionScope, optionMonth, powerProductRegions, refreshNonce, selectedDate],
   );
 
   useEffect(() => {
@@ -1025,6 +1098,7 @@ export default function BackOfficeNavDailyPositionSheet() {
       selectedDate || payload.selectedDate || "",
       selectedOptionMonth,
       activePositionView,
+      gasOptionScope,
       powerProductRegions,
       refreshNonce,
     );
@@ -1057,6 +1131,7 @@ export default function BackOfficeNavDailyPositionSheet() {
     };
   }, [
     activePositionView,
+    gasOptionScope,
     payload,
     powerProductRegions,
     refreshNonce,
@@ -1100,10 +1175,23 @@ export default function BackOfficeNavDailyPositionSheet() {
         <>
           <GasFuturesMatrix payload={payload} />
           <OptionsLadder
+            description={
+              gasOptionScope === "other"
+                ? "Active non-LN/PHE gas/basis option strike ladder. Expired option rows are retained in the Excel audit tab."
+                : undefined
+            }
             months={payload.optionMonths}
             summary={payload.optionSummary}
             rows={payload.optionRows}
             setOptionMonth={setOptionMonth}
+            firstColumnLabel={gasOptionScope === "other" ? "Product" : "Exchange"}
+            quantityLabel={gasOptionScope === "other" ? "Qty" : "Gas qty"}
+            gasOptionScopes={payload.gasOptionScopes}
+            gasOptionScope={gasOptionScope}
+            setGasOptionScope={(value) => {
+              setGasOptionScope(value);
+              setOptionMonth("");
+            }}
             detailLoading={activePositionView === "gas" && optionDetailLoading}
             detailError={activePositionView === "gas" ? optionDetailError : null}
           />

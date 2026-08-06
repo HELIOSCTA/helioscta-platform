@@ -59,11 +59,23 @@ export interface BackOfficeNavDailyPositionSheetPowerFuturesSection {
   unitLabel: string;
 }
 
+export type BackOfficeNavDailyPositionSheetGasOptionScope = "outright" | "other";
+
+export interface BackOfficeNavDailyPositionSheetGasOptionScopeSummary {
+  scope: BackOfficeNavDailyPositionSheetGasOptionScope;
+  label: string;
+  activeRows: number;
+  monthCount: number;
+  netQuantity: number;
+}
+
 export interface BackOfficeNavDailyPositionSheetOptionMonth {
   yyyymm: string;
   label: string;
   netQuantity: number;
   rowCount: number;
+  productCodes?: string[];
+  contractLabel?: string;
 }
 
 export interface BackOfficeNavDailyPositionSheetOptionAccount {
@@ -84,6 +96,8 @@ export interface BackOfficeNavDailyPositionSheetOptionRow {
   settlePnl: number;
   topAccount: string | null;
   accounts: BackOfficeNavDailyPositionSheetOptionAccount[];
+  productCodes?: string[];
+  contractLabel?: string;
 }
 
 export interface BackOfficeNavDailyPositionSheetOptionSummary {
@@ -111,6 +125,8 @@ export interface BackOfficeNavDailyPositionSheetFilters {
 export interface BackOfficeNavDailyPositionSheetPayload {
   source: "backoffice-nav-daily-position-sheet";
   generatedAt: string;
+  positionView: "gas" | "power";
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope;
   selectedDate: string | null;
   selectedDateLabel: string;
   latestDate: string | null;
@@ -125,6 +141,7 @@ export interface BackOfficeNavDailyPositionSheetPayload {
     productRegions: string[];
   };
   metrics: BackOfficeNavDailyPositionSheetMetric[];
+  gasOptionScopes: BackOfficeNavDailyPositionSheetGasOptionScopeSummary[];
   gasFutures: {
     productCodes: string[];
     accountColumns: BackOfficeNavDailyPositionSheetAccountColumn[];
@@ -155,6 +172,7 @@ export interface BackOfficeNavDailyPositionSheetOptionDetailPayload {
   generatedAt: string;
   selectedDate: string | null;
   positionView: "gas" | "power";
+  gasOptionScope: BackOfficeNavDailyPositionSheetGasOptionScope;
   selectedMonth: string | null;
   selectedMonthLabel: string;
   summary: BackOfficeNavDailyPositionSheetOptionSummary;
