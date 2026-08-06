@@ -392,11 +392,17 @@ def run_forecast(
     actual_hourly: dict[int, float | None] | None = None,
     include_pool_actuals: bool = True,
     y_naive_override: np.ndarray | None = None,
+    display_quantiles: list[float] | tuple[float, ...] | None = None,
 ) -> dict[str, object]:
     cfg = config or configs.KnnModelConfig(forecast_date=target_date.isoformat())
     cfg, day_type = cfg.with_day_type_overrides(target_date)
     spec = cfg.resolved_spec()
     quantiles = cfg.resolved_quantiles()
+    displayed_quantiles = (
+        list(display_quantiles)
+        if display_quantiles is not None
+        else cfg.resolved_display_quantiles()
+    )
     funnel = sunny_calendar.FunnelCounts()
     analogs = find_twins(
         query=query,
@@ -416,7 +422,12 @@ def run_forecast(
         funnel=funnel,
     )
     df_forecast = hourly_forecast_from_hour_analogs(analogs, quantiles)
-    quantiles_table = build_quantiles_table(target_date, df_forecast, analogs=analogs)
+    quantiles_table = build_quantiles_table(
+        target_date,
+        df_forecast,
+        displayed_quantiles,
+        analogs=analogs,
+    )
     resolved_actual_hourly = _normalize_actual_hourly(actual_hourly)
     if resolved_actual_hourly is None and include_pool_actuals:
         resolved_actual_hourly = _actuals_long(pool, target_date)

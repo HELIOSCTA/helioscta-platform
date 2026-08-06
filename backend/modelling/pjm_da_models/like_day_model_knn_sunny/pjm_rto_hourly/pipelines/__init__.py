@@ -1,14 +1,26 @@
-"""PJM-backed KNN Sunny pipeline entrypoints."""
+"""Compatibility exports for PJM-backed KNN Sunny pipelines."""
+
+from __future__ import annotations
+
+from importlib import import_module
 
 
-def run_tomorrow(*args: object, **kwargs: object) -> dict[str, object]:
-    from .forecast_tomorrow import run
+_EXPORTS = {
+    "run_single_day": ("._shared", "run_single_day"),
+    "run_tomorrow": (
+        "backend.modelling.pjm_da_models.pipelines.tomorrow."
+        "like_day_knn_sunny_pjm_rto_hourly",
+        "run",
+    ),
+}
 
-    return run(*args, **kwargs)
+__all__ = ["run_single_day", "run_tomorrow"]
 
 
-def run_single_day(*args: object, **kwargs: object) -> dict[str, object]:
-    return run_tomorrow(*args, **kwargs)
-
-
-__all__ = ["run_tomorrow", "run_single_day"]
+def __getattr__(name: str) -> object:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = _EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attribute)
+    globals()[name] = value
+    return value

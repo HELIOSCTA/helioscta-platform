@@ -1,8 +1,9 @@
-"""Compatibility wrapper for next-three-days Meteologica DA-price baseline."""
+"""Next-three-days Meteologica DA-price baseline pipeline."""
 
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -21,15 +22,37 @@ if __package__ in (None, ""):
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
 
-from backend.modelling.pjm_da_models.pipelines.next_3_days.meteo_baseline_price_meteo_da_price import (
-    CUTOFF_UTC,
-    ENTRYPOINT_NAME,
-    HORIZON_DAYS,
-    HUB,
-    INCLUDE_ACTUALS,
-    RUN_DATE,
-    run,
+from backend.modelling.pjm_da_models.meteo_baseline_price.pipelines._shared import (
+    DEFAULT_HUB,
+    run_latest_horizon,
 )
+
+RUN_DATE: date | None = None
+HORIZON_DAYS: int = 3
+HUB: str = DEFAULT_HUB
+CUTOFF_UTC: str | None = None
+INCLUDE_ACTUALS: bool = False
+ENTRYPOINT_NAME = "pjm_da_meteo_baseline_price_meteo_da_price_next_3_days"
+
+
+def run(
+    *,
+    run_date: date | str | None = RUN_DATE,
+    horizon_days: int = HORIZON_DAYS,
+    hub: str = HUB,
+    cutoff_utc: str | None = CUTOFF_UTC,
+    include_actuals: bool = INCLUDE_ACTUALS,
+    quiet: bool = False,
+) -> dict[str, object]:
+    return run_latest_horizon(
+        run_date=run_date,
+        horizon_days=horizon_days,
+        hub=hub,
+        cutoff_utc=cutoff_utc,
+        include_actuals=include_actuals,
+        quiet=quiet,
+    )
+
 
 __all__ = [
     "CUTOFF_UTC",

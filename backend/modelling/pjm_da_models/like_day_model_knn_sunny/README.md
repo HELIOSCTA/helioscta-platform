@@ -56,18 +56,36 @@ and promotion script. Do not edit files under `sql_inputs/` by hand.
 
 ```powershell
 python -m backend.modelling.pjm_da_models.like_day_model_knn_sunny
+python -m backend.modelling.pjm_da_models.pipelines.tomorrow.like_day_knn_sunny_meteo_rto_hourly
+python -m backend.modelling.pjm_da_models.pipelines.tomorrow.like_day_knn_sunny_pjm_rto_hourly
+python -m backend.modelling.pjm_da_models.pipelines.next_3_days.like_day_knn_sunny_meteo_rto_hourly
+python -m backend.modelling.pjm_da_models.pipelines.next_14_days.like_day_knn_sunny_meteo_rto_hourly
+```
+
+Family/input-owned modules remain valid:
+
+```powershell
 python -m backend.modelling.pjm_da_models.like_day_model_knn_sunny.meteo_rto_hourly.pipelines.forecast_tomorrow
 python -m backend.modelling.pjm_da_models.like_day_model_knn_sunny.meteo_rto_hourly.pipelines.forecast_next_3_days
 python -m backend.modelling.pjm_da_models.like_day_model_knn_sunny.meteo_rto_hourly.pipelines.forecast_full_prediction_window
 python -m backend.modelling.pjm_da_models.like_day_model_knn_sunny.pjm_rto_hourly.pipelines.forecast_tomorrow
 ```
 
-Plain script execution is also supported for the pipeline entrypoints. Each
-entrypoint locates the repo root by finding `backend/modelling/pjm_da_models`
-and then imports through the `backend.modelling.pjm_da_models...` package path.
+Plain script execution is also supported for canonical and compatibility
+pipeline entrypoints. Each entrypoint locates the repo root by finding
+`backend/modelling/pjm_da_models` and then imports through the
+`backend.modelling.pjm_da_models...` package path.
 The old PJM-backed `forecast_single_day` module remains as a compatibility
 wrapper, but new code should use `forecast_tomorrow` to match the other
 default one-day model runners.
+
+The input-family `pipelines/` folders support the root horizon scripts.
+Meteologica-backed `_shared.py` owns the multi-day orchestration helper, and
+the nested `forecast_tomorrow.py` / `forecast_next_3_days.py` modules are
+old-path compatibility wrappers around root `pipelines/tomorrow/` and
+`pipelines/next_3_days/` scripts. PJM-backed `_shared.py` owns the PJM query
+builder helper for the root tomorrow script, and its nested `forecast_*`
+modules remain old-path compatibility wrappers.
 
 The pipeline entrypoints accept optional old-repo parity knobs:
 `pool_start_date`, `pool_year_months`, and
@@ -76,8 +94,13 @@ The pipeline entrypoints accept optional old-repo parity knobs:
 
 ## Output Contract
 
-The promoted KNN Sunny runners migrate the legacy output contract into this
-repo without importing the legacy report module. Single-day runners return:
+The promoted KNN Sunny runners return the shared PJM DA model envelope
+documented in `backend/modelling/pjm_da_models/README.md` while preserving the
+legacy output contract without importing the legacy report module.
+
+Single-day canonical pandas tables are under `tables` as `forecast`, `output`,
+`quantiles`, `analogs`, `target_features`, and `actuals`. The legacy top-level
+aliases remain available:
 
 ```text
 df_forecast, output_table, quantiles_table, analogs, metrics,
@@ -99,7 +122,9 @@ for display and metrics. They are not appended to the historical analog pool.
 P01, P05, P10, P25, P37.5, P50, P62.5, P75, P90, P95, P99
 ```
 
-Multi-day Meteologica runners return the strip plus per-date maps:
+Multi-day Meteologica runners expose canonical `tables` entries for `strip`,
+`forecast`, `actuals`, and the per-date forecast, quantile, analog, target
+feature, and output maps. The legacy strip plus per-date maps remain available:
 
 ```text
 strip_table, forecasts_by_date, bands_by_date, analogs_by_date,

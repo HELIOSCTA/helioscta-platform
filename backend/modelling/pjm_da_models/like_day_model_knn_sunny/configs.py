@@ -130,6 +130,7 @@ class KnnModelConfig:
     model_name: str = DEFAULT_MODEL
     n_analogs: int = DEFAULT_N_ANALOGS
     quantiles: list[float] | None = None
+    display_quantiles: list[float] | None = None
     season_window_days: int = SEASON_WINDOW_DAYS
     min_pool_size: int = MIN_POOL_SIZE
     hub: str = HUB
@@ -155,6 +156,11 @@ class KnnModelConfig:
 
     def resolved_quantiles(self) -> list[float]:
         return list(self.quantiles) if self.quantiles is not None else list(QUANTILES)
+
+    def resolved_display_quantiles(self) -> list[float]:
+        if self.display_quantiles is not None:
+            return list(self.display_quantiles)
+        return list(DISPLAY_QUANTILES)
 
     def resolved_spec(self) -> ModelSpec:
         if self.model_name not in MODEL_REGISTRY:

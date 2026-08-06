@@ -1,8 +1,9 @@
-"""Compatibility wrapper for full-window Meteologica DA-price baseline."""
+"""Tomorrow's Meteologica-fed KNN Sunny pipeline."""
 
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -21,48 +22,45 @@ if __package__ in (None, ""):
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
 
-from datetime import date
-
-from backend.modelling.pjm_da_models.meteo_baseline_price.pipelines._shared import (
+from backend.modelling.pjm_da_models.like_day_model_knn_sunny.meteo_rto_hourly.pipelines._shared import (
     DEFAULT_HUB,
-    run_latest_horizon,
+    run_single_day,
 )
 
+TARGET_DATE: date | None = None
 RUN_DATE: date | None = None
-HORIZON_DAYS: int | None = None
 HUB: str = DEFAULT_HUB
+HISTORY_DAYS: int = 730
 CUTOFF_UTC: str | None = None
-INCLUDE_ACTUALS: bool = False
-ENTRYPOINT_NAME = "pjm_da_meteo_baseline_price_meteo_da_price_full_prediction_window"
+INCLUDE_ACTUALS: bool = True
+ENTRYPOINT_NAME = "pjm_da_like_day_knn_sunny_meteo_rto_hourly_tomorrow"
 
 
 def run(
     *,
+    target_date: date | str | None = TARGET_DATE,
     run_date: date | str | None = RUN_DATE,
-    horizon_days: int | None = HORIZON_DAYS,
     hub: str = HUB,
+    history_days: int = HISTORY_DAYS,
+    pool_start_date: date | str | None = None,
+    pool_year_months: dict[int, list[int]] | None = None,
     cutoff_utc: str | None = CUTOFF_UTC,
+    feature_group_weights_override: dict[str, float] | None = None,
     include_actuals: bool = INCLUDE_ACTUALS,
     quiet: bool = False,
 ) -> dict[str, object]:
-    return run_latest_horizon(
+    return run_single_day(
+        target_date=target_date,
         run_date=run_date,
-        horizon_days=horizon_days,
         hub=hub,
+        history_days=history_days,
+        pool_start_date=pool_start_date,
+        pool_year_months=pool_year_months,
         cutoff_utc=cutoff_utc,
+        feature_group_weights_override=feature_group_weights_override,
         include_actuals=include_actuals,
         quiet=quiet,
     )
-
-__all__ = [
-    "CUTOFF_UTC",
-    "ENTRYPOINT_NAME",
-    "HORIZON_DAYS",
-    "HUB",
-    "INCLUDE_ACTUALS",
-    "RUN_DATE",
-    "run",
-]
 
 
 if __name__ == "__main__":

@@ -7,8 +7,15 @@ from datetime import date
 
 import pandas as pd
 
+from ....result_envelope import (
+    build_result_envelope,
+    canonical_log_name,
+    horizon_name_for_days,
+    max_timestamp,
+)
 from ... import configs, loader, reporting as knn_reporting
 from ...pipeline_shared import (
+    MODEL_FAMILY,
     apply_pool_filters,
     configure_stdio,
     features_complete,
@@ -17,10 +24,19 @@ from ...pipeline_shared import (
     run_single_day_forecast,
 )
 from ...pjm_rto_hourly import forecast
-from ..builder import build_horizon_query_rows, build_pool
+from ..builder import (
+    build_horizon_query_rows,
+    build_pool,
+)
 
 
-LOGGER_NAME = "pjm_da_like_day_knn_sunny_meteo_rto_hourly"
+INPUT_FAMILY = "meteo_rto_hourly"
+MODEL_NAME = configs.METEO_RTO_HOURLY_SUNNY_SPEC.name
+DEFAULT_HUB = configs.HUB
+
+
+def _logger_name(horizon: str) -> str:
+    return canonical_log_name(MODEL_FAMILY, INPUT_FAMILY, horizon)
 
 
 def _build_single_day_query(
@@ -85,8 +101,10 @@ def run_single_day(
 ) -> dict[str, object]:
     return run_single_day_forecast(
         source_label="METEO RTO",
-        logger_name=LOGGER_NAME,
-        model_name=configs.METEO_RTO_HOURLY_SUNNY_SPEC.name,
+        input_family=INPUT_FAMILY,
+        horizon="tomorrow",
+        logger_name=_logger_name("tomorrow"),
+        model_name=MODEL_NAME,
         pool_builder=build_pool,
         query_builder=_build_single_day_query,
         target_date=target_date,
@@ -118,15 +136,18 @@ def run_latest_horizon(
     quiet: bool = False,
 ) -> dict[str, object]:
     configure_stdio()
-    resolved_run_date = resolve_date(run_date, default=loader.today_ept())
-    resolved_cutoff_utc = cutoff_utc or loader.default_cutoff_utc(resolved_run_date)
-    cfg = configs.KnnModelConfig(
-        model_name=configs.METEO_RTO_HOURLY_SUNNY_SPEC.name,
-        hub=hub,
-        history_days=history_days,
-    )
-    logger = init_pipeline_logger(logger_name=LOGGER_NAME, quiet=quiet)
+    horizon = horizon_name_for_days(horizon_days)
+    logger = init_pipeline_logger(logger_name=_logger_name(horizon), quiet=quiet)
     try:
+        with logger.timer("resolve params"):
+            resolved_run_date = resolve_date(run_date, default=loader.today_ept())
+            resolved_cutoff_utc = cutoff_utc or loader.default_cutoff_utc(resolved_run_date)
+            cfg = configs.KnnModelConfig(
+                model_name=MODEL_NAME,
+                hub=hub,
+                history_days=history_days,
+            )
+
         with logger.timer("resolve available target dates"):
             target_dates = loader.available_target_dates(
                 run_date=resolved_run_date,
@@ -146,7 +167,7 @@ def run_latest_horizon(
                 pool_start_date=pool_start_date,
                 pool_year_months=pool_year_months,
             )
-        with logger.timer("load METEO RTO query features"):
+        with logger.timer("load source inputs"):
             query_frames = build_horizon_query_rows(
                 target_dates,
                 run_date=resolved_run_date,
@@ -159,7 +180,7 @@ def run_latest_horizon(
         actuals = pd.DataFrame()
         actual_hourly_by_date: dict[date, dict[int, float]] = {}
         if include_actuals and target_dates:
-            with logger.timer(f"load settled DA LMP at {hub} for target horizon"):
+            with logger.timer("load actuals"):
                 actuals = loader.load_lmp_history(
                     start_date=min(target_dates),
                     end_date=max(target_dates),
@@ -198,6 +219,7 @@ def run_latest_horizon(
                     include_pool_actuals=include_actuals,
                 )
                 is_complete = features_complete(query)
+                has_actuals = bool(result.get("has_actuals", actual_hourly is not None))
                 result.update(
                     {
                         "run_date": resolved_run_date.isoformat(),
@@ -206,6 +228,7 @@ def run_latest_horizon(
                         "cutoff_utc": resolved_cutoff_utc,
                         "n_pool": len(pool),
                         "features_complete": is_complete,
+                        "has_actuals": has_actuals,
                         "include_actuals": include_actuals,
                     }
                 )
@@ -238,43 +261,110 @@ def run_latest_horizon(
                     actual_hourly_maps_by_date[target.isoformat()] = actual_hourly
                 results_by_date[target.isoformat()] = result
 
-        strip_table = pd.DataFrame(rows)
-        if not quiet:
-            _print_horizon_report(
-                logger,
-                run_date=resolved_run_date,
-                hub=hub,
-                cutoff_utc=resolved_cutoff_utc,
-                horizon_days=horizon_days,
-                pool_rows=len(pool),
-                target_dates=target_dates,
-                strip_table=strip_table,
+        with logger.timer("build outputs"):
+            strip_table = pd.DataFrame(rows)
+            df_forecast = (
+                pd.concat(forecasts_by_date.values(), ignore_index=True)
+                if forecasts_by_date
+                else pd.DataFrame()
             )
-            if per_day_detail:
-                for target in target_dates:
-                    key = target.isoformat()
-                    result = results_by_date[key]
-                    knn_reporting.print_single_day_report(
-                        logger,
-                        title=f"KNN SUNNY METEO RTO | {hub} ($/MWh) | {target}",
-                        target_date=target,
-                        run_date=resolved_run_date,
-                        hub=hub,
-                        cutoff_utc=resolved_cutoff_utc,
-                        history_days=history_days,
-                        pool=pool,
-                        query=queries_by_date[key],
-                        result=result,
-                    )
 
-        return {
-            "run_id": str(uuid.uuid4()),
-            "run_date": resolved_run_date.isoformat(),
-            "cutoff_utc": resolved_cutoff_utc,
+        if not quiet:
+            with logger.timer("print report"):
+                _print_horizon_report(
+                    logger,
+                    run_date=resolved_run_date,
+                    hub=hub,
+                    cutoff_utc=resolved_cutoff_utc,
+                    horizon_days=horizon_days,
+                    pool_rows=len(pool),
+                    target_dates=target_dates,
+                    strip_table=strip_table,
+                )
+                if per_day_detail:
+                    for target in target_dates:
+                        key = target.isoformat()
+                        result = results_by_date[key]
+                        knn_reporting.print_single_day_report(
+                            logger,
+                            title=f"KNN SUNNY METEO RTO | {hub} ($/MWh) | {target}",
+                            target_date=target,
+                            run_date=resolved_run_date,
+                            hub=hub,
+                            cutoff_utc=resolved_cutoff_utc,
+                            history_days=history_days,
+                            pool=pool,
+                            query=queries_by_date[key],
+                            result=result,
+                        )
+
+        features_by_date = {
+            target.isoformat(): bool(results_by_date[target.isoformat()]["features_complete"])
+            for target in target_dates
+        }
+        has_actuals_by_date = {
+            target.isoformat(): bool(results_by_date[target.isoformat()]["has_actuals"])
+            for target in target_dates
+        }
+        warnings: list[str] = []
+        if not target_dates:
+            warnings.append("No available target dates found for the requested horizon.")
+        incomplete = [key for key, complete in features_by_date.items() if not complete]
+        if incomplete:
+            warnings.append(
+                "Target feature set is incomplete for: " + ", ".join(incomplete)
+            )
+        run_id = str(uuid.uuid4())
+        tables = {
+            "strip": strip_table,
+            "forecast": df_forecast,
+            "actuals": actuals,
+            "forecasts_by_date": forecasts_by_date,
+            "quantiles_by_date": bands_by_date,
+            "analogs_by_date": analogs_by_date,
+            "target_features_by_date": queries_by_date,
+            "output_by_date": output_tables_by_date,
+        }
+        status = {
+            "row_counts": {
+                "target_dates": len(target_dates),
+                "strip_rows": len(strip_table),
+                "forecast_rows": len(df_forecast),
+                "pool_rows": len(pool),
+                "actual_rows": len(actuals),
+                "analog_rows": sum(len(frame) for frame in analogs_by_date.values()),
+            },
+            "has_actuals": any(has_actuals_by_date.values()),
+            "features_complete": all(features_by_date.values())
+            if features_by_date
+            else False,
+            "warnings": warnings,
+        }
+        diagnostics = {
+            "source_freshness": {
+                "actuals_updated_at": max_timestamp(actuals, "updated_at"),
+            },
+            "settings": {
+                "horizon_days": horizon_days,
+                "history_days": history_days,
+                "pool_start_date": str(pool_start_date)
+                if pool_start_date is not None
+                else None,
+                "pool_year_months": pool_year_months,
+                "feature_group_weights_override": feature_group_weights_override,
+                "per_day_detail": per_day_detail,
+                "use_day_type_profiles": use_day_type_profiles,
+                "config": cfg,
+                "metrics_by_date": metrics_by_date,
+            },
+            "features_complete_by_date": features_by_date,
+            "has_actuals_by_date": has_actuals_by_date,
+        }
+        aliases = {
             "horizon_days": horizon_days,
-            "hub": hub,
-            "target_dates": [target.isoformat() for target in target_dates],
             "strip_table": strip_table,
+            "df_forecast": df_forecast,
+            "output_table": strip_table,
             "forecasts_by_date": forecasts_by_date,
             "bands_by_date": bands_by_date,
             "analogs_by_date": analogs_by_date,
@@ -285,7 +375,23 @@ def run_latest_horizon(
             "actual_hourly_by_date": actual_hourly_maps_by_date,
             "results_by_date": results_by_date,
             "n_pool": len(pool),
-            "include_actuals": include_actuals,
         }
+        return build_result_envelope(
+            model_family=MODEL_FAMILY,
+            model_name=MODEL_NAME,
+            input_family=INPUT_FAMILY,
+            horizon=horizon,
+            run_id=run_id,
+            run_date=resolved_run_date,
+            target_date=None,
+            target_dates=target_dates,
+            hub=hub,
+            cutoff_utc=resolved_cutoff_utc,
+            include_actuals=include_actuals,
+            tables=tables,
+            status=status,
+            diagnostics=diagnostics,
+            aliases=aliases,
+        )
     finally:
         logger.close()

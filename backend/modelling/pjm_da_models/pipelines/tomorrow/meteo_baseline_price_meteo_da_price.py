@@ -1,8 +1,9 @@
-"""Compatibility wrapper for full-window Meteologica DA-price baseline."""
+"""Tomorrow's Meteologica DA-price baseline pipeline."""
 
 from __future__ import annotations
 
 import sys
+from datetime import date
 from pathlib import Path
 
 
@@ -21,48 +22,39 @@ if __package__ in (None, ""):
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
 
-from datetime import date
-
 from backend.modelling.pjm_da_models.meteo_baseline_price.pipelines._shared import (
     DEFAULT_HUB,
-    run_latest_horizon,
+    run_single_day,
 )
 
+TARGET_DATE: date | None = None
 RUN_DATE: date | None = None
-HORIZON_DAYS: int | None = None
 HUB: str = DEFAULT_HUB
 CUTOFF_UTC: str | None = None
-INCLUDE_ACTUALS: bool = False
-ENTRYPOINT_NAME = "pjm_da_meteo_baseline_price_meteo_da_price_full_prediction_window"
+LEAD_DAYS: int | None = 1
+INCLUDE_ACTUALS: bool = True
+ENTRYPOINT_NAME = "pjm_da_meteo_baseline_price_meteo_da_price_tomorrow"
 
 
 def run(
     *,
+    target_date: date | str | None = TARGET_DATE,
     run_date: date | str | None = RUN_DATE,
-    horizon_days: int | None = HORIZON_DAYS,
     hub: str = HUB,
     cutoff_utc: str | None = CUTOFF_UTC,
+    lead_days: int | None = LEAD_DAYS,
     include_actuals: bool = INCLUDE_ACTUALS,
     quiet: bool = False,
 ) -> dict[str, object]:
-    return run_latest_horizon(
+    return run_single_day(
+        target_date=target_date,
         run_date=run_date,
-        horizon_days=horizon_days,
         hub=hub,
         cutoff_utc=cutoff_utc,
+        lead_days=lead_days,
         include_actuals=include_actuals,
         quiet=quiet,
     )
-
-__all__ = [
-    "CUTOFF_UTC",
-    "ENTRYPOINT_NAME",
-    "HORIZON_DAYS",
-    "HUB",
-    "INCLUDE_ACTUALS",
-    "RUN_DATE",
-    "run",
-]
 
 
 if __name__ == "__main__":

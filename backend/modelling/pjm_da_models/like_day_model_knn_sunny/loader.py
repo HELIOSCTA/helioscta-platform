@@ -89,6 +89,27 @@ def actuals_by_date_hour(actuals: pd.DataFrame) -> dict[date, dict[int, float]]:
     return output
 
 
+def apply_label_source(
+    labels: pd.DataFrame,
+    label_source: str = configs.LABEL_SOURCE,
+) -> pd.DataFrame:
+    output = labels.copy()
+    if output.empty or label_source == "hub_lmp":
+        return output
+    if label_source == "system_energy":
+        if "lmp_system_energy_price" not in output.columns:
+            raise KeyError(
+                "label_source='system_energy' requires "
+                "lmp_system_energy_price in the LMP frame."
+            )
+        output["lmp"] = pd.to_numeric(
+            output["lmp_system_energy_price"],
+            errors="coerce",
+        )
+        return output
+    raise ValueError(f"Unknown label_source: {label_source!r}")
+
+
 def load_rto_load_history(
     *,
     start_date: date | str,
@@ -216,6 +237,27 @@ def load_renewables_history(
     return _normalize_hourly(
         output,
         numeric_columns=("solar_at_hour", "wind_at_hour"),
+    )
+
+
+def load_renewables_pjm_forecast_history(
+    *,
+    start_date: date | str,
+    end_date: date | str,
+) -> pd.DataFrame:
+    rows = load_sql_input_frame(
+        "renewables_hourly_history.sql",
+        {
+            "start_date": _coerce_date(start_date),
+            "end_date": _coerce_date(end_date),
+        },
+    )
+    return _normalize_hourly(
+        rows,
+        numeric_columns=(
+            "solar_pjm_forecast_at_hour",
+            "wind_pjm_forecast_at_hour",
+        ),
     )
 
 
@@ -550,6 +592,7 @@ def build_pool_frame(
     run_date: date | str | None = None,
     history_days: int = configs.DEFAULT_HISTORY_DAYS,
     hub: str = configs.HUB,
+    label_source: str = configs.LABEL_SOURCE,
     load_region: str = configs.LOAD_REGION,
     weather_region: str = configs.WEATHER_REGION,
 ) -> pd.DataFrame:
@@ -587,6 +630,7 @@ def build_pool_frame(
         end_date=end_date,
         hub=hub,
     )[["date", "hour_ending", "lmp", "lmp_system_energy_price"]]
+    labels = apply_label_source(labels, label_source)
     outages = load_gen_outages_history(
         start_date=start_date,
         end_date=end_date,
@@ -655,6 +699,132 @@ def _outages_for_dates(
     return pd.DataFrame(rows)
 
 
+def _pjm_old_semantics_load_for_dates(
+    *,
+    target_dates: list[date],
+    load_region: str,
+) -> pd.DataFrame:
+    if not target_dates:
+        return _empty_hourly(["load_mw_at_hour"])
+    start_date = min(target_dates)
+    end_date = max(target_dates)
+    forecast = load_rto_load_forecast_history(
+        start_date=start_date,
+        end_date=end_date,
+        load_region=load_region,
+        lead_days=1,
+    )
+    realized: pd.DataFrame | None = None
+    frames: list[pd.DataFrame] = []
+    for target_date in target_dates:
+        forecast_slice = (
+            forecast[forecast["date"] == target_date] if not forecast.empty else forecast
+        )
+        if not forecast_slice.empty:
+            frames.append(
+                forecast_slice[["date", "hour_ending", "load_mw_at_hour"]]
+            )
+            continue
+        if realized is None:
+            realized = load_rto_load_history(
+                start_date=start_date,
+                end_date=end_date,
+                load_region=load_region,
+            )
+        realized_slice = (
+            realized[realized["date"] == target_date] if not realized.empty else realized
+        )
+        if not realized_slice.empty:
+            frames.append(
+                realized_slice[["date", "hour_ending", "load_mw_at_hour"]]
+            )
+    if not frames:
+        return _empty_hourly(["load_mw_at_hour"])
+    return _normalize_hourly(
+        pd.concat(frames, ignore_index=True),
+        numeric_columns=("load_mw_at_hour",),
+    )
+
+
+def _pjm_old_semantics_renewables_for_dates(
+    *,
+    start_date: date,
+    end_date: date,
+    meteo_region: str,
+    meteo_forecast_area: str,
+) -> pd.DataFrame:
+    pjm = load_renewables_pjm_forecast_history(
+        start_date=start_date,
+        end_date=end_date,
+    )
+    if pjm.empty:
+        renewables = _empty_hourly(["solar_at_hour", "wind_at_hour"])
+    else:
+        renewables = pjm[
+            [
+                "date",
+                "hour_ending",
+                "solar_pjm_forecast_at_hour",
+                "wind_pjm_forecast_at_hour",
+            ]
+        ].rename(
+            columns={
+                "solar_pjm_forecast_at_hour": "solar_at_hour",
+                "wind_pjm_forecast_at_hour": "wind_at_hour",
+            }
+        )
+
+    meteo = load_meteologica_rto_forecast_history(
+        start_date=start_date,
+        end_date=end_date,
+        region=meteo_region,
+        forecast_area=meteo_forecast_area,
+        lead_days=1,
+    )
+    if not meteo.empty:
+        meteo = meteo[["date", "hour_ending", "solar_at_hour", "wind_at_hour"]]
+        renewables = _fill_hourly_column(
+            renewables,
+            meteo,
+            value_column="solar_at_hour",
+        )
+        renewables = _fill_hourly_column(
+            renewables,
+            meteo,
+            value_column="wind_at_hour",
+        )
+    return _normalize_hourly(
+        renewables,
+        numeric_columns=("solar_at_hour", "wind_at_hour"),
+    )
+
+
+def _pjm_old_semantics_outages_for_dates(
+    *,
+    target_dates: list[date],
+    load_region: str,
+) -> pd.DataFrame:
+    if not target_dates:
+        return pd.DataFrame(columns=["date", "outage_total_mw"])
+    start_date = min(target_dates)
+    end_date = max(target_dates)
+    daily = load_gen_outages_history(
+        start_date=start_date,
+        end_date=end_date,
+        region=load_region,
+        lead_days=1,
+    )
+    rows: list[dict[str, object]] = []
+    for target_date in target_dates:
+        value = np.nan
+        if not daily.empty:
+            sub = daily[daily["date"] == target_date].dropna(subset=["outage_total_mw"])
+            if not sub.empty:
+                value = float(sub.iloc[0]["outage_total_mw"])
+        rows.append({"date": target_date, "outage_total_mw": value})
+    return pd.DataFrame(rows)
+
+
 def build_pjm_query_frames(
     *,
     target_dates: Iterable[date | str],
@@ -680,46 +850,16 @@ def build_pjm_query_frames(
             for hour in configs.HOURS
         ]
     )
-    load = load_rto_load_latest_forecast(
-        start_date=start_date,
-        end_date=end_date,
-        cutoff_utc=resolved_cutoff_utc,
-        run_date=resolved_run_date,
+    load = _pjm_old_semantics_load_for_dates(
+        target_dates=resolved_dates,
         load_region=load_region,
     )[["date", "hour_ending", "load_mw_at_hour"]]
-    renewables = load_renewables_latest_forecast(
+    renewables = _pjm_old_semantics_renewables_for_dates(
         start_date=start_date,
         end_date=end_date,
-        cutoff_utc=resolved_cutoff_utc,
-        run_date=resolved_run_date,
+        meteo_region=meteo_region,
+        meteo_forecast_area=meteo_forecast_area,
     )[["date", "hour_ending", "solar_at_hour", "wind_at_hour"]]
-    meteo = load_meteologica_rto_latest_forecast(
-        start_date=start_date,
-        end_date=end_date,
-        cutoff_utc=resolved_cutoff_utc,
-        region=meteo_region,
-        forecast_area=meteo_forecast_area,
-    )
-    if not meteo.empty:
-        meteo_renewables = meteo[
-            ["date", "hour_ending", "solar_at_hour", "wind_at_hour"]
-        ].rename(
-            columns={
-                "solar_at_hour": "solar_meteo_forecast_at_hour",
-                "wind_at_hour": "wind_meteo_forecast_at_hour",
-            }
-        )
-        renewables = _merge_hourly_frames([renewables, meteo_renewables])
-        for source, target in (("solar", "solar_at_hour"), ("wind", "wind_at_hour")):
-            meteo_column = f"{source}_meteo_forecast_at_hour"
-            if target not in renewables.columns:
-                renewables[target] = np.nan
-            renewables[target] = pd.to_numeric(renewables[target], errors="coerce")
-            if meteo_column in renewables.columns:
-                renewables[target] = renewables[target].combine_first(
-                    pd.to_numeric(renewables[meteo_column], errors="coerce")
-                )
-        renewables = renewables[["date", "hour_ending", "solar_at_hour", "wind_at_hour"]]
 
     temp = load_wsi_temperature_latest_forecast(
         start_date=start_date,
@@ -748,13 +888,9 @@ def build_pjm_query_frames(
     ramp_parts: list[pd.DataFrame] = []
     if not prev_load.empty:
         ramp_parts.append(prev_load)
-    if "load_mw_at_hour" in hourly.columns:
-        query_load = hourly[["date", "hour_ending", "load_mw_at_hour"]].dropna(
-            subset=["load_mw_at_hour"],
-            how="all",
-        )
-        if not query_load.empty:
-            ramp_parts.append(query_load)
+    query_load = hourly[["date", "hour_ending"]].copy()
+    query_load["load_mw_at_hour"] = _numeric_column(hourly, "load_mw_at_hour")
+    ramp_parts.append(query_load)
     ramp_source = (
         pd.concat(ramp_parts, ignore_index=True)
         if ramp_parts
@@ -778,9 +914,8 @@ def build_pjm_query_frames(
             - _numeric_column(hourly, "solar_at_hour").fillna(0.0)
             - _numeric_column(hourly, "wind_at_hour").fillna(0.0)
         )
-    outages = _outages_for_dates(
+    outages = _pjm_old_semantics_outages_for_dates(
         target_dates=resolved_dates,
-        run_date=resolved_run_date,
         load_region=load_region,
     )
     gas = load_gas_daily(

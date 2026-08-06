@@ -1,9 +1,25 @@
-"""Named pipeline entry points for the Meteologica baseline price model."""
+"""Compatibility exports for Meteologica baseline price pipelines."""
 
-from ._shared import run_latest_horizon, run_single_day
-from .forecast_full_prediction_window import run as run_full_prediction_window
-from .forecast_next_3_days import run as run_next_3_days
-from .forecast_tomorrow import run as run_tomorrow
+from __future__ import annotations
+
+from importlib import import_module
+
+
+_EXPORTS = {
+    "run_full_prediction_window": (".forecast_full_prediction_window", "run"),
+    "run_latest_horizon": ("._shared", "run_latest_horizon"),
+    "run_next_3_days": (
+        "backend.modelling.pjm_da_models.pipelines."
+        "next_3_days.meteo_baseline_price_meteo_da_price",
+        "run",
+    ),
+    "run_single_day": ("._shared", "run_single_day"),
+    "run_tomorrow": (
+        "backend.modelling.pjm_da_models.pipelines."
+        "tomorrow.meteo_baseline_price_meteo_da_price",
+        "run",
+    ),
+}
 
 __all__ = [
     "run_full_prediction_window",
@@ -12,3 +28,12 @@ __all__ = [
     "run_single_day",
     "run_tomorrow",
 ]
+
+
+def __getattr__(name: str) -> object:
+    if name not in _EXPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = _EXPORTS[name]
+    value = getattr(import_module(module_name, __name__), attribute)
+    globals()[name] = value
+    return value

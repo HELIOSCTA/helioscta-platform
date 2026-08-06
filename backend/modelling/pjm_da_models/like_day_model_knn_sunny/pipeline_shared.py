@@ -10,10 +10,12 @@ from datetime import date, timedelta
 import pandas as pd
 
 from ..logging_utils import init_logging
+from ..result_envelope import build_result_envelope, canonical_log_name, max_timestamp
 from ..runtime import DEFAULT_LOG_DIR
 from . import configs, loader, reporting as knn_reporting
 from .pjm_rto_hourly import forecast
 
+MODEL_FAMILY = "like_day_knn_sunny"
 
 PoolBuilder = Callable[..., pd.DataFrame]
 SingleDayQueryBuilder = Callable[
@@ -102,10 +104,12 @@ def init_pipeline_logger(*, logger_name: str, quiet: bool):
 def run_single_day_forecast(
     *,
     source_label: str,
-    logger_name: str,
     model_name: str,
     pool_builder: PoolBuilder,
     query_builder: SingleDayQueryBuilder,
+    input_family: str = "pjm_rto_hourly",
+    horizon: str = "tomorrow",
+    logger_name: str | None = None,
     target_date: date | str | None = None,
     run_date: date | str | None = None,
     hub: str = configs.HUB,
@@ -119,23 +123,32 @@ def run_single_day_forecast(
     quiet: bool = False,
 ) -> dict[str, object]:
     configure_stdio()
-    resolved_run_date = resolve_date(run_date, default=loader.today_ept())
-    resolved_cutoff_utc = cutoff_utc or loader.default_cutoff_utc(resolved_run_date)
-    resolved_target = resolve_date(
-        target_date,
-        default=resolved_run_date + timedelta(days=1),
+    resolved_logger_name = logger_name or canonical_log_name(
+        MODEL_FAMILY,
+        input_family,
+        horizon,
     )
-
-    cfg = configs.KnnModelConfig(
-        forecast_date=resolved_target.isoformat(),
-        model_name=model_name,
-        hub=hub,
-        history_days=history_days,
-        use_day_type_profiles=use_day_type_profiles,
-    )
-    logger = init_pipeline_logger(logger_name=logger_name, quiet=quiet)
+    logger = init_pipeline_logger(logger_name=resolved_logger_name, quiet=quiet)
     try:
-        with logger.timer("load historical feature pool"):
+        with logger.timer("resolve params"):
+            resolved_run_date = resolve_date(run_date, default=loader.today_ept())
+            resolved_cutoff_utc = cutoff_utc or loader.default_cutoff_utc(resolved_run_date)
+            resolved_target = resolve_date(
+                target_date,
+                default=resolved_run_date + timedelta(days=1),
+            )
+            cfg = configs.KnnModelConfig(
+                forecast_date=resolved_target.isoformat(),
+                model_name=model_name,
+                hub=hub,
+                history_days=history_days,
+                use_day_type_profiles=use_day_type_profiles,
+            )
+
+        with logger.timer("resolve target dates"):
+            target_dates = [resolved_target]
+
+        with logger.timer("load source inputs"):
             pool = pool_builder(
                 run_date=resolved_run_date,
                 history_days=history_days,
@@ -148,9 +161,8 @@ def run_single_day_forecast(
                 pool_start_date=pool_start_date,
                 pool_year_months=pool_year_months,
             )
-        with logger.timer(f"load {source_label} query features"):
             query = query_builder(
-                resolved_target,
+                target_dates[0],
                 pool,
                 resolved_run_date,
                 resolved_cutoff_utc,
@@ -159,15 +171,16 @@ def run_single_day_forecast(
         actuals = pd.DataFrame()
         actual_hourly = None
         if include_actuals:
-            with logger.timer(f"load settled DA LMP at {hub}"):
+            with logger.timer("load actuals"):
                 actuals = loader.load_actual_da_lmps(
-                    target_date=resolved_target,
+                    target_date=target_dates[0],
                     hub=hub,
                 )
             actual_hourly = loader.actuals_hourly(actuals)
-        with logger.timer("run KNN Sunny forecast"):
+
+        with logger.timer("run model"):
             result = forecast.run_forecast(
-                target_date=resolved_target,
+                target_date=target_dates[0],
                 query=query,
                 pool=pool,
                 config=cfg,
@@ -175,32 +188,119 @@ def run_single_day_forecast(
                 actual_hourly=actual_hourly,
                 include_pool_actuals=include_actuals,
             )
-        result.update(
-            {
-                "run_id": str(uuid.uuid4()),
-                "run_date": resolved_run_date.isoformat(),
-                "target_date": resolved_target.isoformat(),
-                "hub": hub,
-                "cutoff_utc": resolved_cutoff_utc,
-                "n_pool": len(pool),
-                "features_complete": features_complete(query),
+
+        with logger.timer("build outputs"):
+            run_id = str(uuid.uuid4())
+            df_forecast = result.get("df_forecast", pd.DataFrame())
+            output_table = result.get("output_table", pd.DataFrame())
+            quantiles_table = result.get("quantiles_table", pd.DataFrame())
+            analogs = result.get("analogs", pd.DataFrame())
+            target_features = result.get("target_features", query)
+            if not isinstance(df_forecast, pd.DataFrame):
+                df_forecast = pd.DataFrame()
+            if not isinstance(output_table, pd.DataFrame):
+                output_table = pd.DataFrame()
+            if not isinstance(quantiles_table, pd.DataFrame):
+                quantiles_table = pd.DataFrame()
+            if not isinstance(analogs, pd.DataFrame):
+                analogs = pd.DataFrame()
+            if not isinstance(target_features, pd.DataFrame):
+                target_features = query
+            complete_features = features_complete(query)
+            has_actuals = bool(result.get("has_actuals", actual_hourly is not None))
+            warnings: list[str] = []
+            if not complete_features:
+                warnings.append(f"Target feature set is incomplete for {target_dates[0]}.")
+
+            result.update(
+                {
+                    "run_id": run_id,
+                    "run_date": resolved_run_date.isoformat(),
+                    "target_date": target_dates[0].isoformat(),
+                    "hub": hub,
+                    "cutoff_utc": resolved_cutoff_utc,
+                    "n_pool": len(pool),
+                    "features_complete": complete_features,
+                    "actuals": actuals,
+                    "include_actuals": include_actuals,
+                    "has_actuals": has_actuals,
+                }
+            )
+            tables = {
+                "forecast": df_forecast,
+                "output": output_table,
+                "quantiles": quantiles_table,
+                "analogs": analogs,
+                "target_features": target_features,
                 "actuals": actuals,
-                "include_actuals": include_actuals,
             }
-        )
-        if not quiet:
-            knn_reporting.print_single_day_report(
-                logger,
-                title=f"KNN SUNNY {source_label.upper()} | {hub} ($/MWh) | {resolved_target}",
-                target_date=resolved_target,
+            status = {
+                "row_counts": {
+                    "forecast_rows": len(df_forecast),
+                    "output_rows": len(output_table),
+                    "quantile_rows": len(quantiles_table),
+                    "analog_rows": len(analogs),
+                    "query_rows": len(query),
+                    "pool_rows": len(pool),
+                    "actual_rows": len(actuals),
+                },
+                "has_actuals": has_actuals,
+                "features_complete": complete_features,
+                "warnings": warnings,
+            }
+            diagnostics = {
+                "source_freshness": {
+                    "actuals_updated_at": max_timestamp(actuals, "updated_at"),
+                },
+                "settings": {
+                    "history_days": history_days,
+                    "pool_start_date": str(pool_start_date)
+                    if pool_start_date is not None
+                    else None,
+                    "pool_year_months": pool_year_months,
+                    "feature_group_weights_override": feature_group_weights_override,
+                    "use_day_type_profiles": use_day_type_profiles,
+                    "config": cfg,
+                    "day_type": result.get("day_type"),
+                    "feature_weights": result.get("feature_weights"),
+                    "metrics": result.get("metrics", {}),
+                },
+            }
+            envelope = build_result_envelope(
+                model_family=MODEL_FAMILY,
+                model_name=model_name,
+                input_family=input_family,
+                horizon=horizon,
+                run_id=run_id,
                 run_date=resolved_run_date,
+                target_date=target_dates[0],
+                target_dates=target_dates,
                 hub=hub,
                 cutoff_utc=resolved_cutoff_utc,
-                history_days=history_days,
-                pool=pool,
-                query=query,
-                result=result,
+                include_actuals=include_actuals,
+                tables=tables,
+                status=status,
+                diagnostics=diagnostics,
+                aliases=result,
             )
-        return result
+
+        if not quiet:
+            with logger.timer("print report"):
+                knn_reporting.print_single_day_report(
+                    logger,
+                    title=(
+                        f"KNN SUNNY {source_label.upper()} | "
+                        f"{hub} ($/MWh) | {target_dates[0]}"
+                    ),
+                    target_date=target_dates[0],
+                    run_date=resolved_run_date,
+                    hub=hub,
+                    cutoff_utc=resolved_cutoff_utc,
+                    history_days=history_days,
+                    pool=pool,
+                    query=query,
+                    result=result,
+                )
+        return envelope
     finally:
         logger.close()

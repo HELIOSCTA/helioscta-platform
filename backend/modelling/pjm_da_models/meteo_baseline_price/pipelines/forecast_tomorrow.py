@@ -1,62 +1,54 @@
-"""Tomorrow's Meteologica DA-price baseline pipeline.
-
-Usage:
-    python -m backend.modelling.pjm_da_models.meteo_baseline_price.pipelines.forecast_tomorrow
-    python backend/modelling/pjm_da_models/meteo_baseline_price/pipelines/forecast_tomorrow.py
-"""
+"""Compatibility wrapper for tomorrow's Meteologica DA-price baseline."""
 
 from __future__ import annotations
 
 import sys
-from datetime import date
 from pathlib import Path
 
+
+def _find_repo_root() -> Path:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "backend" / "modelling" / "pjm_da_models").exists():
+            return parent
+    raise RuntimeError(
+        "Could not locate helioscta-platform repo root with "
+        "backend/modelling/pjm_da_models."
+    )
+
+
 if __package__ in (None, ""):
-    _REPO_ROOT = Path(__file__).resolve().parents[5]
+    _REPO_ROOT = _find_repo_root()
     if str(_REPO_ROOT) not in sys.path:
         sys.path.insert(0, str(_REPO_ROOT))
-    from backend.modelling.pjm_da_models.meteo_baseline_price.pipelines._shared import (  # type: ignore[import-not-found]
-        DEFAULT_HUB,
-        run_single_day,
-    )
-else:
-    from ._shared import DEFAULT_HUB, run_single_day
 
-TARGET_DATE: date | None = None
-RUN_DATE: date | None = None
-HUB: str = DEFAULT_HUB
-CUTOFF_UTC: str | None = None
-LEAD_DAYS: int | None = 1
-INCLUDE_ACTUALS: bool = True
+from backend.modelling.pjm_da_models.pipelines.tomorrow.meteo_baseline_price_meteo_da_price import (
+    CUTOFF_UTC,
+    ENTRYPOINT_NAME,
+    HUB,
+    INCLUDE_ACTUALS,
+    LEAD_DAYS,
+    RUN_DATE,
+    TARGET_DATE,
+    run,
+)
 
-
-def run(
-    *,
-    target_date: date | str | None = TARGET_DATE,
-    run_date: date | str | None = RUN_DATE,
-    hub: str = HUB,
-    cutoff_utc: str | None = CUTOFF_UTC,
-    lead_days: int | None = LEAD_DAYS,
-    include_actuals: bool = INCLUDE_ACTUALS,
-    quiet: bool = False,
-) -> dict[str, object]:
-    """Run the single-day report for tomorrow by default."""
-    return run_single_day(
-        target_date=target_date,
-        run_date=run_date,
-        hub=hub,
-        cutoff_utc=cutoff_utc,
-        lead_days=lead_days,
-        include_actuals=include_actuals,
-        quiet=quiet,
-    )
+__all__ = [
+    "CUTOFF_UTC",
+    "ENTRYPOINT_NAME",
+    "HUB",
+    "INCLUDE_ACTUALS",
+    "LEAD_DAYS",
+    "RUN_DATE",
+    "TARGET_DATE",
+    "run",
+]
 
 
 if __name__ == "__main__":
     from backend.modelling.pjm_da_models._entrypoint import run_entrypoint
 
     run_entrypoint(
-        name="pjm_da_meteo_baseline_price_tomorrow",
+        name=ENTRYPOINT_NAME,
         module_file=__file__,
         runner=run,
     )

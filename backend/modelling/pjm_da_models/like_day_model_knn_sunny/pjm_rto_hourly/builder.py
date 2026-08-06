@@ -14,6 +14,7 @@ def build_pool(
     run_date: date | str | None = None,
     history_days: int = configs.DEFAULT_HISTORY_DAYS,
     hub: str = configs.HUB,
+    label_source: str = configs.LABEL_SOURCE,
     load_region: str = configs.LOAD_REGION,
     weather_region: str = configs.WEATHER_REGION,
 ) -> pd.DataFrame:
@@ -21,6 +22,7 @@ def build_pool(
         run_date=run_date,
         history_days=history_days,
         hub=hub,
+        label_source=label_source,
         load_region=load_region,
         weather_region=weather_region,
     )
@@ -37,20 +39,17 @@ def build_query_row(
     meteo_region: str = configs.METEO_REGION,
     meteo_forecast_area: str = configs.METEO_FORECAST_AREA,
 ) -> pd.DataFrame:
-    """Return PJM-backed target features from pool history or forward inputs."""
-    query = pool[
-        pd.to_datetime(pool["date"], errors="coerce").dt.date == target_date
-    ].copy()
-    if query.empty:
-        query = loader.build_pjm_query_frames(
-            target_dates=[target_date],
-            run_date=run_date,
-            cutoff_utc=cutoff_utc,
-            load_region=load_region,
-            weather_region=weather_region,
-            meteo_region=meteo_region,
-            meteo_forecast_area=meteo_forecast_area,
-        ).get(target_date, pd.DataFrame())
+    """Return PJM-backed target features using old lead-1 query semantics."""
+    _ = pool
+    query = loader.build_pjm_query_frames(
+        target_dates=[target_date],
+        run_date=run_date,
+        cutoff_utc=cutoff_utc,
+        load_region=load_region,
+        weather_region=weather_region,
+        meteo_region=meteo_region,
+        meteo_forecast_area=meteo_forecast_area,
+    ).get(target_date, pd.DataFrame())
     if query.empty:
         raise ValueError(f"No PJM-backed feature rows found for target_date={target_date}.")
     keep = list(domains.MODEL_COLUMNS)

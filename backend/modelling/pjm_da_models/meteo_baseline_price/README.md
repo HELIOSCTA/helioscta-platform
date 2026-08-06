@@ -42,19 +42,50 @@ and promotion script. Do not edit files under `sql_inputs/` by hand.
 
 ```powershell
 python -m backend.modelling.pjm_da_models.meteo_baseline_price
+python -m backend.modelling.pjm_da_models.pipelines.tomorrow.meteo_baseline_price_meteo_da_price
+python -m backend.modelling.pjm_da_models.pipelines.next_3_days.meteo_baseline_price_meteo_da_price
+python -m backend.modelling.pjm_da_models.pipelines.next_14_days.meteo_baseline_price_meteo_da_price
+```
+
+Family-owned modules remain valid:
+
+```powershell
 python -m backend.modelling.pjm_da_models.meteo_baseline_price.pipelines.forecast_tomorrow
 python -m backend.modelling.pjm_da_models.meteo_baseline_price.pipelines.forecast_next_3_days
 python -m backend.modelling.pjm_da_models.meteo_baseline_price.pipelines.forecast_full_prediction_window
 ```
 
+The family `pipelines/` folder supports the root horizon scripts. `_shared.py`
+contains the baseline runner implementation, while `forecast_tomorrow.py` and
+`forecast_next_3_days.py` are old-path compatibility wrappers around the root
+`pipelines/tomorrow/` and `pipelines/next_3_days/` modules.
+
 The one-day pipeline defaults to tomorrow, `lead_days=1`, and a 10:00 EPT
 cutoff. Pass `lead_days=None` to relax the lead-day vintage while still keeping
 the run-date cutoff unless `cutoff_utc` is explicit.
+Baseline multi-day horizon entrypoints default to forecast-only summaries
+(`include_actuals=False`) to preserve the original read pattern. Pass
+`include_actuals=True` explicitly when actual DA LMP comparison columns are
+needed.
 
 This model uses the shared PJM DA package-root runtime helpers for read-only DB
 access, promoted SQL artifact loading, cutoff defaults, and terminal logging.
 The local `db.py` and `logging_utils.py` files are compatibility wrappers for
 older imports.
+
+## Output Contract
+
+Baseline runners return the shared PJM DA model envelope documented in
+`backend/modelling/pjm_da_models/README.md`. Canonical pandas tables are under
+`tables` as `forecast`, `actuals`, `bands`, `forecast_vs_actuals`,
+`ens_vs_actuals`, `members`, and `dispersion` for one-day runs, and `summary`
+for horizon runs.
+
+The legacy top-level aliases remain available:
+
+```text
+df_forecast, bands_table, forecast_vs_actuals, summary_table, results
+```
 
 ## Frontend DEV Runtime
 
