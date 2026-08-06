@@ -8,8 +8,14 @@ import type {
 } from "@/lib/server/powerLmps";
 
 export const POWER_SETTLES_EMAIL_TOPIC = "power-settles-email";
-export const POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT = "aidan.keaveny@helioscta.com";
-export const POWER_SETTLES_EMAIL_RECIPIENTS = [POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT] as const;
+export const POWER_SETTLES_EMAIL_ALLOWED_RECIPIENTS = [
+  "aidan.keaveny@helioscta.com",
+  "kapil.saxena@helioscta.com",
+] as const;
+export const POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT =
+  POWER_SETTLES_EMAIL_ALLOWED_RECIPIENTS[0];
+export const POWER_SETTLES_EMAIL_RECIPIENTS =
+  POWER_SETTLES_EMAIL_ALLOWED_RECIPIENTS;
 export const POWER_SETTLES_EMAIL_DEFAULT_RT_SOURCE: RtLmpSource = "verified";
 
 export interface PowerSettlesEmailQueueMessage {
@@ -46,7 +52,10 @@ export function normalizePowerSettlesEmailRecipient(value: string): string {
 }
 
 export function isAllowedPowerSettlesEmailRecipient(value: string): boolean {
-  return normalizePowerSettlesEmailRecipient(value) === POWER_SETTLES_EMAIL_ALLOWED_RECIPIENT;
+  const normalized = normalizePowerSettlesEmailRecipient(value);
+  return POWER_SETTLES_EMAIL_ALLOWED_RECIPIENTS.includes(
+    normalized as (typeof POWER_SETTLES_EMAIL_ALLOWED_RECIPIENTS)[number],
+  );
 }
 
 export function getPowerSettlesEmailRecipients(): string[] {

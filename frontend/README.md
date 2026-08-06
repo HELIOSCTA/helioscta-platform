@@ -310,10 +310,10 @@ linked from the email CTA.
 This workflow does not use
 `ops.email_notification_outbox`.
 
-The current Power Settles email recipient is intentionally pinned to
-`aidan.keaveny@helioscta.com`; `HELIOS_EMAIL_RECIPIENTS` is not used for this
-Vercel workflow until the audience is deliberately widened. The deterministic
-queue idempotency key is
+The current Power Settles email recipients are intentionally pinned to
+`aidan.keaveny@helioscta.com` and `kapil.saxena@helioscta.com`;
+`HELIOS_EMAIL_RECIPIENTS` is not used for this Vercel workflow until the
+audience is deliberately widened. The deterministic queue idempotency key is
 `power-settles:<date-or-latest>:<rtSource>:<component>:<lookbackDays>:<sparkHeatRate>:<recipient>`.
 
 ## Local DEV PJM DA Model Runtime
