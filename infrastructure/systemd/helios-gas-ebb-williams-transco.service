@@ -1,0 +1,19 @@
+[Unit]
+Description=HeliosCTA Williams Transco gas EBB notice refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=helios
+Group=helios
+WorkingDirectory=/opt/helioscta-platform
+EnvironmentFile=/etc/helioscta/backend.env
+ExecStart=/usr/bin/flock -n /tmp/helios-gas-ebb-williams-transco.lock /opt/helioscta-platform/.venv/bin/python -m backend.orchestration.gas_ebbs.williams_transco
+TimeoutStartSec=20min
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=helios-gas-ebb-williams-transco
+
+[Install]
+WantedBy=multi-user.target

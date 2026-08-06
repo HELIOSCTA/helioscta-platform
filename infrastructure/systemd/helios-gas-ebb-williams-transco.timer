@@ -1,0 +1,15 @@
+[Unit]
+Description=Quarter-hour HeliosCTA Williams Transco gas EBB notice refresh timer
+
+[Timer]
+OnCalendar=*-*-* *:00:00 UTC
+OnCalendar=*-*-* *:15:00 UTC
+OnCalendar=*-*-* *:30:00 UTC
+OnCalendar=*-*-* *:45:00 UTC
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-gas-ebb-williams-transco.service
+
+[Install]
+WantedBy=timers.target
