@@ -90,8 +90,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "ice-power-short-term", label: "ICE Power Short Term" },
       { id: "ice-power-term", label: "ICE Power Term" },
       { id: "spark-spreads", label: "ICE Power Analytics" },
-      { id: "gas-prices", label: "ICE GAS Cash & Term" },
-      { id: "gas-outright", label: "ICE Gas Analytics" },
     ],
   });
 
@@ -115,6 +113,16 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
       { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
+    ],
+  });
+
+  sections.push({
+    key: "gas",
+    label: "Gas",
+    navItems: [
+      { id: "gas-prices", label: "ICE GAS Cash & Term" },
+      { id: "gas-outright", label: "ICE Gas Analytics" },
+      { id: "salts", label: "Salts", description: "Flows + forecast" },
     ],
   });
 
@@ -144,7 +152,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "noms", label: "Gas Noms" },
         { id: "criterion-noms", label: "Criterion Noms", description: "PJM-state plant noms" },
         { id: "gtn-balance", label: "GTN Balance" },
-        { id: "salts", label: "Salts" },
         { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "pjm-forecast-reports", label: "Forecast Reports" },

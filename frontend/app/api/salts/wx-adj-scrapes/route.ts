@@ -7,8 +7,6 @@ import {
   type NextDayGasPriceMetric,
 } from "@/lib/gasPricing/nextDayGas";
 import { query } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
-import { localOnlyObservedNotFound } from "@/lib/server/localOnlyApi";
 import { mssqlQuery } from "@/lib/server/mssql";
 import { bindPromotedSql, readPjmDaPromotedSql } from "@/lib/server/pjmDaPromotedSql";
 import {
@@ -37,7 +35,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "no-store",
   owner: "gas",
-  purpose: "Local-dev Salts Home weather-adjusted Genscape table and scatter data.",
+  purpose: "Production Salts Home weather-adjusted Genscape table and scatter data.",
   p95TargetMs: 3_000,
   freshnessSource:
     "Promoted dbt salts mart SQL over GenscapeDataFeed.natgas and helios_prod WSI observations/forecasts",
@@ -1259,10 +1257,6 @@ function buildPlots({
 const observedGET = observedJsonRoute(
   ROUTE_CONFIG,
   async (request: Request): Promise<ObservedRouteResult> => {
-    if (!isLocalOnlyFeatureEnabled()) {
-      return localOnlyObservedNotFound();
-    }
-
     const { searchParams } = new URL(request.url);
     const modelDaily = searchParams.get("modelDaily") === "1";
     const season = parseSeason(searchParams.get("season"));

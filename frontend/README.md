@@ -110,6 +110,8 @@ GET /api/map/locations?pipeline=TRANSCO&limit=25
 GET /api/genscape-noms/filters?pipelines=TRANSCO
 GET /api/genscape-noms?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=50&includeCount=false
 GET /api/genscape-noms/map?start=YYYY-MM-DD&end=YYYY-MM-DD&pipeline=TRANSCO&limit=200
+GET /api/salts/wx-adj-scrapes?season=summer&month=7&weatherMetric=conus_population_cdd&lookbackYears=2
+GET /api/salts/forecast?lookbackWeeks=340
 GET /api/criterion/noms?date=YYYY-MM-DD&states=PA,OH&limit=1000
 GET /api/criterion/noms?date=YYYY-MM-DD&watchlistId=1&limit=1000
 GET /api/criterion/watchlists
@@ -1294,12 +1296,11 @@ and the database must be `helios_prod`.
 `metadataId` so UI-selected plant points can be validated against Snowflake
 metadata before writing to Postgres.
 
-## Local DEV Salts Source Contract
+## Salts Source Contract
 
-The Salts page (`/?section=salts`) is local-dev only while the legacy
-salts dashboards are being migrated. It is hidden from Vercel navigation,
-direct section routing is disabled on Vercel, and
-`GET /api/salts/wx-adj-scrapes` returns 404 outside local Next.js runs.
+The Salts page (`/?section=salts`) is production-visible on Vercel in the Gas
+sidebar section. It exposes the promoted Salts Home, Salts Inv, and Salts
+Forecast tabs backed by bounded server routes.
 
 The default Salts Home tab (`view=gas-salt-model`) is the promoted weather-adjusted salts view. It
 reads the bounded `/api/salts/wx-adj-scrapes` payload and uses the promoted
@@ -1404,11 +1405,11 @@ generated from `backend/scrapes/ice_python/symbols/gas.py` by
 The salts rows are flow metrics, not true inventory levels. Legacy EIA fields
 remain excluded until they have approved `helios_prod` source contracts.
 
-The local route does not write or cache salts data in Azure Postgres, and it
-does not require deployed Azure SQL `salts` views. Before making Salts
-production-visible, either deploy the dbt Azure SQL views with an operator
-principal or document the approved production pattern for executing promoted
-compiled SQL directly.
+The production routes do not write or cache salts data in Azure Postgres, and
+they do not require deployed Azure SQL `salts` views. Vercel executes the
+promoted compiled SQL directly against `GenscapeDataFeed.natgas` using the
+server-only Azure SQL credentials, then joins to `helios_prod` read-only
+weather, EIA, and ICE gas price sources in the route process.
 
 ## Criterion GTN Balance Source Contract
 

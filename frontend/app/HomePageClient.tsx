@@ -438,7 +438,7 @@ function parseInitialSection(
   ) {
     return "gas-outright";
   }
-  if (showLocalDevFeatures && (value === "salts" || parseSaltsTabFromView(viewValue))) {
+  if (value === "salts" || parseSaltsTabFromView(viewValue)) {
     return "salts";
   }
   if (value === "eia-generation" || viewValue === "eia-generation") {
@@ -1157,7 +1157,7 @@ export default function HomePageClient({
         footer: "ICE Gas Analytics | Source: ice_python.settlements / helios_prod",
       };
     }
-    if (showLocalDevFeatures && activeSection === "salts") {
+    if (activeSection === "salts") {
       return saltsChromeForTab(saltsActiveTab);
     }
     if (activeSection === "eia-generation") {
@@ -1309,7 +1309,7 @@ export default function HomePageClient({
   const isIcePowerPage =
     activeSection === "ice-power-short-term" || activeSection === "ice-power-term";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
-  const isSaltModelSection = showLocalDevFeatures && activeSection === "salts";
+  const isSaltModelSection = activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
   const isEiaGenerationSection = activeSection === "eia-generation";
   const isCenteredWorkstation =
@@ -2095,7 +2095,7 @@ export default function HomePageClient({
           {activeSection === "gas-outright" && (
             <GasCurveEvolution />
           )}
-          {showLocalDevFeatures && activeSection === "salts" && (
+          {activeSection === "salts" && (
             <SaltsDashboard
               activeTab={saltsActiveTab}
               initialTab={saltsActiveTab}

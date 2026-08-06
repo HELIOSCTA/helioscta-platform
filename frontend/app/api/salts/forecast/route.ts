@@ -3,8 +3,6 @@ import {
   type ObservedRouteResult,
 } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { isLocalOnlyFeatureEnabled } from "@/lib/server/devFeatures";
-import { localOnlyObservedNotFound } from "@/lib/server/localOnlyApi";
 import { mssqlQuery } from "@/lib/server/mssql";
 import {
   buildSaltFacilitiesForecastSql,
@@ -65,7 +63,7 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "no-store",
   owner: "gas",
-  purpose: "Local-dev Salts Forecast weekly EIA salt storage diagnostics.",
+  purpose: "Production Salts Forecast weekly EIA salt storage diagnostics.",
   p95TargetMs: 3_000,
   freshnessSource:
     "eia.weekly_underground_storage, promoted dbt salts mart SQL over GenscapeDataFeed.natgas, and weather.wsi_daily_weighted_degree_day_observations",
@@ -1046,10 +1044,6 @@ function buildModelPayload({
 const observedGET = observedJsonRoute(
   ROUTE_CONFIG,
   async (request: Request): Promise<ObservedRouteResult> => {
-    if (!isLocalOnlyFeatureEnabled()) {
-      return localOnlyObservedNotFound();
-    }
-
     const { searchParams } = new URL(request.url);
     const saltRegion = parseSaltRegion(searchParams.get("saltRegion"));
     const weatherRegion = parseWeatherRegion(searchParams.get("weatherRegion"));
