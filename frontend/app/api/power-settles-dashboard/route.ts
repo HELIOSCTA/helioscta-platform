@@ -21,7 +21,7 @@ export const maxDuration = 30;
 
 const CACHE_TTL_SECONDS = 300;
 const CACHE_HEADER = `public, s-maxage=${CACHE_TTL_SECONDS}, stale-while-revalidate=60`;
-const CACHE_NAMESPACE = "power-settles-dashboard-v4";
+const CACHE_NAMESPACE = "power-settles-dashboard-v5";
 const ROUTE_CONFIG = {
   route: "/api/power-settles-dashboard",
   cacheHeader: CACHE_HEADER,

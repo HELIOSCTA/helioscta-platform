@@ -175,7 +175,7 @@ Default gas-hub resolution is ISO-aware and may use the selected power hub when
 there is a clear dashboard mapping: PJM Chicago/N Illinois/Chicago Gen map to
 Chicago Citygate, AEP-Dayton/Ohio/AEP Gen and West Int map to Columbia TCO,
 ATSI Gen maps to MichCon, Dominion maps to Transco Z5 South, Western maps to
-Dominion South, and Eastern/New Jersey map to Transco Z6 NY; ERCOT North maps
+Tetco M3, and Eastern/New Jersey map to Transco Z6 NY; ERCOT North maps
 to NGPL TX/OK, ERCOT South/Houston to HSC, ERCOT West to Waha; CAISO SP15 to
 SoCal Citygate and NP15 to PG&E Citygate; MISO Indiana/Illinois to Chicago,
 Arkansas to NGPL Midcontinent, Louisiana to Henry Hub, Michigan to MichCon,

@@ -99,7 +99,7 @@ interface PowerSettlesDashboardPayload {
   };
 }
 
-const API_CACHE_SCHEMA_VERSION = "dashboard-spark-v4";
+const API_CACHE_SCHEMA_VERSION = "dashboard-spark-v5";
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const COMPONENT_TABS: Array<{ value: PowerSettlesComponent; label: string }> = [
   { value: "total", label: "Total" },

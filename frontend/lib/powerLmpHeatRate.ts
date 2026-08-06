@@ -396,7 +396,7 @@ export const POWER_LMP_GAS_HUB_BY_POWER_HUB: Partial<
     "ATSI GEN HUB": "gas_michcon",
     "DOMINION HUB": "gas_transco_z5_south",
     "NEW JERSEY HUB": "gas_tz6",
-    "WESTERN HUB": "gas_dom_south",
+    "WESTERN HUB": "gas_m3",
     "EASTERN HUB": "gas_tz6",
     "WEST INT HUB": "gas_tco",
   },
