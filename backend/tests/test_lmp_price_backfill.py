@@ -165,6 +165,35 @@ def test_main_continues_and_returns_nonzero_when_a_workflow_fails():
     assert calls == ["good", "bad", "good"]
 
 
+def test_main_treats_source_unavailable_partial_success_as_success():
+    def partial_runner(**kwargs):
+        return lmp_price_backfill_7_day.BackfillResult(
+            pipeline_name="partial",
+            start_date=kwargs["start_date"],
+            end_date=kwargs["end_date"],
+            days_requested=7,
+            rows_processed=2,
+            status="partial_success",
+            skipped_dates=(date(2026, 7, 30),),
+            skipped_errors=("2026-07-30: missing source file",),
+        )
+
+    workflows = (
+        lmp_price_backfill_7_day.PriceBackfillWorkflow(
+            name="partial",
+            runner=partial_runner,
+            end_lag_days=1,
+        ),
+    )
+
+    result = lmp_price_backfill_7_day.main(
+        workflows=workflows,
+        now=datetime.fromisoformat("2026-08-06T18:15:00-04:00"),
+    )
+
+    assert result == 0
+
+
 def test_isone_ercot_scrape_backfill_calls_pull_and_upsert_with_metadata():
     calls: list[dict[str, object]] = []
 
@@ -415,6 +444,59 @@ def test_spp_scrape_backfill_calls_pull_and_upsert_with_metadata(monkeypatch):
     assert calls[2]["operating_date"] == date(2026, 8, 5)
     assert calls[2]["metadata"]["backfill_business_date"] == "2026-08-05"
     assert calls[3]["method"] == "upsert"
+
+
+def test_spp_rt_backfill_skips_source_unavailable_dates_and_continues(monkeypatch):
+    calls: list[dict[str, object]] = []
+
+    def fake_pull(**kwargs):
+        calls.append({"method": "pull", **kwargs})
+        if kwargs["operating_date"] == date(2026, 7, 30):
+            raise lmp_price_backfill_7_day.spp_lmp.SPPPortalDataNotAvailable(
+                "not found",
+                status_code=404,
+            )
+        return pd.DataFrame({"row_id": [1, 2]})
+
+    def fake_upsert(df, database=None):
+        calls.append({"method": "upsert", "df": df, "database": database})
+
+    monkeypatch.setattr(
+        lmp_price_backfill_7_day.spp_rt_lmps_prelim,
+        "_pull",
+        fake_pull,
+    )
+    monkeypatch.setattr(
+        lmp_price_backfill_7_day.spp_rt_lmps_prelim,
+        "_upsert",
+        fake_upsert,
+    )
+
+    result = lmp_price_backfill_7_day._run_spp_rt_lmps_prelim_backfill(
+        start_date=date(2026, 7, 29),
+        end_date=date(2026, 7, 31),
+        database="stage_db",
+        request_delay_seconds=0,
+    )
+
+    assert result.status == "partial_success"
+    assert result.rows_processed == 4
+    assert result.skipped_dates == (date(2026, 7, 30),)
+    assert result.skipped_errors == (
+        "2026-07-30: SPPPortalDataNotAvailable: not found",
+    )
+    pulled_dates = [
+        call["operating_date"] for call in calls if call["method"] == "pull"
+    ]
+    assert pulled_dates == [
+        date(2026, 7, 29),
+        date(2026, 7, 30),
+        date(2026, 7, 31),
+    ]
+    assert [call["database"] for call in calls if call["method"] == "upsert"] == [
+        "stage_db",
+        "stage_db",
+    ]
 
 
 def test_nyiso_scrape_backfill_calls_pull_and_upsert_with_metadata(monkeypatch):

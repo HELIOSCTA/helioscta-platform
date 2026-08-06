@@ -43,12 +43,14 @@ from backend.scrapes.power.pjm import rt_hrl_lmps as pjm_rt_hrl_lmps
 from backend.scrapes.power.pjm import (
     rt_unverified_hrl_lmps as pjm_rt_unverified_hrl_lmps,
 )
+from backend.scrapes.power.spp import _lmp as spp_lmp
 from backend.scrapes.power.spp import da_lmps as spp_da_lmps
 from backend.scrapes.power.spp import rt_lmps_prelim as spp_rt_lmps_prelim
 
 MARKET_TIMEZONE = ZoneInfo("America/New_York")
 DEFAULT_LOOKBACK_DAYS = 7
 REPAIR_FAMILY = "lmp_price_backfill_7_day"
+SUCCESS_STATUSES = {"success", "dry_run", "partial_success"}
 
 
 @dataclass(frozen=True)
@@ -60,6 +62,8 @@ class BackfillResult:
     rows_processed: int
     status: str
     dry_run: bool = False
+    skipped_dates: tuple[date, ...] = ()
+    skipped_errors: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -79,6 +83,8 @@ class PriceBackfillRunSummary:
     rows_processed: int
     elapsed_seconds: float
     error: str | None = None
+    skipped_dates: tuple[date, ...] = ()
+    skipped_errors: tuple[str, ...] = ()
 
 
 def _start_of_day(value: date) -> datetime:
@@ -393,6 +399,7 @@ def _run_miso_scrape_backfill(
     dry_run: bool = False,
     database: str | None = None,
     request_delay_seconds: float = 2.0,
+    continue_on_exceptions: tuple[type[BaseException], ...] = (),
 ) -> BackfillResult:
     if dry_run:
         return _dry_run_result(
@@ -403,6 +410,8 @@ def _run_miso_scrape_backfill(
 
     run_id = str(uuid4())
     total_rows = 0
+    skipped_dates: list[date] = []
+    skipped_errors: list[str] = []
     current_date = start_date
     while current_date <= end_date:
         metadata = _backfill_metadata(
@@ -411,13 +420,34 @@ def _run_miso_scrape_backfill(
             workflow=workflow_name,
             business_date=current_date,
         )
-        df = module._pull(
-            operating_date=current_date,
-            nodes=module.DEFAULT_NODES,
-            run_id=run_id,
-            database=database,
-            metadata=metadata,
-        )
+        try:
+            df = module._pull(
+                operating_date=current_date,
+                nodes=module.DEFAULT_NODES,
+                run_id=run_id,
+                database=database,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            if not continue_on_exceptions or not isinstance(
+                exc,
+                continue_on_exceptions,
+            ):
+                raise
+            skipped_dates.append(current_date)
+            skipped_errors.append(
+                f"{current_date.isoformat()}: {type(exc).__name__}: {exc}"
+            )
+            print(
+                "LMP price backfill skipped source-unavailable date: "
+                f"{workflow_name} {current_date}; error={exc}",
+                flush=True,
+            )
+            current_date += timedelta(days=1)
+            if current_date <= end_date and request_delay_seconds > 0:
+                sleep(request_delay_seconds)
+            continue
+
         if not df.empty:
             module._upsert(df=df, database=database)
             total_rows += int(len(df))
@@ -432,7 +462,9 @@ def _run_miso_scrape_backfill(
         end_date=end_date,
         days_requested=(end_date - start_date).days + 1,
         rows_processed=total_rows,
-        status="success",
+        status="partial_success" if skipped_dates else "success",
+        skipped_dates=tuple(skipped_dates),
+        skipped_errors=tuple(skipped_errors),
     )
 
 
@@ -554,6 +586,7 @@ def _run_spp_rt_lmps_prelim_backfill(**kwargs: Any) -> BackfillResult:
     return _run_miso_scrape_backfill(
         module=spp_rt_lmps_prelim,
         workflow_name="spp_rt_lmps_prelim",
+        continue_on_exceptions=(spp_lmp.SPPPortalDataNotAvailable,),
         **kwargs,
     )
 
@@ -749,6 +782,8 @@ def _run_workflow(
         days_requested=result.days_requested,
         rows_processed=result.rows_processed,
         elapsed_seconds=elapsed,
+        skipped_dates=result.skipped_dates,
+        skipped_errors=result.skipped_errors,
     )
 
 
@@ -780,13 +815,20 @@ def main(
     ]
 
     for result in results:
-        if result.status in {"success", "dry_run"}:
+        if result.status in SUCCESS_STATUSES:
+            skipped = (
+                "; skipped_dates="
+                + ",".join(value.isoformat() for value in result.skipped_dates)
+                if result.skipped_dates
+                else ""
+            )
             print(
                 "LMP price backfill "
                 f"{result.status}: {result.workflow_name} "
                 f"{result.start_date} to {result.end_date}; "
                 f"days={result.days_requested}; rows={result.rows_processed}; "
-                f"elapsed={result.elapsed_seconds:.1f}s",
+                f"elapsed={result.elapsed_seconds:.1f}s"
+                f"{skipped}",
                 flush=True,
             )
         else:
@@ -798,7 +840,7 @@ def main(
                 flush=True,
             )
 
-    failures = [result for result in results if result.status not in {"success", "dry_run"}]
+    failures = [result for result in results if result.status not in SUCCESS_STATUSES]
     print(
         "Completed global LMP price backfill repair: "
         f"{len(results) - len(failures)} succeeded, {len(failures)} failed",
