@@ -33,6 +33,7 @@ import {
   FORECAST_POPUP_TABLE_CLASS,
   ForecastHeatmapToggle,
   ForecastPopupColGroup,
+  autoscaledYAxisDomain,
   compareDeltaCellStyle,
   compareLevelCellStyle,
   deltaCellStyle,
@@ -1241,57 +1242,69 @@ export default function PjmNetLoadForecast({
     });
   }, []);
 
-  const renderLookbackChart = (heightClass: string) => (
-    <div className={heightClass}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={lookbackChartRows} margin={{ top: 12, right: 20, bottom: 12, left: 8 }}>
-          <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
-          <XAxis
-            dataKey="he"
-            type="number"
-            domain={[1, 24]}
-            ticks={[1, 4, 8, 12, 16, 20, 24]}
-            tick={{ fill: "#9ca3af", fontSize: 11 }}
-            label={{ value: "Hour Ending", position: "insideBottom", offset: -4, fill: "#6b7280" }}
-          />
-          <YAxis
-            tick={{ fill: "#9ca3af", fontSize: 11 }}
-            tickFormatter={(value) => fmtMw(Number(value))}
-            width={86}
-            label={{ value: "MW", angle: -90, position: "insideLeft", fill: "#6b7280" }}
-          />
-          <Tooltip
-            contentStyle={{
-              background: "#111827",
-              border: "1px solid #374151",
-              borderRadius: 8,
-              color: "#e5e7eb",
-            }}
-            labelFormatter={(value) => `HE ${value}`}
-            formatter={(value, name) => [
-              tooltipMw(value),
-              lookbackSeries.find((item) => item.key === name)?.label ?? String(name),
-            ]}
-          />
-          {lookbackSeries
-            .filter((item) => !hiddenSeries.has(item.key))
-            .map((item) => (
-              <Line
-                key={item.key}
-                type="monotone"
-                dataKey={item.key}
-                name={item.label}
-                stroke={item.color}
-                strokeWidth={2}
-                dot={false}
-                connectNulls
-                isAnimationActive={false}
-              />
-            ))}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  const renderLookbackChart = (heightClass: string) => {
+    const visibleKeys = lookbackSeries
+      .filter((item) => !hiddenSeries.has(item.key))
+      .map((item) => item.key);
+    const yAxisDomain = autoscaledYAxisDomain({
+      rows: lookbackChartRows,
+      keys: visibleKeys,
+      minPadding: selectedComponent === "wind" || selectedComponent === "solar" ? 100 : 250,
+    });
+
+    return (
+      <div className={heightClass}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={lookbackChartRows} margin={{ top: 12, right: 20, bottom: 12, left: 8 }}>
+            <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+            <XAxis
+              dataKey="he"
+              type="number"
+              domain={[1, 24]}
+              ticks={[1, 4, 8, 12, 16, 20, 24]}
+              tick={{ fill: "#9ca3af", fontSize: 11 }}
+              label={{ value: "Hour Ending", position: "insideBottom", offset: -4, fill: "#6b7280" }}
+            />
+            <YAxis
+              domain={yAxisDomain}
+              tick={{ fill: "#9ca3af", fontSize: 11 }}
+              tickFormatter={(value) => fmtMw(Number(value))}
+              width={86}
+              label={{ value: "MW", angle: -90, position: "insideLeft", fill: "#6b7280" }}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "#111827",
+                border: "1px solid #374151",
+                borderRadius: 8,
+                color: "#e5e7eb",
+              }}
+              labelFormatter={(value) => `HE ${value}`}
+              formatter={(value, name) => [
+                tooltipMw(value),
+                lookbackSeries.find((item) => item.key === name)?.label ?? String(name),
+              ]}
+            />
+            {lookbackSeries
+              .filter((item) => !hiddenSeries.has(item.key))
+              .map((item) => (
+                <Line
+                  key={item.key}
+                  type="monotone"
+                  dataKey={item.key}
+                  name={item.label}
+                  stroke={item.color}
+                  strokeWidth={2}
+                  dot={false}
+                  connectNulls
+                  isAnimationActive={false}
+                />
+              ))}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
 
   const renderCompareProfileChart = (
     component: (typeof COMPARE_COMPONENTS)[number],

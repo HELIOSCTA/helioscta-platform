@@ -25,6 +25,7 @@ import {
   FORECAST_POPUP_TABLE_CLASS,
   ForecastHeatmapToggle,
   ForecastPopupColGroup,
+  autoscaledYAxisDomain,
   compareDeltaCellStyle,
   compareLevelCellStyle,
   forecastPopupColCount,
@@ -1161,59 +1162,67 @@ export default function PjmForecasts({
     chartSeries: PlotSeries[];
     curves: ForecastVintageCurve[];
     hiddenSeries: Set<string>;
-  }) => (
-    <div className={heightClass}>
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={rows} margin={{ top: 12, right: 24, bottom: 12, left: 8 }}>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" vertical={false} />
-          <XAxis
-            dataKey="heStart"
-            ticks={[0, 3, 7, 11, 15, 19, 23]}
-            tickFormatter={(value) => `HE ${Number(value) + 1}`}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-          />
-          <YAxis
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
-            tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-          />
-          <Tooltip
-            contentStyle={{
-              background: "#0f172a",
-              border: "1px solid #334155",
-              borderRadius: 6,
-              color: "#e5e7eb",
-            }}
-            formatter={(value: unknown, name: unknown) => [
-              typeof value === "number" ? `${Math.round(value).toLocaleString()} MW` : "-",
-              typeof name === "string"
-                ? (curves.find((row) => row.evaluatedAtEpt === name)?.tag || fmtDateTime(name))
-                : String(name),
-            ]}
-            labelFormatter={(value) => `HE ${Number(value) + 1}`}
-          />
-          {chartSeries.map((item) =>
-            hiddenSeries.has(item.key) ? null : (
-              <Line
-                key={item.key}
-                type="monotone"
-                dataKey={item.key}
-                name={item.key}
-                stroke={item.color}
-                dot={false}
-                strokeWidth={item.label === "LATEST" ? 2.8 : 2}
-                strokeDasharray={item.label === "LATEST" ? undefined : "5 3"}
-                connectNulls
-              />
-            ),
-          )}
-        </LineChart>
-      </ResponsiveContainer>
-    </div>
-  );
+  }) => {
+    const visibleKeys = chartSeries
+      .filter((item) => !hiddenSeries.has(item.key))
+      .map((item) => item.key);
+    const yAxisDomain = autoscaledYAxisDomain({ rows, keys: visibleKeys });
+
+    return (
+      <div className={heightClass}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={rows} margin={{ top: 12, right: 24, bottom: 12, left: 8 }}>
+            <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" vertical={false} />
+            <XAxis
+              dataKey="heStart"
+              ticks={[0, 3, 7, 11, 15, 19, 23]}
+              tickFormatter={(value) => `HE ${Number(value) + 1}`}
+              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tickLine={false}
+              axisLine={{ stroke: "#334155" }}
+            />
+            <YAxis
+              domain={yAxisDomain}
+              tick={{ fill: "#94a3b8", fontSize: 11 }}
+              tickLine={false}
+              axisLine={{ stroke: "#334155" }}
+              tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
+            />
+            <Tooltip
+              contentStyle={{
+                background: "#0f172a",
+                border: "1px solid #334155",
+                borderRadius: 6,
+                color: "#e5e7eb",
+              }}
+              formatter={(value: unknown, name: unknown) => [
+                typeof value === "number" ? `${Math.round(value).toLocaleString()} MW` : "-",
+                typeof name === "string"
+                  ? (curves.find((row) => row.evaluatedAtEpt === name)?.tag || fmtDateTime(name))
+                  : String(name),
+              ]}
+              labelFormatter={(value) => `HE ${Number(value) + 1}`}
+            />
+            {chartSeries.map((item) =>
+              hiddenSeries.has(item.key) ? null : (
+                <Line
+                  key={item.key}
+                  type="monotone"
+                  dataKey={item.key}
+                  name={item.key}
+                  stroke={item.color}
+                  dot={false}
+                  strokeWidth={item.label === "LATEST" ? 2.8 : 2}
+                  strokeDasharray={item.label === "LATEST" ? undefined : "5 3"}
+                  connectNulls
+                />
+              ),
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+    );
+  };
 
   const renderLookbackChart = (heightClass: string) =>
     renderCurveChart({

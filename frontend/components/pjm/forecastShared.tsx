@@ -47,6 +47,42 @@ export function avg(values: Array<number | null>): number | null {
   return nums.reduce((sum, value) => sum + value, 0) / nums.length;
 }
 
+export type ForecastYAxisDomain = [number, number];
+
+export function autoscaledYAxisDomain({
+  rows,
+  keys,
+  minPadding = 250,
+  paddingRatio = 0.08,
+  clampNonNegative = true,
+}: {
+  rows: Array<Record<string, number | null | undefined>>;
+  keys: string[];
+  minPadding?: number;
+  paddingRatio?: number;
+  clampNonNegative?: boolean;
+}): ForecastYAxisDomain | undefined {
+  const values = rows.flatMap((row) =>
+    keys
+      .map((key) => row[key])
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value)),
+  );
+  if (!values.length) return undefined;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  const magnitude = Math.max(Math.abs(min), Math.abs(max), 1);
+  const padding =
+    range > 0 ? Math.max(range * paddingRatio, minPadding) : Math.max(magnitude * 0.02, minPadding);
+  let lower = min - padding;
+  const upper = max + padding;
+
+  if (clampNonNegative && min >= 0 && lower < 0) lower = 0;
+
+  return [Math.floor(lower), Math.ceil(upper)];
+}
+
 export function heatCellStyle(
   value: number | null,
   min: number,
