@@ -1145,9 +1145,9 @@ export default function HomePageClient({
     }
     if (activeSection === "gas-prices") {
       return {
-        title: "ICE GAS Cash & Term",
+        title: "ICE Gas Cash & Term",
         subtitle: "ICE gas cash, BalMo, and active monthly settlements by region and market.",
-        footer: "ICE GAS Cash & Term | Source: ice_python.settlements / helios_prod",
+        footer: "ICE Gas Cash & Term | Source: ice_python.settlements / helios_prod",
       };
     }
     if (activeSection === "gas-outright") {

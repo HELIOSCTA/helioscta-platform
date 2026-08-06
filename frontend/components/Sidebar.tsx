@@ -90,6 +90,8 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
       { id: "ice-power-short-term", label: "ICE Power Short Term" },
       { id: "ice-power-term", label: "ICE Power Term" },
       { id: "spark-spreads", label: "ICE Power Analytics" },
+      { id: "gas-prices", label: "ICE Gas Cash & Term" },
+      { id: "gas-outright", label: "ICE Gas Analytics" },
     ],
   });
 
@@ -120,8 +122,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "gas",
     label: "Gas",
     navItems: [
-      { id: "gas-prices", label: "ICE GAS Cash & Term" },
-      { id: "gas-outright", label: "ICE Gas Analytics" },
       { id: "salts", label: "Salts", description: "Flows + forecast" },
     ],
   });

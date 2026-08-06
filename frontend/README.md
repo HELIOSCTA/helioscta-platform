@@ -693,12 +693,12 @@ are present, and exposes latest trade date, latest `updated_at`, row count, and
 source table metadata in the payload. It does not create a database model, frontend
 cache table, backend job, or new credential requirement.
 
-## ICE GAS Cash & Term Source Contract
+## ICE Gas Cash & Term Source Contract
 
-The ICE GAS Cash & Term view reads ICE physical gas cash, BalMo, and monthly
+The ICE Gas Cash & Term view reads ICE physical gas cash, BalMo, and monthly
 settlement marks with `helios_readonly` from `helios_prod.ice_python.settlements`.
 It appears in the `Pricing` sidebar section at `/?section=gas-prices`; the page
-and supporting ICE GAS Cash & Term API routes are production-visible on Vercel.
+and supporting ICE Gas Cash & Term API routes are production-visible on Vercel.
 
 Source system: ICE Python / ICE XL local Windows runtime.
 
@@ -714,7 +714,7 @@ The workstation currently uses:
   evolution page.
 - `GET /api/gas-daily-prices/contract` for cell-level history drilldowns.
 
-The ICE GAS Cash & Term routes do not read calendar tables, legacy `ice_python_v1_*`
+The ICE Gas Cash & Term routes do not read calendar tables, legacy `ice_python_v1_*`
 schemas, Azure SQL, Criterion Snowflake, or weather-adjusted WDD sources. Active
 monthly/front values are selected from available settlement rows in
 `ice_python.settlements`; settlement rows are treated as the settlement/expiry
@@ -736,7 +736,7 @@ table, backend job, or new credential requirement.
 
 The ICE Gas Analytics page reads monthly ICE gas futures settlement marks with
 `helios_readonly` from `helios_prod.ice_python.settlements`. It appears in the
-`Pricing` sidebar section at `/?section=gas-outright` directly below ICE GAS
+`Pricing` sidebar section at `/?section=gas-outright` directly below ICE Gas
 Cash & Term and is production-visible on Vercel.
 
 The page has two tabs:
