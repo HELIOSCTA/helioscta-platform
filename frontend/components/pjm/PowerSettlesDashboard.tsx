@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 
+import ControlCard from "@/components/dashboard/ControlCard";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type PowerIso = "pjm" | "ercot" | "isone" | "caiso";
@@ -186,17 +187,6 @@ function metricCell(value: number | null, signed = false) {
     <span className={`tabular-nums ${signed ? dartClass(value) : "text-gray-200"}`}>
       {fmtPrice(value, signed)}
     </span>
-  );
-}
-
-function ControlCard({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-        {title}
-      </h2>
-      {children}
-    </section>
   );
 }
 

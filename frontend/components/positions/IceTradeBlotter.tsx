@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ColumnVisibilityPopover from "@/components/dashboard/ColumnVisibilityPopover";
+import ControlCard from "@/components/dashboard/ControlCard";
 import DataTableShell from "@/components/dashboard/DataTableShell";
-import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
   formatIceTradeProductDisplay,
@@ -465,24 +465,6 @@ const EMPTY_POSITION_ROWS: PositionRow[] = [];
 const EMPTY_POSITION_LEG_ROWS: PositionLegRow[] = [];
 const EMPTY_PNL_SUMMARY_ROWS: PnlSummaryRow[] = [];
 const DEFAULT_SETTLE_REGION_FILTERS = ["PJM"] as const;
-const PJM_MONTHLY_SETTLE_MATRICES = [
-  {
-    key: "pmi",
-    productId: "PJM_WH_RT_TETCO_M3_7X",
-    title: "PMI Monthly Matrix",
-    subtitle: "PJM Western Hub RT on-peak monthly settles.",
-  },
-  {
-    key: "opj",
-    productId: "PJM_WH_RT_OFFPEAK_TETCO_M3_7X",
-    title: "OPJ Monthly Matrix",
-    subtitle: "PJM Western Hub RT off-peak monthly settles.",
-  },
-] as const;
-
-function defaultPjmMonthlyMatrixYears(referenceYear = new Date().getFullYear()): number[] {
-  return Array.from({ length: 7 }, (_, index) => referenceYear - 4 + index);
-}
 
 function fmtDate(value: string | null | undefined): string {
   if (!value) return "--";
@@ -5342,23 +5324,6 @@ function marksFromSettlementRows(rows: IceTradeBlotterRow[]): MarkValues {
   );
 }
 
-function ControlCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-        {title}
-      </h2>
-      {children}
-    </section>
-  );
-}
-
 function ColumnFilterMenu({
   label,
   options,
@@ -7247,10 +7212,6 @@ export default function IceTradeBlotter({
   );
   const settlementSummaryColumns = settlementSummary.columns;
   const settlementSummaryRows = settlementSummary.rows;
-  const pjmMonthlyMatrixYears = useMemo(() => defaultPjmMonthlyMatrixYears(), []);
-  const showPjmMonthlyMatrices = displayedDailySettlementRows.some(
-    (row) => String(row.region ?? "").trim().toUpperCase() === "PJM"
-  );
   const settlementSummaryColumnDeliveryRanges = useMemo(
     () =>
       Object.fromEntries(
@@ -8341,35 +8302,99 @@ export default function IceTradeBlotter({
   return (
     <div className="w-full space-y-4">
       {quickFiltersVisible && (
-        <div className="mx-auto w-full max-w-2xl">
-            <ControlCard title="Region">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
-                Filters
-              </span>
-              <span className="h-px flex-1 bg-gray-800" />
-              <span className="text-xs text-gray-500">
-                {quickFilterDisplayedRows.toLocaleString()} /{" "}
-                {quickFilterTotalRows.toLocaleString()}{" "}
-                {view === "settles" ? "settles" : view === "products" ? "products" : "trades"}
-              </span>
-            </div>
-            {view === "trades" && (
+        <div className="w-full max-w-2xl">
+          <ControlCard title="Region">
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  Filters
+                </span>
+                <span className="h-px flex-1 bg-gray-800" />
+                <span className="text-xs text-gray-500">
+                  {quickFilterDisplayedRows.toLocaleString()} /{" "}
+                  {quickFilterTotalRows.toLocaleString()}{" "}
+                  {view === "settles" ? "settles" : view === "products" ? "products" : "trades"}
+                </span>
+              </div>
+              {view === "trades" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    Trader
+                  </span>
+                  {["All", ...quickFilterTraderOptions].map((trader) => {
+                    const active = quickTraderFilter === trader;
+                    return (
+                      <button
+                        key={trader}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          setQuickTraderFilter(trader);
+                          clearCellSelection();
+                          clearExpandedGroups();
+                        }}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+                          active
+                            ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                            : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                        }`}
+                      >
+                        {trader === "All" ? "All Traders" : trader}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {view !== "settles" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    Asset
+                  </span>
+                  {["All", ...quickFilterAssetOptions].map((asset) => {
+                    const active =
+                      asset === "All"
+                        ? quickAssetFilters.length === 0
+                        : quickAssetFilters.includes(asset);
+                    return (
+                      <button
+                        key={asset}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          toggleQuickAssetFilter(asset);
+                          clearExpandedGroups();
+                        }}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+                          active
+                            ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                            : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                        }`}
+                      >
+                        {asset === "All" ? "All Assets" : asset}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  Trader
+                  Region
                 </span>
-                {["All", ...quickFilterTraderOptions].map((trader) => {
-                  const active = quickTraderFilter === trader;
+                {(view === "settles" ? quickFilterRegionOptions : ["All", ...quickFilterRegionOptions]).map((region) => {
+                  const active =
+                    region === "All"
+                      ? quickRegionFilters.length === 0
+                      : (view === "settles"
+                          ? effectiveQuickRegionFilters
+                          : quickRegionFilters
+                        ).includes(region);
                   return (
                     <button
-                      key={trader}
+                      key={region}
                       type="button"
                       aria-pressed={active}
                       onClick={() => {
-                        setQuickTraderFilter(trader);
-                        clearCellSelection();
+                        toggleQuickRegionFilter(region);
                         clearExpandedGroups();
                       }}
                       className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
@@ -8378,119 +8403,55 @@ export default function IceTradeBlotter({
                           : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
                       }`}
                     >
-                      {trader === "All" ? "All Traders" : trader}
+                      {region === "All" ? "All Regions" : region}
                     </button>
                   );
                 })}
               </div>
-            )}
-            {view !== "settles" && (
-              <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Asset
-              </span>
-              {["All", ...quickFilterAssetOptions].map((asset) => {
-                const active =
-                  asset === "All"
-                    ? quickAssetFilters.length === 0
-                    : quickAssetFilters.includes(asset);
-                return (
-                  <button
-                    key={asset}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => {
-                      toggleQuickAssetFilter(asset);
-                      clearExpandedGroups();
-                    }}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
-                      active
-                        ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
-                        : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
-                    }`}
-                  >
-                    {asset === "All" ? "All Assets" : asset}
-                  </button>
-                );
-              })}
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Region
-              </span>
-              {(view === "settles" ? quickFilterRegionOptions : ["All", ...quickFilterRegionOptions]).map((region) => {
-                const active =
-                  region === "All"
-                    ? quickRegionFilters.length === 0
-                    : (view === "settles"
-                        ? effectiveQuickRegionFilters
-                        : quickRegionFilters
-                      ).includes(region);
-                return (
-                  <button
-                    key={region}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => {
-                      toggleQuickRegionFilter(region);
-                      clearExpandedGroups();
-                    }}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
-                      active
-                        ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
-                        : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
-                    }`}
-                  >
-                    {region === "All" ? "All Regions" : region}
-                  </button>
-                );
-              })}
+              {view !== "settles" && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                    Term
+                  </span>
+                  {TRADE_BLOTTER_SCOPE_TABS.map((scope) => {
+                    const active = productScope === scope.value;
+                    return (
+                      <button
+                        key={scope.value}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          setProductScope(scope.value);
+                          resetTable();
+                          clearExpandedGroups();
+                          clearPositionPopupState();
+                        }}
+                        className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+                          active
+                            ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                            : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                        }`}
+                      >
+                        {scope.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+              {quickFilterActive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearQuickFilters();
+                    clearExpandedGroups();
+                  }}
+                  className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-500 transition-all duration-150 hover:border-gray-600 hover:text-gray-300"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
-            {view !== "settles" && (
-              <div className="flex flex-wrap items-center gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                Term
-              </span>
-              {TRADE_BLOTTER_SCOPE_TABS.map((scope) => {
-                const active = productScope === scope.value;
-                return (
-                  <button
-                    key={scope.value}
-                    type="button"
-                    aria-pressed={active}
-                    onClick={() => {
-                      setProductScope(scope.value);
-                      resetTable();
-                      clearExpandedGroups();
-                      clearPositionPopupState();
-                    }}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
-                      active
-                        ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
-                        : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
-                    }`}
-                  >
-                    {scope.label}
-                  </button>
-                );
-              })}
-              </div>
-            )}
-            {quickFilterActive && (
-              <button
-                type="button"
-                onClick={() => {
-                  clearQuickFilters();
-                  clearExpandedGroups();
-                }}
-                className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-500 transition-all duration-150 hover:border-gray-600 hover:text-gray-300"
-              >
-                Clear Filters
-              </button>
-            )}
-          </div>
-            </ControlCard>
+          </ControlCard>
         </div>
       )}
 
@@ -9144,7 +9105,7 @@ export default function IceTradeBlotter({
                 ? `Latest trade date ${fmtDate(dailySettlementsData.endDate)} | Click a product or settle value to view exact-symbol history.`
                 : "Latest trade date only. Click a product or settle value to view exact-symbol history."
             }
-            className="mx-auto w-fit max-w-full"
+            className="w-fit max-w-full"
             bodyClassName="w-fit max-w-full"
             action={
               <div className="flex flex-wrap items-center gap-2">
@@ -9268,24 +9229,6 @@ export default function IceTradeBlotter({
               </table>
             </div>
           </DataTableShell>
-
-          {showPjmMonthlyMatrices ? (
-            <div className="grid w-full grid-cols-1 items-stretch gap-4 xl:grid-cols-2">
-              {PJM_MONTHLY_SETTLE_MATRICES.map((matrix) => (
-                <IcePmiCurveTable
-                  key={matrix.key}
-                  className="min-w-0"
-                  mode="power"
-                  sparkProduct={matrix.productId}
-                  selectedYears={pjmMonthlyMatrixYears}
-                  title={matrix.title}
-                  subtitle={matrix.subtitle}
-                  pairedLayout
-                  defaultShowMetrics={false}
-                />
-              ))}
-            </div>
-          ) : null}
 
           {settlementHistorySelection && (
             <div

@@ -17,12 +17,12 @@ export type ActiveSection =
   | "nav-positions"
   | "clear-street-trades"
   | "ice-trade-blotter"
-  | "ice-settlements"
+  | "ice-power-short-term"
+  | "ice-power-term"
   | "spark-spreads"
   | "map"
   | "noms"
   | "gtn-balance"
-  | "ice-pmi-curve"
   | "gas-prices"
   | "gas-outright"
   | "salts"
@@ -76,10 +76,11 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "pricing",
     label: "Pricing",
     navItems: [
-      { id: "ice-settlements", label: "Power ICE Settles" },
-      { id: "spark-spreads", label: "Power Sparks" },
-      { id: "gas-prices", label: "Gas ICE Settles" },
-      { id: "gas-outright", label: "Gas Outright" },
+      { id: "ice-power-short-term", label: "ICE Power Short Term" },
+      { id: "ice-power-term", label: "ICE Power Term" },
+      { id: "spark-spreads", label: "ICE Power Analytics" },
+      { id: "gas-prices", label: "ICE GAS Cash & Term" },
+      { id: "gas-outright", label: "ICE Gas Analytics" },
     ],
   });
 

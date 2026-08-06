@@ -37,13 +37,10 @@ interface IcePmiCurveRow {
   stripOrder: number;
   currentSymbol: string | null;
   priceTrend?: TrendPoint[];
-  volumeTrend?: TrendPoint[];
   cal27Symbol?: string | null;
   cal27PriceTrend?: TrendPoint[];
-  cal27VolumeTrend?: TrendPoint[];
   cal28Symbol?: string | null;
   cal28PriceTrend?: TrendPoint[];
-  cal28VolumeTrend?: TrendPoint[];
   monthCurvePoints: PriorSettlementPoint[];
 }
 
@@ -96,12 +93,12 @@ interface IcePmiCurveTableProps {
   title?: string;
   subtitle?: string;
   pairedLayout?: boolean;
-  defaultShowMetrics?: boolean;
+  defaultShowTrend?: boolean;
 }
 
 interface MatrixCell {
   point: PriorSettlementPoint | null;
-  scan: ActiveScan | null;
+  priceTrend: TrendPoint[] | null;
 }
 
 interface MatrixRow {
@@ -116,16 +113,6 @@ interface SelectedContract {
   strip: string;
   year: number;
   point: PriorSettlementPoint;
-}
-
-interface ActiveScan {
-  priceMove: number | null;
-  priceMovePct: number | null;
-  latestVolume: number | null;
-  avgVolume: number | null;
-  attentionScore: number | null;
-  isHighVolume: boolean;
-  isBigMove: boolean;
 }
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -147,17 +134,6 @@ function fmtVolume(value: number | null | undefined): string {
   return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-function fmtSigned(value: number | null | undefined, decimals = 2): string {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
-  const formatted = Math.abs(value).toLocaleString(undefined, {
-    maximumFractionDigits: decimals,
-    minimumFractionDigits: decimals,
-  });
-  if (value > 0) return `+${formatted}`;
-  if (value < 0) return `-${formatted}`;
-  return formatted;
-}
-
 function chartDateMs(value: string | null | undefined): number | null {
   if (!value) return null;
   const time = new Date(`${value.slice(0, 10)}T00:00:00Z`).getTime();
@@ -174,45 +150,6 @@ function finiteTrendValues(points: TrendPoint[] | undefined): number[] {
     .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value));
 }
 
-function percentile(values: number[], ratio: number): number | null {
-  const sorted = values.filter((value) => Number.isFinite(value)).sort((a, b) => a - b);
-  if (sorted.length === 0) return null;
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.floor((sorted.length - 1) * ratio)));
-  return sorted[index];
-}
-
-function buildActiveScan(
-  priceTrend: TrendPoint[] | undefined,
-  volumeTrend: TrendPoint[] | undefined,
-): Omit<ActiveScan, "attentionScore" | "isHighVolume" | "isBigMove"> {
-  const prices = finiteTrendValues(priceTrend);
-  const volumes = finiteTrendValues(volumeTrend);
-  const firstPrice = prices.at(0) ?? null;
-  const latestPrice = prices.at(-1) ?? null;
-  const priceMove = firstPrice !== null && latestPrice !== null ? latestPrice - firstPrice : null;
-  const priceMovePct =
-    priceMove !== null && firstPrice !== null && firstPrice !== 0 ? priceMove / firstPrice : null;
-  const latestVolume = volumes.at(-1) ?? null;
-  const avgVolume =
-    volumes.length > 0 ? volumes.reduce((sum, value) => sum + value, 0) / volumes.length : null;
-
-  return { priceMove, priceMovePct, latestVolume, avgVolume };
-}
-
-function activeAttentionBorder(score: number | null): string {
-  if (score === null || !Number.isFinite(score)) return "rgba(34, 197, 94, 0.18)";
-  const clamped = Math.max(0, Math.min(1, score));
-  const alpha = 0.18 + clamped * 0.52;
-  return `rgba(34, 197, 94, ${alpha.toFixed(2)})`;
-}
-
-function activeAttentionBackground(score: number | null): string {
-  if (score === null || !Number.isFinite(score)) return "rgba(34, 197, 94, 0.08)";
-  const clamped = Math.max(0, Math.min(1, score));
-  const alpha = 0.08 + clamped * 0.24;
-  return `rgba(34, 197, 94, ${alpha.toFixed(2)})`;
-}
-
 function isActiveForwardPoint(point: PriorSettlementPoint | null, dataAsOf: string | null | undefined): boolean {
   return (
     point?.pointType === "forward" &&
@@ -227,6 +164,39 @@ function pointTypeLabel(point: PriorSettlementPoint | null, dataAsOf: string | n
   if (!point) return "-";
   if (isActiveForwardPoint(point, dataAsOf)) return "Fwd";
   return point.pointType === "forward" ? "Settled" : "Settle";
+}
+
+function PriceTrendSparkline({ priceTrend }: { priceTrend: TrendPoint[] }) {
+  const values = finiteTrendValues(priceTrend);
+  if (values.length < 2) return null;
+
+  const width = 72;
+  const height = 16;
+  const paddingX = 1;
+  const paddingY = 2;
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const coordinates = values.map((value, index) => {
+    const x = paddingX + (index / Math.max(1, values.length - 1)) * (width - paddingX * 2);
+    const y = height - paddingY - ((value - min) / range) * (height - paddingY * 2);
+    return { x, y };
+  });
+  const path = coordinates
+    .map(({ x, y }, index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(" ");
+
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className="mt-1 h-3.5 w-full overflow-visible"
+    >
+      <path d={path} fill="none" stroke="#38bdf8" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} />
+    </svg>
+  );
 }
 
 function ContractCombinedChart({ history }: { history: ContractHistoryPoint[] }) {
@@ -463,12 +433,12 @@ export default function IcePmiCurveTable({
   title,
   subtitle,
   pairedLayout = false,
-  defaultShowMetrics = true,
+  defaultShowTrend = true,
 }: IcePmiCurveTableProps = {}) {
   const [payload, setPayload] = useState<IcePmiCurvePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showMetrics, setShowMetrics] = useState(defaultShowMetrics);
+  const [showTrend, setShowTrend] = useState(defaultShowTrend);
   const lookbackDays = 7;
   const [selectedContract, setSelectedContract] = useState<SelectedContract | null>(null);
   const [contractPayload, setContractPayload] = useState<ContractHistoryPayload | null>(null);
@@ -594,34 +564,19 @@ export default function IcePmiCurveTable({
         const cells = new Map<number, MatrixCell>();
         for (const year of matrixYears) {
           const point = pointsByYear.get(year) ?? null;
-          let scan: ActiveScan | null = null;
+          let priceTrend: TrendPoint[] | null = null;
 
           if (point && isActiveForwardPoint(point, payload?.dataAsOf)) {
             if (point.symbol === row.currentSymbol || (!point.symbol && point.contractYear === matrixCurrentYear)) {
-              scan = {
-                ...buildActiveScan(row.priceTrend, row.volumeTrend),
-                attentionScore: null,
-                isHighVolume: false,
-                isBigMove: false,
-              };
+              priceTrend = row.priceTrend ?? null;
             } else if (point.symbol === row.cal27Symbol || (!point.symbol && point.contractYear === 2027)) {
-              scan = {
-                ...buildActiveScan(row.cal27PriceTrend, row.cal27VolumeTrend),
-                attentionScore: null,
-                isHighVolume: false,
-                isBigMove: false,
-              };
+              priceTrend = row.cal27PriceTrend ?? null;
             } else if (point.symbol === row.cal28Symbol || (!point.symbol && point.contractYear === 2028)) {
-              scan = {
-                ...buildActiveScan(row.cal28PriceTrend, row.cal28VolumeTrend),
-                attentionScore: null,
-                isHighVolume: false,
-                isBigMove: false,
-              };
+              priceTrend = row.cal28PriceTrend ?? null;
             }
           }
 
-          cells.set(year, { point, scan });
+          cells.set(year, { point, priceTrend });
         }
 
         return {
@@ -633,69 +588,15 @@ export default function IcePmiCurveTable({
       });
   }, [matrixCurrentYear, matrixYears, payload?.dataAsOf, payload?.rows]);
 
-  const matrixRows = useMemo(() => {
-    const baseRows = monthlyMatrixRows;
-
-    const activeScans = baseRows.flatMap((row) =>
-      matrixYears.map((year) => row.cells.get(year)?.scan ?? null),
-    );
-    const highVolumeThreshold = percentile(
-      activeScans
-        .map((scan) => scan?.latestVolume ?? null)
-        .filter((value): value is number => value !== null && Number.isFinite(value)),
-      0.75,
-    );
-    const maxVolume = Math.max(
-      0,
-      ...activeScans
-        .map((scan) => scan?.latestVolume ?? null)
-        .filter((value): value is number => value !== null && Number.isFinite(value)),
-    );
-    const bigMoveThreshold = percentile(
-      activeScans
-        .map((scan) => (scan?.priceMove === null || scan?.priceMove === undefined ? null : Math.abs(scan.priceMove)))
-        .filter((value): value is number => value !== null && Number.isFinite(value)),
-      0.75,
-    );
-    const maxAbsMove = Math.max(
-      0,
-      ...activeScans
-        .map((scan) => (scan?.priceMove === null || scan?.priceMove === undefined ? null : Math.abs(scan.priceMove)))
-        .filter((value): value is number => value !== null && Number.isFinite(value)),
-    );
-
-    for (const row of baseRows) {
-      for (const year of matrixYears) {
-        const cell = row.cells.get(year);
-        if (!cell?.scan) continue;
-        cell.scan.isHighVolume =
-          highVolumeThreshold !== null &&
-          cell.scan.latestVolume !== null &&
-          cell.scan.latestVolume >= highVolumeThreshold;
-        cell.scan.isBigMove =
-          bigMoveThreshold !== null &&
-          cell.scan.priceMove !== null &&
-          Math.abs(cell.scan.priceMove) >= bigMoveThreshold;
-        const volumeScore =
-          maxVolume > 0 && cell.scan.latestVolume !== null ? cell.scan.latestVolume / maxVolume : 0;
-        const moveScore =
-          maxAbsMove > 0 && cell.scan.priceMove !== null ? Math.abs(cell.scan.priceMove) / maxAbsMove : 0;
-        cell.scan.attentionScore = (volumeScore + moveScore) / 2;
-      }
-    }
-
-    return baseRows;
-  }, [matrixYears, monthlyMatrixRows]);
-
   const selectedSameMonthPoints = useMemo(() => {
     if (!selectedContract) return [];
     return (
-      matrixRows
+      monthlyMatrixRows
         .find((row) => row.strip === selectedContract.strip)
         ?.points.filter((point) => point.contractYear !== null)
         .sort((a, b) => (a.contractYear ?? 0) - (b.contractYear ?? 0)) ?? []
     );
-  }, [matrixRows, selectedContract]);
+  }, [monthlyMatrixRows, selectedContract]);
 
   const activeSymbol = selectedContract?.point.symbol;
 
@@ -726,22 +627,23 @@ export default function IcePmiCurveTable({
         title={title ?? `${pricingModeLabel(mode)} Month x Year`}
         subtitle={
           subtitle ??
-          (showMetrics
-            ? `Metrics show ${lookbackDays}-day move and volume analytics; settled contracts open contract history`
-            : "Metrics hidden; cells show settlement marks only")
+          (showTrend
+            ? `${lookbackDays}d price trends shown for active forwards`
+            : "Trend hidden; cells show settlement marks only")
         }
         action={
           <button
             type="button"
-            aria-pressed={showMetrics}
-            onClick={() => setShowMetrics((value) => !value)}
+            aria-pressed={showTrend}
+            aria-label="Toggle 7-day price trend"
+            onClick={() => setShowTrend((value) => !value)}
             className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
-              showMetrics
+              showTrend
                 ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100"
                 : "border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-500 hover:text-gray-200"
             }`}
           >
-            Metrics
+            7d Trend
           </button>
         }
         className={pairedLayout ? "h-full min-w-0" : ""}
@@ -777,7 +679,7 @@ export default function IcePmiCurveTable({
                 </td>
               </tr>
             )}
-            {!loading && matrixRows.length === 0 && (
+            {!loading && monthlyMatrixRows.length === 0 && (
               <tr>
                 <td className="px-3 py-4 text-gray-500" colSpan={Math.max(2, matrixYears.length + 1)}>
                   No {pricingModeLabel(mode).toLowerCase()} matrix rows returned.
@@ -785,7 +687,7 @@ export default function IcePmiCurveTable({
               </tr>
             )}
             {!loading &&
-              matrixRows.map((row) => (
+              monthlyMatrixRows.map((row) => (
                 <tr key={row.strip} className="h-[54px] bg-[#151820] odd:bg-[#181b23]">
                   <th className="sticky left-0 z-10 bg-inherit px-2 py-1 text-left text-sm font-semibold text-gray-100">
                     <span className="block">{row.strip}</span>
@@ -794,22 +696,15 @@ export default function IcePmiCurveTable({
                     ) : null}
                   </th>
                   {matrixYears.map((year) => {
-                    const cell = row.cells.get(year) ?? { point: null, scan: null };
+                    const cell = row.cells.get(year) ?? { point: null, priceTrend: null };
                     const selected = activeSymbol && cell.point?.symbol === activeSymbol;
                     const pointLabel = pointTypeLabel(cell.point, payload?.dataAsOf);
                     const activeForward = isActiveForwardPoint(cell.point, payload?.dataAsOf);
-                    const attentionWorthy = showMetrics && Boolean(cell.scan?.isHighVolume || cell.scan?.isBigMove);
                     const statusClass = activeForward
                       ? "text-cyan-200"
                       : cell.point
                         ? "text-yellow-200"
                         : "text-gray-500";
-                    const moveTone =
-                      (cell.scan?.priceMove ?? 0) > 0
-                        ? "text-emerald-200"
-                        : (cell.scan?.priceMove ?? 0) < 0
-                          ? "text-red-200"
-                          : "text-gray-400";
                     return (
                       <td key={`${row.strip}-${year}`} className="h-[54px] px-1 py-0.5 align-top">
                         <button
@@ -829,20 +724,8 @@ export default function IcePmiCurveTable({
                           className={`min-h-[42px] w-full rounded border px-1.5 py-1 text-right transition-colors disabled:cursor-not-allowed ${
                             selected
                               ? "border-cyan-300 shadow-[0_0_0_1px_rgba(34,211,238,0.55)]"
-                              : attentionWorthy
-                                ? "hover:border-green-300"
-                                : "border-white/5 hover:border-cyan-400/50"
+                              : "border-white/5 hover:border-cyan-400/50"
                           }`}
-                          style={{
-                            borderColor:
-                              !selected && attentionWorthy && cell.scan
-                                ? activeAttentionBorder(cell.scan.attentionScore)
-                                : undefined,
-                            backgroundColor:
-                              !selected && attentionWorthy && cell.scan
-                                ? activeAttentionBackground(cell.scan.attentionScore)
-                                : undefined,
-                          }}
                         >
                           <div className="text-xs font-semibold leading-tight tabular-nums text-gray-100">
                             {fmtPrice(cell.point?.settlement)}
@@ -850,12 +733,8 @@ export default function IcePmiCurveTable({
                           <div className={`text-[9px] font-semibold leading-tight tabular-nums ${statusClass}`}>
                             {cell.point ? `${pointLabel} ${fmtDate(cell.point.finalTradeDate)}` : "-"}
                           </div>
-                          {showMetrics && cell.scan ? (
-                            <div className={`text-[9px] font-semibold leading-tight tabular-nums ${moveTone}`}>
-                              {lookbackDays}d {fmtSigned(cell.scan.priceMove)} · V {fmtVolume(cell.scan.latestVolume)}
-                              {cell.scan.isHighVolume && <span className="ml-1 text-cyan-100">Vol</span>}
-                              {cell.scan.isBigMove && <span className="ml-1 text-amber-100">Move</span>}
-                            </div>
+                          {showTrend && cell.priceTrend ? (
+                            <PriceTrendSparkline priceTrend={cell.priceTrend} />
                           ) : null}
                         </button>
                       </td>

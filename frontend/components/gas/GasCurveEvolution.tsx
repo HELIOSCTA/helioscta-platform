@@ -136,7 +136,7 @@ function formatSignedMoney(value: number | null, decimals = 3): string {
 }
 
 function viewLabel(view: GasCurveEvolutionView): string {
-  return view === "cal-spread" ? "Calendar Spread" : "Gas Outright";
+  return view === "cal-spread" ? "Calendar Spread" : "Outright";
 }
 
 function valueFormatter(view: GasCurveEvolutionView): (value: number | null) => string {
@@ -304,7 +304,7 @@ function ModeTabs({
   return (
     <div className="inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-gray-700 bg-gray-900 p-1">
       {[
-        { key: "gas-outright" as const, title: "Gas Outright", subtitle: "Monthly settlement curve" },
+        { key: "gas-outright" as const, title: "Outright", subtitle: "Monthly settlement curve" },
         { key: "cal-spread" as const, title: "Calendar Spread", subtitle: "Near - far gas months" },
       ].map((option) => (
         <button

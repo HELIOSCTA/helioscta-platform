@@ -562,9 +562,9 @@ payload metadata such as `nav_date`, `trade_date`, and `trade_date_from_sftp`,
 with telemetry creation date as the fallback. The UI opens each history row in
 a modal with recipient-level delivery details.
 
-## Power Sparks Source Contract
+## ICE Power Analytics Source Contract
 
-The Power Sparks view reads non-option ICE settlement marks with
+The ICE Power Analytics view reads non-option ICE settlement marks with
 `helios_readonly` from `ice_python.settlements`. It appears in the `Pricing`
 sidebar section at `/?section=spark-spreads&pricingMode=spark&sparkStrip=H`;
 the page and `GET /api/spark-spread-evolution` are production-visible on Vercel.
@@ -583,12 +583,12 @@ are present, and exposes latest trade date, latest `updated_at`, row count, and
 source table metadata in the payload. It does not create a database model, frontend
 cache table, backend job, or new credential requirement.
 
-## Gas ICE Settles Source Contract
+## ICE GAS Cash & Term Source Contract
 
-The Gas ICE Settles view reads ICE physical gas cash, BalMo, and monthly
+The ICE GAS Cash & Term view reads ICE physical gas cash, BalMo, and monthly
 settlement marks with `helios_readonly` from `helios_prod.ice_python.settlements`.
 It appears in the `Pricing` sidebar section at `/?section=gas-prices`; the page
-and supporting Gas ICE Settles API routes are production-visible on Vercel.
+and supporting ICE GAS Cash & Term API routes are production-visible on Vercel.
 
 Source system: ICE Python / ICE XL local Windows runtime.
 
@@ -600,11 +600,11 @@ The workstation currently uses:
 - `GET /api/gas-daily-prices` for the cash, BalMo, and active monthly matrix.
 - `GET /api/gas-daily-prices/monthly-settles` for the Gas Pricing Monthly
   Settles tab.
-- `GET /api/gas-curve-evolution` for the Gas Outright and Calendar Spread curve
+- `GET /api/gas-curve-evolution` for the ICE Gas Analytics curve
   evolution page.
 - `GET /api/gas-daily-prices/contract` for cell-level history drilldowns.
 
-The Gas ICE Settles routes do not read calendar tables, legacy `ice_python_v1_*`
+The ICE GAS Cash & Term routes do not read calendar tables, legacy `ice_python_v1_*`
 schemas, Azure SQL, Criterion Snowflake, or weather-adjusted WDD sources. Active
 monthly/front values are selected from available settlement rows in
 `ice_python.settlements`; settlement rows are treated as the settlement/expiry
@@ -622,23 +622,23 @@ uses EIA storage-region keys: `east`, `midwest`, `mountain`, `pacific`, and
 `south_central`. The view does not create a database model, frontend cache
 table, backend job, or new credential requirement.
 
-## Gas Outright Source Contract
+## ICE Gas Analytics Source Contract
 
-The Gas Outright page reads monthly ICE gas futures settlement marks with
+The ICE Gas Analytics page reads monthly ICE gas futures settlement marks with
 `helios_readonly` from `helios_prod.ice_python.settlements`. It appears in the
-`Pricing` sidebar section at `/?section=gas-outright` directly below Gas ICE
-Settles and is production-visible on Vercel.
+`Pricing` sidebar section at `/?section=gas-outright` directly below ICE GAS
+Cash & Term and is production-visible on Vercel.
 
 The page has two tabs:
 
-- `Gas Outright`: one EIA region, one gas market, and one monthly `gasStrip`.
+- `Outright`: one EIA region, one gas market, and one monthly `gasStrip`.
 - `Calendar Spread`: one EIA region, one gas market, and `gasNear - gasFar`.
 
 The route `GET /api/gas-curve-evolution` accepts bounded params
 `view=gas-outright|cal-spread`, `market`, `gasStrip`, `gasNear`, `gasFar`,
 `startYear`, and `endYear`. `sparkStrip` is accepted only as a fallback for
 reference links when `gasStrip` is missing. The default page state is South
-Central, Henry Hub, Gas Outright, and the current/front monthly strip. The
+Central, Henry Hub, Outright, and the current/front monthly strip. The
 default year window is current year minus four through current year plus two.
 
 Fixed-price markets use the market futures product directly, such as
@@ -653,27 +653,37 @@ delivery month starts. It does not read an exchange-calendar table. Freshness co
 does not create a database model, frontend cache table, backend job, or new
 credential requirement.
 
-## Power ICE Settles Source Contract
+## ICE Power Source Contract
 
-The Power ICE Settles view reads PJM short-term and monthly settlement marks
-with `helios_readonly` from PJM LMPs and `ice_python.settlements`, using the
+The Pricing sidebar exposes two production-visible ICE power pages:
+`ICE Power Short Term` at `/?section=ice-power-short-term` and
+`ICE Power Term` at `/?section=ice-power-term`. Legacy
+`/?section=ice-settlements` links alias to Short Term, and legacy local/dev
+`/?section=ice-pmi-curve` links alias to Term.
+
+The Short Term page reads PJM short-term settlement marks with
+`helios_readonly` from PJM LMPs and `ice_python.settlements`, using the
 frontend trade-blotter product dictionary for the displayed contract catalog.
-It appears in the `Pricing` sidebar section at `/?section=ice-settlements`;
-the page and supporting ICE settle routes are production-visible on Vercel.
 
 Source systems: PJM hourly LMP tables and ICE Python / ICE XL local Windows
 settlement tables.
 
-Primary settle grain:
+Primary short-term settle grain:
 `market_date x cc x hub x contract x settlement_source_key`.
 
-The PJM short-term scope is the default and only exposed UI scope for this
-page. It covers `PDP`, `PWA`, `PDA`, `PJL`, `PDO`, and `ODP` with daily,
-weekly, and weekend contract codes. The route
+The short-term scope covers `PDP`, `PWA`, `PDA`, `PJL`, `PDO`, and `ODP` with
+daily, weekly, and weekend contract codes. The route
 `GET /api/ice-trade-blotter/daily-settlements?scope=short_pjm` returns daily
 settle rows and metadata. The product dictionary route exposes the rules used
-for mapping trade-blotter product codes to settlement sources. The copied
-trade-level matching routes still expect the legacy
+for mapping trade-blotter product codes to settlement sources.
+
+The Term page renders only the PMI and OPJ monthly matrices. It reuses
+`GET /api/ice-pmi-curve` with the existing PMI default product and the OPJ
+`PJM_WH_RT_OFFPEAK_TETCO_M3_7X` product definition, and it reuses
+`GET /api/ice-pmi-curve/contract?symbol=<ICE symbol>` for matrix cell
+contract-detail charts.
+
+The copied trade-level matching routes still expect the legacy
 `ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI
 until that source table is promoted into this database. This work does not
 create a database model, frontend cache table, backend job, or new credential

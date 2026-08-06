@@ -18,7 +18,7 @@ import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
 import GtnPipelineBalance from "@/components/gas/GtnPipelineBalance";
-import IcePmiCurveTable from "@/components/ice/IcePmiCurveTable";
+import IcePowerTermPage from "@/components/ice/IcePowerTermPage";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
@@ -343,8 +343,11 @@ function parseInitialSection(
   if (showLocalDevFeatures && value === "clear-street-trades") {
     return "clear-street-trades";
   }
-  if (value === "ice-settlements") {
-    return "ice-settlements";
+  if (value === "ice-power-short-term" || value === "ice-settlements") {
+    return "ice-power-short-term";
+  }
+  if (value === "ice-power-term" || value === "ice-pmi-curve") {
+    return "ice-power-term";
   }
   if (value === "spark-spreads") {
     return "spark-spreads";
@@ -357,9 +360,6 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "gtn-balance") {
     return "gtn-balance";
-  }
-  if (showLocalDevFeatures && value === "ice-pmi-curve") {
-    return "ice-pmi-curve";
   }
   if (value === "gas-prices") {
     return "gas-prices";
@@ -404,7 +404,7 @@ function parseInitialSection(
   if (value === "pjm-forecasts") return "pjm-forecasts";
   if (value === "pjm-outages") return "pjm-outages";
   if (value === "pjm-constraints") return "pjm-constraints";
-  return "ice-settlements";
+  return "ice-power-short-term";
 }
 
 function parseInitialForecastType(
@@ -775,21 +775,29 @@ export default function HomePageClient({
           "Clear Street Trades | Source: clear_street.eod_transactions / Azure PostgreSQL",
       };
     }
-    if (activeSection === "ice-settlements") {
+    if (activeSection === "ice-power-short-term") {
       return {
-        title: "Power ICE Settles",
+        title: "ICE Power Short Term",
         subtitle:
-          "PJM short-term and monthly power settlement marks with source context.",
+          "PJM daily, weekly, and weekend power settlement marks with source context.",
         footer:
-          "Power ICE Settles | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
+          "ICE Power Short Term | Source: PJM LMPs + ice_python.settlements / Azure PostgreSQL",
+      };
+    }
+    if (activeSection === "ice-power-term") {
+      return {
+        title: "ICE Power Term",
+        subtitle:
+          "PMI and OPJ monthly power settlement matrices with contract detail history.",
+        footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (activeSection === "spark-spreads") {
       return {
-        title: "Power Sparks",
+        title: "ICE Power Analytics",
         subtitle:
           "Outright, calendar, and spark spread curve history with heat-rate context.",
-        footer: "Power Sparks | Source: ice_python.settlements / Azure PostgreSQL",
+        footer: "ICE Power Analytics | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "map") {
@@ -814,26 +822,18 @@ export default function HomePageClient({
         footer: "GTN Balance | Source: Criterion Snowflake PRODUCTION.PIPELINES",
       };
     }
-    if (showLocalDevFeatures && activeSection === "ice-pmi-curve") {
-      return {
-        title: "ICE PMI",
-        subtitle:
-          "PMI monthly curve table with current marks, seven-day trends, Cal27/Cal28 values, and prior-year settlements.",
-        footer: "ICE PMI | Source: ice_python.settlements / Azure PostgreSQL",
-      };
-    }
     if (activeSection === "gas-prices") {
       return {
-        title: "Gas ICE Settles",
+        title: "ICE GAS Cash & Term",
         subtitle: "ICE gas cash, BalMo, and active monthly settlements by region and market.",
-        footer: "Gas ICE Settles | Source: ice_python.settlements / helios_prod",
+        footer: "ICE GAS Cash & Term | Source: ice_python.settlements / helios_prod",
       };
     }
     if (activeSection === "gas-outright") {
       return {
-        title: "Gas Outright",
+        title: "ICE Gas Analytics",
         subtitle: "ICE gas monthly outright and calendar-spread evolution by EIA region and market.",
-        footer: "Gas Outright | Source: ice_python.settlements / helios_prod",
+        footer: "ICE Gas Analytics | Source: ice_python.settlements / helios_prod",
       };
     }
     if (showLocalDevFeatures && activeSection === "salts") {
@@ -966,7 +966,8 @@ export default function HomePageClient({
   }, [activeSection, saltsActiveTab, showLocalDevFeatures]);
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
-  const isIceSettlements = activeSection === "ice-settlements";
+  const isIcePowerPage =
+    activeSection === "ice-power-short-term" || activeSection === "ice-power-term";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isSaltModelSection = showLocalDevFeatures && activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
@@ -981,7 +982,7 @@ export default function HomePageClient({
     isPjmDaModelSection ||
     isEiaGenerationSection ||
     isHistoricalSettlements ||
-    isIceSettlements ||
+    isIcePowerPage ||
     activeSection === "pjm-constraints";
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
@@ -1291,7 +1292,7 @@ export default function HomePageClient({
               />
             )}
 
-            {activeSection === "ice-settlements" && (
+            {activeSection === "ice-power-short-term" && (
               <FreshnessCard
                 statusLabel={iceSettlementsFreshness.status}
                 statusClass={iceSettlementsFreshness.statusClass}
@@ -1612,7 +1613,7 @@ export default function HomePageClient({
               onFreshnessChange={setClearStreetTradesFreshness}
             />
           )}
-          {activeSection === "ice-settlements" && (
+          {activeSection === "ice-power-short-term" && (
             <IceTradeBlotter
               refreshToken={iceSettlementsRefreshToken}
               onFreshnessChange={setIceSettlementsFreshness}
@@ -1639,8 +1640,8 @@ export default function HomePageClient({
           {showLocalDevFeatures && activeSection === "gtn-balance" && (
             <GtnPipelineBalance initialDate={initialGtnBalanceDate} />
           )}
-          {showLocalDevFeatures && activeSection === "ice-pmi-curve" && (
-            <IcePmiCurveTable />
+          {activeSection === "ice-power-term" && (
+            <IcePowerTermPage />
           )}
           {activeSection === "gas-prices" && (
             <GasDailyPrices
