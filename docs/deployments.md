@@ -61,9 +61,14 @@ boundary, or log path changes.
     `provider = 'gas_ebb'`, `pipeline_name = 'gas_ebb_williams_transco'`, and
     `run_mode = 'scheduled'` succeeded for listing fetch, listing parse,
     listing upsert, detail fetch, lifecycle, and retention.
-- Residual risk: first production runs can have more new notices than the
-  `25` detail-fetch cap; listing lifecycle rows are complete immediately, and
-  details backfill across repeated scheduled runs.
+- One-time detail catch-up: transient systemd unit
+  `helios-gas-ebb-williams-transco-backfill.service` ran on `2026-08-06` with
+  `run_mode = 'manual_backfill'`, `run_reason = 'detail_catchup_2026_08_06'`,
+  and `max_detail_fetches = 5000`; it fetched `2,194` detail pages with zero
+  detail failures, leaving all `2,204` current notices with detail.
+- Residual risk: future bursts of new notices can exceed the scheduled
+  `25` detail-fetch cap for a single run; listing lifecycle rows are complete
+  immediately, and details catch up across repeated scheduled runs.
 
 ## miso-data-exchange-lmps
 
