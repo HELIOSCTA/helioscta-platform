@@ -34,6 +34,7 @@ export type ActiveSection =
   | "pjm-ops-summary"
   | "pjm-load-growth"
   | "pjm-forecasts"
+  | "pjm-forecast-reports"
   | "pjm-outages"
   | "pjm-constraints"
   | "pjm-weather"
@@ -136,6 +137,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "salts", label: "Salt Model" },
         { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
+        { id: "pjm-forecast-reports", label: "Forecast Reports" },
         { id: "weather-short-term", label: "Short-Term Weather" },
         { id: "positions-home", label: "Old Positions Home" },
         { id: "nav-positions", label: "Old NAV Positions" },

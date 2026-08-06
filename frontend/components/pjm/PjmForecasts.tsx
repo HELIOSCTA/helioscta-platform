@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode } from "react";
-import { Fragment, startTransition, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -34,8 +34,10 @@ import {
   forecastPopupMinWidthClass,
 } from "@/components/pjm/forecastShared";
 import PjmNetLoadForecast, {
+  type ComponentKey as NetLoadComponentKey,
   type PjmNetLoadForecastFreshnessSummary,
   type NetLoadForecastTab,
+  type StatisticKey as NetLoadStatisticKey,
 } from "@/components/pjm/PjmNetLoadForecast";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
@@ -144,9 +146,11 @@ export interface PjmForecastsFreshnessSummary {
 }
 
 export type PjmForecastView = "explorer" | "profile" | "table" | "diffs";
-type ForecastSourceMode = "pjm" | "meteologica";
+export type ForecastSourceMode = "pjm" | "meteologica";
 export type ForecastType = "load" | "netLoad";
-type ForecastMode = "outright" | "compareDay";
+export type ForecastMode = "outright" | "compareDay";
+export type NetLoadForecastComponent = NetLoadComponentKey;
+export type NetLoadForecastStatistic = NetLoadStatisticKey;
 type ExplorerMetric =
   | "peakMw"
   | "onPeakAvg"
@@ -630,12 +634,22 @@ function forecastSegmentButtonClass(active: boolean): string {
 export default function PjmForecasts({
   initialForecastType = "load",
   initialMode = "outright",
+  initialSourceMode = "pjm",
+  initialArea,
+  initialDate,
+  initialNetLoadComponent,
+  initialNetLoadStatistic,
   refreshToken = 0,
   onFreshnessChange,
 }: {
   initialView?: PjmForecastView;
   initialForecastType?: ForecastType;
   initialMode?: ForecastMode;
+  initialSourceMode?: ForecastSourceMode;
+  initialArea?: string;
+  initialDate?: string;
+  initialNetLoadComponent?: NetLoadComponentKey;
+  initialNetLoadStatistic?: NetLoadStatisticKey;
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmForecastsFreshnessSummary) => void;
   onViewChange?: (view: PjmForecastView) => void;
@@ -643,7 +657,7 @@ export default function PjmForecasts({
   const [forecastType, setForecastType] = useState<ForecastType>(initialForecastType);
   const [forecastMode, setForecastMode] = useState<ForecastMode>(initialMode);
   const [explorerViewMode, setExplorerViewMode] = useState<ExplorerViewMode>("latest");
-  const [sourceMode, setSourceMode] = useState<ForecastSourceMode>("pjm");
+  const [sourceMode, setSourceMode] = useState<ForecastSourceMode>(initialSourceMode);
   const [explorerMetric, setExplorerMetric] = useState<ExplorerMetric>("peakMw");
   const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
@@ -659,7 +673,12 @@ export default function PjmForecasts({
   const [selectedExplorerCell, setSelectedExplorerCell] = useState<{
     area: string;
     forecastDate: string;
-  } | null>(null);
+  } | null>(() =>
+    initialForecastType === "load" && initialMode === "outright" && initialArea && initialDate
+      ? { area: initialArea, forecastDate: initialDate }
+      : null,
+  );
+  const previousSourceMode = useRef(sourceMode);
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
@@ -681,6 +700,8 @@ export default function PjmForecasts({
   };
 
   useEffect(() => {
+    if (previousSourceMode.current === sourceMode) return;
+    previousSourceMode.current = sourceMode;
     setSelectedExplorerCell(null);
     setDiffData(null);
     setDiffError(null);
@@ -2253,6 +2274,10 @@ export default function PjmForecasts({
           refreshToken={refreshToken}
           sourceMode={sourceMode}
           activeTab={forecastMode as NetLoadForecastTab}
+          initialArea={initialArea}
+          initialDate={initialDate}
+          initialComponent={initialNetLoadComponent}
+          initialStatistic={initialNetLoadStatistic}
           embedded
           onFreshnessChange={handleNetLoadFreshnessChange}
         />

@@ -48,9 +48,16 @@ import PowerLmpAdders, {
   type PowerLmpAddersFreshnessSummary,
 } from "@/components/pjm/PowerLmpAdders";
 import PjmForecasts, {
+  type ForecastMode,
+  type ForecastSourceMode,
   type ForecastType,
+  type NetLoadForecastComponent,
+  type NetLoadForecastStatistic,
   type PjmForecastsFreshnessSummary,
 } from "@/components/pjm/PjmForecasts";
+import PjmForecastReports, {
+  type PjmForecastReportsFreshnessSummary,
+} from "@/components/pjm/PjmForecastReports";
 import PjmGeneration, {
   type PjmGenerationFreshnessSummary,
 } from "@/components/pjm/PjmGeneration";
@@ -202,6 +209,15 @@ const DEFAULT_PJM_FORECASTS_FRESHNESS: PjmForecastsFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
   summary: "Forecasts --",
+  targetDateLabel: "--",
+  latestDateLabel: "--",
+  latestUpdateLabel: "--",
+};
+
+const DEFAULT_PJM_FORECAST_REPORTS_FRESHNESS: PjmForecastReportsFreshnessSummary = {
+  status: "Unknown",
+  statusClass: "border-gray-700 bg-gray-900 text-gray-400",
+  summary: "Forecast reports --",
   targetDateLabel: "--",
   latestDateLabel: "--",
   latestUpdateLabel: "--",
@@ -402,6 +418,7 @@ function parseInitialSection(
   if (value === "pjm-ops-summary") return "pjm-ops-summary";
   if (value === "pjm-load-growth") return "pjm-load-growth";
   if (value === "pjm-forecasts") return "pjm-forecasts";
+  if (showLocalDevFeatures && value === "pjm-forecast-reports") return "pjm-forecast-reports";
   if (value === "pjm-outages") return "pjm-outages";
   if (value === "pjm-constraints") return "pjm-constraints";
   return "ice-power-short-term";
@@ -414,6 +431,30 @@ function parseInitialForecastType(
 ): ForecastType {
   if (showLocalDevFeatures && section === "pjm-net-load-forecast") return "netLoad";
   return value === "netLoad" ? "netLoad" : "load";
+}
+
+function parseForecastSourceModeParam(value: string | null): ForecastSourceMode | undefined {
+  return value === "pjm" || value === "meteologica" ? value : undefined;
+}
+
+function parseForecastModeParam(value: string | null): ForecastMode | undefined {
+  return value === "outright" || value === "compareDay" ? value : undefined;
+}
+
+function parseNetLoadForecastComponentParam(
+  value: string | null,
+): NetLoadForecastComponent | undefined {
+  return value === "load" || value === "wind" || value === "solar" || value === "netLoad"
+    ? value
+    : undefined;
+}
+
+function parseNetLoadForecastStatisticParam(
+  value: string | null,
+): NetLoadForecastStatistic | undefined {
+  return value === "peak" || value === "onPeak" || value === "offPeak" || value === "flat"
+    ? value
+    : undefined;
 }
 
 function parseDateParam(value: string | null): string | undefined {
@@ -503,6 +544,7 @@ export default function HomePageClient({
   const [pjmTermBibleRefreshToken, setPjmTermBibleRefreshToken] = useState(0);
   const [pjmLoadGrowthRefreshToken, setPjmLoadGrowthRefreshToken] = useState(0);
   const [pjmForecastsRefreshToken, setPjmForecastsRefreshToken] = useState(0);
+  const [pjmForecastReportsRefreshToken, setPjmForecastReportsRefreshToken] = useState(0);
   const [pjmOutagesRefreshToken, setPjmOutagesRefreshToken] = useState(0);
   const [pjmConstraintsRefreshToken, setPjmConstraintsRefreshToken] = useState(0);
   const [pjmWeatherRefreshToken, setPjmWeatherRefreshToken] = useState(0);
@@ -526,6 +568,8 @@ export default function HomePageClient({
   const [pjmTermBibleFreshnessOpen, setPjmTermBibleFreshnessOpen] = useState(false);
   const [pjmLoadGrowthFreshnessOpen, setPjmLoadGrowthFreshnessOpen] = useState(false);
   const [pjmForecastsFreshnessOpen, setPjmForecastsFreshnessOpen] = useState(false);
+  const [pjmForecastReportsFreshnessOpen, setPjmForecastReportsFreshnessOpen] =
+    useState(false);
   const [pjmOutagesFreshnessOpen, setPjmOutagesFreshnessOpen] = useState(false);
   const [pjmConstraintsFreshnessOpen, setPjmConstraintsFreshnessOpen] = useState(false);
   const [pjmWeatherFreshnessOpen, setPjmWeatherFreshnessOpen] = useState(false);
@@ -568,6 +612,8 @@ export default function HomePageClient({
     useState<PjmLoadGrowthFreshnessSummary>(DEFAULT_PJM_LOAD_GROWTH_FRESHNESS);
   const [pjmForecastsFreshness, setPjmForecastsFreshness] =
     useState<PjmForecastsFreshnessSummary>(DEFAULT_PJM_FORECASTS_FRESHNESS);
+  const [pjmForecastReportsFreshness, setPjmForecastReportsFreshness] =
+    useState<PjmForecastReportsFreshnessSummary>(DEFAULT_PJM_FORECAST_REPORTS_FRESHNESS);
   const [pjmOutagesFreshness, setPjmOutagesFreshness] =
     useState<PjmOutagesFreshnessSummary>(DEFAULT_PJM_OUTAGES_FRESHNESS);
   const [pjmConstraintsFreshness, setPjmConstraintsFreshness] =
@@ -610,9 +656,29 @@ export default function HomePageClient({
   );
   const initialPjmDaLmpRefresh = parseRefreshParam(searchParams.get("refresh"));
   const initialForecastType = parseInitialForecastType(
-    searchParams.get("forecastType"),
+    searchParams.get("forecastType") ?? searchParams.get("type"),
     searchParams.get("section"),
     showLocalDevFeatures,
+  );
+  const initialForecastSourceMode =
+    parseForecastSourceModeParam(searchParams.get("forecastSource")) ??
+    parseForecastSourceModeParam(searchParams.get("source")) ??
+    "pjm";
+  const initialForecastMode =
+    parseForecastModeParam(searchParams.get("forecastMode")) ??
+    parseForecastModeParam(searchParams.get("mode")) ??
+    "outright";
+  const initialForecastArea = parseTextParam(
+    searchParams.get("forecastArea") ?? searchParams.get("area"),
+  );
+  const initialForecastDate = parseDateParam(
+    searchParams.get("forecastDate") ?? searchParams.get("date"),
+  );
+  const initialNetLoadForecastComponent = parseNetLoadForecastComponentParam(
+    searchParams.get("component"),
+  );
+  const initialNetLoadForecastStatistic = parseNetLoadForecastStatisticParam(
+    searchParams.get("statistic"),
   );
   const initialGenscapeNomsStart = parseDateParam(searchParams.get("start"));
   const initialGenscapeNomsEnd = parseDateParam(searchParams.get("end"));
@@ -909,6 +975,14 @@ export default function HomePageClient({
           "Forecasts | Sources: PJM Data Miner + Meteologica hourly forecasts / Azure PostgreSQL",
       };
     }
+    if (showLocalDevFeatures && activeSection === "pjm-forecast-reports") {
+      return {
+        title: "Forecast Reports",
+        subtitle:
+          "Compact PJM Data Miner morning load forecast change report by area and date, split into PK, OnPk, and OffPeak.",
+        footer: "Forecast Reports | Source: pjm.load_frcstd_7_day / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "pjm-outages") {
       return {
         title: "Outages",
@@ -979,6 +1053,7 @@ export default function HomePageClient({
     isSaltModelSection;
   const usesPowerMarketEyebrow =
     activeSection === "power-settles-dashboard" ||
+    (showLocalDevFeatures && activeSection === "pjm-forecast-reports") ||
     isPjmDaModelSection ||
     isEiaGenerationSection ||
     isHistoricalSettlements ||
@@ -1513,6 +1588,28 @@ export default function HomePageClient({
               />
             )}
 
+            {showLocalDevFeatures && activeSection === "pjm-forecast-reports" && (
+              <FreshnessCard
+                statusLabel={pjmForecastReportsFreshness.status}
+                statusClass={pjmForecastReportsFreshness.statusClass}
+                summary={pjmForecastReportsFreshness.summary}
+                items={[
+                  {
+                    label: "Freshness Status",
+                    value: pjmForecastReportsFreshness.status,
+                    className: pjmForecastReportsFreshness.statusClass,
+                  },
+                  { label: "Report Areas", value: pjmForecastReportsFreshness.targetDateLabel },
+                  { label: "Latest Forecast Day", value: pjmForecastReportsFreshness.latestDateLabel },
+                  { label: "Source Update", value: pjmForecastReportsFreshness.latestUpdateLabel },
+                ]}
+                open={pjmForecastReportsFreshnessOpen}
+                onToggle={() => setPjmForecastReportsFreshnessOpen((open) => !open)}
+                actionLabel="Refresh"
+                onAction={() => setPjmForecastReportsRefreshToken((value) => value + 1)}
+              />
+            )}
+
             {activeSection === "pjm-weather" && (
               <FreshnessCard
                 statusLabel={pjmWeatherFreshness.status}
@@ -1704,8 +1801,20 @@ export default function HomePageClient({
           {activeSection === "pjm-forecasts" && (
             <PjmForecasts
               initialForecastType={initialForecastType}
+              initialMode={initialForecastMode}
+              initialSourceMode={initialForecastSourceMode}
+              initialArea={initialForecastArea}
+              initialDate={initialForecastDate}
+              initialNetLoadComponent={initialNetLoadForecastComponent}
+              initialNetLoadStatistic={initialNetLoadForecastStatistic}
               refreshToken={pjmForecastsRefreshToken}
               onFreshnessChange={setPjmForecastsFreshness}
+            />
+          )}
+          {showLocalDevFeatures && activeSection === "pjm-forecast-reports" && (
+            <PjmForecastReports
+              refreshToken={pjmForecastReportsRefreshToken}
+              onFreshnessChange={setPjmForecastReportsFreshness}
             />
           )}
           {activeSection === "pjm-outages" && (

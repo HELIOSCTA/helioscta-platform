@@ -8,6 +8,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import {
@@ -171,11 +172,11 @@ export interface PjmNetLoadForecastFreshnessSummary {
   latestUpdateLabel: string;
 }
 
-type ComponentKey = "load" | "wind" | "solar" | "netLoad";
+export type ComponentKey = "load" | "wind" | "solar" | "netLoad";
 export type ForecastSourceMode = "pjm" | "meteologica";
 type AreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 export type NetLoadForecastTab = "outright" | "compareDay";
-type StatisticKey = "peak" | "onPeak" | "offPeak" | "flat";
+export type StatisticKey = "peak" | "onPeak" | "offPeak" | "flat";
 type ViewMode = "latest" | "change";
 type ChangeWindowKey = "1h" | "12h" | "24h" | "48h" | "72h";
 type DetailRowType = "Snapshot" | "Delta";
@@ -754,6 +755,10 @@ export default function PjmNetLoadForecast({
   onSourceModeChange,
   activeTab: controlledActiveTab,
   onActiveTabChange,
+  initialArea = "RTO",
+  initialDate,
+  initialComponent = "netLoad",
+  initialStatistic = "peak",
   embedded = false,
 }: {
   refreshToken?: number;
@@ -762,12 +767,17 @@ export default function PjmNetLoadForecast({
   onSourceModeChange?: (sourceMode: ForecastSourceMode) => void;
   activeTab?: NetLoadForecastTab;
   onActiveTabChange?: (activeTab: NetLoadForecastTab) => void;
+  initialArea?: string;
+  initialDate?: string;
+  initialComponent?: ComponentKey;
+  initialStatistic?: StatisticKey;
   embedded?: boolean;
 }) {
   const [internalSourceMode, setInternalSourceMode] = useState<ForecastSourceMode>("pjm");
   const [internalActiveTab, setInternalActiveTab] = useState<NetLoadForecastTab>("outright");
   const sourceMode = controlledSourceMode ?? internalSourceMode;
   const activeTab = controlledActiveTab ?? internalActiveTab;
+  const previousSourceMode = useRef(sourceMode);
   const setSourceMode = useCallback(
     (nextSourceMode: ForecastSourceMode) => {
       startTransition(() => {
@@ -790,7 +800,7 @@ export default function PjmNetLoadForecast({
   const [changeWindow, setChangeWindow] = useState<ChangeWindowKey>("24h");
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [collapsedAreaCards, setCollapsedAreaCards] = useState<Set<string>>(() => new Set());
-  const [selectedStatistic, setSelectedStatistic] = useState<StatisticKey>("peak");
+  const [selectedStatistic, setSelectedStatistic] = useState<StatisticKey>(initialStatistic);
   const [explorerData, setExplorerData] = useState<NetLoadExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<NetLoadDifferencesPayload | null>(null);
   const [compareDataByArea, setCompareDataByArea] = useState<Record<string, NetLoadDateComparePayload>>({});
@@ -800,13 +810,15 @@ export default function PjmNetLoadForecast({
   const [explorerError, setExplorerError] = useState<string | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
-  const [selectedForecastDate, setSelectedForecastDate] = useState<string | null>(null);
-  const [selectedArea, setSelectedArea] = useState("RTO");
+  const [selectedForecastDate, setSelectedForecastDate] = useState<string | null>(
+    initialDate ?? null,
+  );
+  const [selectedArea, setSelectedArea] = useState(initialArea);
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
   const [focusedCompareChart, setFocusedCompareChart] = useState<FocusedCompareChart | null>(null);
-  const [selectedComponent, setSelectedComponent] = useState<ComponentKey>("netLoad");
+  const [selectedComponent, setSelectedComponent] = useState<ComponentKey>(initialComponent);
   const [lookbackHours, setLookbackHours] = useState(DEFAULT_LOOKBACK_HOURS);
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(() => new Set());
   const [collapsedCompareCards, setCollapsedCompareCards] = useState<Set<string>>(() => new Set());
@@ -818,8 +830,12 @@ export default function PjmNetLoadForecast({
   );
 
   useEffect(() => {
+    if (previousSourceMode.current === sourceMode) return;
+    previousSourceMode.current = sourceMode;
     setSelectedForecastDate(null);
     setSelectedArea("RTO");
+    setSelectedComponent("netLoad");
+    setSelectedStatistic("peak");
     setExplorerData(null);
     setDiffData(null);
     setCompareDataByArea({});
