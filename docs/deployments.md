@@ -28,6 +28,43 @@ boundary, or log path changes.
   - VM verification commands: `journalctl --disk-usage` and
     `systemctl list-timers 'helios-*'`.
 
+## gas-ebb-williams-transco
+
+- Status: deployed and enabled on `helioscta-prod-vm-01` on `2026-08-06`.
+- Runtime promotion commit: `03d717d`.
+- Runtime path: `/opt/helioscta-platform`.
+- Service user: `helios`.
+- Credential boundary: public Williams 1Line EBB; no backend secret required.
+- Source system: Williams 1Line public EBB, Transco `buid=80`, `archive=N`,
+  critical and non-critical notice listings.
+- Tables:
+  - `gas_ebbs.notices`
+  - `gas_ebbs.notice_revisions`
+  - `gas_ebbs.notice_details`
+  - `gas_ebbs.planned_outages`
+- Unit files:
+  - `infrastructure/systemd/helios-gas-ebb-williams-transco.service`
+  - `infrastructure/systemd/helios-gas-ebb-williams-transco.timer`
+- Schedule: every 15 minutes at `:00`, `:15`, `:30`, and `:45` UTC with
+  `Persistent=false`, `RandomizedDelaySec=2min`, `AccuracySec=1min`, `flock`,
+  and `TimeoutStartSec=20min`.
+- VM activation: `/opt/helioscta-platform` fast-forwarded to `03d717d`, unit
+  files installed under `/etc/systemd/system/`, `systemctl daemon-reload`
+  completed, and `helios-gas-ebb-williams-transco.timer` enabled.
+- Verification:
+  - Local focused pytest:
+    `python -m pytest backend\tests\test_gas_ebb_williams_transco.py --basetemp .pytest-tmp -p no:cacheprovider`.
+  - Manual VM service run completed successfully on `2026-08-06`: parsed
+    `1,605` critical and `599` non-critical listing rows, upserted `1,204`
+    listing rows, fetched `25` details, and exited `status=0/SUCCESS`.
+  - Production telemetry: `ops.api_fetch_log` rows with
+    `provider = 'gas_ebb'`, `pipeline_name = 'gas_ebb_williams_transco'`, and
+    `run_mode = 'scheduled'` succeeded for listing fetch, listing parse,
+    listing upsert, detail fetch, lifecycle, and retention.
+- Residual risk: first production runs can have more new notices than the
+  `25` detail-fetch cap; listing lifecycle rows are complete immediately, and
+  details backfill across repeated scheduled runs.
+
 ## miso-data-exchange-lmps
 
 - Status: deployed on `helioscta-prod-vm-01` on `2026-08-04`.
