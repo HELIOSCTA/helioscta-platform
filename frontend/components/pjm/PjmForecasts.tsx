@@ -1911,7 +1911,6 @@ export default function PjmForecasts({
             onToggle={() => setTableHeatmapEnabled((enabled) => !enabled)}
           />
         }
-        bodyClassName="max-h-[72vh] overflow-auto"
       >
         <table className={FORECAST_EXPLORER_TABLE_CLASS}>
           <colgroup>

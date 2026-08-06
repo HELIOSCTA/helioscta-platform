@@ -221,7 +221,7 @@ export function ForecastFilterCard({
   children: ReactNode;
 }) {
   return (
-    <section className="w-full max-w-none rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+    <section className="w-fit max-w-full rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
       <div className="mb-3 flex items-center gap-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
           Forecast Filters
@@ -342,7 +342,7 @@ export function ForecastSelectControl({
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
-        className="h-8 w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-xs text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
+        className="h-8 w-44 max-w-full rounded-md border border-gray-700 bg-gray-900 px-3 text-xs text-gray-200 focus:border-gray-500 focus:outline-none disabled:cursor-default disabled:text-gray-500"
       >
         {!options.length && <option value="">--</option>}
         {options.map((option) => (
