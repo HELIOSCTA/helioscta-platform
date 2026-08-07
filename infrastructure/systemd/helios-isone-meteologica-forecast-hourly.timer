@@ -1,0 +1,12 @@
+[Unit]
+Description=Half-hourly HeliosCTA ISO-NE Meteologica hourly forecast refresh timer
+
+[Timer]
+OnCalendar=*:05,35
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-isone-meteologica-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target

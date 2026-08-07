@@ -1,4 +1,4 @@
-"""PJM hourly load, solar, and wind forecasts from Meteologica."""
+"""SPP hourly load, solar, and wind forecasts from Meteologica."""
 
 from __future__ import annotations
 
@@ -9,10 +9,10 @@ import pandas as pd
 
 from backend.scrapes.power.meteologica import forecast_hourly as common
 
-API_SCRAPE_NAME = "pjm_meteologica_forecast_hourly"
+API_SCRAPE_NAME = "spp_meteologica_forecast_hourly"
 SOURCE_SYSTEM = common.SOURCE_SYSTEM
 TARGET_SCHEMA = common.TARGET_SCHEMA
-TARGET_TABLE = "pjm_forecast_hourly"
+TARGET_TABLE = "spp_forecast_hourly"
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 PRIMARY_KEY = common.PRIMARY_KEY
 DEFAULT_RETENTION_DAYS = common.DEFAULT_RETENTION_DAYS
@@ -28,100 +28,28 @@ retention = common.retention
 
 FEEDS: tuple[MeteologicaForecastFeed, ...] = (
     MeteologicaForecastFeed(
-        2706,
-        "USA PJM power demand forecast Meteologica hourly",
+        2927,
+        "USA SPP power demand forecast Meteologica hourly",
         METRIC_LOAD,
-        "PJM",
-        "RTO",
-        "usa_pjm_power_demand_forecast_hourly",
+        "SPP",
+        "SPP",
+        "usa_spp_power_demand_forecast_hourly",
     ),
     MeteologicaForecastFeed(
-        2553,
-        "USA PJM photovoltaic power generation forecast Meteologica hourly",
+        2831,
+        "USA SPP photovoltaic power generation forecast Meteologica hourly",
         METRIC_SOLAR,
-        "PJM",
-        "RTO",
-        "usa_pjm_pv_power_generation_forecast_hourly",
+        "SPP",
+        "SPP",
+        "usa_spp_pv_power_generation_forecast_hourly",
     ),
     MeteologicaForecastFeed(
-        2604,
-        "USA PJM wind power generation forecast Meteologica hourly",
+        2856,
+        "USA SPP wind power generation forecast Meteologica hourly",
         METRIC_WIND,
-        "PJM",
-        "RTO",
-        "usa_pjm_wind_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2688,
-        "USA PJM MidAtlantic power demand forecast Meteologica hourly",
-        METRIC_LOAD,
-        "PJM",
-        "MIDATL",
-        "usa_pjm_midatlantic_power_demand_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2554,
-        "USA PJM MidAtlantic photovoltaic power generation forecast Meteologica hourly",
-        METRIC_SOLAR,
-        "PJM",
-        "MIDATL",
-        "usa_pjm_midatlantic_pv_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2602,
-        "USA PJM MidAtlantic wind power generation forecast Meteologica hourly",
-        METRIC_WIND,
-        "PJM",
-        "MIDATL",
-        "usa_pjm_midatlantic_wind_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2722,
-        "USA PJM South power demand forecast Meteologica hourly",
-        METRIC_LOAD,
-        "PJM",
-        "SOUTH",
-        "usa_pjm_south_power_demand_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2556,
-        "USA PJM South photovoltaic power generation forecast Meteologica hourly",
-        METRIC_SOLAR,
-        "PJM",
-        "SOUTH",
-        "usa_pjm_south_pv_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2599,
-        "USA PJM South wind power generation forecast Meteologica hourly",
-        METRIC_WIND,
-        "PJM",
-        "SOUTH",
-        "usa_pjm_south_wind_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2707,
-        "USA PJM West power demand forecast Meteologica hourly",
-        METRIC_LOAD,
-        "PJM",
-        "WEST",
-        "usa_pjm_west_power_demand_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2555,
-        "USA PJM West photovoltaic power generation forecast Meteologica hourly",
-        METRIC_SOLAR,
-        "PJM",
-        "WEST",
-        "usa_pjm_west_pv_power_generation_forecast_hourly",
-    ),
-    MeteologicaForecastFeed(
-        2597,
-        "USA PJM West wind power generation forecast Meteologica hourly",
-        METRIC_WIND,
-        "PJM",
-        "WEST",
-        "usa_pjm_west_wind_power_generation_forecast_hourly",
+        "SPP",
+        "SPP",
+        "usa_spp_wind_power_generation_forecast_hourly",
     ),
 )
 
@@ -212,7 +140,7 @@ def main(
     retention_days: int = DEFAULT_RETENTION_DAYS,
     metadata: dict | None = None,
 ) -> pd.DataFrame | None:
-    """Pull and upsert all configured PJM Meteologica hourly forecast feeds."""
+    """Pull and upsert all configured SPP Meteologica hourly forecast feeds."""
     return common.run_forecast_scrape(
         pipeline_name=API_SCRAPE_NAME,
         feeds=feeds,

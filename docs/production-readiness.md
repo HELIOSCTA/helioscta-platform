@@ -57,6 +57,7 @@ A backend workflow is production-ready when it has:
 | NYISO DA LBMP schedule | In place | `helios-nyiso-da-lmps.timer` runs daily at `08:30 America/New_York`, targets the next operating date, and polls for NYISO MIS DA publication. |
 | NYISO RT preliminary LBMP schedule | In place | `helios-nyiso-rt-lmps-prelim.timer` runs daily at `00:15 America/New_York`, targets the previous operating date, and polls for complete five-minute realtime publication. |
 | ERCOT RT SPP schedule | In place | `helios-ercot-settlement-point-prices.timer` runs every 15 minutes. |
+| Main-zone Meteologica forecast schedules | Promoted for VM install | CAISO, ISO-NE, MISO, NYISO, and SPP Meteologica hourly load/solar/wind timers run every 30 minutes at staggered UTC offsets from `:00` through `:58` and retain 21 days by `issue_date`. |
 | ISO-NE DA hourly LMP schedule | In place | `helios-isone-da-hrl-lmps.timer` runs daily at `11:55 America/New_York` and polls for the complete next Eastern operating date. |
 | ISO-NE RT preliminary hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-prelim.timer` runs daily at `01:10 UTC`. |
 | ISO-NE RT final hourly LMP schedule | In place | `helios-isone-rt-hrl-lmps-final.timer` runs daily at `20:10 UTC`. |

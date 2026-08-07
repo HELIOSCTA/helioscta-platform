@@ -439,6 +439,75 @@ sudo systemctl start helios-ercot-meteologica-forecast-hourly.service
 sudo systemctl enable --now helios-ercot-meteologica-forecast-hourly.timer
 ```
 
+## Main-Zone Meteologica Hourly Forecasts
+
+The CAISO, ISO-NE, MISO, NYISO, and SPP Meteologica forecast workflows use one
+service and timer per ISO:
+
+```text
+helios-caiso-meteologica-forecast-hourly.service
+helios-caiso-meteologica-forecast-hourly.timer
+helios-isone-meteologica-forecast-hourly.service
+helios-isone-meteologica-forecast-hourly.timer
+helios-miso-meteologica-forecast-hourly.service
+helios-miso-meteologica-forecast-hourly.timer
+helios-nyiso-meteologica-forecast-hourly.service
+helios-nyiso-meteologica-forecast-hourly.timer
+helios-spp-meteologica-forecast-hourly.service
+helios-spp-meteologica-forecast-hourly.timer
+```
+
+They run the matching
+`backend.orchestration.power.<iso>.meteologica_forecast_hourly` module and
+upsert the focused load, solar, and wind forecast content IDs into
+`meteologica.caiso_forecast_hourly`, `meteologica.isone_forecast_hourly`,
+`meteologica.miso_forecast_hourly`, `meteologica.nyiso_forecast_hourly`, and
+`meteologica.spp_forecast_hourly`. Each workflow writes Meteologica API
+telemetry to `ops.api_fetch_log`, emits a forecast freshness event to
+`ops.data_availability_events`, and purges forecast issues older than 21 days
+after successful upserts. Timers run with `Persistent=false` and
+`RandomizedDelaySec=2min`:
+
+| ISO | Timer |
+| --- | --- |
+| CAISO | `*:00,30` UTC |
+| ISO-NE | `*:05,35` UTC |
+| MISO | `*:10,40` UTC |
+| NYISO | `*:15,45` UTC |
+| SPP | `*:28,58` UTC |
+
+Do not enable these timers until `/etc/helioscta/backend.env` contains
+`XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the matching
+table/index application DDL under
+`dbt/azure_postgres/reference_sql/ddl/power/meteologica/<iso>_forecast_hourly/`
+has been applied with `helios_admin`.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-miso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-miso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-spp-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-spp-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-caiso-meteologica-forecast-hourly.service
+sudo systemctl start helios-isone-meteologica-forecast-hourly.service
+sudo systemctl start helios-miso-meteologica-forecast-hourly.service
+sudo systemctl start helios-nyiso-meteologica-forecast-hourly.service
+sudo systemctl start helios-spp-meteologica-forecast-hourly.service
+sudo systemctl enable --now helios-caiso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-isone-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-miso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-nyiso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-spp-meteologica-forecast-hourly.timer
+```
+
 ## RT Unverified Hourly LMPs
 
 The overnight unverified hourly RT price workflow has its own timer:
@@ -1248,6 +1317,16 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-p
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-isone-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-miso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-miso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-spp-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-spp-meteologica-forecast-hourly.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-batch.service /etc/systemd/system/
@@ -1307,6 +1386,11 @@ sudo systemctl enable --now helios-eia-weekly-underground-storage.timer
 sudo systemctl enable --now helios-eia-nat-gas-consumption-end-use-monthly.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
 sudo systemctl enable --now helios-ercot-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-caiso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-isone-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-miso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-nyiso-meteologica-forecast-hourly.timer
+sudo systemctl enable --now helios-spp-meteologica-forecast-hourly.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-batch.timer
@@ -1367,6 +1451,11 @@ sudo systemctl start helios-eia-930-daily-region-data.service
 sudo systemctl start helios-eia-weekly-underground-storage.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
 sudo systemctl start helios-ercot-meteologica-forecast-hourly.service
+sudo systemctl start helios-caiso-meteologica-forecast-hourly.service
+sudo systemctl start helios-isone-meteologica-forecast-hourly.service
+sudo systemctl start helios-miso-meteologica-forecast-hourly.service
+sudo systemctl start helios-nyiso-meteologica-forecast-hourly.service
+sudo systemctl start helios-spp-meteologica-forecast-hourly.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
 sudo systemctl start helios-ercot-renewables-batch.service
@@ -1559,6 +1648,26 @@ For the ERCOT Meteologica forecast refresh:
 systemctl status helios-ercot-meteologica-forecast-hourly.service
 systemctl status helios-ercot-meteologica-forecast-hourly.timer
 journalctl -u helios-ercot-meteologica-forecast-hourly.service -n 200 --no-pager
+```
+
+For the main-zone Meteologica forecast refreshes:
+
+```bash
+systemctl status helios-caiso-meteologica-forecast-hourly.service
+systemctl status helios-caiso-meteologica-forecast-hourly.timer
+journalctl -u helios-caiso-meteologica-forecast-hourly.service -n 200 --no-pager
+systemctl status helios-isone-meteologica-forecast-hourly.service
+systemctl status helios-isone-meteologica-forecast-hourly.timer
+journalctl -u helios-isone-meteologica-forecast-hourly.service -n 200 --no-pager
+systemctl status helios-miso-meteologica-forecast-hourly.service
+systemctl status helios-miso-meteologica-forecast-hourly.timer
+journalctl -u helios-miso-meteologica-forecast-hourly.service -n 200 --no-pager
+systemctl status helios-nyiso-meteologica-forecast-hourly.service
+systemctl status helios-nyiso-meteologica-forecast-hourly.timer
+journalctl -u helios-nyiso-meteologica-forecast-hourly.service -n 200 --no-pager
+systemctl status helios-spp-meteologica-forecast-hourly.service
+systemctl status helios-spp-meteologica-forecast-hourly.timer
+journalctl -u helios-spp-meteologica-forecast-hourly.service -n 200 --no-pager
 ```
 
 For CAISO LMPs:
