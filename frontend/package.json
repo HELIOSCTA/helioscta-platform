@@ -13,6 +13,8 @@
     "test:trading-calendars": "node --test scripts/run-trading-calendar-tests.cjs",
     "sync:ice-gas-registry": "python scripts/sync-ice-gas-registry.py",
     "check:ice-gas-registry-sync": "python scripts/sync-ice-gas-registry.py --check",
+    "sync:ice-power-registry": "python scripts/sync-ice-power-registry.py",
+    "check:ice-power-registry-sync": "python scripts/sync-ice-power-registry.py --check",
     "verify:ice-gas-registry": "python scripts/verify-ice-gas-registry.py",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
