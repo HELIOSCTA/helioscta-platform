@@ -44,6 +44,9 @@ ROLE_CASH_PHYSICAL = "cash_physical"
 ROLE_BALMO_SWING = "balmo_swing"
 ROLE_BASIS_FUTURE = "basis_future"
 ROLE_FIXED_PRICE_FUTURE = "fixed_price_future"
+REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET = (
+    "verified_fixed_price_excluded_basis_market"
+)
 
 
 def _ice_product_url(product_id: str | None) -> str | None:
@@ -60,18 +63,24 @@ def _hub_from_description(description: str) -> str:
     )
 
 
-def _metadata_note(entry: dict[str, object]) -> str:
+def _metadata_note(
+    entry: dict[str, object],
+    review_note: str | None = None,
+) -> str:
     if entry["metadata_status"] == "ice_product_url_verified":
         source = f"ICE product URL {entry['ice_product_url']}"
     else:
         source = (
             f"legacy registry only; not found in {ICE_PRODUCT_CODE_DOWNLOAD_URL}"
         )
-    return (
+    note = (
         "ICE metadata reviewed "
         f"{PRODUCT_METADATA_REVIEWED_DATE}; {source}; source table "
         f"{entry['source_table']}."
     )
+    if review_note:
+        note = f"{note} {review_note}"
+    return note
 
 
 def _common_metadata(entry: dict[str, object], family: str) -> dict[str, object]:
@@ -98,7 +107,11 @@ def _common_metadata(entry: dict[str, object], family: str) -> dict[str, object]
         ),
         "active": entry.get("active", True),
     }
-    enriched["notes"] = _metadata_note(enriched)
+    review_note = enriched.pop("review_note", None)
+    enriched["notes"] = _metadata_note(
+        enriched,
+        review_note=str(review_note) if review_note else None,
+    )
     return enriched
 
 
@@ -165,6 +178,18 @@ NEXT_DAY_GAS_DESCRIPTIONS: dict[str, str] = {
     "YKL": "CIG Mainline",
     "XJR": "NGPL Midcontinent",
     "XJZ": "MichCon",
+}
+
+NEXT_DAY_GAS_REVIEW_OVERRIDES: dict[str, dict[str, object]] = {
+    "X7F": {
+        "ice_trading_screen_hub_name": "AGT-CG non-G",
+        "review_status": "business_verified_legacy_cash",
+        "review_note": (
+            "Business mapping accepted 2026-08-07: X7F D1-IPG is the ICE "
+            "Python AGT-CG non-G next-day physical cash symbol for "
+            "Algonquin Citygates."
+        ),
+    },
 }
 
 BALMO_GAS_PRODUCTS: list[tuple[str, str, str, str]] = [
@@ -239,12 +264,14 @@ GAS_FUTURES_PRODUCTS: list[dict] = [
     {"product": "SCB", "ice_product_id": "6590151", "product_name": "Socal Citygate Basis Future", "description": "SoCal Citygate Basis", "region": "pacific"},
     {"product": "PGE", "ice_product_id": "6590150", "product_name": "PG&E Citygate Basis Future", "description": "PG&E Citygate Basis", "region": "pacific"},
     {"product": "CRI", "ice_product_id": "6590129", "product_name": "CIG Rockies Basis Future", "description": "CIG Mainline Basis", "region": "mountain"},
-    {"product": "ALG", "ice_product_id": "71085626", "product_name": "Algonquin Citygates Fixed Price Future", "description": "Algonquin Citygates Fixed Price", "region": "east", "candidate_for_market": "Algonquin Citygates", "review_status": "candidate_verified_not_mapped"},
-    {"product": "TZ5", "ice_product_id": "83048643", "product_name": "Transco Zone 5 Fixed Price", "description": "Transco Zone 5 Fixed Price", "region": "east", "candidate_for_market": "Transco Zone 5 North", "review_status": "candidate_verified_not_mapped"},
-    {"product": "IZP", "ice_product_id": "83048605", "product_name": "Iroquois-Z2 (Platts) Fixed Price", "description": "Iroquois Zone 2 Fixed Price", "region": "east", "candidate_for_market": "Iroquois Zone 2", "review_status": "candidate_verified_not_mapped"},
-    {"product": "TN4", "ice_product_id": "83048637", "product_name": "Tennessee Zone 4 200L Fixed Price", "description": "Tennessee Zone 4 200L Fixed Price", "region": "east", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": "candidate_verified_not_mapped"},
-    {"product": "DM9", "ice_product_id": "83048638", "product_name": "Tennessee Zone 4 300L Fixed Price Future", "description": "Tennessee Zone 4 300L Fixed Price", "region": "east", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": "candidate_verified_not_mapped"},
-    {"product": "CRA", "ice_product_id": "71085627", "product_name": "CIG Rockies Fixed Price Future", "description": "CIG Rockies Fixed Price", "region": "mountain", "candidate_for_market": "CIG Mainline", "review_status": "candidate_verified_not_mapped"},
+    # Fixed-price products are verified ICE contracts, but basis markets remain
+    # mapped to basis futures plus Henry Hub futures. Keep these inactive.
+    {"product": "ALG", "ice_product_id": "71085626", "product_name": "Algonquin Citygates Fixed Price Future", "description": "Algonquin Citygates Fixed Price", "region": "east", "candidate_for_market": "Algonquin Citygates", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
+    {"product": "TZ5", "ice_product_id": "83048643", "product_name": "Transco Zone 5 Fixed Price", "description": "Transco Zone 5 Fixed Price", "region": "east", "candidate_for_market": "Transco Zone 5 North", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
+    {"product": "IZP", "ice_product_id": "83048605", "product_name": "Iroquois-Z2 (Platts) Fixed Price", "description": "Iroquois Zone 2 Fixed Price", "region": "east", "candidate_for_market": "Iroquois Zone 2", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
+    {"product": "TN4", "ice_product_id": "83048637", "product_name": "Tennessee Zone 4 200L Fixed Price", "description": "Tennessee Zone 4 200L Fixed Price", "region": "east", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
+    {"product": "DM9", "ice_product_id": "83048638", "product_name": "Tennessee Zone 4 300L Fixed Price Future", "description": "Tennessee Zone 4 300L Fixed Price", "region": "east", "candidate_for_market": "Tennessee Z4 (Marcellus)", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
+    {"product": "CRA", "ice_product_id": "71085627", "product_name": "CIG Rockies Fixed Price Future", "description": "CIG Rockies Fixed Price", "region": "mountain", "candidate_for_market": "CIG Mainline", "review_status": REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET},
 ]
 
 
@@ -252,6 +279,7 @@ def _build_next_day_entries() -> list[dict]:
     entries: list[dict] = []
     for cc, product_id, product_name, region in NEXT_DAY_GAS_PRODUCTS:
         description = NEXT_DAY_GAS_DESCRIPTIONS[cc]
+        review_overrides = NEXT_DAY_GAS_REVIEW_OVERRIDES.get(cc, {})
         entries.append(
             _common_metadata(
                 {
@@ -276,6 +304,7 @@ def _build_next_day_entries() -> list[dict]:
                     ),
                     "contract_size": "100 MMBtus per lot",
                     "settlement_source_key": "ice_next_day_gas",
+                    **review_overrides,
                 },
                 family="Next-Day Physical Gas",
             )
@@ -320,7 +349,11 @@ def _build_gas_futures_entries() -> list[dict]:
         product = str(entry["product"])
         product_name = str(entry["product_name"])
         is_basis = "Basis" in product_name
-        is_candidate = str(entry.get("review_status") or "").startswith("candidate")
+        review_status = str(entry.get("review_status") or "")
+        is_candidate = review_status.startswith("candidate")
+        is_excluded = (
+            review_status == REVIEW_STATUS_FIXED_PRICE_EXCLUDED_BASIS_MARKET
+        )
         entries.append(
             _common_metadata(
                 {
@@ -343,7 +376,7 @@ def _build_gas_futures_entries() -> list[dict]:
                         entry.get("review_status")
                         or ("verified_basis_curve" if is_basis else "verified_fixed_price_curve")
                     ),
-                    "active": not is_candidate,
+                    "active": not is_candidate and not is_excluded,
                     "contract_size": "2500 MMBtus",
                     "settlement_source_key": "ice_gas_futures",
                 },

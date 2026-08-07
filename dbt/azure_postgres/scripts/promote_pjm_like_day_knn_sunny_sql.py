@@ -412,9 +412,9 @@ def write_manifest() -> None:
                 "helios_prod."
             ),
             "ice_gas_non_trading_days": (
-                "ICE gas uses settlement trade dates with the simple next-day "
-                "and Friday-weekend rule. Holiday and non-trading-day gas "
-                "calendar migration is intentionally out of scope."
+                "ICE gas uses a code-owned physical gas non-trading calendar "
+                "compiled from dbt macro ice_python_physical_gas_non_trading_day_values; "
+                "calendar updates require dbt compile and SQL promotion."
             ),
         },
     }

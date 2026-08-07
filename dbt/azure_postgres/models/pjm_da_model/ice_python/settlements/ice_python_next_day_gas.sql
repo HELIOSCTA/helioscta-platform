@@ -26,28 +26,52 @@ symbol_map as (
     ) as mapped(symbol, hub_name, region, sort_index)
 ),
 
-source_trade_dates as (
-    select distinct s.trade_date::date as trade_date
-    from {{ source('ice_python', 'settlements') }} s
-    join symbol_map m
-      on s.symbol = m.symbol
-    cross join params p
-    where s.trade_date::date >= (p.start_date - interval '60 days')::date
-      and s.trade_date::date <= (p.end_date + interval '14 days')::date
-      and extract(isodow from s.trade_date::date)::int between 1 and 5
+ice_physical_gas_non_trading_days as (
+    select
+        non_trading_date,
+        holiday_name
+    from (
+        {{ ice_python_physical_gas_non_trading_day_values() }}
+    ) as non_trading_days
+),
+
+calendar_trade_dates as (
+    select trade_date::date as trade_date
+    from params p
+    cross join lateral generate_series(
+        (p.start_date - interval '60 days')::timestamp,
+        (p.end_date + interval '14 days')::timestamp,
+        interval '1 day'
+    ) as spine(trade_date)
+    where extract(isodow from trade_date::date)::int between 1 and 5
+      and not exists (
+          select 1
+          from ice_physical_gas_non_trading_days n
+          where n.non_trading_date = trade_date::date
+      )
+),
+
+calendar_trade_windows as (
+    select
+        trade_date,
+        lead(trade_date) over (order by trade_date) as next_trade_date
+    from calendar_trade_dates
 ),
 
 sessions as (
     select
         trade_date,
-        (
-            trade_date
-            + case
-                when extract(isodow from trade_date)::int = 5 then interval '3 days'
-                else interval '1 day'
-            end
-        )::date as last_gas_day
-    from source_trade_dates
+        coalesce(
+            next_trade_date,
+            (
+                trade_date
+                + case
+                    when extract(isodow from trade_date)::int = 5 then interval '3 days'
+                    else interval '1 day'
+                end
+            )::date
+        ) as last_gas_day
+    from calendar_trade_windows
 ),
 
 gas_day_trade_dates as (
@@ -69,7 +93,7 @@ symbol_trade_dates as (
         m.hub_name,
         m.region,
         m.sort_index
-    from source_trade_dates t
+    from calendar_trade_dates t
     cross join symbol_map m
 ),
 

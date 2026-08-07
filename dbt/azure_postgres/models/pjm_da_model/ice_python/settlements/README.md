@@ -56,11 +56,14 @@ model `ice_python_next_day_gas_hourly` references
 physical gas day active at that instant while preserving the five-column PJM
 model-loader feature contract.
 
-The gas-day rule is intentionally simple: weekday `settlements.trade_date`
-sessions from Monday through Thursday price the next calendar gas day, and
-Friday sessions price Saturday, Sunday, and Monday gas days. Weekend-dated
-source rows are not treated as trade sessions. The model does not maintain a
-separate holiday or non-trading-day calendar.
+The gas-day rule uses the code-owned ICE physical gas non-trading calendar in
+`ice_python_physical_gas_non_trading_day_values()`. Calendar trade dates are
+generated from weekday dates excluding ICE physical gas non-trading days; each
+trade date prices physical gas days from the next calendar day through the next
+ICE trading date. This preserves normal Friday-to-Monday weekend strips and
+extends pre-holiday trade dates across ICE gas closures such as Good Friday,
+Independence Day observation, Thanksgiving, and the Day After Thanksgiving.
+Weekend-dated source rows are not treated as trade sessions.
 
 `ice_python.settlement_contract_dates` remains available for source inspection
 through `src_ice_python_settlement_contract_dates.sql`, but it is not used to
