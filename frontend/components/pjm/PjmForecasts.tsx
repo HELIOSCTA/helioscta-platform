@@ -29,7 +29,6 @@ import {
   ForecastPopupColGroup,
   ForecastSegmentedControl,
   ForecastSelectControl,
-  ForecastStaticToken,
   autoscaledYAxisDomain,
   compareDeltaCellStyle,
   compareLevelCellStyle,
@@ -47,6 +46,14 @@ import PjmNetLoadForecast, {
   type StatisticKey as NetLoadStatisticKey,
 } from "@/components/pjm/PjmNetLoadForecast";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
+import {
+  POWER_FORECAST_ISO_TABS,
+  effectivePowerForecastSource,
+  powerForecastIsoLabel,
+  powerForecastSourceLabel,
+  type PowerForecastIso,
+  type PowerForecastSourceMode,
+} from "@/lib/powerForecasts";
 
 interface ForecastVintageCurve {
   evaluatedAtEpt: string;
@@ -67,7 +74,9 @@ interface ForecastVintageTableRow extends ForecastVintageCurve {
 type ForecastVintageRowType = ForecastVintageTableRow["rowType"];
 
 interface PjmForecastDifferencesPayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
+  isoLabel?: string;
+  type?: ForecastType;
   area: string;
   areas: string[];
   forecastDate: string;
@@ -75,6 +84,10 @@ interface PjmForecastDifferencesPayload {
   asOf: string | null;
   latestUpdate: string | null;
   source: string;
+  sourceMode?: ForecastSourceMode;
+  sourceLabel?: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   sourceComparisonAvailable: boolean;
   sourceComparisonNote: string;
   rowCount: number;
@@ -109,8 +122,14 @@ interface ForecastExplorerCell extends ExplorerMetricSummary {
 }
 
 interface PjmForecastExplorerPayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
+  isoLabel?: string;
+  type?: "load";
   source: string;
+  sourceMode?: ForecastSourceMode;
+  sourceLabel?: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   asOf: string | null;
   latestUpdate: string | null;
   areas: string[];
@@ -128,7 +147,7 @@ interface ForecastDateCompareHour {
 }
 
 interface ForecastDateComparePayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
   type: "load";
   area: string;
   baseDate: string;
@@ -138,6 +157,8 @@ interface ForecastDateComparePayload {
   sourceMode: ForecastSourceMode;
   sourceLabel: string;
   source: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   completeHourCount: number;
   latestUpdate: string | null;
   rows: ForecastDateCompareHour[];
@@ -153,7 +174,8 @@ export interface PjmForecastsFreshnessSummary {
 }
 
 export type PjmForecastView = "explorer" | "profile" | "table" | "diffs";
-export type ForecastSourceMode = "pjm" | "meteologica";
+export type { PowerForecastIso };
+export type ForecastSourceMode = PowerForecastSourceMode;
 export type ForecastType = "load" | "netLoad";
 export type ForecastMode = "outright" | "compareDay";
 export type NetLoadForecastComponent = NetLoadComponentKey;
@@ -220,7 +242,7 @@ const FORECAST_SOURCE_TABS: Array<{
   label: string;
   scope: string;
 }> = [
-  { key: "pjm", label: "PJM", scope: "Data Miner" },
+  { key: "pjm", label: "PJM Data Miner", scope: "PJM only" },
   { key: "meteologica", label: "Meteologica", scope: "xTraders hourly forecasts" },
 ];
 const FORECAST_TYPE_TABS: Array<{
@@ -304,80 +326,103 @@ function fmtCompactMw(value: number | null | undefined): string {
 }
 
 function sourceLabel(sourceMode: ForecastSourceMode): string {
-  return sourceMode === "meteologica" ? "Meteologica" : "PJM Data Miner";
+  return powerForecastSourceLabel(sourceMode);
 }
 
-function buildExplorerApiUrl(sourceMode: ForecastSourceMode, refresh: boolean): string {
-  const endpoint =
-    sourceMode === "meteologica"
-      ? "/api/pjm-meteologica-forecast-explorer"
-      : "/api/pjm-forecast-explorer";
-  return refresh ? `${endpoint}?refresh=1` : endpoint;
+function buildExplorerApiUrl({
+  iso,
+  sourceMode,
+  refresh,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+  refresh: boolean;
+}): string {
+  const params = new URLSearchParams({ iso, source: sourceMode, type: "load" });
+  if (refresh) params.set("refresh", "1");
+  return `/api/power-forecast-explorer?${params.toString()}`;
 }
 
-function buildExplorerCacheKey(sourceMode: ForecastSourceMode): string {
-  return sourceMode === "meteologica"
-    ? "api:pjm-meteologica-forecast-explorer"
-    : "api:pjm-forecast-explorer";
+function buildExplorerCacheKey({
+  iso,
+  sourceMode,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+}): string {
+  return ["api:power-forecast-explorer", iso, sourceMode, "load"].join(":");
 }
 
-function buildNetLoadExplorerApiUrl(sourceMode: ForecastSourceMode): string {
-  const params = new URLSearchParams({ source: sourceMode });
-  return `/api/pjm-net-load-forecast-explorer?${params.toString()}`;
+function buildNetLoadExplorerApiUrl({
+  iso,
+  sourceMode,
+  refresh = false,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+  refresh?: boolean;
+}): string {
+  const params = new URLSearchParams({ iso, source: sourceMode, type: "netLoad" });
+  if (refresh) params.set("refresh", "1");
+  return `/api/power-forecast-explorer?${params.toString()}`;
 }
 
-function buildNetLoadExplorerCacheKey(sourceMode: ForecastSourceMode): string {
-  return `api:pjm-net-load-forecast-explorer:${sourceMode}`;
+function buildNetLoadExplorerCacheKey({
+  iso,
+  sourceMode,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+}): string {
+  return ["api:power-forecast-explorer", iso, sourceMode, "netLoad"].join(":");
 }
 
 function buildDiffApiUrl({
+  iso,
   sourceMode,
   area,
   forecastDate,
   lookbackHours,
   refresh,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   forecastDate: string;
   lookbackHours: number;
   refresh: boolean;
 }): string {
-  const endpoint =
-    sourceMode === "meteologica"
-      ? "/api/pjm-meteologica-forecast-differences"
-      : "/api/pjm-forecast-differences";
-  const params = new URLSearchParams({ area, date: forecastDate });
+  const params = new URLSearchParams({ iso, source: sourceMode, type: "load", area, date: forecastDate });
   params.set("lookbackHours", String(lookbackHours));
   if (refresh) params.set("refresh", "1");
-  return `${endpoint}?${params.toString()}`;
+  return `/api/power-forecast-differences?${params.toString()}`;
 }
 
 function buildDiffCacheKey({
+  iso,
   sourceMode,
   area,
   forecastDate,
   lookbackHours,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   forecastDate: string;
   lookbackHours: number;
 }): string {
-  const sourceKey =
-    sourceMode === "meteologica"
-      ? "api:pjm-meteologica-forecast-differences"
-      : "api:pjm-forecast-differences";
-  return [sourceKey, area, forecastDate, lookbackHours].join(":");
+  return ["api:power-forecast-differences", iso, sourceMode, "load", area, forecastDate, lookbackHours].join(":");
 }
 
 function buildCompareApiUrl({
+  iso,
   sourceMode,
   area,
   baseDate,
   compareDate,
   refresh,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   baseDate: string;
@@ -385,6 +430,7 @@ function buildCompareApiUrl({
   refresh: boolean;
 }): string {
   const params = new URLSearchParams({
+    iso,
     source: sourceMode,
     type: "load",
     area,
@@ -392,21 +438,23 @@ function buildCompareApiUrl({
     compareDate,
   });
   if (refresh) params.set("refresh", "1");
-  return `/api/pjm-forecast-date-compare?${params.toString()}`;
+  return `/api/power-forecast-date-compare?${params.toString()}`;
 }
 
 function buildCompareCacheKey({
+  iso,
   sourceMode,
   area,
   baseDate,
   compareDate,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   baseDate: string;
   compareDate: string;
 }): string {
-  return ["api:pjm-forecast-date-compare", sourceMode, "load", area, baseDate, compareDate].join(":");
+  return ["api:power-forecast-date-compare", iso, sourceMode, "load", area, baseDate, compareDate].join(":");
 }
 
 function metricValue(cell: ForecastExplorerCell, metric: ExplorerMetric): number | null {
@@ -646,6 +694,7 @@ function SectionCard({
 }
 
 export default function PjmForecasts({
+  initialIso = "pjm",
   initialForecastType = "load",
   initialMode = "outright",
   initialSourceMode = "pjm",
@@ -657,6 +706,7 @@ export default function PjmForecasts({
   onFreshnessChange,
 }: {
   initialView?: PjmForecastView;
+  initialIso?: PowerForecastIso;
   initialForecastType?: ForecastType;
   initialMode?: ForecastMode;
   initialSourceMode?: ForecastSourceMode;
@@ -668,6 +718,7 @@ export default function PjmForecasts({
   onFreshnessChange?: (freshness: PjmForecastsFreshnessSummary) => void;
   onViewChange?: (view: PjmForecastView) => void;
 }) {
+  const [forecastIso, setForecastIso] = useState<PowerForecastIso>(initialIso);
   const [forecastType, setForecastType] = useState<ForecastType>(initialForecastType);
   const [forecastMode, setForecastMode] = useState<ForecastMode>(initialMode);
   const [explorerViewMode, setExplorerViewMode] = useState<ExplorerViewMode>("latest");
@@ -684,6 +735,8 @@ export default function PjmForecasts({
   const [netLoadCompareTargetDate, setNetLoadCompareTargetDate] = useState<string | null>(null);
   const [netLoadCompareRampingEnabled, setNetLoadCompareRampingEnabled] = useState(false);
   const [netLoadCompareDateOptions, setNetLoadCompareDateOptions] = useState<string[]>([]);
+  const [netLoadControlFreshness, setNetLoadControlFreshness] =
+    useState<PjmNetLoadForecastFreshnessSummary | null>(null);
   const [tableHeatmapEnabled, setTableHeatmapEnabled] = useState(true);
   const [explorerData, setExplorerData] = useState<PjmForecastExplorerPayload | null>(null);
   const [diffData, setDiffData] = useState<PjmForecastDifferencesPayload | null>(null);
@@ -702,7 +755,9 @@ export default function PjmForecasts({
       ? { area: initialArea, forecastDate: initialDate }
       : null,
   );
-  const previousSourceMode = useRef(sourceMode);
+  const activeSourceMode = effectivePowerForecastSource(forecastIso, sourceMode);
+  const selectedIsoLabel = powerForecastIsoLabel(forecastIso);
+  const previousForecastSourceKey = useRef(`${forecastIso}|${activeSourceMode}`);
   const [compareBaseDate, setCompareBaseDate] = useState<string | null>(null);
   const [compareTargetDate, setCompareTargetDate] = useState<string | null>(null);
   const [compareRampingEnabled, setCompareRampingEnabled] = useState(false);
@@ -733,8 +788,9 @@ export default function PjmForecasts({
   }, [forecastType]);
 
   useEffect(() => {
-    if (previousSourceMode.current === sourceMode) return;
-    previousSourceMode.current = sourceMode;
+    const nextKey = `${forecastIso}|${activeSourceMode}`;
+    if (previousForecastSourceKey.current === nextKey) return;
+    previousForecastSourceKey.current = nextKey;
     setSelectedExplorerCell(null);
     setDiffData(null);
     setDiffError(null);
@@ -745,7 +801,8 @@ export default function PjmForecasts({
     setCollapsedCompareCards(new Set());
     setCompareBaseDate(null);
     setCompareTargetDate(null);
-  }, [sourceMode]);
+    setNetLoadControlFreshness(null);
+  }, [activeSourceMode, forecastIso]);
 
   useEffect(() => {
     if (forecastType !== "load" || forecastMode !== "compareDay") {
@@ -775,15 +832,17 @@ export default function PjmForecasts({
     let cancelled = false;
     const timeoutId = window.setTimeout(() => {
       if (cancelled) return;
-      const requests = FORECAST_PREFETCH_SOURCES.flatMap((prefetchSource) => [
+      const prefetchSources =
+        forecastIso === "pjm" ? FORECAST_PREFETCH_SOURCES : (["meteologica"] as ForecastSourceMode[]);
+      const requests = prefetchSources.flatMap((prefetchSource) => [
         fetchJsonWithCache<unknown>({
-          key: buildExplorerCacheKey(prefetchSource),
-          url: buildExplorerApiUrl(prefetchSource, false),
+          key: buildExplorerCacheKey({ iso: forecastIso, sourceMode: prefetchSource }),
+          url: buildExplorerApiUrl({ iso: forecastIso, sourceMode: prefetchSource, refresh: false }),
           ttlMs: API_CACHE_TTL_MS,
         }),
         fetchJsonWithCache<unknown>({
-          key: buildNetLoadExplorerCacheKey(prefetchSource),
-          url: buildNetLoadExplorerApiUrl(prefetchSource),
+          key: buildNetLoadExplorerCacheKey({ iso: forecastIso, sourceMode: prefetchSource }),
+          url: buildNetLoadExplorerApiUrl({ iso: forecastIso, sourceMode: prefetchSource }),
           ttlMs: API_CACHE_TTL_MS,
         }),
       ]);
@@ -794,7 +853,7 @@ export default function PjmForecasts({
       cancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [refreshToken]);
+  }, [forecastIso, refreshToken]);
 
   useEffect(() => {
     if (!explorerData || forecastType !== "load") return;
@@ -829,13 +888,15 @@ export default function PjmForecasts({
       areas.map((area) =>
         fetchJsonWithCache<ForecastDateComparePayload>({
           key: buildCompareCacheKey({
-            sourceMode,
+            iso: forecastIso,
+            sourceMode: activeSourceMode,
             area,
             baseDate: compareBaseDate,
             compareDate: compareTargetDate,
           }),
           url: buildCompareApiUrl({
-            sourceMode,
+            iso: forecastIso,
+            sourceMode: activeSourceMode,
             area,
             baseDate: compareBaseDate,
             compareDate: compareTargetDate,
@@ -872,7 +933,7 @@ export default function PjmForecasts({
       })
       .catch((err: Error) => {
         if (!active) return;
-        setCompareError(err.message || `Failed to load ${sourceLabel(sourceMode)} load date comparison`);
+        setCompareError(err.message || `Failed to load ${sourceLabel(activeSourceMode)} load date comparison`);
         setCompareDataByArea({});
       })
       .finally(() => {
@@ -889,7 +950,8 @@ export default function PjmForecasts({
     forecastMode,
     forecastType,
     refreshToken,
-    sourceMode,
+    activeSourceMode,
+    forecastIso,
   ]);
 
   useEffect(() => {
@@ -905,8 +967,8 @@ export default function PjmForecasts({
     setExplorerError(null);
 
     fetchJsonWithCache<PjmForecastExplorerPayload>({
-      key: buildExplorerCacheKey(sourceMode),
-      url: buildExplorerApiUrl(sourceMode, refreshToken > 0),
+      key: buildExplorerCacheKey({ iso: forecastIso, sourceMode: activeSourceMode }),
+      url: buildExplorerApiUrl({ iso: forecastIso, sourceMode: activeSourceMode, refresh: refreshToken > 0 }),
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
       cacheMode: refreshToken > 0 ? "no-store" : "default",
@@ -920,15 +982,15 @@ export default function PjmForecasts({
           statusClass: payload.asOf
             ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
             : "border-gray-700 bg-gray-900 text-gray-400",
-          summary: `${sourceLabel(sourceMode)} | ${payload.cellCount.toLocaleString()} cells | ${payload.rowCount.toLocaleString()} summaries`,
-          targetDateLabel: `${payload.areas.length} areas`,
+          summary: `${payload.isoLabel ?? selectedIsoLabel} | ${sourceLabel(activeSourceMode)} | ${payload.cellCount.toLocaleString()} cells | ${payload.rowCount.toLocaleString()} summaries`,
+          targetDateLabel: `${payload.areas.length} load areas`,
           latestDateLabel: fmtDate(payload.forecastDates.at(-1)),
           latestUpdateLabel: fmtDateTime(payload.asOf),
         });
       })
       .catch((err: Error) => {
         if (!active || err.name === "AbortError") return;
-        setExplorerError(err.message || `Failed to load ${sourceLabel(sourceMode)} forecast explorer`);
+        setExplorerError(err.message || `Failed to load ${sourceLabel(activeSourceMode)} forecast explorer`);
         setExplorerData(null);
         onFreshnessChange?.({
           ...DEFAULT_FRESHNESS,
@@ -945,7 +1007,7 @@ export default function PjmForecasts({
       active = false;
       controller.abort();
     };
-  }, [forecastType, refreshToken, onFreshnessChange, sourceMode]);
+  }, [activeSourceMode, forecastIso, forecastType, onFreshnessChange, refreshToken, selectedIsoLabel]);
 
   useEffect(() => {
     if (forecastType !== "load" || forecastMode !== "outright" || !selectedExplorerCell) return;
@@ -957,13 +1019,15 @@ export default function PjmForecasts({
 
     fetchJsonWithCache<PjmForecastDifferencesPayload>({
       key: buildDiffCacheKey({
-        sourceMode,
+        iso: forecastIso,
+        sourceMode: activeSourceMode,
         area: selectedExplorerCell.area,
         forecastDate: selectedExplorerCell.forecastDate,
         lookbackHours,
       }),
       url: buildDiffApiUrl({
-        sourceMode,
+        iso: forecastIso,
+        sourceMode: activeSourceMode,
         area: selectedExplorerCell.area,
         forecastDate: selectedExplorerCell.forecastDate,
         lookbackHours,
@@ -980,7 +1044,7 @@ export default function PjmForecasts({
       })
       .catch((err: Error) => {
         if (!active || err.name === "AbortError") return;
-        setDiffError(err.message || `Failed to load ${sourceLabel(sourceMode)} forecast differences`);
+        setDiffError(err.message || `Failed to load ${sourceLabel(activeSourceMode)} forecast differences`);
         setDiffData(null);
       })
       .finally(() => {
@@ -991,7 +1055,7 @@ export default function PjmForecasts({
       active = false;
       controller.abort();
     };
-  }, [forecastMode, forecastType, lookbackHours, refreshToken, selectedExplorerCell, sourceMode]);
+  }, [activeSourceMode, forecastIso, forecastMode, forecastType, lookbackHours, refreshToken, selectedExplorerCell]);
 
   const visibleAreaGroups = useMemo(() => {
     const areas = explorerData?.areas ?? [];
@@ -1195,9 +1259,11 @@ export default function PjmForecasts({
   const compareValueKey = compareRampingEnabled ? "baseRamp" : "base";
   const compareTargetValueKey = compareRampingEnabled ? "compareRamp" : "compare";
   const compareDeltaValueKey = compareRampingEnabled ? "rampDelta" : "delta";
-  const loadCompareSubtitle = `${sourceLabel(sourceMode)} | ${compareDataList.length}/${
+  const forecastHourBasis = activeSourceMode === "meteologica" ? "source-local hours" : "PJM/EPT hours";
+  const issueBasis = activeSourceMode === "meteologica" ? "UTC issues" : "PJM/EPT issues";
+  const loadCompareSubtitle = `${selectedIsoLabel} | ${sourceLabel(activeSourceMode)} | ${compareDataList.length}/${
     visibleAreaCount || visibleAreas.length
-  } regions loaded | ${compareBaseDateLabel} vs ${compareTargetDateLabel}`;
+  } regions loaded | ${compareBaseDateLabel} vs ${compareTargetDateLabel} | ${forecastHourBasis}`;
 
   const renderCurveChart = ({
     heightClass,
@@ -1900,9 +1966,9 @@ export default function PjmForecasts({
         title="Forecast Explorer"
         subtitle={
           explorerData
-            ? `${visibleAreaCount} areas x ${datesToRender.length} dates | ${selectedMetric.label} | ${
+            ? `${selectedIsoLabel} | ${sourceLabel(activeSourceMode)} | ${visibleAreaCount} areas x ${datesToRender.length} dates | ${selectedMetric.label} | ${
                 explorerViewMode === "change" ? `change vs ${selectedWindow.label}` : "latest"
-              } | row heatmap`
+              } | ${forecastHourBasis} | row heatmap`
             : undefined
         }
         action={
@@ -2060,7 +2126,7 @@ export default function PjmForecasts({
               </h2>
               <p className="mt-1 text-xs text-gray-500">
                 {selectedExplorerCell.area} | {fmtDate(selectedExplorerCell.forecastDate)} |{" "}
-                {lookbackHours} hour lookback
+                {lookbackHours} hour lookback | {issueBasis}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2103,9 +2169,9 @@ export default function PjmForecasts({
               <>
                 <PlotCard
                   title="Forecast Vintages in Lookback"
-                  subtitle={`${diffData.area}: ${diffData.forecastDate} | as of ${fmtDateTime(
+                  subtitle={`${diffData.area}: ${diffData.forecastDate} | ${issueBasis} ${fmtDateTime(
                     diffData.asOf,
-                  )}`}
+                  )} | ${forecastHourBasis}`}
                   series={lookbackSeries}
                   hiddenSeries={hiddenLookbackSeries}
                   onToggleSeries={toggleLookbackSeries}
@@ -2127,6 +2193,7 @@ export default function PjmForecasts({
   };
 
   const handleNetLoadFreshnessChange = useCallback((freshness: PjmNetLoadForecastFreshnessSummary) => {
+    setNetLoadControlFreshness(freshness);
     onFreshnessChange?.({
       status: freshness.status,
       statusClass: freshness.statusClass,
@@ -2138,13 +2205,20 @@ export default function PjmForecasts({
   }, [onFreshnessChange]);
 
   const sourceFilterLabel =
-    FORECAST_SOURCE_TABS.find((tab) => tab.key === sourceMode)?.label ?? sourceMode;
+    FORECAST_SOURCE_TABS.find((tab) => tab.key === activeSourceMode)?.label ?? activeSourceMode;
   const forecastTypeFilterLabel =
     FORECAST_TYPE_TABS.find((tab) => tab.key === forecastType)?.label ?? forecastType;
   const forecastModeFilterLabel =
     FORECAST_MODE_TABS.find((tab) => tab.key === forecastMode)?.label ?? forecastMode;
-  const filterSummary = `${sourceFilterLabel} / ${forecastTypeFilterLabel} / ${forecastModeFilterLabel}`;
-  const sourceOptions = FORECAST_SOURCE_TABS.map((tab) => ({
+  const filterSummary = `${selectedIsoLabel} / ${sourceFilterLabel} / ${forecastTypeFilterLabel} / ${forecastModeFilterLabel}`;
+  const isoOptions = POWER_FORECAST_ISO_TABS.map((tab) => ({
+    value: tab.key,
+    label: tab.label,
+    title: tab.scope,
+  }));
+  const sourceOptions = FORECAST_SOURCE_TABS.filter(
+    (tab) => forecastIso === "pjm" || tab.key === "meteologica",
+  ).map((tab) => ({
     value: tab.key,
     label: tab.label,
     title: tab.scope,
@@ -2171,165 +2245,248 @@ export default function PjmForecasts({
   const netLoadCompareProfileMode: CompareProfileMode = netLoadCompareRampingEnabled
     ? "ramps"
     : "levels";
+  const loadAreaDenominator = visibleAreaCount || visibleAreas.length;
+  const netLoadLatestUpdateLabel = netLoadControlFreshness?.latestUpdateLabel;
+  const netLoadAreaLabel = netLoadControlFreshness?.targetDateLabel;
+  const controlLatestIssueLabel =
+    forecastType === "netLoad"
+      ? netLoadLatestUpdateLabel &&
+        netLoadLatestUpdateLabel !== "--" &&
+        netLoadLatestUpdateLabel !== "-"
+        ? netLoadLatestUpdateLabel
+        : null
+      : forecastMode === "compareDay"
+        ? compareLatestUpdate
+          ? fmtDateTime(compareLatestUpdate)
+          : null
+        : explorerData?.asOf
+          ? fmtDateTime(explorerData.asOf)
+          : explorerData?.latestUpdate
+            ? fmtDateTime(explorerData.latestUpdate)
+            : null;
+  const controlAreaLabel =
+    forecastType === "netLoad"
+      ? netLoadAreaLabel && netLoadAreaLabel !== "--" && netLoadAreaLabel !== "-"
+        ? `${netLoadAreaLabel} loaded`
+        : null
+      : forecastMode === "compareDay"
+        ? loadAreaDenominator
+          ? `${compareDataList.length}/${loadAreaDenominator} areas loaded`
+          : null
+        : explorerData
+          ? `${visibleAreaCount || explorerData.areas.length} areas loaded`
+          : null;
+  const controlFooterItems = [
+    controlLatestIssueLabel ? `As of ${controlLatestIssueLabel}` : null,
+    controlAreaLabel,
+    forecastHourBasis,
+  ].filter((item): item is string => Boolean(item));
 
   const renderForecastFilterCard = () => (
     <ForecastFilterCard summary={filterSummary}>
       <div className="space-y-2">
-        <ForecastStaticToken label="ISO" value="PJM" />
-        <ForecastControlGroup label="Source">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            Scope
+          </span>
+          <span className="h-px flex-1 bg-gray-800" />
+        </div>
+        <ForecastControlGroup label="ISO">
           <ForecastSegmentedControl
-            options={sourceOptions}
-            value={sourceMode}
-            onChange={(nextSourceMode) => {
-              startTransition(() => setSourceMode(nextSourceMode));
-            }}
-            ariaLabel="Forecast source"
-          />
-        </ForecastControlGroup>
-        <ForecastControlGroup label="Forecast">
-          <ForecastSegmentedControl
-            options={forecastTypeOptions}
-            value={forecastType}
-            onChange={(nextForecastType) => {
+            options={isoOptions}
+            value={forecastIso}
+            onChange={(nextIso) => {
               startTransition(() => {
-                setForecastType(nextForecastType);
+                setForecastIso(nextIso);
+                if (nextIso !== "pjm") setSourceMode("meteologica");
                 setSelectedExplorerCell(null);
               });
             }}
-            ariaLabel="Forecast type"
+            ariaLabel="Forecast ISO"
           />
         </ForecastControlGroup>
-        <ForecastControlGroup label="View">
-          <ForecastSegmentedControl
-            options={forecastModeOptions}
-            value={forecastMode}
-            onChange={(nextForecastMode) => {
-              startTransition(() => {
-                setForecastMode(nextForecastMode);
-                if (nextForecastMode === "compareDay") setSelectedExplorerCell(null);
-              });
-            }}
-            ariaLabel="Forecast view"
-          />
-        </ForecastControlGroup>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {forecastIso === "pjm" && (
+            <ForecastControlGroup label="Source">
+              <ForecastSegmentedControl
+                options={sourceOptions}
+                value={activeSourceMode}
+                onChange={(nextSourceMode) => {
+                  startTransition(() => setSourceMode(nextSourceMode));
+                }}
+                ariaLabel="Forecast source"
+              />
+            </ForecastControlGroup>
+          )}
+          <ForecastControlGroup label="Type">
+            <ForecastSegmentedControl
+              options={forecastTypeOptions}
+              value={forecastType}
+              onChange={(nextForecastType) => {
+                startTransition(() => {
+                  setForecastType(nextForecastType);
+                  setSelectedExplorerCell(null);
+                });
+              }}
+              ariaLabel="Forecast type"
+            />
+          </ForecastControlGroup>
+        </div>
       </div>
 
-      <div className="space-y-2 border-t border-gray-800 pt-2">
-        {forecastMode === "compareDay" ? (
-          <>
-            <ForecastSelectControl
-              label="Date A"
-              value={
-                forecastType === "netLoad"
-                  ? netLoadCompareBaseDate ?? ""
-                  : compareBaseDate ?? ""
-              }
-              options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
-              disabled={
-                forecastType === "netLoad"
-                  ? !netLoadCompareDateOptions.length
-                  : !compareDateOptions.length
-              }
-              onChange={(nextDate) => {
-                const value = nextDate || null;
-                if (forecastType === "netLoad") setNetLoadCompareBaseDate(value);
-                else startTransition(() => setCompareBaseDate(value));
+      <div className="space-y-2 border-t border-gray-800 pt-3">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+            Analysis
+          </span>
+          <span className="h-px flex-1 bg-gray-800" />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <ForecastControlGroup label="View">
+            <ForecastSegmentedControl
+              options={forecastModeOptions}
+              value={forecastMode}
+              onChange={(nextForecastMode) => {
+                startTransition(() => {
+                  setForecastMode(nextForecastMode);
+                  if (nextForecastMode === "compareDay") setSelectedExplorerCell(null);
+                });
               }}
+              ariaLabel="Forecast view"
             />
-            <ForecastSelectControl
-              label="Date B"
-              value={
-                forecastType === "netLoad"
-                  ? netLoadCompareTargetDate ?? ""
-                  : compareTargetDate ?? ""
-              }
-              options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
-              disabled={
-                forecastType === "netLoad"
-                  ? !netLoadCompareDateOptions.length
-                  : !compareDateOptions.length
-              }
-              onChange={(nextDate) => {
-                const value = nextDate || null;
-                if (forecastType === "netLoad") setNetLoadCompareTargetDate(value);
-                else startTransition(() => setCompareTargetDate(value));
-              }}
-            />
-            <ForecastControlGroup label="Profile">
-              <ForecastSegmentedControl
-                options={COMPARE_PROFILE_OPTIONS}
-                value={forecastType === "netLoad" ? netLoadCompareProfileMode : compareProfileMode}
-                onChange={(nextProfileMode) => {
-                  const enabled = nextProfileMode === "ramps";
-                  if (forecastType === "netLoad") setNetLoadCompareRampingEnabled(enabled);
-                  else startTransition(() => setCompareRampingEnabled(enabled));
+          </ForecastControlGroup>
+
+          {forecastMode === "compareDay" ? (
+            <>
+              <ForecastSelectControl
+                label="Date A"
+                value={
+                  forecastType === "netLoad"
+                    ? netLoadCompareBaseDate ?? ""
+                    : compareBaseDate ?? ""
+                }
+                options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
+                disabled={
+                  forecastType === "netLoad"
+                    ? !netLoadCompareDateOptions.length
+                    : !compareDateOptions.length
+                }
+                onChange={(nextDate) => {
+                  const value = nextDate || null;
+                  if (forecastType === "netLoad") setNetLoadCompareBaseDate(value);
+                  else startTransition(() => setCompareBaseDate(value));
                 }}
-                ariaLabel="Compare profile"
               />
-            </ForecastControlGroup>
-          </>
-        ) : forecastType === "netLoad" ? (
-          <>
-            <ForecastControlGroup label="Mode">
-              <ForecastSegmentedControl
-                options={EXPLORER_VIEW_OPTIONS}
-                value={netLoadViewMode}
-                onChange={setNetLoadViewMode}
-                ariaLabel="Net load explorer view"
-              />
-            </ForecastControlGroup>
-            <ForecastControlGroup label="Statistic">
-              <ForecastSegmentedControl
-                options={NET_LOAD_STATISTIC_OPTIONS}
-                value={netLoadStatistic}
-                onChange={setNetLoadStatistic}
-                ariaLabel="Net load statistic"
-              />
-            </ForecastControlGroup>
-            <ForecastControlGroup label="Window">
-              <ForecastSegmentedControl
-                options={changeWindowOptions}
-                value={netLoadChangeWindow}
-                onChange={selectNetLoadChangeWindow}
-                ariaLabel="Net load change window"
-              />
-            </ForecastControlGroup>
-          </>
-        ) : (
-          <>
-            <ForecastControlGroup label="Mode">
-              <ForecastSegmentedControl
-                options={EXPLORER_VIEW_OPTIONS}
-                value={explorerViewMode}
-                onChange={(nextViewMode) => {
-                  setExplorerViewMode(nextViewMode);
-                  if (nextViewMode === "change") setLookbackHours(selectedWindow.hours);
+              <ForecastSelectControl
+                label="Date B"
+                value={
+                  forecastType === "netLoad"
+                    ? netLoadCompareTargetDate ?? ""
+                    : compareTargetDate ?? ""
+                }
+                options={forecastType === "netLoad" ? netLoadCompareDateOptions : compareDateOptions}
+                disabled={
+                  forecastType === "netLoad"
+                    ? !netLoadCompareDateOptions.length
+                    : !compareDateOptions.length
+                }
+                onChange={(nextDate) => {
+                  const value = nextDate || null;
+                  if (forecastType === "netLoad") setNetLoadCompareTargetDate(value);
+                  else startTransition(() => setCompareTargetDate(value));
                 }}
-                ariaLabel="Load explorer view"
               />
-            </ForecastControlGroup>
-            <ForecastControlGroup label="Metric">
-              <ForecastSegmentedControl
-                options={explorerMetricOptions}
-                value={explorerMetric}
-                onChange={setExplorerMetric}
-                ariaLabel="Load explorer metric"
-              />
-            </ForecastControlGroup>
-            <ForecastControlGroup label="Window">
-              <ForecastSegmentedControl
-                options={changeWindowOptions}
-                value={changeWindow}
-                onChange={(nextWindow) => {
-                  setExplorerViewMode("change");
-                  selectChangeWindow(nextWindow);
-                }}
-                ariaLabel="Load change window"
-              />
-            </ForecastControlGroup>
-          </>
-        )}
+              <ForecastControlGroup label="Profile">
+                <ForecastSegmentedControl
+                  options={COMPARE_PROFILE_OPTIONS}
+                  value={forecastType === "netLoad" ? netLoadCompareProfileMode : compareProfileMode}
+                  onChange={(nextProfileMode) => {
+                    const enabled = nextProfileMode === "ramps";
+                    if (forecastType === "netLoad") setNetLoadCompareRampingEnabled(enabled);
+                    else startTransition(() => setCompareRampingEnabled(enabled));
+                  }}
+                  ariaLabel="Compare profile"
+                />
+              </ForecastControlGroup>
+            </>
+          ) : forecastType === "netLoad" ? (
+            <>
+              <ForecastControlGroup label="Mode">
+                <ForecastSegmentedControl
+                  options={EXPLORER_VIEW_OPTIONS}
+                  value={netLoadViewMode}
+                  onChange={setNetLoadViewMode}
+                  ariaLabel="Net load explorer view"
+                />
+              </ForecastControlGroup>
+              <ForecastControlGroup label="Statistic">
+                <ForecastSegmentedControl
+                  options={NET_LOAD_STATISTIC_OPTIONS}
+                  value={netLoadStatistic}
+                  onChange={setNetLoadStatistic}
+                  ariaLabel="Net load statistic"
+                />
+              </ForecastControlGroup>
+              {netLoadViewMode === "change" && (
+                <ForecastControlGroup label="Window">
+                  <ForecastSegmentedControl
+                    options={changeWindowOptions}
+                    value={netLoadChangeWindow}
+                    onChange={selectNetLoadChangeWindow}
+                    ariaLabel="Net load change window"
+                  />
+                </ForecastControlGroup>
+              )}
+            </>
+          ) : (
+            <>
+              <ForecastControlGroup label="Mode">
+                <ForecastSegmentedControl
+                  options={EXPLORER_VIEW_OPTIONS}
+                  value={explorerViewMode}
+                  onChange={(nextViewMode) => {
+                    setExplorerViewMode(nextViewMode);
+                    if (nextViewMode === "change") setLookbackHours(selectedWindow.hours);
+                  }}
+                  ariaLabel="Load explorer view"
+                />
+              </ForecastControlGroup>
+              <ForecastControlGroup label="Metric">
+                <ForecastSegmentedControl
+                  options={explorerMetricOptions}
+                  value={explorerMetric}
+                  onChange={setExplorerMetric}
+                  ariaLabel="Load explorer metric"
+                />
+              </ForecastControlGroup>
+              {explorerViewMode === "change" && (
+                <ForecastControlGroup label="Window">
+                  <ForecastSegmentedControl
+                    options={changeWindowOptions}
+                    value={changeWindow}
+                    onChange={(nextWindow) => {
+                      setExplorerViewMode("change");
+                      selectChangeWindow(nextWindow);
+                    }}
+                    ariaLabel="Load change window"
+                  />
+                </ForecastControlGroup>
+              )}
+            </>
+          )}
+        </div>
       </div>
+
+      {controlFooterItems.length > 0 && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-gray-800 pt-2 text-[11px] font-medium text-gray-500">
+          {controlFooterItems.map((item) => (
+            <span key={item} className="whitespace-nowrap">
+              {item}
+            </span>
+          ))}
+        </div>
+      )}
     </ForecastFilterCard>
   );
 
@@ -2339,8 +2496,9 @@ export default function PjmForecasts({
 
       {forecastType === "netLoad" ? (
         <PjmNetLoadForecast
+          iso={forecastIso}
           refreshToken={refreshToken}
-          sourceMode={sourceMode}
+          sourceMode={activeSourceMode}
           activeTab={forecastMode as NetLoadForecastTab}
           viewMode={netLoadViewMode}
           onViewModeChange={setNetLoadViewMode}

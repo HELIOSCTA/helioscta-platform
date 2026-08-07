@@ -21,6 +21,7 @@ import {
   GAS_MONTHLY_SETTLES_MODE_LABELS,
   GAS_REGION_LABELS,
   GAS_REGION_ORDER,
+  getIceGasRegistryEntry,
   type DailyGasMarket,
   type GasMonthlyFuturesDisplay,
   type GasMonthlySettlesCell,
@@ -205,6 +206,59 @@ function monthlyTableSymbol({
   return market.futuresProduct ?? "No futures symbol";
 }
 
+function monthlyTableSourceSymbols({
+  mode,
+  market,
+  futuresDisplay,
+}: {
+  mode: GasMonthlySettlesMode;
+  market: DailyGasMarket;
+  futuresDisplay: GasMonthlyFuturesDisplay;
+}): string[] {
+  if (mode === "cash") return [market.cashSymbol];
+  if (mode === "balmo") return market.balmoSymbol ? [market.balmoSymbol] : [];
+  if (!market.futuresProduct) return [];
+  if (market.curveStyle === "basis" && futuresDisplay === "outright") return ["HNG", market.futuresProduct];
+  return [market.futuresProduct];
+}
+
+function iceProductEntryForSymbol(symbol: string) {
+  return getIceGasRegistryEntry(symbol) ?? getIceGasRegistryEntry(symbol.split(/\s+/)[0]);
+}
+
+function IceProductSymbolChip({
+  symbol,
+  compact = false,
+}: {
+  symbol: string | null | undefined;
+  compact?: boolean;
+}) {
+  if (!symbol) return <span className="font-mono text-gray-500">-</span>;
+
+  const entry = iceProductEntryForSymbol(symbol);
+  if (!entry?.ice_product_url) {
+    return <span className="inline-block max-w-full truncate font-mono text-gray-300">{symbol}</span>;
+  }
+
+  return (
+    <a
+      href={entry.ice_product_url}
+      target="_blank"
+      rel="noreferrer"
+      aria-label={`Open ICE product for ${symbol}`}
+      title={`Open ICE product for ${symbol}`}
+      className={`inline-flex max-w-full min-w-0 items-center gap-1.5 rounded-md border border-sky-500/45 bg-sky-500/10 font-mono font-semibold text-sky-200 underline decoration-sky-300/70 underline-offset-2 transition-colors hover:border-sky-300 hover:bg-sky-500/20 hover:text-white focus:outline-none focus:ring-1 focus:ring-sky-300 ${
+        compact ? "px-1.5 py-0.5 text-[11px]" : "px-2 py-0.5 text-xs"
+      }`}
+    >
+      <span className="truncate">{symbol}</span>
+      <span className="rounded border border-sky-400/30 bg-sky-300/10 px-1 text-[9px] font-bold uppercase tracking-wider text-sky-100">
+        ICE
+      </span>
+    </a>
+  );
+}
+
 function monthlyTableMethod({
   mode,
   payload,
@@ -229,6 +283,60 @@ function cellValueText(cell: GasMonthlySettlesCell | null | undefined, payload: 
   return fmtPrice(cell.value);
 }
 
+function finiteMonthlyTrendPoints(
+  points: GasMonthlySettlesCell["priceTrend"] | undefined,
+): Array<{ date: string | null; value: number }> {
+  return (points ?? []).filter(
+    (point): point is { date: string | null; value: number } =>
+      point.value !== null && point.value !== undefined && Number.isFinite(point.value),
+  );
+}
+
+function monthlyTrendStroke(move: number): string {
+  if (!Number.isFinite(move) || Math.abs(move) < 1e-9) return "#94a3b8";
+  return move > 0 ? "#34d399" : "#f87171";
+}
+
+function MonthlyCellTrendSparkline({
+  priceTrend,
+}: {
+  priceTrend: GasMonthlySettlesCell["priceTrend"];
+}) {
+  const trendPoints = finiteMonthlyTrendPoints(priceTrend);
+  if (trendPoints.length < 2) return null;
+
+  const width = 72;
+  const height = 16;
+  const paddingX = 1;
+  const paddingY = 2;
+  const values = trendPoints.map((point) => point.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+  const coordinates = values.map((value, index) => {
+    const x = paddingX + (index / Math.max(1, values.length - 1)) * (width - paddingX * 2);
+    const y = height - paddingY - ((value - min) / range) * (height - paddingY * 2);
+    return { x, y };
+  });
+  const path = coordinates
+    .map(({ x, y }, index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`)
+    .join(" ");
+  const move = values.at(-1)! - values[0];
+  const stroke = monthlyTrendStroke(move);
+
+  return (
+    <svg
+      aria-hidden="true"
+      focusable="false"
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className="mt-1 h-3.5 w-full overflow-visible"
+    >
+      <path d={path} fill="none" stroke={stroke} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} />
+    </svg>
+  );
+}
+
 function contractMonthIndex(contractMonth: string | null | undefined): number | null {
   if (!contractMonth || !/^\d{4}-\d{2}-\d{2}$/.test(contractMonth)) return null;
   const year = Number(contractMonth.slice(0, 4));
@@ -240,6 +348,31 @@ function contractMonthIndex(contractMonth: string | null | undefined): number | 
 function currentContractMonthIndex(): number {
   const now = new Date();
   return now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
+}
+
+function isMonthlyCellSettled(cell: GasMonthlySettlesCell): boolean {
+  const contractIndex = contractMonthIndex(cell.contractMonth);
+  return cell.pointType === "settled" || (contractIndex !== null && contractIndex < currentContractMonthIndex());
+}
+
+function shouldRenderMonthlyTrend({
+  cell,
+  latestTradeDate,
+  showTrend,
+}: {
+  cell: GasMonthlySettlesCell | null;
+  latestTradeDate: string | null;
+  showTrend: boolean;
+}): boolean {
+  return Boolean(
+    showTrend &&
+      cell &&
+      !isMonthlyCellSettled(cell) &&
+      cell.tradeDate &&
+      latestTradeDate &&
+      cell.tradeDate.slice(0, 10) === latestTradeDate.slice(0, 10) &&
+      finiteMonthlyTrendPoints(cell.priceTrend).length >= 2,
+  );
 }
 
 function latestPayloadTradeDate(payload: GasMonthlySettlesPayload | null): string | null {
@@ -361,7 +494,7 @@ function buildMonthlySettlesCacheKey({
   endYear: number;
 }): string {
   return [
-    "api:gas-monthly-settles:v3",
+    "api:gas-monthly-settles:v4",
     mode,
     marketCacheToken(market),
     priceBasis,
@@ -581,7 +714,9 @@ function MonthlyHistoryTable({
                 <tr key={`${row.tradeDate ?? "missing"}-${index}`}>
                   <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.tradeDate)}</td>
                   <td className="px-3 py-2 font-mono text-gray-300">{fmtDate(row.iceTradeDate)}</td>
-                  <td className="px-3 py-2 font-mono text-gray-100">{row.sourceSymbol ?? "-"}</td>
+                  <td className="px-3 py-2">
+                    <IceProductSymbolChip symbol={row.sourceSymbol} compact />
+                  </td>
                   <td className="px-3 py-2 text-gray-200">{row.hubName ?? "-"}</td>
                   <td className="px-3 py-2 text-right font-mono tabular-nums text-gray-100">
                     {fmtPrice(row.settlement)}
@@ -632,6 +767,7 @@ function MonthlySettlesTable({
   selectedMarket,
   priceBasis,
   futuresDisplay,
+  showTrend,
   loading,
   onSelectCell,
   className = "",
@@ -643,6 +779,7 @@ function MonthlySettlesTable({
   selectedMarket: DailyGasMarket;
   priceBasis: GasPriceBasis;
   futuresDisplay: GasMonthlyFuturesDisplay;
+  showTrend: boolean;
   loading: boolean;
   onSelectCell: (selection: SelectedMonthlyCell) => void;
   className?: string;
@@ -655,6 +792,7 @@ function MonthlySettlesTable({
   const rows = payload?.rows ?? [];
   const latestTradeDate = useMemo(() => latestPayloadTradeDate(payload), [payload]);
   const tableMinWidth = TABLE_ROW_HEADER_WIDTH + Math.max(columns.length, 1) * TABLE_YEAR_COLUMN_WIDTH;
+  const tableSourceSymbols = monthlyTableSourceSymbols({ mode, market: selectedMarket, futuresDisplay });
 
   return (
     <DataTableShell
@@ -670,6 +808,18 @@ function MonthlySettlesTable({
       bodyClassName="w-full overflow-auto"
       action={
         <div className="flex flex-wrap items-center justify-end gap-2 text-xs">
+          {tableSourceSymbols.length ? (
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Sources</span>
+              {tableSourceSymbols.map((symbol) => (
+                <IceProductSymbolChip key={symbol} symbol={symbol} compact />
+              ))}
+            </div>
+          ) : (
+            <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-[11px] font-semibold text-gray-600">
+              No source symbol
+            </span>
+          )}
           <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 font-mono text-gray-400">
             {(payload?.metadata.valueCount ?? 0).toLocaleString()} values
           </span>
@@ -711,7 +861,10 @@ function MonthlySettlesTable({
           )}
           {!loading &&
             rows.map((row) => (
-              <tr key={row.key} className="h-[44px] border-t border-gray-800 bg-[#151820] odd:bg-[#181b23] hover:bg-gray-900/70">
+              <tr
+                key={row.key}
+                className={`${showTrend ? "h-[52px]" : "h-[44px]"} border-t border-gray-800 bg-[#151820] odd:bg-[#181b23] hover:bg-gray-900/70`}
+              >
                 <th className="sticky left-0 z-10 bg-inherit px-2 py-1 text-left text-sm font-semibold text-gray-100 shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                   {row.label}
                 </th>
@@ -719,6 +872,7 @@ function MonthlySettlesTable({
                   const cell = row.cells[column.key] ?? null;
                   const disabled = !payload || !cell || cell.value === null || cell.sourceSymbols.length === 0;
                   const status = monthlyCellStatus(cell, payload, latestTradeDate);
+                  const showCellTrend = shouldRenderMonthlyTrend({ cell, latestTradeDate, showTrend });
                   return (
                     <td key={`${row.key}-${column.key}`} className="border-l border-gray-800 p-1">
                       <button
@@ -729,7 +883,7 @@ function MonthlySettlesTable({
                           onSelectCell({ row, column, cell, payload });
                         }}
                         title={[cell?.displaySymbol, status.title].filter(Boolean).join(" | ") || undefined}
-                        className={`block h-full min-h-[34px] w-full rounded border px-1.5 py-1 text-right transition-colors enabled:hover:bg-white/10 disabled:cursor-default disabled:opacity-45 ${status.buttonClass}`}
+                        className={`block h-full ${showTrend ? "min-h-[44px]" : "min-h-[34px]"} w-full rounded border px-1.5 py-1 text-right transition-colors enabled:hover:bg-white/10 disabled:cursor-default disabled:opacity-45 ${status.buttonClass}`}
                       >
                         <div className={`font-mono text-xs font-semibold leading-tight tabular-nums ${status.valueClass}`}>
                           {cellValueText(cell, payload)}
@@ -737,6 +891,7 @@ function MonthlySettlesTable({
                         <div className={`mt-0.5 truncate text-[9px] font-semibold leading-tight tabular-nums ${status.statusClass}`}>
                           {status.label}
                         </div>
+                        {showCellTrend && cell ? <MonthlyCellTrendSparkline priceTrend={cell.priceTrend} /> : null}
                       </button>
                     </td>
                   );
@@ -759,6 +914,7 @@ function MonthlySettlesTable({
 export default function GasMonthlySettles() {
   const [marketName, setMarketName] = useState("Henry Hub");
   const [selectedRegion, setSelectedRegion] = useState<GasRegion | "all">("south_central");
+  const [showTrend, setShowTrend] = useState(false);
   const [refreshToken, setRefreshToken] = useState(0);
   const [payloads, setPayloads] = useState<Partial<Record<GasMonthlySettlesMode, GasMonthlySettlesPayload>>>({});
   const [loading, setLoading] = useState(true);
@@ -919,9 +1075,8 @@ export default function GasMonthlySettles() {
   const selectedCellDateBasis = selectedCell?.cell.dateBasis ?? "trade_date";
   const selectedDateLabel = selectedCellDateBasis === "gas_day" ? "Gas Day" : "Trade Date";
   const historyDateBasis = detailPayload?.dateBasis ?? selectedCellDateBasis;
-  const selectedSourceText = selectedCell?.cell.sourceSymbols.join(" + ") ?? "-";
+  const selectedSourceSymbols = selectedCell?.cell.sourceSymbols ?? [];
   const selectedDetailMetadataText = [
-    selectedSourceText,
     selectedCell?.payload.metadata.sourceTable,
     selectedCellDateBasis,
     selectedCell?.cell.formula,
@@ -950,6 +1105,19 @@ export default function GasMonthlySettles() {
               className="rounded-md border border-gray-700 bg-gray-800 px-2.5 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
             >
               Refresh
+            </button>
+            <button
+              type="button"
+              aria-pressed={showTrend}
+              aria-label="Toggle 7-day price trend"
+              onClick={() => setShowTrend((value) => !value)}
+              className={`rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${
+                showTrend
+                  ? "border-cyan-400/50 bg-cyan-400/15 text-cyan-100"
+                  : "border-gray-700 bg-gray-950 text-gray-400 hover:border-gray-500 hover:text-gray-200"
+              }`}
+            >
+              7d Trend
             </button>
           </div>
 
@@ -1009,6 +1177,7 @@ export default function GasMonthlySettles() {
           selectedMarket={selectedMarket}
           priceBasis={DEFAULT_PRICE_BASIS}
           futuresDisplay={DEFAULT_FUTURES_DISPLAY}
+          showTrend={showTrend}
           loading={loading}
           onSelectCell={setSelectedCell}
         />
@@ -1020,6 +1189,7 @@ export default function GasMonthlySettles() {
           selectedMarket={selectedMarket}
           priceBasis={DEFAULT_PRICE_BASIS}
           futuresDisplay={DEFAULT_FUTURES_DISPLAY}
+          showTrend={showTrend}
           loading={loading}
           onSelectCell={setSelectedCell}
         />
@@ -1031,6 +1201,7 @@ export default function GasMonthlySettles() {
           selectedMarket={selectedMarket}
           priceBasis={DEFAULT_PRICE_BASIS}
           futuresDisplay={DEFAULT_FUTURES_DISPLAY}
+          showTrend={showTrend}
           loading={loading}
           onSelectCell={setSelectedCell}
         />
@@ -1055,6 +1226,14 @@ export default function GasMonthlySettles() {
                 <div className="mt-1 truncate text-xs text-gray-500">
                   {selectedDetailMetadataText}
                 </div>
+                {selectedSourceSymbols.length ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Sources</span>
+                    {selectedSourceSymbols.map((symbol) => (
+                      <IceProductSymbolChip key={symbol} symbol={symbol} compact />
+                    ))}
+                  </div>
+                ) : null}
               </div>
               <button
                 type="button"

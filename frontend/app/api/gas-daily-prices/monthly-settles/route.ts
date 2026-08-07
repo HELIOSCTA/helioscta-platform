@@ -12,6 +12,7 @@ import {
   type GasMonthlySettlesMode,
   type GasMonthlySettlesPayload,
   type GasMonthlySettlesPointType,
+  type GasMonthlySettlesTrendPoint,
   type GasPriceBasis,
 } from "@/lib/gasPricing";
 
@@ -79,6 +80,7 @@ interface FuturesSourceRow {
   value: number | string | null;
   volume: number | string | null;
   updated_at: string | Date | null;
+  price_trend: unknown;
 }
 
 interface DailySourceRow {
@@ -163,6 +165,41 @@ function toTimestampString(value: unknown): string | null {
 
 function maxString(values: Array<string | null>): string | null {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
+function asArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizePriceTrendPoint(value: unknown): GasMonthlySettlesTrendPoint {
+  const row = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    date: toDateString(row.date ?? row.tradeDate ?? row.trade_date),
+    value: toNumber(row.value),
+  };
+}
+
+function parsePriceTrend(value: unknown): GasMonthlySettlesTrendPoint[] {
+  return asArray(value).map(normalizePriceTrendPoint).slice(-7);
+}
+
+function priceTrendFromDailyRows(rows: DailySourceRow[]): GasMonthlySettlesTrendPoint[] {
+  return [...rows]
+    .sort((first, second) =>
+      (toDateString(first.trade_date) ?? "").localeCompare(toDateString(second.trade_date) ?? ""),
+    )
+    .slice(-7)
+    .map((row) => ({
+      date: toDateString(row.trade_date),
+      value: toNumber(row.value),
+    }));
 }
 
 function promotedSqlBody(sql: string): string {
@@ -269,15 +306,46 @@ latest as (
     updated_at
   from daily
   order by cell_key, trade_date desc
+),
+trend_source as (
+  select
+    cell_key,
+    trade_date,
+    value
+  from (
+    select
+      cell_key,
+      trade_date,
+      value,
+      row_number() over (partition by cell_key order by trade_date desc) as trend_rank
+    from daily
+  ) ranked
+  where trend_rank <= 7
+),
+trends as (
+  select
+    cell_key,
+    jsonb_agg(
+      jsonb_build_object(
+        'date', trade_date::text,
+        'value', value
+      )
+      order by trade_date
+    ) as price_trend
+  from trend_source
+  group by cell_key
 )
 select
-  cell_key,
-  trade_date::text as trade_date,
-  value,
-  volume,
-  to_char(updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at
+  latest.cell_key,
+  latest.trade_date::text as trade_date,
+  latest.value,
+  latest.volume,
+  to_char(latest.updated_at, 'YYYY-MM-DD"T"HH24:MI:SSOF') as updated_at,
+  coalesce(trends.price_trend, '[]'::jsonb) as price_trend
 from latest
-order by cell_key;
+left join trends
+  on trends.cell_key = latest.cell_key
+order by latest.cell_key;
 `;
 }
 
@@ -437,6 +505,7 @@ async function buildFuturesPayload({
         contractMonth: target.contractMonth,
         pointType: target.pointType,
         dateBasis: "trade_date",
+        priceTrend: parsePriceTrend(sourceRow?.price_trend),
       };
     }
     return {
@@ -538,6 +607,7 @@ async function buildDailyPayload({
         contractMonth: contractMonthDate(year, month),
         pointType: mode,
         dateBasis: useGasDayCash ? "gas_day" : "trade_date",
+        priceTrend: priceTrendFromDailyRows(sourceRowsForCell),
       };
     }
     return {

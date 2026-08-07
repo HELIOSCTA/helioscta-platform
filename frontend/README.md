@@ -94,13 +94,13 @@ GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified
 GET /api/pjm-term-bible?product=rt&rtSource=verified&component=total&period=5x16&hub=WESTERN%20HUB&startYear=2022&endYear=2026&month=7
 GET /api/pjm-historical-settlements?view=single&location=WESTERN%20HUB&market=RT_VERIFIED&period=all&month=6&startYear=2020&endYear=2026&component=total
-GET /api/pjm-forecast-explorer
 GET /api/pjm-forecasts?area=RTO_COMBINED
-GET /api/pjm-forecast-differences?area=RTO_COMBINED&date=YYYY-MM-DD&lookbackHours=72
-GET /api/pjm-forecast-date-compare?source=pjm&type=load&area=RTO_COMBINED&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
-GET /api/pjm-forecast-date-compare?source=meteologica&type=load&area=RTO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/power-forecast-explorer?iso=pjm&source=pjm&type=load
+GET /api/power-forecast-explorer?iso=ercot&source=meteologica&type=netLoad
+GET /api/power-forecast-differences?iso=caiso&source=meteologica&type=load&area=CAISO&date=YYYY-MM-DD&lookbackHours=72
+GET /api/power-forecast-date-compare?iso=miso&source=meteologica&type=netLoad&area=MISO&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+GET /api/pjm-forecast-explorer
 GET /api/pjm-meteologica-forecast-explorer
-GET /api/pjm-meteologica-forecast-differences?area=RTO&date=YYYY-MM-DD&lookbackHours=72
 GET /api/cache/warm-forecasts
 GET /api/pjm-outages?view=forecast&region=RTO
 GET /api/pjm-outages?view=seasonal&region=RTO
@@ -766,9 +766,11 @@ credential requirement.
 
 ## ICE Power Source Contract
 
-The Pricing sidebar exposes two production-visible ICE power pages:
+The Pricing sidebar exposes production-visible ICE power pages:
 `ICE Power Short Term` at `/?section=ice-power-short-term` and
-`ICE Power Term` at `/?section=ice-power-term`. Legacy
+`ICE Power Term` at `/?section=ice-power-term`. The Reports sidebar exposes
+`ICE Term Report` at `/?section=ice-term-report`. Legacy
+`/?section=ice-power-term-report-dev` links alias to ICE Term Report,
 `/?section=ice-settlements` links alias to Short Term, and legacy local/dev
 `/?section=ice-pmi-curve` links alias to Term.
 
@@ -796,6 +798,18 @@ accepted for existing links. Matrix cells reuse
 `GET /api/ice-pmi-curve/contract?symbol=<ICE symbol>` for contract-detail
 charts. MISO, SPP, and NYISO are not shown until matching direct monthly
 futures are present in the active symbol registries.
+
+The ICE Term Report is a Reports-visible report page with canonical
+`ice-term-report` route id. It exposes Power and Gas tabs; direct links can use
+`/?section=ice-term-report&tab=gas` for the Gas tab. Legacy
+`/?section=ice-power-term-report-dev` links remain accepted.
+Power reads the same `ice_python.settlements` source through
+`GET /api/ice-pmi-curve?mode=power&powerProduct=<ICE root>` and renders PMI/OPJ
+and other active ICE power roots as separate product tables. Gas reads active
+monthly futures roots from `frontend/lib/gasPricing/ice_gas_registry.json`
+through `GET /api/ice-pmi-curve?mode=gas&gasProduct=<ICE root>`. Fixed-price
+gas markets use their root directly, and basis markets render all-in monthly
+prices as `HNG + <basis root>` to match the Gas Cash & Term convention.
 
 The copied trade-level matching routes still expect the legacy
 `ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI
@@ -939,84 +953,68 @@ Forecast points in the Load Growth chart use latest-vintage
 daily forecast series applies the same load shape and weekday/weekend filters as
 the actual daily series and is plotted as a separate non-fit overlay.
 
-## PJM Meteologica Load Forecast Source Contract
+## Multi-ISO Forecasts Source Contract
 
-The Meteologica mode in Forecasts reads
-`meteologica.pjm_forecast_hourly` using `helios_readonly`.
+The Forecasts page is a shared Load and Net Load workspace for:
+`PJM`, `ERCOT`, `ISO-NE`, `CAISO`, `MISO`, `SPP`, and `NYISO`.
+Solar and wind stay visible as net-load ingredients; they are not standalone
+forecast pages in this v1.
+
+PJM supports `source=pjm` for Data Miner and `source=meteologica`. Non-PJM ISOs
+force `source=meteologica`. Meteologica reads the promoted hourly tables:
+`meteologica.pjm_forecast_hourly`, `meteologica.ercot_forecast_hourly`,
+`meteologica.caiso_forecast_hourly`, `meteologica.isone_forecast_hourly`,
+`meteologica.miso_forecast_hourly`, `meteologica.nyiso_forecast_hourly`, and
+`meteologica.spp_forecast_hourly` using `helios_readonly`.
 
 Source system: Meteologica xTraders Markets API
 `contents/{content_id}/data` through the ISO account.
 
-Canonical grain:
+Canonical Meteologica grain:
 `content_id x update_id x forecast_period_start`.
 
-The Forecasts UI currently exposes load forecasts only for `RTO`, `MIDATL`,
-`SOUTH`, and `WEST`. The backend keeps 90 days of forecast issue history in the
-hot table.
+The promoted Meteologica forecast tables keep 21 days of issue history.
 
-The route `GET /api/pjm-meteologica-forecast-explorer` returns the same
-area/date explorer shape as PJM Data Miner load forecasts. The route
-`GET /api/pjm-meteologica-forecast-differences` accepts `area`, `date`, and
-`lookbackHours` and returns the same snapshot/delta vintage shape used by the
-PJM Data Miner forecast explorer popup.
+Meteologica issue timestamps are UTC and forecast periods are source-local.
+PJM Data Miner issue and forecast-hour displays remain PJM/EPT. The UI labels
+Meteologica forecast hours as source-local and uses the LMP ISO peak windows
+for OnPeak/OffPeak summary stats.
 
-## PJM Forecasts Source Contract
+The generic read-only Forecasts routes are:
 
-The Forecasts page exposes three shared filters: `Data Source` (`PJM` or
-`Meteologica`), `Type` (`Load` or `Net Load`), and `View` (`Outright` or
-`Compare Day`). Load forecasts use the existing PJM Data Miner and
-Meteologica explorer routes. `Compare Day` for load uses
-`GET /api/pjm-forecast-date-compare` to return latest-vintage hourly curves for
-two selected forecast dates plus `B - A` deltas.
+```text
+GET /api/power-forecast-explorer?iso=<iso>&source=<source>&type=load|netLoad
+GET /api/power-forecast-differences?iso=<iso>&source=<source>&type=load|netLoad&area=<area>&date=YYYY-MM-DD&lookbackHours=72
+GET /api/power-forecast-date-compare?iso=<iso>&source=<source>&type=load|netLoad&area=<area>&baseDate=YYYY-MM-DD&compareDate=YYYY-MM-DD
+```
 
-For `type=netLoad`, `GET /api/pjm-forecast-date-compare` forwards to the
-net-load comparison route and preserves the same request contract.
+The legacy PJM-specific routes stay available for compatibility and for
+`PjmForecastReports`.
 
-The Forecasts client prefetches the PJM and Meteologica load and net-load
-explorer payloads after initial render. Heavy Forecasts explorer and
-compare-day routes use `s-maxage=600`, `stale-while-revalidate=600`, and
-`stale-if-error=3600` so Vercel can keep serving the last good forecast
-snapshot during a transient database timeout.
-
-`GET /api/cache/warm-forecasts` is a protected no-store cache warmer for
-Forecasts. It warms PJM and Meteologica load/net-load explorer routes, reads
-their available forecast dates, then warms the default compare-day URLs used by
-the page (`RTO_COMBINED` for PJM load and `RTO` for Meteologica/load net-load
-views). Local development may call it without a secret. Vercel/production must
-set `CRON_SECRET` for the committed Vercel Cron schedule; the route also accepts
-`HELIOS_CACHE_WARM_SECRET` for external schedulers. Manual calls can authenticate
-with either `Authorization: Bearer <secret>` or `x-cache-warm-secret: <secret>`.
-The Vercel Cron schedule runs every 15 minutes in UTC.
-
-## PJM Net Load Forecast Source Contract
-
-The Forecasts page derives net load from either PJM Data Miner or Meteologica
-forecast rows using `helios_readonly`.
-
-Source systems:
-PJM Data Miner `pjm.load_frcstd_7_day`, `pjm.hourly_solar_power_forecast`,
-and `pjm.hourly_wind_power_forecast`; Meteologica xTraders promoted hourly
-forecast rows in `meteologica.pjm_forecast_hourly`.
-
-Derived formula:
+Net load is derived as:
 `net_load_mw = load - solar - wind`.
 
-The net-load outright view displays fixed component rows for `load`, `wind`,
-`solar`, and `net load`, with a statistic selector for `Peak`, `OnPeak`,
-`OffPeak`, and `Flat`. PJM mode remains RTO-only and uses
-`RTO_COMBINED` load, `solar_forecast_mwh`, and `wind_forecast_mwh`.
-Meteologica mode returns regional summaries for available `forecast_area`
-values with complete `load`, `solar`, and `wind` coverage, currently `RTO`,
-`MIDATL`, `SOUTH`, and `WEST`. Each load issue is paired to the latest prior
-non-null solar and wind forecast for the same forecast area and forecast hour.
-Hours are emitted only when load, wind, and solar all have non-null MW values,
-so net load is missing whenever either renewable component is missing. It does
-not create a database model, table, or materialized cache.
+For net load, the explorer exposes only forecast areas with overlapping load,
+solar, and wind coverage. Each load issue is paired to the latest prior non-null
+solar and wind forecast for the same forecast area and source-local forecast
+hour. Hours are emitted only when load, wind, and solar all have non-null MW
+values. No database model, table, or materialized cache is created by the
+frontend.
 
-The route `GET /api/pjm-net-load-forecast-date-compare` accepts `source`,
-`area`, `baseDate`, and `compareDate`. It returns the latest complete hourly
-load, solar, wind, and net-load curves for both selected forecast dates plus
-`B - A` deltas, using the same component-completeness rule as the explorer.
+Heavy Forecasts explorer and compare-day routes use `s-maxage=600`,
+`stale-while-revalidate=600`, and `stale-if-error=3600` where applicable so
+Vercel can keep serving the last good forecast snapshot during a transient
+database timeout.
+
+`GET /api/cache/warm-forecasts` is a protected no-store cache warmer for
+Forecasts. It warms generic load and net-load explorer routes for all supported
+ISOs, reads available areas and forecast dates, then warms derived generic
+compare-day URLs. Local development may call it without a secret.
+Vercel/production must set `CRON_SECRET` for the committed Vercel Cron
+schedule; the route also accepts `HELIOS_CACHE_WARM_SECRET` for external
+schedulers. Manual calls can authenticate with either
+`Authorization: Bearer <secret>` or `x-cache-warm-secret: <secret>`. The Vercel
+Cron schedule runs every 15 minutes in UTC.
 
 ## PJM Price Distributions Source Contract
 

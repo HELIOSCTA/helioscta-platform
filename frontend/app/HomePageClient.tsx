@@ -22,7 +22,9 @@ import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
 import GtnPipelineBalance from "@/components/gas/GtnPipelineBalance";
+import GasEbbTranscoDashboard from "@/components/gas/GasEbbTranscoDashboard";
 import IcePowerTermPage from "@/components/ice/IcePowerTermPage";
+import IcePowerTermReportDev from "@/components/ice/IcePowerTermReportDev";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
@@ -58,6 +60,7 @@ import PjmForecasts, {
   type NetLoadForecastStatistic,
   type ForecastSourceMode,
   type ForecastType,
+  type PowerForecastIso,
   type PjmForecastsFreshnessSummary,
 } from "@/components/pjm/PjmForecasts";
 import PjmForecastReports, {
@@ -418,6 +421,9 @@ function parseInitialSection(
   if (value === "trading-calendars") {
     return "trading-calendars";
   }
+  if (value === "ice-term-report" || value === "ice-power-term-report-dev") {
+    return "ice-term-report";
+  }
   if (value === "spark-spreads") {
     return "spark-spreads";
   }
@@ -432,6 +438,9 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "gtn-balance") {
     return "gtn-balance";
+  }
+  if (showLocalDevFeatures && value === "gas-ebb-transco") {
+    return "gas-ebb-transco";
   }
   if (value === "gas-prices") {
     return "gas-prices";
@@ -794,10 +803,14 @@ export default function HomePageClient({
     searchParams.get("section"),
     showLocalDevFeatures,
   );
-  const initialForecastSourceMode =
+  const initialForecastIso: PowerForecastIso =
+    parsePjmLmpIsoParam(searchParams.get("forecastIso") ?? searchParams.get("iso")) ?? "pjm";
+  const requestedInitialForecastSourceMode =
     parseForecastSourceModeParam(searchParams.get("forecastSource")) ??
     parseForecastSourceModeParam(searchParams.get("source")) ??
     "pjm";
+  const initialForecastSourceMode =
+    initialForecastIso === "pjm" ? requestedInitialForecastSourceMode : "meteologica";
   const initialForecastMode =
     parseForecastModeParam(searchParams.get("forecastMode")) ??
     parseForecastModeParam(searchParams.get("mode")) ??
@@ -1109,6 +1122,14 @@ export default function HomePageClient({
         footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
+    if (activeSection === "ice-term-report") {
+      return {
+        title: "ICE Term Report",
+        subtitle:
+          "One-page monthly futures summary across ICE power and gas markets.",
+        footer: "ICE Term Report | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "trading-calendars") {
       return {
         title: "Trading Calendars",
@@ -1154,6 +1175,15 @@ export default function HomePageClient({
         subtitle:
           "Date-addressable GTN pipeline balance from Criterion nominations with auditable point mappings.",
         footer: "GTN Balance | Source: Criterion Snowflake PRODUCTION.PIPELINES",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "gas-ebb-transco") {
+      return {
+        title: "DEV / Transco EBB",
+        subtitle:
+          "Williams Transco current notices and derived outage rows for outage triage, with general Transco market context.",
+        footer:
+          "Transco EBB | Sources: gas_ebbs.notices, gas_ebbs.planned_outages, and ICE gas prices / Azure PostgreSQL",
       };
     }
     if (activeSection === "gas-prices") {
@@ -1238,7 +1268,7 @@ export default function HomePageClient({
       return {
         title: "Forecasts",
         subtitle:
-          "PJM load and net-load forecasts by source, with outright vintages and compare-day overlays.",
+          "Multi-ISO load and net-load forecasts, with outright vintages and compare-day overlays.",
         footer:
           "Forecasts | Sources: PJM Data Miner + Meteologica hourly forecasts / Azure PostgreSQL",
       };
@@ -1320,7 +1350,9 @@ export default function HomePageClient({
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIcePowerPage =
-    activeSection === "ice-power-short-term" || activeSection === "ice-power-term";
+    activeSection === "ice-power-short-term" ||
+    activeSection === "ice-power-term" ||
+    activeSection === "ice-term-report";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isSaltModelSection = activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
@@ -1341,6 +1373,7 @@ export default function HomePageClient({
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
     activeSection === "gas-outright" ||
+    (showLocalDevFeatures && activeSection === "gas-ebb-transco") ||
     isSaltModelSection;
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
@@ -1892,9 +1925,9 @@ export default function HomePageClient({
                     value: pjmForecastsFreshness.status,
                     className: pjmForecastsFreshness.statusClass,
                   },
-                  { label: "Forecast Area", value: pjmForecastsFreshness.targetDateLabel },
+                  { label: "Forecast Selection", value: pjmForecastsFreshness.targetDateLabel },
                   { label: "Latest Forecast Day", value: pjmForecastsFreshness.latestDateLabel },
-                  { label: "Source Update", value: pjmForecastsFreshness.latestUpdateLabel },
+                  { label: "Latest Issue", value: pjmForecastsFreshness.latestUpdateLabel },
                 ]}
                 open={pjmForecastsFreshnessOpen}
                 onToggle={() => setPjmForecastsFreshnessOpen((open) => !open)}
@@ -2096,8 +2129,14 @@ export default function HomePageClient({
           {showLocalDevFeatures && activeSection === "gtn-balance" && (
             <GtnPipelineBalance initialDate={initialGtnBalanceDate} />
           )}
+          {showLocalDevFeatures && activeSection === "gas-ebb-transco" && (
+            <GasEbbTranscoDashboard />
+          )}
           {activeSection === "ice-power-term" && (
             <IcePowerTermPage />
+          )}
+          {activeSection === "ice-term-report" && (
+            <IcePowerTermReportDev />
           )}
           {activeSection === "trading-calendars" && (
             <TradingCalendarsDashboard />
@@ -2162,6 +2201,7 @@ export default function HomePageClient({
           )}
           {activeSection === "pjm-forecasts" && (
             <PjmForecasts
+              initialIso={initialForecastIso}
               initialForecastType={initialForecastType}
               initialMode={initialForecastMode}
               initialSourceMode={initialForecastSourceMode}

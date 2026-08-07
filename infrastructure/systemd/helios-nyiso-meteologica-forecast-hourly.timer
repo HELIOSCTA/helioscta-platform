@@ -1,0 +1,12 @@
+[Unit]
+Description=Half-hourly HeliosCTA NYISO Meteologica hourly forecast refresh timer
+
+[Timer]
+OnCalendar=*:15,45
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-nyiso-meteologica-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target

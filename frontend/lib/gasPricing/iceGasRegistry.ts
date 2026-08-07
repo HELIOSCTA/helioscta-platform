@@ -35,6 +35,10 @@ interface IceGasRegistryMarket {
   futuresProduct: string | null;
   curveStyle: DailyGasMarket["curveStyle"];
   registryHubKey: string;
+  pipelineKey: string | null;
+  pipelineLabel: string | null;
+  pipelineSortOrder: number | null;
+  pipelineMarketSortOrder: number | null;
 }
 
 interface IceGasRegistry {
@@ -76,6 +80,10 @@ export const DAILY_GAS_MARKETS: DailyGasMarket[] = ICE_GAS_REGISTRY.markets.map(
   balmoSymbol: market.balmoSymbol,
   futuresProduct: market.futuresProduct,
   curveStyle: market.curveStyle,
+  pipelineKey: market.pipelineKey,
+  pipelineLabel: market.pipelineLabel,
+  pipelineSortOrder: market.pipelineSortOrder,
+  pipelineMarketSortOrder: market.pipelineMarketSortOrder,
 }));
 
 export function getIceGasRegistryCounts() {
@@ -87,9 +95,17 @@ export function getIceGasRegistryEntry(identifier: string | null | undefined): I
   return ICE_GAS_REGISTRY_ENTRY_BY_KEY.get(identifier) ?? null;
 }
 
+export function isAcceptedIceGasRegistryEntry(entry: IceGasRegistryEntry | null | undefined): boolean {
+  return (
+    entry?.metadata_status === "ice_product_url_verified" ||
+    entry?.review_status === "business_verified_legacy_cash"
+  );
+}
+
 export function getIceGasVerificationLabel(entry: IceGasRegistryEntry | null | undefined): string {
   if (!entry) return "No contract configured";
   if (entry.metadata_status === "ice_product_url_verified") return "Verified ICE product";
+  if (entry.review_status === "business_verified_legacy_cash") return "Business-verified legacy cash";
   if (entry.metadata_status === "unverified_legacy_symbol") return "Legacy settlement symbol";
   return entry.metadata_status || "Unknown";
 }

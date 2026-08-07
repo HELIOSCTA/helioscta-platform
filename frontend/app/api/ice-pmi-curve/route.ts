@@ -10,6 +10,8 @@ import {
   getPowerSparkSpreadProduct,
   type PowerSparkSpreadProduct,
 } from "@/lib/sparkSpreads/products";
+import { DAILY_GAS_MARKETS } from "@/lib/gasPricing/iceGasRegistry";
+import type { DailyGasMarket } from "@/lib/gasPricing/dailyGasPriceView";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -20,12 +22,13 @@ const ROUTE_CONFIG = {
   cacheHeader: CACHE_HEADER,
   cachePolicy: "s-maxage=300, stale-while-revalidate=60",
   owner: "frontend",
-  purpose: "ICE power monthly curve table",
+  purpose: "ICE power and gas monthly curve table",
   p95TargetMs: 1_500,
   freshnessSource: "ice_python.settlements trade_date",
 } as const;
 
 interface IcePmiCurveSourceRow {
+  data_as_of: string | Date | null;
   strip: string;
   strip_order: number | string;
   current_symbol: string | null;
@@ -53,9 +56,11 @@ interface IcePmiCurveSourceRow {
   month_curve_points: unknown;
 }
 
-type MatrixMode = "power" | "cal" | "spark";
+type MatrixMode = "power" | "cal" | "spark" | "gas";
+type DatePolicy = "latest" | "as-of";
 
 interface MatrixSettlementSourceRow {
+  data_as_of: string | Date | null;
   product_code: string;
   month_number: number | string;
   month_strip: string;
@@ -79,7 +84,7 @@ interface DerivedMatrixProductConfig {
   powerRoot: string;
   spreadRoot: string | null;
   gasRoot: string;
-  basisRoot: string;
+  basisRoot: string | null;
   heatRate: number;
 }
 
@@ -114,6 +119,7 @@ interface DerivedMatrixRow {
 const DEFAULT_POWER_TERM_GAS_ROOT = "HNG";
 const DEFAULT_POWER_TERM_BASIS_ROOT = "TMT";
 const DEFAULT_POWER_TERM_HEAT_RATE = 7.0;
+const DEFAULT_GAS_TERM_FIXED_ROOT = "HNG";
 
 function intParam(value: string | null, fallback: number, min: number, max: number): number {
   if (!value) return fallback;
@@ -125,8 +131,41 @@ function intParam(value: string | null, fallback: number, min: number, max: numb
 function normalizeMode(value: string | null): MatrixMode {
   const normalized = (value ?? "power").trim().toLowerCase();
   if (normalized === "calendar" || normalized === "calender") return "cal";
-  if (normalized === "cal" || normalized === "spark" || normalized === "power") return normalized;
+  if (normalized === "cal" || normalized === "spark" || normalized === "power" || normalized === "gas") {
+    return normalized;
+  }
   return "power";
+}
+
+function defaultGasTermMarket(): DailyGasMarket | null {
+  return (
+    DAILY_GAS_MARKETS.find((market) => market.market === "Henry Hub" && market.futuresProduct) ??
+    DAILY_GAS_MARKETS.find((market) => market.futuresProduct) ??
+    null
+  );
+}
+
+function getGasTermMarket(value: string | null | undefined): DailyGasMarket | null {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) return defaultGasTermMarket();
+  return (
+    DAILY_GAS_MARKETS.find(
+      (market) =>
+        Boolean(market.futuresProduct) &&
+        (market.market.toLowerCase() === normalized ||
+          market.futuresProduct?.toLowerCase() === normalized),
+    ) ?? null
+  );
+}
+
+function tradeDateParam(value: string | null): string | null {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const year = Number(value.slice(0, 4));
+  if (!Number.isInteger(year) || year < 1) return null;
+
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10) === value ? value : null;
 }
 
 function toNumber(value: unknown): number | null {
@@ -218,7 +257,8 @@ with params as (
         make_date($1::integer, 1, 1) as start_contract_month,
         make_date($2::integer, 12, 1) as end_contract_month,
         $3::integer as trading_days,
-        $4::integer as prior_year_count
+        $4::integer as prior_year_count,
+        $5::date as requested_trade_date
 ),
 month_strips as (
     select *
@@ -265,6 +305,10 @@ curve_trade_dates as (
     inner join target_symbols as t
         on s.symbol = t.symbol
     where s.settlement is not null
+      and (
+          (select requested_trade_date from params) is null
+          or s.trade_date::date <= (select requested_trade_date from params)
+      )
 ),
 latest_curve_dates as (
     select trade_date
@@ -296,6 +340,7 @@ month_rows as (
     cross join params as p
 )
 select
+    wb.latest_curve_trade_date as data_as_of,
     mr.strip_label as strip,
     mr.month_number as strip_order,
     mr.current_symbol,
@@ -344,6 +389,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.current_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -367,6 +413,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.current_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -402,6 +449,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.cal27_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -425,6 +473,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.cal27_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -460,6 +509,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.cal28_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -483,6 +533,7 @@ left join lateral (
         from ice_python.settlements as s
         where s.symbol = mr.cal28_symbol
           and s.settlement is not null
+          and s.trade_date::date <= wb.latest_curve_trade_date
     )
     select coalesce(
         jsonb_agg(
@@ -527,6 +578,7 @@ left join lateral (
             from ice_python.settlements as s
             where s.symbol = ps.symbol
               and s.settlement is not null
+              and s.trade_date::date <= wb.latest_curve_trade_date
             order by s.trade_date desc
             limit 1
         ) as final on true
@@ -578,6 +630,7 @@ left join lateral (
             from ice_python.settlements as s
             where s.symbol = ps.symbol
               and s.settlement is not null
+              and s.trade_date::date <= wb.latest_curve_trade_date
             order by s.trade_date desc
             limit 1
         ) as final on true
@@ -641,7 +694,9 @@ with params as (
         $5::text as power_root,
         $6::text as gas_root,
         $7::text as basis_root,
-        $8::text as spread_root
+        $8::text as spread_root,
+        $9::date as requested_trade_date,
+        $10::text as pricing_mode
 ),
 month_strips as (
     select *
@@ -662,13 +717,22 @@ month_strips as (
     ) as m(month_number, month_strip, strip_label)
 ),
 product_roots as (
-    select power_root as product_code from params
+    select power_root as product_code
+    from params
     union
-    select spread_root as product_code from params where spread_root is not null
+    select spread_root as product_code
+    from params
+    where spread_root is not null
+      and pricing_mode in ('power', 'cal')
     union
-    select gas_root as product_code from params
+    select gas_root as product_code
+    from params
+    where pricing_mode = 'spark'
     union
-    select basis_root as product_code from params
+    select basis_root as product_code
+    from params
+    where basis_root is not null
+      and pricing_mode in ('spark', 'gas')
 ),
 target_symbols as (
     select
@@ -686,11 +750,27 @@ target_symbols as (
     cross join month_strips as ms
     cross join lateral generate_series(
         (select current_year - prior_year_count from params),
-        (select end_year + 1 from params)
+        (select end_year + case when pricing_mode = 'cal' then 1 else 0 end from params)
     ) as years(contract_year)
+),
+available_trade_dates as (
+    select distinct s.trade_date::date as trade_date
+    from target_symbols as t
+    inner join ice_python.settlements as s
+        on s.symbol = t.symbol
+    where s.settlement is not null
+      and (
+          (select requested_trade_date from params) is null
+          or s.trade_date::date <= (select requested_trade_date from params)
+      )
+),
+window_bounds as (
+    select max(trade_date) as latest_curve_trade_date
+    from available_trade_dates
 ),
 ranked as (
     select
+        wb.latest_curve_trade_date as data_as_of,
         t.product_code,
         t.month_number,
         t.month_strip,
@@ -702,11 +782,14 @@ ranked as (
         s.volume::float8 as volume,
         row_number() over (partition by t.symbol order by s.trade_date desc) as recent_rank
     from target_symbols as t
+    cross join window_bounds as wb
     inner join ice_python.settlements as s
         on s.symbol = t.symbol
     where s.settlement is not null
+      and s.trade_date::date <= wb.latest_curve_trade_date
 )
 select
+    data_as_of,
     product_code,
     month_number,
     month_strip,
@@ -749,6 +832,9 @@ function sumVolumes(points: MatrixSettlementPoint[]): number | null {
 }
 
 function deriveValue(mode: MatrixMode, points: MatrixSettlementPoint[], heatRate: number): number {
+  if (mode === "gas") {
+    return points.reduce((sum, point) => sum + point.settlement, 0);
+  }
   if (mode === "cal") {
     if (points.length === 4) {
       return (points[0].settlement - points[1].settlement) - (points[2].settlement - points[3].settlement);
@@ -774,7 +860,7 @@ function deriveSeries({
   year: number;
   currentYear: number;
   heatRate: number;
-  productRoots: { power: string; spread: string | null; gas: string; basis: string };
+  productRoots: { power: string; spread: string | null; gas: string; basis: string | null };
   pointsBySymbol: Map<string, MatrixSettlementPoint[]>;
 }): { priceTrend: Array<{ date: string | null; value: number | null }>; volumeTrend: Array<{ date: string | null; value: number | null }>; latest: ReturnType<typeof normalizePriorPoint> | null } {
   const legSymbols =
@@ -791,8 +877,12 @@ function deriveSeries({
         ? [
           symbolFor(productRoots.power, monthStrip, year),
           symbolFor(productRoots.gas, monthStrip, year),
-          symbolFor(productRoots.basis, monthStrip, year),
+          symbolFor(productRoots.basis ?? productRoots.gas, monthStrip, year),
         ]
+        : mode === "gas"
+          ? productRoots.basis && productRoots.basis !== productRoots.power
+            ? [symbolFor(productRoots.power, monthStrip, year), symbolFor(productRoots.basis, monthStrip, year)]
+            : [symbolFor(productRoots.power, monthStrip, year)]
         : productRoots.spread
           ? [symbolFor(productRoots.power, monthStrip, year), symbolFor(productRoots.spread, monthStrip, year)]
           : [symbolFor(productRoots.power, monthStrip, year)];
@@ -808,14 +898,20 @@ function deriveSeries({
     return { date, value: sumVolumes(points) };
   });
 
-  const latestPoints = pointSets
-    .map((points) => points.at(-1) ?? null)
+  const commonLatestDate = dates.at(-1) ?? null;
+  if (!commonLatestDate && pointSets.length > 1) {
+    return { priceTrend, volumeTrend, latest: null };
+  }
+
+  const latestPoints = (commonLatestDate
+    ? maps.map((map) => map.get(commonLatestDate) ?? null)
+    : pointSets.map((points) => points.at(-1) ?? null)
+  )
     .filter((point): point is MatrixSettlementPoint => point !== null);
   if (latestPoints.length !== pointSets.length) {
     return { priceTrend, volumeTrend, latest: null };
   }
 
-  const commonLatestDate = dates.at(-1) ?? latestPoints.map((point) => point.tradeDate).sort().at(-1) ?? null;
   const latest = {
     contractYear: year,
     pointType: year >= currentYear ? "forward" : "settlement",
@@ -843,7 +939,7 @@ function buildDerivedRows({
   endYear: number;
   priorYears: number;
   heatRate: number;
-  productRoots: { power: string; spread: string | null; gas: string; basis: string };
+  productRoots: { power: string; spread: string | null; gas: string; basis: string | null };
 }): DerivedMatrixRow[] {
   const pointsBySymbol = new Map<string, MatrixSettlementPoint[]>();
   const monthMeta = new Map<string, { strip: string; stripOrder: number; monthStrip: string }>();
@@ -957,6 +1053,19 @@ function derivedConfigForSparkProduct(
   };
 }
 
+function derivedConfigForGasMarket(market: DailyGasMarket): DerivedMatrixProductConfig | null {
+  if (!market.futuresProduct) return null;
+  const basisRoot = market.curveStyle === "basis" ? market.futuresProduct : null;
+  return {
+    product: market.futuresProduct,
+    powerRoot: basisRoot ? DEFAULT_GAS_TERM_FIXED_ROOT : market.futuresProduct,
+    spreadRoot: null,
+    gasRoot: DEFAULT_GAS_TERM_FIXED_ROOT,
+    basisRoot,
+    heatRate: 1,
+  };
+}
+
 async function loadDerivedMatrix({
   config,
   mode,
@@ -964,6 +1073,8 @@ async function loadDerivedMatrix({
   endYear,
   tradingDays,
   priorYears,
+  requestedTradeDate,
+  datePolicy,
 }: {
   config: DerivedMatrixProductConfig;
   mode: MatrixMode;
@@ -971,6 +1082,8 @@ async function loadDerivedMatrix({
   endYear: number;
   tradingDays: number;
   priorYears: number;
+  requestedTradeDate: string | null;
+  datePolicy: DatePolicy;
 }) {
   const rows = await query<MatrixSettlementSourceRow>(DERIVED_MATRIX_SQL, [
     currentYear,
@@ -981,6 +1094,8 @@ async function loadDerivedMatrix({
     config.gasRoot,
     config.basisRoot,
     config.spreadRoot,
+    requestedTradeDate,
+    mode,
   ]);
   const normalizedRows = buildDerivedRows({
     sourceRows: rows,
@@ -997,6 +1112,7 @@ async function loadDerivedMatrix({
     },
   });
   const dataAsOf =
+    toDateString(rows[0]?.data_as_of) ??
     normalizedRows
       .flatMap((row) => row.monthCurvePoints.map((point) => point.finalTradeDate))
       .filter((value): value is string => Boolean(value))
@@ -1014,6 +1130,8 @@ async function loadDerivedMatrix({
       tradingDays,
       priorYears,
       dataAsOf,
+      requestedTradeDate,
+      datePolicy,
       rows: normalizedRows,
     },
     headers: { "Cache-Control": CACHE_HEADER },
@@ -1030,11 +1148,37 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
   const tradingDays = intParam(searchParams.get("tradingDays"), 7, 2, 20);
   const priorYears = intParam(searchParams.get("priorYears"), 5, 1, 10);
   const mode = normalizeMode(searchParams.get("mode"));
+  const requestedTradeDate = tradeDateParam(searchParams.get("tradeDate"));
+  const datePolicy: DatePolicy = requestedTradeDate ? "as-of" : "latest";
   const powerProductParam = searchParams.get("powerProduct");
   const sparkProductParam = searchParams.get("sparkProduct");
+  const gasProductParam = searchParams.get("gasProduct") ?? searchParams.get("gasMarket");
   const selectedPowerProduct = getIcePowerTermProduct(powerProductParam);
   const selectedProduct =
     getPowerSparkSpreadProduct(sparkProductParam) ?? DEFAULT_POWER_SPARK_SPREAD_PRODUCT;
+  const selectedGasMarket = getGasTermMarket(gasProductParam);
+
+  if (mode === "gas") {
+    const gasConfig = selectedGasMarket ? derivedConfigForGasMarket(selectedGasMarket) : null;
+    if (!gasConfig) {
+      return {
+        status: 400,
+        payload: { error: "mode=gas requires a configured gasProduct or gasMarket." },
+        headers: { "Cache-Control": "no-store" },
+        rowCount: 0,
+      };
+    }
+    return loadDerivedMatrix({
+      config: gasConfig,
+      mode,
+      currentYear,
+      endYear,
+      tradingDays,
+      priorYears,
+      requestedTradeDate,
+      datePolicy,
+    });
+  }
 
   if (mode === "power" && selectedPowerProduct) {
     if (selectedPowerProduct.root !== DEFAULT_ICE_POWER_TERM_PRODUCT.root) {
@@ -1045,6 +1189,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         endYear,
         tradingDays,
         priorYears,
+        requestedTradeDate,
+        datePolicy,
       });
     }
   } else if (mode !== "power" || sparkProductParam) {
@@ -1056,6 +1202,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
         endYear,
         tradingDays,
         priorYears,
+        requestedTradeDate,
+        datePolicy,
       });
     }
   }
@@ -1065,9 +1213,11 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
     endYear,
     tradingDays,
     priorYears,
+    requestedTradeDate,
   ]);
   const normalizedRows = rows.map(normalizeRow);
   const dataAsOf =
+    toDateString(rows[0]?.data_as_of) ??
     normalizedRows
       .map((row) => row.currentTradeDate)
       .filter((value): value is string => Boolean(value))
@@ -1084,6 +1234,8 @@ const observedGET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => 
       tradingDays,
       priorYears,
       dataAsOf,
+      requestedTradeDate,
+      datePolicy,
       rows: normalizedRows,
     },
     headers: { "Cache-Control": CACHE_HEADER },

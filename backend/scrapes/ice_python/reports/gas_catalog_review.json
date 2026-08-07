@@ -1,7 +1,7 @@
 [
   {
     "market": "Henry Hub",
-    "region": "louisiana",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XGF D1-IPG",
@@ -17,7 +17,7 @@
   },
   {
     "market": "Transco Station 85",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XVA D1-IPG",
@@ -33,7 +33,7 @@
   },
   {
     "market": "TGP-500L",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XLM D1-IPG",
@@ -49,7 +49,7 @@
   },
   {
     "market": "FGT Zone 3",
-    "region": "southeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YHV D1-IPG",
@@ -65,7 +65,7 @@
   },
   {
     "market": "Columbia Gulf (Mainline)",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XLA D1-IPG",
@@ -81,7 +81,7 @@
   },
   {
     "market": "ANR SE-T",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XTA D1-IPG",
@@ -97,7 +97,7 @@
   },
   {
     "market": "Pine Prairie",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YV7 D1-IPG",
@@ -113,7 +113,7 @@
   },
   {
     "market": "Tetco WLA",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XVM D1-IPG",
@@ -129,7 +129,7 @@
   },
   {
     "market": "Houston Ship Channel",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XYZ D1-IPG",
@@ -145,7 +145,7 @@
   },
   {
     "market": "Waha",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XT6 D1-IPG",
@@ -161,7 +161,7 @@
   },
   {
     "market": "NGPL TX/OK",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XIT D1-IPG",
@@ -177,7 +177,7 @@
   },
   {
     "market": "Algonquin Citygates",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "X7F D1-IPG",
@@ -189,11 +189,11 @@
     "candidate_for_market": "",
     "ice_catalog_status": "not_found",
     "metadata_status": "unverified_legacy_symbol",
-    "review_status": "legacy_cash_requires_business_mapping_review"
+    "review_status": "business_verified_legacy_cash"
   },
   {
     "market": "Tetco M3",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XZR D1-IPG",
@@ -209,7 +209,7 @@
   },
   {
     "market": "Transco Zone 5 South",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YFF D1-IPG",
@@ -225,7 +225,7 @@
   },
   {
     "market": "Transco Zone 5 North",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "Z2Y D1-IPG",
@@ -241,7 +241,7 @@
   },
   {
     "market": "Iroquois Zone 2",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YP8 D1-IPG",
@@ -257,7 +257,7 @@
   },
   {
     "market": "Transco Zone 6 NY",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XWK D1-IPG",
@@ -273,7 +273,7 @@
   },
   {
     "market": "Dominion South (Eastern Gas-South)",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XJL D1-IPG",
@@ -289,7 +289,7 @@
   },
   {
     "market": "Columbia TCO Pool",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XIZ D1-IPG",
@@ -305,7 +305,7 @@
   },
   {
     "market": "Tetco M2 (Receipt)",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YAG D1-IPG",
@@ -321,7 +321,7 @@
   },
   {
     "market": "Tennessee Z4 (Marcellus)",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "Z1Q D1-IPG",
@@ -337,7 +337,7 @@
   },
   {
     "market": "Transco Leidy",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YQE D1-IPG",
@@ -385,7 +385,7 @@
   },
   {
     "market": "SoCal Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XKF D1-IPG",
@@ -401,7 +401,7 @@
   },
   {
     "market": "PG&E Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XGV D1-IPG",
@@ -417,7 +417,7 @@
   },
   {
     "market": "CIG Mainline",
-    "region": "rockies_northwest",
+    "region": "mountain",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "YKL D1-IPG",
@@ -433,7 +433,7 @@
   },
   {
     "market": "NGPL Midcontinent",
-    "region": "midwest",
+    "region": "south_central",
     "source_registry": "gas_next_day",
     "instrument_role": "cash_physical",
     "symbol": "XJR D1-IPG",
@@ -465,7 +465,7 @@
   },
   {
     "market": "Henry Hub",
-    "region": "louisiana",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "HHD B0-IUS",
@@ -481,7 +481,7 @@
   },
   {
     "market": "Transco Station 85",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "TRW B0-IUS",
@@ -497,7 +497,7 @@
   },
   {
     "market": "FGT Zone 3",
-    "region": "southeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "FTS B0-IUS",
@@ -513,7 +513,7 @@
   },
   {
     "market": "Columbia Gulf (Mainline)",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "CGR B0-IUS",
@@ -529,7 +529,7 @@
   },
   {
     "market": "ANR SE-T",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "APS B0-IUS",
@@ -545,7 +545,7 @@
   },
   {
     "market": "Pine Prairie",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "CVK B0-IUS",
@@ -561,7 +561,7 @@
   },
   {
     "market": "Tetco WLA",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "CVP B0-IUS",
@@ -577,7 +577,7 @@
   },
   {
     "market": "Houston Ship Channel",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "UCS B0-IUS",
@@ -593,7 +593,7 @@
   },
   {
     "market": "Waha",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "WAS B0-IUS",
@@ -609,7 +609,7 @@
   },
   {
     "market": "NGPL TX/OK",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "NTS B0-IUS",
@@ -625,7 +625,7 @@
   },
   {
     "market": "Algonquin Citygates",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "ALS B0-IUS",
@@ -641,7 +641,7 @@
   },
   {
     "market": "Tetco M3",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "TSS B0-IUS",
@@ -657,7 +657,7 @@
   },
   {
     "market": "Transco Zone 5",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "DKS B0-IUS",
@@ -673,7 +673,7 @@
   },
   {
     "market": "Transco Zone 5 South",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "T5C B0-IUS",
@@ -689,7 +689,7 @@
   },
   {
     "market": "Iroquois Zone 2",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "IZS B0-IUS",
@@ -705,7 +705,7 @@
   },
   {
     "market": "Transco Zone 6 NY",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "ZSS B0-IUS",
@@ -721,7 +721,7 @@
   },
   {
     "market": "Dominion South (Eastern Gas-South)",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "DSS B0-IUS",
@@ -737,7 +737,7 @@
   },
   {
     "market": "SoCal Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "SCS B0-IUS",
@@ -753,7 +753,7 @@
   },
   {
     "market": "PG&E Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "PIG B0-IUS",
@@ -769,7 +769,7 @@
   },
   {
     "market": "CIG Mainline",
-    "region": "rockies_northwest",
+    "region": "mountain",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "CRS B0-IUS",
@@ -785,7 +785,7 @@
   },
   {
     "market": "NGPL Midcontinent",
-    "region": "midwest",
+    "region": "south_central",
     "source_registry": "gas_balmo",
     "instrument_role": "balmo_swing",
     "symbol": "MTS B0-IUS",
@@ -817,7 +817,7 @@
   },
   {
     "market": "Henry Hub Natural Gas",
-    "region": "louisiana",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -833,11 +833,11 @@
   },
   {
     "market": "Henry Penultimate Natural Gas",
-    "region": "louisiana",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
-    "product": "PHE",
+    "product": "PHH",
     "ice_product_id": "6590264",
     "ice_product_url": "https://www.ice.com/products/6590264",
     "product_name": "Henry Penultimate Fixed Price Future",
@@ -849,7 +849,7 @@
   },
   {
     "market": "Transco Station 85",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -865,7 +865,7 @@
   },
   {
     "market": "TGP 500L",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -881,7 +881,7 @@
   },
   {
     "market": "Columbia Gulf",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -897,7 +897,7 @@
   },
   {
     "market": "ANR SE-T",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -913,7 +913,7 @@
   },
   {
     "market": "Tetco WLA",
-    "region": "southeast",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -929,7 +929,7 @@
   },
   {
     "market": "Houston Ship Channel",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -945,7 +945,7 @@
   },
   {
     "market": "Waha",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -961,7 +961,7 @@
   },
   {
     "market": "NGPL TX/OK",
-    "region": "east_texas",
+    "region": "south_central",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -977,7 +977,7 @@
   },
   {
     "market": "Algonquin Citygates",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -993,7 +993,7 @@
   },
   {
     "market": "Tetco M3",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1009,7 +1009,7 @@
   },
   {
     "market": "Transco Zone 5 South",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1025,7 +1025,7 @@
   },
   {
     "market": "Iroquois Zone 2",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1041,7 +1041,7 @@
   },
   {
     "market": "Transco Zone 6 NY",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1057,7 +1057,7 @@
   },
   {
     "market": "Dominion South",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1073,7 +1073,7 @@
   },
   {
     "market": "SoCal Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1089,7 +1089,7 @@
   },
   {
     "market": "PG&E Citygate",
-    "region": "southwest",
+    "region": "pacific",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1105,7 +1105,7 @@
   },
   {
     "market": "CIG Mainline",
-    "region": "rockies_northwest",
+    "region": "mountain",
     "source_registry": "gas_futures",
     "instrument_role": "basis_future",
     "symbol": "",
@@ -1121,7 +1121,7 @@
   },
   {
     "market": "Algonquin Citygates Fixed Price",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1133,11 +1133,11 @@
     "candidate_for_market": "Algonquin Citygates",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   },
   {
     "market": "Transco Zone 5 Fixed Price",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1149,11 +1149,11 @@
     "candidate_for_market": "Transco Zone 5 North",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   },
   {
     "market": "Iroquois Zone 2 Fixed Price",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1165,11 +1165,11 @@
     "candidate_for_market": "Iroquois Zone 2",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   },
   {
     "market": "Tennessee Zone 4 200L Fixed Price",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1181,11 +1181,11 @@
     "candidate_for_market": "Tennessee Z4 (Marcellus)",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   },
   {
     "market": "Tennessee Zone 4 300L Fixed Price",
-    "region": "northeast",
+    "region": "east",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1197,11 +1197,11 @@
     "candidate_for_market": "Tennessee Z4 (Marcellus)",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   },
   {
     "market": "CIG Rockies Fixed Price",
-    "region": "rockies_northwest",
+    "region": "mountain",
     "source_registry": "gas_futures",
     "instrument_role": "fixed_price_future",
     "symbol": "",
@@ -1213,6 +1213,6 @@
     "candidate_for_market": "CIG Mainline",
     "ice_catalog_status": "verified",
     "metadata_status": "ice_product_url_verified",
-    "review_status": "candidate_verified_not_mapped"
+    "review_status": "verified_fixed_price_excluded_basis_market"
   }
 ]

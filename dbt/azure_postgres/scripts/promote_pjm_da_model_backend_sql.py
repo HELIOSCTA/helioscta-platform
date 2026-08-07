@@ -477,8 +477,9 @@ def write_manifest(sql_root: Path) -> Path:
                 "derives weekday/weekend features and defaults NERC holiday to 0."
             ),
             "ice_gas_non_trading_days": (
-                "ICE gas uses settlements.trade_date with the simple next-day "
-                "and Friday-weekend rule; special holiday handling is out of scope."
+                "ICE gas uses a code-owned physical gas non-trading calendar "
+                "compiled from dbt macro ice_python_physical_gas_non_trading_day_values; "
+                "calendar updates require dbt compile and SQL promotion."
             ),
             "output_publication": (
                 "Model outputs are not published to database cache tables in "

@@ -48,28 +48,211 @@ symbol_map as (
     ) as mapped(symbol, hub_name, region, sort_index)
 ),
 
-source_trade_dates as (
-    select distinct s.trade_date::date as trade_date
-    from "helios_prod"."ice_python"."settlements" s
-    join symbol_map m
-      on s.symbol = m.symbol
-    cross join params p
-    where s.trade_date::date >= (p.start_date - interval '60 days')::date
-      and s.trade_date::date <= (p.end_date + interval '14 days')::date
-      and extract(isodow from s.trade_date::date)::int between 1 and 5
+ice_physical_gas_non_trading_days as (
+    select
+        non_trading_date,
+        holiday_name
+    from (
+    select *
+    from (
+        values
+        (DATE '2020-01-01', 'New Year''s Day'),
+        (DATE '2020-01-20', 'Martin Luther King Jr. Day'),
+        (DATE '2020-02-17', 'Washington''s Birthday'),
+        (DATE '2020-04-10', 'Good Friday'),
+        (DATE '2020-05-25', 'Memorial Day'),
+        (DATE '2020-07-03', 'Independence Day'),
+        (DATE '2020-09-07', 'Labor Day'),
+        (DATE '2020-10-12', 'Columbus Day'),
+        (DATE '2020-11-11', 'Veterans Day'),
+        (DATE '2020-11-26', 'Thanksgiving Day'),
+        (DATE '2020-11-27', 'Day After Thanksgiving'),
+        (DATE '2020-12-25', 'Christmas Day'),
+        (DATE '2021-01-01', 'New Year''s Day'),
+        (DATE '2021-01-18', 'Martin Luther King Jr. Day'),
+        (DATE '2021-02-15', 'Washington''s Birthday'),
+        (DATE '2021-04-02', 'Good Friday'),
+        (DATE '2021-05-31', 'Memorial Day'),
+        (DATE '2021-06-18', 'Juneteenth National Independence Day'),
+        (DATE '2021-07-05', 'Independence Day'),
+        (DATE '2021-09-06', 'Labor Day'),
+        (DATE '2021-10-11', 'Columbus Day'),
+        (DATE '2021-11-11', 'Veterans Day'),
+        (DATE '2021-11-25', 'Thanksgiving Day'),
+        (DATE '2021-11-26', 'Day After Thanksgiving'),
+        (DATE '2021-12-24', 'Christmas Day'),
+        (DATE '2021-12-31', 'New Year''s Day'),
+        (DATE '2022-01-17', 'Martin Luther King Jr. Day'),
+        (DATE '2022-02-21', 'Washington''s Birthday'),
+        (DATE '2022-04-15', 'Good Friday'),
+        (DATE '2022-05-30', 'Memorial Day'),
+        (DATE '2022-06-20', 'Juneteenth National Independence Day'),
+        (DATE '2022-07-04', 'Independence Day'),
+        (DATE '2022-09-05', 'Labor Day'),
+        (DATE '2022-10-10', 'Columbus Day'),
+        (DATE '2022-11-11', 'Veterans Day'),
+        (DATE '2022-11-24', 'Thanksgiving Day'),
+        (DATE '2022-11-25', 'Day After Thanksgiving'),
+        (DATE '2022-12-26', 'Christmas Day'),
+        (DATE '2023-01-02', 'New Year''s Day'),
+        (DATE '2023-01-16', 'Martin Luther King Jr. Day'),
+        (DATE '2023-02-20', 'Washington''s Birthday'),
+        (DATE '2023-04-07', 'Good Friday'),
+        (DATE '2023-05-29', 'Memorial Day'),
+        (DATE '2023-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2023-07-04', 'Independence Day'),
+        (DATE '2023-09-04', 'Labor Day'),
+        (DATE '2023-10-09', 'Columbus Day'),
+        (DATE '2023-11-10', 'Veterans Day'),
+        (DATE '2023-11-23', 'Thanksgiving Day'),
+        (DATE '2023-11-24', 'Day After Thanksgiving'),
+        (DATE '2023-12-25', 'Christmas Day'),
+        (DATE '2024-01-01', 'New Year''s Day'),
+        (DATE '2024-01-15', 'Martin Luther King Jr. Day'),
+        (DATE '2024-02-19', 'Washington''s Birthday'),
+        (DATE '2024-03-29', 'Good Friday'),
+        (DATE '2024-05-27', 'Memorial Day'),
+        (DATE '2024-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2024-07-04', 'Independence Day'),
+        (DATE '2024-09-02', 'Labor Day'),
+        (DATE '2024-10-14', 'Columbus Day'),
+        (DATE '2024-11-11', 'Veterans Day'),
+        (DATE '2024-11-28', 'Thanksgiving Day'),
+        (DATE '2024-11-29', 'Day After Thanksgiving'),
+        (DATE '2024-12-25', 'Christmas Day'),
+        (DATE '2025-01-01', 'New Year''s Day'),
+        (DATE '2025-01-20', 'Martin Luther King Jr. Day'),
+        (DATE '2025-02-17', 'Washington''s Birthday'),
+        (DATE '2025-04-18', 'Good Friday'),
+        (DATE '2025-05-26', 'Memorial Day'),
+        (DATE '2025-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2025-07-04', 'Independence Day'),
+        (DATE '2025-09-01', 'Labor Day'),
+        (DATE '2025-10-13', 'Columbus Day'),
+        (DATE '2025-11-11', 'Veterans Day'),
+        (DATE '2025-11-27', 'Thanksgiving Day'),
+        (DATE '2025-11-28', 'Day After Thanksgiving'),
+        (DATE '2025-12-25', 'Christmas Day'),
+        (DATE '2026-01-01', 'New Year''s Day'),
+        (DATE '2026-01-19', 'Martin Luther King Jr. Day'),
+        (DATE '2026-02-16', 'Washington''s Birthday'),
+        (DATE '2026-04-03', 'Good Friday'),
+        (DATE '2026-05-25', 'Memorial Day'),
+        (DATE '2026-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2026-07-03', 'Independence Day'),
+        (DATE '2026-09-07', 'Labor Day'),
+        (DATE '2026-10-12', 'Columbus Day'),
+        (DATE '2026-11-11', 'Veterans Day'),
+        (DATE '2026-11-26', 'Thanksgiving Day'),
+        (DATE '2026-11-27', 'Day After Thanksgiving'),
+        (DATE '2026-12-25', 'Christmas Day'),
+        (DATE '2027-01-01', 'New Year''s Day'),
+        (DATE '2027-01-18', 'Martin Luther King Jr. Day'),
+        (DATE '2027-02-15', 'Washington''s Birthday'),
+        (DATE '2027-03-26', 'Good Friday'),
+        (DATE '2027-05-31', 'Memorial Day'),
+        (DATE '2027-06-18', 'Juneteenth National Independence Day'),
+        (DATE '2027-07-05', 'Independence Day'),
+        (DATE '2027-09-06', 'Labor Day'),
+        (DATE '2027-10-11', 'Columbus Day'),
+        (DATE '2027-11-11', 'Veterans Day'),
+        (DATE '2027-11-25', 'Thanksgiving Day'),
+        (DATE '2027-11-26', 'Day After Thanksgiving'),
+        (DATE '2027-12-24', 'Christmas Day'),
+        (DATE '2027-12-31', 'New Year''s Day'),
+        (DATE '2028-01-17', 'Martin Luther King Jr. Day'),
+        (DATE '2028-02-21', 'Washington''s Birthday'),
+        (DATE '2028-04-14', 'Good Friday'),
+        (DATE '2028-05-29', 'Memorial Day'),
+        (DATE '2028-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2028-07-04', 'Independence Day'),
+        (DATE '2028-09-04', 'Labor Day'),
+        (DATE '2028-10-09', 'Columbus Day'),
+        (DATE '2028-11-10', 'Veterans Day'),
+        (DATE '2028-11-23', 'Thanksgiving Day'),
+        (DATE '2028-11-24', 'Day After Thanksgiving'),
+        (DATE '2028-12-25', 'Christmas Day'),
+        (DATE '2029-01-01', 'New Year''s Day'),
+        (DATE '2029-01-15', 'Martin Luther King Jr. Day'),
+        (DATE '2029-02-19', 'Washington''s Birthday'),
+        (DATE '2029-03-30', 'Good Friday'),
+        (DATE '2029-05-28', 'Memorial Day'),
+        (DATE '2029-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2029-07-04', 'Independence Day'),
+        (DATE '2029-09-03', 'Labor Day'),
+        (DATE '2029-10-08', 'Columbus Day'),
+        (DATE '2029-11-12', 'Veterans Day'),
+        (DATE '2029-11-22', 'Thanksgiving Day'),
+        (DATE '2029-11-23', 'Day After Thanksgiving'),
+        (DATE '2029-12-25', 'Christmas Day'),
+        (DATE '2030-01-01', 'New Year''s Day'),
+        (DATE '2030-01-21', 'Martin Luther King Jr. Day'),
+        (DATE '2030-02-18', 'Washington''s Birthday'),
+        (DATE '2030-04-19', 'Good Friday'),
+        (DATE '2030-05-27', 'Memorial Day'),
+        (DATE '2030-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2030-07-04', 'Independence Day'),
+        (DATE '2030-09-02', 'Labor Day'),
+        (DATE '2030-10-14', 'Columbus Day'),
+        (DATE '2030-11-11', 'Veterans Day'),
+        (DATE '2030-11-28', 'Thanksgiving Day'),
+        (DATE '2030-11-29', 'Day After Thanksgiving'),
+        (DATE '2030-12-25', 'Christmas Day'),
+        (DATE '2031-01-01', 'New Year''s Day'),
+        (DATE '2031-01-20', 'Martin Luther King Jr. Day'),
+        (DATE '2031-02-17', 'Washington''s Birthday'),
+        (DATE '2031-04-11', 'Good Friday'),
+        (DATE '2031-05-26', 'Memorial Day'),
+        (DATE '2031-06-19', 'Juneteenth National Independence Day'),
+        (DATE '2031-07-04', 'Independence Day'),
+        (DATE '2031-09-01', 'Labor Day'),
+        (DATE '2031-10-13', 'Columbus Day'),
+        (DATE '2031-11-11', 'Veterans Day'),
+        (DATE '2031-11-27', 'Thanksgiving Day'),
+        (DATE '2031-11-28', 'Day After Thanksgiving'),
+        (DATE '2031-12-25', 'Christmas Day')
+    ) as t(non_trading_date, holiday_name)
+
+    ) as non_trading_days
+),
+
+calendar_trade_dates as (
+    select trade_date::date as trade_date
+    from params p
+    cross join lateral generate_series(
+        (p.start_date - interval '60 days')::timestamp,
+        (p.end_date + interval '14 days')::timestamp,
+        interval '1 day'
+    ) as spine(trade_date)
+    where extract(isodow from trade_date::date)::int between 1 and 5
+      and not exists (
+          select 1
+          from ice_physical_gas_non_trading_days n
+          where n.non_trading_date = trade_date::date
+      )
+),
+
+calendar_trade_windows as (
+    select
+        trade_date,
+        lead(trade_date) over (order by trade_date) as next_trade_date
+    from calendar_trade_dates
 ),
 
 sessions as (
     select
         trade_date,
-        (
-            trade_date
-            + case
-                when extract(isodow from trade_date)::int = 5 then interval '3 days'
-                else interval '1 day'
-            end
-        )::date as last_gas_day
-    from source_trade_dates
+        coalesce(
+            next_trade_date,
+            (
+                trade_date
+                + case
+                    when extract(isodow from trade_date)::int = 5 then interval '3 days'
+                    else interval '1 day'
+                end
+            )::date
+        ) as last_gas_day
+    from calendar_trade_windows
 ),
 
 gas_day_trade_dates as (
@@ -91,7 +274,7 @@ symbol_trade_dates as (
         m.hub_name,
         m.region,
         m.sort_index
-    from source_trade_dates t
+    from calendar_trade_dates t
     cross join symbol_map m
 ),
 

@@ -467,6 +467,29 @@ key. Scheduled runs retain 21 days of forecast issue history by `issue_date`.
 Finer weather zones, renewable subregions, observations, normals, projections,
 and DA price feeds are excluded from the ERCOT v1 scope.
 
+The promoted main-zone Meteologica forecast runtime modules for CAISO, ISO-NE,
+MISO, NYISO, and SPP follow the same backend-only table contract and write to
+one table per ISO:
+`meteologica.caiso_forecast_hourly`,
+`meteologica.isone_forecast_hourly`,
+`meteologica.miso_forecast_hourly`,
+`meteologica.nyiso_forecast_hourly`, and
+`meteologica.spp_forecast_hourly`. Runtime modules live under
+`backend.scrapes.power.<iso>.meteologica_forecast_hourly`, with orchestration
+under `backend.orchestration.power.<iso>.meteologica_forecast_hourly`. The
+new feeds cover the locked load, solar, and wind content IDs for CAISO
+main/subregional areas, ISO-NE states/regions, MISO aggregate and North,
+Central, South, NYISO load zones plus promoted wind zones, and aggregate SPP.
+They use the same source grain,
+`content_id x update_id x forecast_period_start`; safe reruns upsert by that
+key, scheduled runs retain 21 days of forecast issue history by `issue_date`,
+Meteologica API calls log to `ops.api_fetch_log`, and orchestration emits
+forecast freshness events to `ops.data_availability_events` under
+`<iso>_meteologica_forecast_hourly`. SPP utility/LSE loads, SPP reserve/WEIS
+renewable zones, MISO LRZ and state/province wind subregions, CAISO adjacent
+BA-style loads, prices, normals, observations, hydro, potential, projections,
+long-term feeds, and `l48` are excluded from this wave.
+
 The PJM Meteologica DA price runtime module is
 `backend.scrapes.power.pjm.meteologica_da_price_forecast`, with orchestration
 at `backend.orchestration.power.pjm.meteologica_da_price_forecast` for manual

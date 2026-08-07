@@ -4,6 +4,7 @@ from __future__ import annotations
 import csv
 import json
 import re
+import ssl
 import urllib.request
 from collections import Counter
 from pathlib import Path
@@ -14,6 +15,7 @@ from backend.scrapes.ice_python.symbols import gas
 
 ICE_PRODUCT_CODES_URL = "https://www.ice.com/api/productguide/info/codes/all/csv"
 DEFAULT_OUTPUT_DIR = Path(__file__).resolve().parents[1] / "reports"
+ACCEPTED_LEGACY_REVIEW_STATUSES = {"business_verified_legacy_cash"}
 CATALOG_COLUMNS = (
     "market",
     "region",
@@ -32,6 +34,15 @@ CATALOG_COLUMNS = (
 )
 
 
+def _create_https_context() -> ssl.SSLContext:
+    try:
+        import certifi  # type: ignore[import-not-found]
+    except ImportError:
+        return ssl.create_default_context()
+
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def download_ice_product_codes(url: str = ICE_PRODUCT_CODES_URL) -> list[dict[str, str]]:
     request = urllib.request.Request(
         url,
@@ -40,7 +51,7 @@ def download_ice_product_codes(url: str = ICE_PRODUCT_CODES_URL) -> list[dict[st
             "Accept": "text/csv,*/*",
         },
     )
-    with urllib.request.urlopen(request, timeout=60) as response:
+    with urllib.request.urlopen(request, timeout=60, context=_create_https_context()) as response:
         text = response.read().decode("utf-8-sig")
     return list(csv.DictReader(text.splitlines()))
 
@@ -128,8 +139,11 @@ def summarize_review(rows: list[dict[str, str]]) -> dict[str, object]:
         "needs_review": [
             row
             for row in rows
-            if row["ice_catalog_status"] != "verified"
-            or row["review_status"].startswith("candidate")
+            if row["review_status"] not in ACCEPTED_LEGACY_REVIEW_STATUSES
+            and (
+                row["ice_catalog_status"] != "verified"
+                or row["review_status"].startswith("candidate")
+            )
         ],
     }
 

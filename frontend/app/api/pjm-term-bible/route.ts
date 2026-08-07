@@ -1,6 +1,6 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
 import { query } from "@/lib/server/db";
-import { buildNercOffPeakDaysValuesSql } from "@/lib/tradingCalendars";
+import { NERC_OFF_PEAK_CALENDAR, buildNercOffPeakDaysValuesSql } from "@/lib/tradingCalendars";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -69,6 +69,13 @@ interface PjmTermBiblePayload {
     periodDefinition: string;
     availableHubs: readonly string[];
     maxYearSpan: number;
+    calendar?: {
+      calendarId: string;
+      label: string;
+      source: string | null;
+      sourceUrl: string | null;
+      description: string;
+    };
   };
 }
 
@@ -394,7 +401,8 @@ ${buildNercOffPeakDaysValuesSql(startYear, endYear)}
         SELECT json_agg(
           json_build_object(
             'date', holiday_date::text,
-            'name', holiday_name
+            'name', holiday_name,
+            'source', calendar_source
           )
           ORDER BY holiday_date
         )
@@ -456,10 +464,24 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     };
   }
 
+  const enrichedPayload: PjmTermBiblePayload = {
+    ...payload,
+    metadata: {
+      ...payload.metadata,
+      calendar: {
+        calendarId: NERC_OFF_PEAK_CALENDAR.calendarId,
+        label: NERC_OFF_PEAK_CALENDAR.label,
+        source: NERC_OFF_PEAK_CALENDAR.source ?? null,
+        sourceUrl: NERC_OFF_PEAK_CALENDAR.sourceUrl ?? null,
+        description: NERC_OFF_PEAK_CALENDAR.description,
+      },
+    },
+  };
+
   return {
-    payload,
+    payload: enrichedPayload,
     headers: { "Cache-Control": CACHE_HEADER },
-    rowCount: payload.dailyValues.length,
-    dataAsOf: payload.asOf,
+    rowCount: enrichedPayload.dailyValues.length,
+    dataAsOf: enrichedPayload.asOf,
   };
 });

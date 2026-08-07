@@ -25,6 +25,10 @@ export interface DailyGasMarket {
   balmoSymbol: string | null;
   futuresProduct: string | null;
   curveStyle: "fixed" | "basis" | "none";
+  pipelineKey: string | null;
+  pipelineLabel: string | null;
+  pipelineSortOrder: number | null;
+  pipelineMarketSortOrder: number | null;
 }
 
 export interface DailyGasTrendPoint {

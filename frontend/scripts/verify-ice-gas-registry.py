@@ -13,6 +13,80 @@ from typing import Any
 
 ICE_PRODUCT_CODES_URL = "https://www.ice.com/api/productguide/info/codes/all/csv"
 REGISTRY_PATH = Path(__file__).resolve().parents[1] / "lib" / "gasPricing" / "ice_gas_registry.json"
+ACCEPTED_LEGACY_REVIEW_STATUSES = {"business_verified_legacy_cash"}
+CURATED_PIPELINE_GROUPS = [
+    {
+        "pipelineKey": "transco",
+        "pipelineLabel": "Transco",
+        "markets": [
+            "Transco Station 85",
+            "Transco Zone 5 South",
+            "Transco Zone 5 North",
+            "Transco Zone 6 NY",
+            "Transco Leidy",
+        ],
+    },
+    {
+        "pipelineKey": "tennessee_gas_pipeline",
+        "pipelineLabel": "Tennessee Gas Pipeline",
+        "markets": ["TGP-500L", "Tennessee Z4 (Marcellus)"],
+    },
+    {
+        "pipelineKey": "florida_gas",
+        "pipelineLabel": "Florida Gas",
+        "markets": ["FGT Zone 3"],
+    },
+    {
+        "pipelineKey": "columbia_gulf",
+        "pipelineLabel": "Columbia Gulf",
+        "markets": ["Columbia Gulf (Mainline)"],
+    },
+    {
+        "pipelineKey": "columbia_gas",
+        "pipelineLabel": "Columbia Gas",
+        "markets": ["Columbia TCO Pool"],
+    },
+    {
+        "pipelineKey": "anr",
+        "pipelineLabel": "ANR",
+        "markets": ["ANR SE-T"],
+    },
+    {
+        "pipelineKey": "texas_eastern",
+        "pipelineLabel": "Texas Eastern",
+        "markets": ["Tetco WLA", "Tetco M3", "Tetco M2 (Receipt)"],
+    },
+    {
+        "pipelineKey": "natural_gas_pipeline_of_america",
+        "pipelineLabel": "Natural Gas Pipeline of America",
+        "markets": ["NGPL TX/OK", "NGPL Midcontinent", "Chicago CityGate (NGPL-Nicor)"],
+    },
+    {
+        "pipelineKey": "algonquin",
+        "pipelineLabel": "Algonquin",
+        "markets": ["Algonquin Citygates"],
+    },
+    {
+        "pipelineKey": "iroquois",
+        "pipelineLabel": "Iroquois",
+        "markets": ["Iroquois Zone 2"],
+    },
+    {
+        "pipelineKey": "northern_natural",
+        "pipelineLabel": "Northern Natural",
+        "markets": ["Northern Ventura (NNG)"],
+    },
+    {
+        "pipelineKey": "colorado_interstate_gas",
+        "pipelineLabel": "Colorado Interstate Gas",
+        "markets": ["CIG Mainline"],
+    },
+    {
+        "pipelineKey": "eastern_gas",
+        "pipelineLabel": "Eastern Gas",
+        "markets": ["Dominion South (Eastern Gas-South)"],
+    },
+]
 
 
 def _create_https_context() -> ssl.SSLContext:
@@ -97,11 +171,80 @@ def _component_status(entry: dict[str, Any] | None) -> str:
         return "none"
     if entry.get("csv_match"):
         return "verified"
+    review_status = str(entry.get("review_status") or "")
+    if review_status in ACCEPTED_LEGACY_REVIEW_STATUSES:
+        return review_status
     return str(entry.get("metadata_status") or "unverified")
+
+
+def _validate_pipeline_metadata(registry: dict[str, Any]) -> dict[str, list[str]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for market in registry.get("markets", []):
+        pipeline_key = market.get("pipelineKey")
+        if not pipeline_key:
+            continue
+        missing = [
+            key
+            for key in (
+                "pipelineKey",
+                "pipelineLabel",
+                "pipelineSortOrder",
+                "pipelineMarketSortOrder",
+            )
+            if market.get(key) is None
+        ]
+        if missing:
+            raise RuntimeError(f"Pipeline market {market.get('market')} is missing {missing}.")
+        grouped[str(pipeline_key)].append(market)
+
+    pipeline_markets = {
+        key: [
+            str(market["market"])
+            for market in sorted(
+                rows,
+                key=lambda item: (
+                    int(item["pipelineSortOrder"]),
+                    int(item["pipelineMarketSortOrder"]),
+                ),
+            )
+        ]
+        for key, rows in grouped.items()
+    }
+    expected_pipeline_markets = {
+        str(group["pipelineKey"]): [str(market) for market in group["markets"]]
+        for group in CURATED_PIPELINE_GROUPS
+    }
+    if set(pipeline_markets) != set(expected_pipeline_markets):
+        raise RuntimeError(
+            "Pipeline registry group drifted. "
+            f"Expected keys {sorted(expected_pipeline_markets)}, got {sorted(pipeline_markets)}."
+        )
+    for group in CURATED_PIPELINE_GROUPS:
+        pipeline_key = str(group["pipelineKey"])
+        expected_markets = expected_pipeline_markets[pipeline_key]
+        actual_markets = pipeline_markets[pipeline_key]
+        if actual_markets != expected_markets:
+            raise RuntimeError(
+                f"{pipeline_key} pipeline registry mapping drifted. "
+                f"Expected {expected_markets}, got {actual_markets}."
+            )
+        expected_label = str(group["pipelineLabel"])
+        actual_labels = {
+            str(market["pipelineLabel"])
+            for market in registry.get("markets", [])
+            if market.get("pipelineKey") == pipeline_key
+        }
+        if actual_labels != {expected_label}:
+            raise RuntimeError(
+                f"{pipeline_key} pipeline label drifted. "
+                f"Expected {expected_label}, got {sorted(actual_labels)}."
+            )
+    return pipeline_markets
 
 
 def verify_ice_gas_registry() -> int:
     registry = _load_registry()
+    pipeline_markets = _validate_pipeline_metadata(registry)
     ice_rows = _download_ice_product_codes()
     indexes = _build_ice_indexes(ice_rows)
 
@@ -156,6 +299,13 @@ def verify_ice_gas_registry() -> int:
     print(f"Entries by group: {dict(entries_by_group)}")
     print(f"Registry status vs ICE CSV: {dict(status_counts)}")
     print(f"Market component status: { {key: dict(value) for key, value in component_counts.items()} }")
+    pipeline_group_counts = {key: len(value) for key, value in pipeline_markets.items()}
+    print(
+        "Pipeline groups: "
+        f"groups={len(pipeline_markets)} "
+        f"markets={sum(pipeline_group_counts.values())} "
+        f"details={pipeline_group_counts}"
+    )
 
     if legacy_market_rows:
         print("\nLegacy cash symbols retained from settlement source:")

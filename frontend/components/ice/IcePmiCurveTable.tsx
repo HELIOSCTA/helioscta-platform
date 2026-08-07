@@ -186,6 +186,8 @@ function PriceTrendSparkline({ priceTrend }: { priceTrend: TrendPoint[] }) {
   const path = coordinates
     .map(({ x, y }, index) => `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`)
     .join(" ");
+  const move = values.at(-1)! - values[0];
+  const stroke = move > 0 ? "#34d399" : move < 0 ? "#f87171" : "#94a3b8";
 
   return (
     <svg
@@ -195,7 +197,7 @@ function PriceTrendSparkline({ priceTrend }: { priceTrend: TrendPoint[] }) {
       preserveAspectRatio="none"
       className="mt-1 h-3.5 w-full overflow-visible"
     >
-      <path d={path} fill="none" stroke="#38bdf8" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} />
+      <path d={path} fill="none" stroke={stroke} strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} />
     </svg>
   );
 }

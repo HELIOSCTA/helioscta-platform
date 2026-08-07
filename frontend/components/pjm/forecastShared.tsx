@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import { Fragment, type CSSProperties, type ReactNode } from "react";
 
 export interface ForecastMetricDefinition<K extends string> {
   key: K;
@@ -221,14 +221,14 @@ export function ForecastFilterCard({
   children: ReactNode;
 }) {
   return (
-    <section className="w-fit max-w-full rounded-lg border border-sky-950/70 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
-      <div className="mb-3 flex items-center gap-2">
+    <section className="w-fit max-w-full rounded-lg border border-gray-800 bg-[#0d121b] p-3 shadow-xl shadow-black/20 ring-1 ring-white/[0.02] sm:p-4">
+      <div className="mb-3 flex min-w-0 items-center gap-2">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gray-500">
-          Forecast Filters
+          Forecast Controls
         </h2>
         <span className="h-px flex-1 bg-gray-800" />
         {summary && (
-          <span className="truncate text-xs font-semibold text-gray-500">
+          <span className="min-w-0 truncate text-xs font-semibold text-gray-500">
             {summary}
           </span>
         )}
@@ -248,8 +248,8 @@ export function ForecastControlGroup({
   className?: string;
 }) {
   return (
-    <div className={`flex min-w-0 items-center gap-2 ${className}`}>
-      <span className="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+    <div className={`flex min-w-0 items-center gap-1.5 ${className}`}>
+      <span className="shrink-0 whitespace-nowrap text-[10px] font-bold uppercase tracking-wider text-gray-500">
         {label}
       </span>
       <div className="min-w-0 flex-1">{children}</div>
@@ -293,30 +293,36 @@ export function ForecastSegmentedControl<T extends string>({
 }) {
   return (
     <div
-      className={`inline-flex max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap rounded-md border border-gray-800 bg-gray-950/70 p-0.5 ${className}`}
+      className={`inline-flex max-w-full items-center overflow-x-auto whitespace-nowrap rounded-md border border-gray-800 bg-gray-950/70 p-0.5 ${className}`}
       role="tablist"
       aria-label={ariaLabel}
     >
-      {options.map((option) => {
+      {options.map((option, index) => {
         const active = value === option.value;
         return (
-          <button
-            key={option.value}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            title={option.title}
-            onClick={() => {
-              if (!active) onChange(option.value);
-            }}
-            className={`h-7 shrink-0 rounded px-2.5 text-center text-xs font-semibold transition-colors ${
-              active
-                ? "bg-sky-500/15 text-white shadow-sm ring-1 ring-inset ring-sky-400/30"
-                : "text-gray-500 hover:bg-gray-900 hover:text-gray-200"
-            }`}
-          >
-            <span className="whitespace-nowrap">{option.label}</span>
-          </button>
+          <Fragment key={option.value}>
+            {index > 0 && (
+              <span aria-hidden="true" className="mx-0.5 shrink-0 text-[11px] text-gray-700">
+                |
+              </span>
+            )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active}
+              title={option.title}
+              onClick={() => {
+                if (!active) onChange(option.value);
+              }}
+              className={`h-7 shrink-0 rounded px-2 text-center text-xs font-semibold transition-colors ${
+                active
+                  ? "bg-sky-500/15 text-white shadow-sm ring-1 ring-inset ring-sky-400/30"
+                  : "text-gray-500 hover:bg-gray-900 hover:text-gray-200"
+              }`}
+            >
+              <span className="whitespace-nowrap">{option.label}</span>
+            </button>
+          </Fragment>
         );
       })}
     </div>

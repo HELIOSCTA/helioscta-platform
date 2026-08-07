@@ -1,0 +1,12 @@
+[Unit]
+Description=Half-hourly HeliosCTA CAISO Meteologica hourly forecast refresh timer
+
+[Timer]
+OnCalendar=*:00,30
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-caiso-meteologica-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target
