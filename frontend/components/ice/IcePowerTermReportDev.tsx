@@ -64,6 +64,26 @@ interface ProductLoadResult {
   error: string | null;
 }
 
+interface IceTermReportBatchResult {
+  mode: "power" | "gas";
+  root: string;
+  payload: IcePmiCurvePayload | null;
+  error: string | null;
+}
+
+interface IceTermReportBatchPayload {
+  source: "ice_python.settlements";
+  currentYear: number;
+  endYear: number;
+  tradingDays: number;
+  priorYears: number;
+  requestedTradeDate: string | null;
+  datePolicy: "latest" | "as-of";
+  dataAsOf: string | null;
+  rowCount: number;
+  results: IceTermReportBatchResult[];
+}
+
 type TermReportTab = "power" | "gas";
 
 interface ReportMarket {
@@ -76,7 +96,6 @@ interface ReportProduct {
   market: string;
   title: string;
   subtitle: string;
-  requestParam: "powerProduct" | "gasProduct";
   mode: "power" | "gas";
   productLabel?: string;
 }
@@ -117,7 +136,6 @@ interface SummaryProductGroup {
 
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const LOOKBACK_DAYS = 7;
-const PRODUCT_LOAD_CONCURRENCY = 3;
 const SUMMARY_ROWS_PER_MARKET_LIMIT = 6;
 const REPORT_TABS: Array<DashboardTabOption<TermReportTab>> = [
   { value: "power", label: "Power" },
@@ -125,7 +143,6 @@ const REPORT_TABS: Array<DashboardTabOption<TermReportTab>> = [
 ];
 const POWER_REPORT_PRODUCTS: ReportProduct[] = ICE_POWER_TERM_PRODUCTS.map((product) => ({
   ...product,
-  requestParam: "powerProduct",
   mode: "power",
 }));
 const POWER_REPORT_MARKETS: ReportMarket[] = ICE_POWER_TERM_MARKETS;
@@ -134,7 +151,6 @@ const POWER_REPORT_PRODUCTS_BY_MARKET = Object.fromEntries(
     market.id,
     (ICE_POWER_TERM_PRODUCTS_BY_MARKET[market.id] ?? []).map((product) => ({
       ...product,
-      requestParam: "powerProduct" as const,
       mode: "power" as const,
     })),
   ]),
@@ -152,7 +168,6 @@ const GAS_REPORT_PRODUCTS: ReportProduct[] = DAILY_GAS_MARKETS.filter(
     market.curveStyle === "basis"
       ? `${market.market} all-in monthly futures from HNG plus ${market.futuresProduct} basis.`
       : `${market.market} fixed-price monthly futures.`,
-  requestParam: "gasProduct",
   mode: "gas",
   productLabel: market.curveStyle === "basis" ? `HNG + ${market.futuresProduct}` : market.futuresProduct!,
 }));
@@ -300,28 +315,6 @@ function filterStatus(results: ProductLoadResult[], loading: boolean, totalProdu
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to load ICE term data";
-}
-
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  mapper: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results: R[] = new Array(items.length);
-  let nextIndex = 0;
-  const workerCount = Math.min(Math.max(1, limit), items.length);
-
-  await Promise.all(
-    Array.from({ length: workerCount }, async () => {
-      while (nextIndex < items.length) {
-        const currentIndex = nextIndex;
-        nextIndex += 1;
-        results[currentIndex] = await mapper(items[currentIndex]!);
-      }
-    }),
-  );
-
-  return results;
 }
 
 function finiteTrendPoints(points: TrendPoint[] | undefined): Array<{ date: string | null; value: number }> {
@@ -934,7 +927,7 @@ function buildSummaryGroups({
         productRows.push({
           key: `${result.product.root}-${month.strip}-${year}`,
           product: result.product.root,
-          contract: `${month.strip} ${year}`,
+          contract: `${result.product.root} ${month.strip} ${year}`,
           contractYear: year,
           monthOrder: month.stripOrder,
           last,
@@ -1027,43 +1020,39 @@ export default function IcePowerTermReportDev() {
     const endYear = matrixYears.at(-1) ?? currentYear + 2;
     const tradeDateKey = selectedTradeDate ?? "latest";
     const forceRefresh = refreshToken > 0;
+    const params = new URLSearchParams({
+      currentYear: String(currentYear),
+      endYear: String(endYear),
+      tradingDays: String(LOOKBACK_DAYS),
+      priorYears: "1",
+      tab: "all",
+    });
+    if (selectedTradeDate) params.set("tradeDate", selectedTradeDate);
+    if (forceRefresh) params.set("refresh", "1");
 
     setLoading(true);
     setResults(ALL_REPORT_PRODUCTS.map((product) => ({ product, payload: null, error: null })));
-    mapWithConcurrency(
-      ALL_REPORT_PRODUCTS,
-      PRODUCT_LOAD_CONCURRENCY,
-      async (product) => {
-        const params = new URLSearchParams({
-          mode: product.mode,
-          [product.requestParam]: product.root,
-          currentYear: String(currentYear),
-          endYear: String(endYear),
-          tradingDays: String(LOOKBACK_DAYS),
-          priorYears: "1",
-        });
-        if (selectedTradeDate) params.set("tradeDate", selectedTradeDate);
-        if (forceRefresh) params.set("refresh", "1");
-        if (product.mode === "gas") params.set("reportVersion", "gas-v2");
-
-        try {
-          const payload = await fetchJsonWithCache<IcePmiCurvePayload>({
-            key: `api:ice-term-report:v2:${product.mode}:${product.root}:${currentYear}:${endYear}:${LOOKBACK_DAYS}:${tradeDateKey}`,
-            url: `/api/ice-pmi-curve?${params.toString()}`,
-            ttlMs: API_CACHE_TTL_MS,
-            signal: controller.signal,
-            cacheMode: forceRefresh || product.mode === "gas" ? "no-store" : "default",
-            forceRefresh,
-          });
-          return { product, payload, error: null };
-        } catch (error) {
-          if (controller.signal.aborted) throw error;
-          return { product, payload: null, error: errorMessage(error) };
-        }
-      },
-    )
-      .then((nextResults) => {
+    fetchJsonWithCache<IceTermReportBatchPayload>({
+      key: `api:ice-term-report:batch:v1:all:${currentYear}:${endYear}:${LOOKBACK_DAYS}:${tradeDateKey}`,
+      url: `/api/ice-term-report?${params.toString()}`,
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: forceRefresh ? "no-store" : "default",
+      forceRefresh,
+    })
+      .then((batch) => {
         if (!controller.signal.aborted) {
+          const batchResultsByProduct = new Map(
+            batch.results.map((result) => [`${result.mode}:${result.root}`, result]),
+          );
+          const nextResults = ALL_REPORT_PRODUCTS.map((product) => {
+            const batchResult = batchResultsByProduct.get(`${product.mode}:${product.root}`);
+            return {
+              product,
+              payload: batchResult?.payload ?? null,
+              error: batchResult?.error ?? (batchResult ? null : "No batch result returned for root."),
+            };
+          });
           setResults(nextResults);
           if (!selectedTradeDate) {
             setTradeDateInput(latestLoadedDataAsOf(nextResults) ?? "");
