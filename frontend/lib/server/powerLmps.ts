@@ -19,6 +19,7 @@ import {
   parsePowerLmpMetricMode,
   powerLmpGasHubConfig,
 } from "@/lib/powerLmpHeatRate";
+import { NERC_OFF_PEAK_CALENDAR } from "@/lib/tradingCalendars";
 
 export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "miso" | "spp" | "nyiso";
 export type PowerLmpProduct = "da" | "rt";
@@ -328,6 +329,11 @@ export interface PowerSettlesDashboardPayload {
     unverifiedFallbackHubCount: number;
     latestAsOf: string | null;
   };
+  calendarMetadata?: {
+    calendarId: string;
+    label: string;
+    source: string | null;
+  };
 }
 
 export function parsePowerIso(raw: string | null): PowerIso {
@@ -458,6 +464,22 @@ function gasHourKey(date: string, hourEnding: number): string {
 function isOnPeakHour(iso: PowerIso, hourEnding: number): boolean {
   const window = PEAK_WINDOW_BY_ISO[iso];
   return hourEnding >= window.start && hourEnding <= window.end;
+}
+
+function nercPowerDayMetadata(date: string): {
+  isWeekend: boolean;
+  isNercHoliday: boolean;
+  holidayName: string | null;
+  isNercOffPeakDay: boolean;
+} {
+  const isWeekend = NERC_OFF_PEAK_CALENDAR.isWeekend(date);
+  const holiday = NERC_OFF_PEAK_CALENDAR.getHoliday(date);
+  return {
+    isWeekend,
+    isNercHoliday: Boolean(holiday),
+    holidayName: holiday?.name ?? null,
+    isNercOffPeakDay: isWeekend || Boolean(holiday),
+  };
 }
 
 interface PowerLmpHeatRateGasHourlyDbRow {
@@ -663,6 +685,7 @@ function sparkHourlyValues(
 function buildPowerSettlesInputSummary({
   iso,
   targetDate,
+  isNercOffPeakDay,
   gasHub,
   sparkHeatRate,
   gasHours,
@@ -673,6 +696,7 @@ function buildPowerSettlesInputSummary({
 }: {
   iso: PowerIso;
   targetDate: string;
+  isNercOffPeakDay?: boolean;
   gasHub: PowerLmpGasHubKey;
   sparkHeatRate: number;
   gasHours: PowerLmpHeatRateGasHourMetadata[];
@@ -697,11 +721,19 @@ function buildPowerSettlesInputSummary({
     latestGasDay: metadata.latestGasDay,
     latestTradeDate: metadata.latestTradeDate,
     latestAsOf: metadata.latestAsOf,
-    gas: productSummary(iso, gasValues),
-    daHeatRate: productSummary(iso, divideHourlyValuesByGas(daValues, gasValues)),
-    rtHeatRate: productSummary(iso, divideHourlyValuesByGas(rtValues, gasValues)),
-    daSpark: productSummary(iso, sparkHourlyValues(daSparkValues, gasValues, sparkHeatRate)),
-    rtSpark: productSummary(iso, sparkHourlyValues(rtSparkValues, gasValues, sparkHeatRate)),
+    gas: productSummary(iso, gasValues, { isNercOffPeakDay }),
+    daHeatRate: productSummary(iso, divideHourlyValuesByGas(daValues, gasValues), {
+      isNercOffPeakDay,
+    }),
+    rtHeatRate: productSummary(iso, divideHourlyValuesByGas(rtValues, gasValues), {
+      isNercOffPeakDay,
+    }),
+    daSpark: productSummary(iso, sparkHourlyValues(daSparkValues, gasValues, sparkHeatRate), {
+      isNercOffPeakDay,
+    }),
+    rtSpark: productSummary(iso, sparkHourlyValues(rtSparkValues, gasValues, sparkHeatRate), {
+      isNercOffPeakDay,
+    }),
   };
 }
 
@@ -1801,10 +1833,16 @@ async function settleRows({
 function productSummary(
   iso: PowerIso,
   values: Array<number | null>,
+  options: { isNercOffPeakDay?: boolean } = {},
 ): PowerSettlesDashboardProductSummary {
   const observed = values.filter((value): value is number => value !== null);
-  const onPeakValues = values.filter((_, index) => isOnPeakHour(iso, index + 1));
-  const offPeakValues = values.filter((_, index) => !isOnPeakHour(iso, index + 1));
+  const useNercOffPeakDay = iso === "pjm" && options.isNercOffPeakDay === true;
+  const onPeakValues = useNercOffPeakDay
+    ? []
+    : values.filter((_, index) => isOnPeakHour(iso, index + 1));
+  const offPeakValues = useNercOffPeakDay
+    ? values
+    : values.filter((_, index) => !isOnPeakHour(iso, index + 1));
   let peakHour: number | null = null;
   let peakPrice: number | null = null;
 
@@ -2122,11 +2160,15 @@ async function buildPowerSettlesDashboardIsoRows({
   );
 
   return hubs.map((hub) => {
+    const nercDay = nercPowerDayMetadata(targetDate);
+    const summaryOptions = {
+      isNercOffPeakDay: iso === "pjm" ? nercDay.isNercOffPeakDay : false,
+    };
     const targetDa = daByHub.get(hub) ?? { values: emptyHours(), asOf: null };
     const requestedRt = requestedRtByHub.get(hub) ?? { values: emptyHours(), asOf: null };
-    const requestedRtSummary = productSummary(iso, requestedRt.values);
+    const requestedRtSummary = productSummary(iso, requestedRt.values, summaryOptions);
     const fallbackRt = fallbackRtByHub?.get(hub) ?? null;
-    const fallbackRtSummary = fallbackRt ? productSummary(iso, fallbackRt.values) : null;
+    const fallbackRtSummary = fallbackRt ? productSummary(iso, fallbackRt.values, summaryOptions) : null;
     const useFallback =
       fallbackRt !== null &&
       fallbackRtSummary !== null &&
@@ -2143,12 +2185,17 @@ async function buildPowerSettlesDashboardIsoRows({
     const effectiveRtSource: RtLmpSource =
       hasSinglePromotedRtSource(iso) || useFallback ? "unverified" : rtSource;
     const rt = useFallback && fallbackRtSummary ? fallbackRtSummary : requestedRtSummary;
-    const da = productSummary(iso, targetDa.values);
-    const dart = productSummary(iso, subtractHourlyValues(targetDa.values, targetRt.values));
+    const da = productSummary(iso, targetDa.values, summaryOptions);
+    const dart = productSummary(
+      iso,
+      subtractHourlyValues(targetDa.values, targetRt.values),
+      summaryOptions,
+    );
     const gasHub = defaultPowerLmpGasHubForIso(iso, hub);
     const inputs = buildPowerSettlesInputSummary({
       iso,
       targetDate,
+      isNercOffPeakDay: summaryOptions.isNercOffPeakDay,
       gasHub,
       sparkHeatRate,
       gasHours: gasHoursByHub.get(gasHub) ?? [],
@@ -2164,10 +2211,18 @@ async function buildPowerSettlesDashboardIsoRows({
       requestedRtSource: rtSource,
       effectiveRtSource,
     });
-    const statusDetail =
-      rtSourceStatus === "fallback"
-        ? `${detail} Preferred RT was unavailable or less complete for this hub, so the preliminary/unverified RT source is shown.`
-        : detail;
+    const statusNotes = [detail];
+    if (rtSourceStatus === "fallback") {
+      statusNotes.push(
+        "Preferred RT was unavailable or less complete for this hub, so the preliminary/unverified RT source is shown.",
+      );
+    }
+    if (summaryOptions.isNercOffPeakDay && nercDay.holidayName) {
+      statusNotes.push(
+        `${nercDay.holidayName} is treated as a NERC off-peak day for PJM summaries.`,
+      );
+    }
+    const statusDetail = statusNotes.join(" ");
 
     return {
       iso,
@@ -2265,6 +2320,11 @@ export async function buildPowerSettlesDashboardPayload({
       missingHubCount: rows.filter((row) => row.status === "missing").length,
       unverifiedFallbackHubCount: rows.filter((row) => row.rtSourceStatus === "fallback").length,
       latestAsOf,
+    },
+    calendarMetadata: {
+      calendarId: NERC_OFF_PEAK_CALENDAR.calendarId,
+      label: NERC_OFF_PEAK_CALENDAR.label,
+      source: NERC_OFF_PEAK_CALENDAR.source ?? null,
     },
   };
 
@@ -2387,7 +2447,7 @@ export async function buildPowerLmpSettlesPayload({
   }
 
   const rows = dateRange(startDate, endDate).map((date) => {
-    const jsDate = new Date(`${date}T00:00:00Z`);
+    const nercDay = nercPowerDayMetadata(date);
     const da = daByDate.get(date);
     const rt = rtByDate.get(date);
     const gasHourly =
@@ -2396,9 +2456,9 @@ export async function buildPowerLmpSettlesPayload({
     return {
       date,
       hub: selectedHub,
-      isWeekend: jsDate.getUTCDay() === 0 || jsDate.getUTCDay() === 6,
-      isNercHoliday: false,
-      holidayName: null,
+      isWeekend: nercDay.isWeekend,
+      isNercHoliday: nercDay.isNercHoliday,
+      holidayName: nercDay.holidayName,
       daHourly: da?.values ?? emptyHours(),
       rtHourly: rt?.values ?? emptyHours(),
       daAsOf: da?.asOf ?? null,
@@ -2417,6 +2477,11 @@ export async function buildPowerLmpSettlesPayload({
     ...(resolvedGasHub ? { defaultGasHub: resolvedGasHub } : {}),
     component: selectedComponent,
     rtSource,
+    calendarMetadata: {
+      calendarId: NERC_OFF_PEAK_CALENDAR.calendarId,
+      label: NERC_OFF_PEAK_CALENDAR.label,
+      source: NERC_OFF_PEAK_CALENDAR.source ?? null,
+    },
     rowCount: rows.length,
     summary: {
       rowCount: rows.length,

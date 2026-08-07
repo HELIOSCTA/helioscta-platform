@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Bar,
   CartesianGrid,
@@ -14,6 +15,7 @@ import {
 } from "recharts";
 
 import ColumnFilterMenu, { type SortDirection } from "@/components/dashboard/ColumnFilterMenu";
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 import {
@@ -22,8 +24,10 @@ import {
   GAS_REGION_ORDER,
   getIceGasRegistryEntry,
   getIceGasVerificationLabel,
+  isAcceptedIceGasRegistryEntry,
   type DailyGasCellMarketStats,
   type DailyGasCurveColumn,
+  type DailyGasMarket,
   type DailyGasPriceRow,
   type DailyGasPricesPayload,
   type DailyGasTrendPoint,
@@ -41,6 +45,15 @@ const MATRIX_MARKET_COLUMN_WIDTH = 240;
 const MATRIX_PRICE_COLUMN_WIDTH = 92;
 const MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH = 108;
 const MATRIX_CASH_BALMO_METRIC_COLUMN_WIDTH = 132;
+const PIPELINE_INFO_COLUMN_WIDTH = MATRIX_INFO_COLUMN_WIDTH;
+const PIPELINE_MARKET_COLUMN_WIDTH = 240;
+const PIPELINE_REGION_COLUMN_WIDTH = 112;
+const PIPELINE_CASH_BALMO_COLUMN_WIDTH = MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH;
+const PIPELINE_MONTH_COLUMN_WIDTH = 98;
+const INFO_POPOVER_WIDTH = 940;
+const INFO_POPOVER_ESTIMATED_HEIGHT = 340;
+const INFO_POPOVER_VIEWPORT_PADDING = 12;
+const DEFAULT_PIPELINE_KEY = "transco";
 const GAS_PRICE_FIELD_OPTIONS: Array<{ key: GasPriceBasis; label: string }> = [
   { key: "vwap_close", label: DAILY_GAS_PRICE_BASIS_LABELS.vwap_close },
   { key: "settlement", label: DAILY_GAS_PRICE_BASIS_LABELS.settlement },
@@ -64,7 +77,7 @@ interface SortState {
 type ColumnFilters = Record<string, string[]>;
 type GasHistoryLookbackKey = (typeof GAS_HISTORY_LOOKBACK_OPTIONS)[number]["key"];
 type GasMatrixDisplayMode = "price" | "basisVsHenry" | "cashSpread";
-type GasPricingTab = "matrix" | "monthlySettles";
+type GasPricingTab = "matrix" | "pipelines" | "monthlySettles";
 type GasRegionFilterOption = { key: GasRegion | "all"; label: string };
 
 interface SelectedGasCell {
@@ -72,11 +85,24 @@ interface SelectedGasCell {
   column: DailyGasCurveColumn;
 }
 
+interface GasPipelineOption {
+  key: string;
+  label: string;
+  displayLabel: string;
+  sortOrder: number;
+  marketCount: number;
+}
+
+interface GasPipelinePricingRow {
+  row: DailyGasPriceRow;
+  market: DailyGasMarket;
+}
+
 interface GasInfoHoverCardState {
   row: DailyGasPriceRow;
-  fullyVerified: boolean;
   top: number;
   left: number;
+  pinned: boolean;
 }
 
 interface GasTrendHoverCardState {
@@ -146,6 +172,22 @@ interface GasDailyPricesProps {
   onFreshnessChange?: (freshness: GasDailyPricesFreshnessSummary) => void;
 }
 
+const GAS_PRICING_TABS: Array<{ value: GasPricingTab; label: string }> = [
+  { value: "matrix", label: "Gas Matrix" },
+  { value: "pipelines", label: "Pipelines" },
+  { value: "monthlySettles", label: "Monthly Settles" },
+];
+const PIPELINE_DISPLAY_LABELS: Record<string, string> = {
+  "Tennessee Gas Pipeline": "TGP",
+  "Florida Gas": "FGT",
+  "Columbia Gulf": "CGT",
+  "Columbia Gas": "TCO",
+  "Texas Eastern": "TETCO",
+  "Natural Gas Pipeline of America": "NGPL",
+  "Northern Natural": "NNG",
+  "Colorado Interstate Gas": "CIG",
+};
+
 function buildGasMatrixApiUrl(refresh: boolean, cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
   const params = new URLSearchParams();
   params.set("cashBasis", cashBasis);
@@ -156,7 +198,29 @@ function buildGasMatrixApiUrl(refresh: boolean, cashBasis: GasPriceBasis, balmoB
 }
 
 function buildCacheKey(cashBasis: GasPriceBasis, balmoBasis: GasPriceBasis): string {
-  return `api:gas-daily-prices:v14:latest-mixed-fields-24-months-cash-balmo-trends-stats:${cashBasis}:${balmoBasis}`;
+  return `api:gas-daily-prices:v15:latest-mixed-fields-24-months-cash-balmo-trends-stats-pipelines:${cashBasis}:${balmoBasis}`;
+}
+
+function normalizeGasPricingTab(value: string | null | undefined): GasPricingTab {
+  const normalized = (value ?? "").trim().toLowerCase().replaceAll("_", "-");
+  if (normalized === "pipelines" || normalized === "pipeline") return "pipelines";
+  if (normalized === "monthly-settles" || normalized === "monthlysettles") return "monthlySettles";
+  return "matrix";
+}
+
+function gasPricingTabParam(tab: GasPricingTab): string {
+  if (tab === "monthlySettles") return "monthly-settles";
+  return tab;
+}
+
+function normalizePipelineKey(value: string | null | undefined): string | null {
+  const normalized = (value ?? "").trim().toLowerCase();
+  if (!normalized) return null;
+  return normalized.replace(/[^a-z0-9_-]+/g, "_").replace(/[-_]+/g, "_").replace(/^_+|_+$/g, "");
+}
+
+function pipelineDisplayLabel(label: string): string {
+  return PIPELINE_DISPLAY_LABELS[label] ?? label;
 }
 
 function fmtPrice(value: number | null | undefined): string {
@@ -205,6 +269,29 @@ function fmtCompactPrice(value: number | null | undefined): string {
   return value.toFixed(3);
 }
 
+function csvCell(value: string | number | null | undefined): string {
+  const text = value === null || value === undefined ? "" : String(value);
+  if (/[",\r\n]/.test(text)) return `"${text.replaceAll('"', '""')}"`;
+  return text;
+}
+
+function csvFileSegment(value: string): string {
+  const segment = value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return segment || "latest";
+}
+
+function downloadCsv(filename: string, rows: string[][]): void {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 function matrixColumnWidth(column: DailyGasCurveColumn, showCashBalmoMetrics: boolean): number {
   if (column.kind === "cash" || column.kind === "balmo") {
     return showCashBalmoMetrics
@@ -212,6 +299,11 @@ function matrixColumnWidth(column: DailyGasCurveColumn, showCashBalmoMetrics: bo
       : MATRIX_CASH_BALMO_COMPACT_COLUMN_WIDTH;
   }
   return MATRIX_PRICE_COLUMN_WIDTH;
+}
+
+function pipelineColumnWidth(column: DailyGasCurveColumn): number {
+  if (column.kind === "cash" || column.kind === "balmo") return PIPELINE_CASH_BALMO_COLUMN_WIDTH;
+  return PIPELINE_MONTH_COLUMN_WIDTH;
 }
 
 function ControlCard({
@@ -262,6 +354,20 @@ function priceFieldLabel(
   return "Settlement";
 }
 
+function pipelineUnavailableLabel(row: DailyGasPriceRow, column: DailyGasCurveColumn): string | null {
+  if (column.kind === "balmo" && !row.balmoSymbol) return "No BalMo configured";
+  if (column.kind === "month" && !row.futuresProduct) return "No curve configured";
+  return null;
+}
+
+function filterPillClass(active: boolean): string {
+  return `rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+    active
+      ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+      : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+  }`;
+}
+
 function verificationClassName(entry: IceGasRegistryEntry | null): string {
   if (!entry) return "border-gray-700 bg-gray-900/50 text-gray-400";
   if (entry.metadata_status === "ice_product_url_verified") {
@@ -283,11 +389,7 @@ function registryScreenText(entry: IceGasRegistryEntry | null): string {
   return [entry.ice_trading_screen_product_name, entry.ice_trading_screen_hub_name].filter(Boolean).join(" | ") || "-";
 }
 
-function isVerifiedIceEntry(entry: IceGasRegistryEntry | null): boolean {
-  return entry?.metadata_status === "ice_product_url_verified";
-}
-
-function hasFullyVerifiedConfiguredSymbols(row: DailyGasPriceRow): boolean {
+function hasAcceptedConfiguredSymbols(row: DailyGasPriceRow): boolean {
   const configuredEntries = [
     getIceGasRegistryEntry(row.cashSymbol),
     row.balmoSymbol ? getIceGasRegistryEntry(row.balmoSymbol) : null,
@@ -295,19 +397,29 @@ function hasFullyVerifiedConfiguredSymbols(row: DailyGasPriceRow): boolean {
     row.curveStyle === "basis" ? getIceGasRegistryEntry("HNG") : null,
   ].filter((entry): entry is IceGasRegistryEntry => Boolean(entry));
 
-  return configuredEntries.length > 0 && configuredEntries.every(isVerifiedIceEntry);
+  return configuredEntries.length > 0 && configuredEntries.every(isAcceptedIceGasRegistryEntry);
 }
 
-function gasInfoHoverRows(row: DailyGasPriceRow, fullyVerified: boolean) {
-  return [
-    { label: "Market", value: row.market },
-    { label: "Region", value: GAS_REGION_LABELS[row.region] },
-    { label: "Cash Symbol", value: row.cashSymbol },
-    { label: "BalMo Symbol", value: row.balmoSymbol ?? "-" },
-    { label: "Futures", value: row.futuresProduct ?? "-" },
-    { label: "Curve", value: row.curveStyle },
-    { label: "ICE Status", value: fullyVerified ? "Verified symbols" : "Needs symbol review" },
-  ];
+function gasInfoRowKey(row: DailyGasPriceRow): string {
+  return [row.market, row.cashSymbol, row.balmoSymbol ?? "", row.futuresProduct ?? ""].join("|");
+}
+
+function gasInfoPopoverPosition(element: HTMLElement): { top: number; left: number } {
+  const rect = element.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  const width = Math.min(INFO_POPOVER_WIDTH, viewportWidth - INFO_POPOVER_VIEWPORT_PADDING * 2);
+  const rightSideLeft = rect.right + INFO_POPOVER_VIEWPORT_PADDING;
+  const leftSideLeft = rect.left - width - INFO_POPOVER_VIEWPORT_PADDING;
+  const left =
+    rightSideLeft + width <= viewportWidth - INFO_POPOVER_VIEWPORT_PADDING
+      ? rightSideLeft
+      : Math.max(INFO_POPOVER_VIEWPORT_PADDING, leftSideLeft);
+  const top = Math.min(
+    Math.max(INFO_POPOVER_VIEWPORT_PADDING, rect.top - 8),
+    Math.max(INFO_POPOVER_VIEWPORT_PADDING, viewportHeight - INFO_POPOVER_ESTIMATED_HEIGHT),
+  );
+  return { top, left };
 }
 
 function numericTrendPoints(points: DailyGasTrendPoint[]): Array<{ tradeDate: string | null; value: number }> {
@@ -865,7 +977,13 @@ export default function GasDailyPrices({
   refreshToken = 0,
   onFreshnessChange,
 }: GasDailyPricesProps) {
-  const [activeTab, setActiveTab] = useState<GasPricingTab>("matrix");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<GasPricingTab>(() => normalizeGasPricingTab(searchParams.get("tab")));
+  const [selectedPipelineKey, setSelectedPipelineKey] = useState(
+    () => normalizePipelineKey(searchParams.get("pipeline")) ?? DEFAULT_PIPELINE_KEY,
+  );
   const [displayMode, setDisplayMode] = useState<GasMatrixDisplayMode>("price");
   const [showGradient, setShowGradient] = useState(false);
   const [showCashBalmoMetrics, setShowCashBalmoMetrics] = useState(false);
@@ -876,7 +994,6 @@ export default function GasDailyPrices({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedCell, setSelectedCell] = useState<SelectedGasCell | null>(null);
-  const [selectedInfoRow, setSelectedInfoRow] = useState<DailyGasPriceRow | null>(null);
   const [detailPayload, setDetailPayload] = useState<GasContractHistoryPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -884,6 +1001,71 @@ export default function GasDailyPrices({
   const [sortState, setSortState] = useState<SortState | null>(null);
   const [infoHoverCard, setInfoHoverCard] = useState<GasInfoHoverCardState | null>(null);
   const [trendHoverCard, setTrendHoverCard] = useState<GasTrendHoverCardState | null>(null);
+  const infoPopoverRef = useRef<HTMLDivElement | null>(null);
+  const infoPopoverTriggerRef = useRef<HTMLElement | null>(null);
+  const infoPopoverCloseTimerRef = useRef<number | null>(null);
+
+  const cancelInfoPopoverClose = useCallback(() => {
+    if (infoPopoverCloseTimerRef.current !== null) {
+      window.clearTimeout(infoPopoverCloseTimerRef.current);
+      infoPopoverCloseTimerRef.current = null;
+    }
+  }, []);
+
+  const closeInfoPopover = useCallback(() => {
+    cancelInfoPopoverClose();
+    setInfoHoverCard(null);
+    infoPopoverTriggerRef.current = null;
+  }, [cancelInfoPopoverClose]);
+
+  const scheduleInfoPopoverClose = useCallback(() => {
+    cancelInfoPopoverClose();
+    infoPopoverCloseTimerRef.current = window.setTimeout(() => {
+      infoPopoverCloseTimerRef.current = null;
+      setInfoHoverCard((current) => {
+        if (current?.pinned) return current;
+        infoPopoverTriggerRef.current = null;
+        return null;
+      });
+    }, 140);
+  }, [cancelInfoPopoverClose]);
+
+  const updateGasPricingRoute = useCallback(
+    (nextTab: GasPricingTab, nextPipelineKey: string = selectedPipelineKey) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("section", "gas-prices");
+      if (nextTab === "matrix") {
+        params.delete("tab");
+      } else {
+        params.set("tab", gasPricingTabParam(nextTab));
+      }
+      if (nextTab === "pipelines") {
+        params.set("pipeline", nextPipelineKey);
+      } else {
+        params.delete("pipeline");
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams, selectedPipelineKey],
+  );
+
+  useEffect(() => {
+    const routedTab = normalizeGasPricingTab(searchParams.get("tab"));
+    setActiveTab((current) => (current === routedTab ? current : routedTab));
+    const routedPipelineKey = normalizePipelineKey(searchParams.get("pipeline"));
+    if (routedPipelineKey) {
+      setSelectedPipelineKey((current) => (current === routedPipelineKey ? current : routedPipelineKey));
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setSelectedCell(null);
+    closeInfoPopover();
+    setTrendHoverCard(null);
+  }, [activeTab, closeInfoPopover]);
+
+  useEffect(() => cancelInfoPopoverClose, [cancelInfoPopoverClose]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -948,22 +1130,63 @@ export default function GasDailyPrices({
   }, [data?.tradeDate, selectedCell]);
 
   useEffect(() => {
-    if (!selectedCell && !selectedInfoRow) return;
+    if (!selectedCell && !infoHoverCard) return;
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setSelectedCell(null);
-        setSelectedInfoRow(null);
+        closeInfoPopover();
       }
     }
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedCell, selectedInfoRow]);
+  }, [closeInfoPopover, infoHoverCard, selectedCell]);
+
+  useEffect(() => {
+    if (!infoHoverCard) return;
+
+    function handlePointerDown(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (infoPopoverRef.current?.contains(target)) return;
+      if (infoPopoverTriggerRef.current?.contains(target)) return;
+      closeInfoPopover();
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [closeInfoPopover, infoHoverCard]);
 
   const columns = useMemo(() => data?.columns ?? [], [data]);
   const rows = useMemo(() => data?.rows ?? [], [data]);
   const henryRow = useMemo(() => rows.find((row) => row.market === "Henry Hub") ?? null, [rows]);
+  const marketsByName = useMemo(() => {
+    return new Map((data?.markets ?? []).map((market) => [market.market, market]));
+  }, [data?.markets]);
+  const pipelineOptions = useMemo<GasPipelineOption[]>(() => {
+    const byPipeline = new Map<string, GasPipelineOption>();
+    for (const market of data?.markets ?? []) {
+      if (!market.pipelineKey || !market.pipelineLabel || market.pipelineSortOrder === null) continue;
+      const existing = byPipeline.get(market.pipelineKey);
+      if (existing) {
+        existing.marketCount += 1;
+        continue;
+      }
+      byPipeline.set(market.pipelineKey, {
+        key: market.pipelineKey,
+        label: market.pipelineLabel,
+        displayLabel: pipelineDisplayLabel(market.pipelineLabel),
+        sortOrder: market.pipelineSortOrder,
+        marketCount: 1,
+      });
+    }
+    return [...byPipeline.values()].sort((left, right) => {
+      const sortComparison = left.sortOrder - right.sortOrder;
+      if (sortComparison !== 0) return sortComparison;
+      return left.label.localeCompare(right.label);
+    });
+  }, [data?.markets]);
   const quickRegionOptions = useMemo<GasRegionFilterOption[]>(() => {
     const configuredRegions = new Set(rows.map((row) => row.region));
     return [
@@ -1027,13 +1250,18 @@ export default function GasDailyPrices({
   );
 
   useEffect(() => {
-    if (sortState && sortState.key !== "market" && !columns.some((column) => column.key === sortState.key)) {
+    if (
+      sortState &&
+      sortState.key !== "market" &&
+      sortState.key !== "region" &&
+      !columns.some((column) => column.key === sortState.key)
+    ) {
       setSortState(null);
     }
   }, [sortState, columns]);
 
   useEffect(() => {
-    const visibleFilterKeys = new Set(["market", ...columns.map((column) => column.key)]);
+    const visibleFilterKeys = new Set(["market", "region", ...columns.map((column) => column.key)]);
     setColumnFilters((filters) =>
       Object.fromEntries(Object.entries(filters).filter(([key]) => visibleFilterKeys.has(key))),
     );
@@ -1041,7 +1269,7 @@ export default function GasDailyPrices({
 
   useEffect(() => {
     setColumnFilters((filters) =>
-      Object.fromEntries(Object.entries(filters).filter(([key]) => key === "market")),
+      Object.fromEntries(Object.entries(filters).filter(([key]) => key === "market" || key === "region")),
     );
   }, [displayMode]);
 
@@ -1049,6 +1277,14 @@ export default function GasDailyPrices({
     const validRegions = new Set(quickRegionOptions.map((option) => option.key));
     setQuickRegionFilters((filters) => filters.filter((key) => validRegions.has(key)));
   }, [quickRegionOptions]);
+
+  useEffect(() => {
+    if (pipelineOptions.length === 0) return;
+    if (pipelineOptions.some((option) => option.key === selectedPipelineKey)) return;
+    const fallbackKey = pipelineOptions[0].key;
+    setSelectedPipelineKey(fallbackKey);
+    if (activeTab === "pipelines") updateGasPricingRoute("pipelines", fallbackKey);
+  }, [activeTab, pipelineOptions, selectedPipelineKey, updateGasPricingRoute]);
 
   const quickFilteredRows = useMemo(() => {
     const selectedRegions = new Set(quickRegionFilters);
@@ -1059,10 +1295,16 @@ export default function GasDailyPrices({
   }, [quickRegionFilters, rows]);
 
   const quickFiltersActive = quickRegionFilters.length > 0;
+  const activeColumnFilters = useMemo(
+    () => Object.entries(columnFilters).filter(([, values]) => values.length > 0),
+    [columnFilters],
+  );
+  const columnFiltersActive = activeColumnFilters.length > 0;
 
   const filterOptions = useMemo(() => {
     const entries: Array<[string, string[]]> = [
       ["market", [...new Set(quickFilteredRows.map((row) => row.market))].sort(sortFilterOption)],
+      ["region", [...new Set(quickFilteredRows.map((row) => GAS_REGION_LABELS[row.region]))].sort(sortFilterOption)],
       ...columns.map((column): [string, string[]] => [
         column.key,
         [...new Set(quickFilteredRows.map((row) => formatMatrixValue(displayValueForKey(row, column.key))).filter((value) => value !== "-"))].sort(
@@ -1074,12 +1316,11 @@ export default function GasDailyPrices({
   }, [columns, displayValueForKey, formatMatrixValue, quickFilteredRows]);
 
   const visibleRows = useMemo(() => {
-    const activeFilters = Object.entries(columnFilters).filter(([, values]) => values.length > 0);
     const filteredRows =
-      activeFilters.length === 0
+      activeColumnFilters.length === 0
         ? quickFilteredRows
         : quickFilteredRows.filter((row) =>
-            activeFilters.every(([key, values]) =>
+            activeColumnFilters.every(([key, values]) =>
               values.includes(filterValueForColumn(row, key, displayValueForKey, formatMatrixValue)),
             ),
           );
@@ -1095,7 +1336,97 @@ export default function GasDailyPrices({
       if (columnComparison !== 0) return columnComparison;
       return left.market.localeCompare(right.market);
     });
-  }, [columnFilters, displayValueForKey, formatMatrixValue, quickFilteredRows, sortState]);
+  }, [activeColumnFilters, displayValueForKey, formatMatrixValue, quickFilteredRows, sortState]);
+  const selectedPipeline = useMemo(
+    () => pipelineOptions.find((option) => option.key === selectedPipelineKey) ?? pipelineOptions[0] ?? null,
+    [pipelineOptions, selectedPipelineKey],
+  );
+  const selectedPipelineLabel = selectedPipeline?.label ?? "Pipeline";
+  const selectedPipelineDisplayLabel = pipelineDisplayLabel(selectedPipelineLabel);
+  const defaultPipelineOptionKey =
+    pipelineOptions.find((option) => option.key === DEFAULT_PIPELINE_KEY)?.key ??
+    pipelineOptions[0]?.key ??
+    DEFAULT_PIPELINE_KEY;
+  const pipelineBaseRows = useMemo<GasPipelinePricingRow[]>(() => {
+    return rows
+      .map((row) => {
+        const market = marketsByName.get(row.market);
+        return market ? { row, market } : null;
+      })
+      .filter((item): item is GasPipelinePricingRow => item?.market.pipelineKey === selectedPipelineKey)
+      .sort((left, right) => {
+        const leftSort = left.market.pipelineMarketSortOrder ?? Number.MAX_SAFE_INTEGER;
+        const rightSort = right.market.pipelineMarketSortOrder ?? Number.MAX_SAFE_INTEGER;
+        if (leftSort !== rightSort) return leftSort - rightSort;
+        return left.row.market.localeCompare(right.row.market);
+      });
+  }, [marketsByName, rows, selectedPipelineKey]);
+  const pipelineFilterBaseRows = pipelineBaseRows;
+  const pipelineFilterOptions = useMemo(() => {
+    const entries: Array<[string, string[]]> = [
+      ["market", [...new Set(pipelineFilterBaseRows.map(({ row }) => row.market))].sort(sortFilterOption)],
+      [
+        "region",
+        [...new Set(pipelineFilterBaseRows.map(({ row }) => GAS_REGION_LABELS[row.region]))].sort(
+          sortFilterOption,
+        ),
+      ],
+      ...columns.map((column): [string, string[]] => [
+        column.key,
+        [
+          ...new Set(
+            pipelineFilterBaseRows
+              .map(({ row }) => filterValueForColumn(row, column.key))
+              .filter((value) => value !== "-"),
+          ),
+        ].sort(sortFilterOption),
+      ]),
+    ];
+    return Object.fromEntries(entries);
+  }, [columns, pipelineFilterBaseRows]);
+  const pipelineRows = useMemo<GasPipelinePricingRow[]>(() => {
+    const filteredRows =
+      activeColumnFilters.length === 0
+        ? pipelineFilterBaseRows
+        : pipelineFilterBaseRows.filter(({ row }) =>
+            activeColumnFilters.every(([key, values]) =>
+              values.includes(filterValueForColumn(row, key)),
+            ),
+          );
+
+    if (!sortState) return filteredRows;
+    return [...filteredRows].sort((left, right) => {
+      const columnComparison = compareRowsByColumn(left.row, right.row, sortState.key, sortState.direction);
+      if (columnComparison !== 0) return columnComparison;
+      const leftSort = left.market.pipelineMarketSortOrder ?? Number.MAX_SAFE_INTEGER;
+      const rightSort = right.market.pipelineMarketSortOrder ?? Number.MAX_SAFE_INTEGER;
+      if (leftSort !== rightSort) return leftSort - rightSort;
+      return left.row.market.localeCompare(right.row.market);
+    });
+  }, [activeColumnFilters, pipelineFilterBaseRows, sortState]);
+  const pipelineFiltersActive =
+    selectedPipelineKey !== defaultPipelineOptionKey || columnFiltersActive;
+  const pipelineTableWidth =
+    PIPELINE_INFO_COLUMN_WIDTH +
+    PIPELINE_MARKET_COLUMN_WIDTH +
+    PIPELINE_REGION_COLUMN_WIDTH +
+    columns.reduce((sum, column) => sum + pipelineColumnWidth(column), 0);
+  const pipelineStickyLeftForColumn = (column: DailyGasCurveColumn): number | undefined => {
+    if (column.kind === "cash") {
+      return PIPELINE_INFO_COLUMN_WIDTH + PIPELINE_MARKET_COLUMN_WIDTH + PIPELINE_REGION_COLUMN_WIDTH;
+    }
+    if (column.kind === "balmo") {
+      return (
+        PIPELINE_INFO_COLUMN_WIDTH +
+        PIPELINE_MARKET_COLUMN_WIDTH +
+        PIPELINE_REGION_COLUMN_WIDTH +
+        PIPELINE_CASH_BALMO_COLUMN_WIDTH
+      );
+    }
+    return undefined;
+  };
+  const pipelineConfiguredBalmoCount = pipelineRows.filter(({ row }) => Boolean(row.balmoSymbol)).length;
+  const pipelineConfiguredCurveCount = pipelineRows.filter(({ row }) => Boolean(row.futuresProduct)).length;
   const rowGradientDomains = useMemo(() => {
     return new Map(
       visibleRows.map((row) => {
@@ -1114,39 +1445,40 @@ export default function GasDailyPrices({
   }, [columns, displayValueForKey, visibleRows]);
   const selectedValue = selectedCell ? selectedCell.row.values[selectedCell.column.key] ?? null : null;
   const selectedUpdatedAt = selectedCell ? selectedCell.row.updatedAt[selectedCell.column.key] ?? null : null;
-  const selectedInfoRows = useMemo<GasSymbolInfoRow[]>(() => {
-    if (!selectedInfoRow) return [];
+  const infoPopoverRow = infoHoverCard?.row ?? null;
+  const infoPopoverRows = useMemo<GasSymbolInfoRow[]>(() => {
+    if (!infoPopoverRow) return [];
 
-    const cashEntry = getIceGasRegistryEntry(selectedInfoRow.cashSymbol);
-    const balmoEntry = getIceGasRegistryEntry(selectedInfoRow.balmoSymbol);
-    const curveEntry = getIceGasRegistryEntry(selectedInfoRow.futuresProduct);
-    const henryEntry = selectedInfoRow.curveStyle === "basis" ? getIceGasRegistryEntry("HNG") : null;
+    const cashEntry = getIceGasRegistryEntry(infoPopoverRow.cashSymbol);
+    const balmoEntry = getIceGasRegistryEntry(infoPopoverRow.balmoSymbol);
+    const curveEntry = getIceGasRegistryEntry(infoPopoverRow.futuresProduct);
+    const henryEntry = infoPopoverRow.curveStyle === "basis" ? getIceGasRegistryEntry("HNG") : null;
     const rowsForInfo: GasSymbolInfoRow[] = [
       {
         bucket: "Cash",
-        symbol: selectedInfoRow.cashSymbol,
+        symbol: infoPopoverRow.cashSymbol,
         entry: cashEntry,
         formula: `Cash ${cashBasisLabel}`,
-        sourceSymbols: selectedInfoRow.sourceSymbols.cash ?? [selectedInfoRow.cashSymbol],
+        sourceSymbols: infoPopoverRow.sourceSymbols.cash ?? [infoPopoverRow.cashSymbol],
       },
       {
         bucket: "BalMo",
-        symbol: selectedInfoRow.balmoSymbol,
+        symbol: infoPopoverRow.balmoSymbol,
         entry: balmoEntry,
-        formula: selectedInfoRow.balmoSymbol ? `BalMo ${balmoBasisLabel}` : "No BalMo configured",
-        sourceSymbols: selectedInfoRow.sourceSymbols.balmo ?? (selectedInfoRow.balmoSymbol ? [selectedInfoRow.balmoSymbol] : []),
+        formula: infoPopoverRow.balmoSymbol ? `BalMo ${balmoBasisLabel}` : "No BalMo configured",
+        sourceSymbols: infoPopoverRow.sourceSymbols.balmo ?? (infoPopoverRow.balmoSymbol ? [infoPopoverRow.balmoSymbol] : []),
       },
       {
-        bucket: selectedInfoRow.curveStyle === "basis" ? "Curve Basis" : "Curve",
-        symbol: selectedInfoRow.futuresProduct,
+        bucket: infoPopoverRow.curveStyle === "basis" ? "Curve Basis" : "Curve",
+        symbol: infoPopoverRow.futuresProduct,
         entry: curveEntry,
         formula:
-          selectedInfoRow.curveStyle === "basis"
-            ? `Henry fixed price + ${selectedInfoRow.futuresProduct ?? "basis"} settlement`
-            : selectedInfoRow.futuresProduct
+          infoPopoverRow.curveStyle === "basis"
+            ? `Henry fixed price + ${infoPopoverRow.futuresProduct ?? "basis"} settlement`
+            : infoPopoverRow.futuresProduct
               ? "Contract settlement"
               : "No curve configured",
-        sourceSymbols: selectedInfoRow.futuresProduct ? [selectedInfoRow.futuresProduct] : [],
+        sourceSymbols: infoPopoverRow.futuresProduct ? [infoPopoverRow.futuresProduct] : [],
       },
     ];
 
@@ -1161,7 +1493,7 @@ export default function GasDailyPrices({
     }
 
     return rowsForInfo;
-  }, [balmoBasisLabel, cashBasisLabel, selectedInfoRow]);
+  }, [balmoBasisLabel, cashBasisLabel, infoPopoverRow]);
 
   const freshnessTradeDate = data?.tradeDate ?? null;
   const freshnessDataAsOf = data?.metadata.dataAsOf ?? null;
@@ -1213,17 +1545,33 @@ export default function GasDailyPrices({
     }
     return undefined;
   };
-  const showInfoHoverCard = (
-    row: DailyGasPriceRow,
-    fullyVerified: boolean,
-    element: HTMLElement,
-  ) => {
-    const rect = element.getBoundingClientRect();
+  const showInfoHoverCard = (row: DailyGasPriceRow, element: HTMLElement) => {
+    const position = gasInfoPopoverPosition(element);
+    const currentInfoHoverCard = infoHoverCard;
+    const rowAlreadyPinned =
+      currentInfoHoverCard?.pinned === true && gasInfoRowKey(currentInfoHoverCard.row) === gasInfoRowKey(row);
+    cancelInfoPopoverClose();
+    infoPopoverTriggerRef.current = element;
     setInfoHoverCard({
       row,
-      fullyVerified,
-      top: Math.max(12, rect.top - 10),
-      left: Math.max(12, Math.min(window.innerWidth - 340, rect.right + 12)),
+      ...position,
+      pinned: rowAlreadyPinned,
+    });
+  };
+  const toggleInfoHoverCard = (row: DailyGasPriceRow, element: HTMLElement) => {
+    const rowKey = gasInfoRowKey(row);
+    if (infoHoverCard?.pinned && gasInfoRowKey(infoHoverCard.row) === rowKey) {
+      closeInfoPopover();
+      return;
+    }
+
+    const position = gasInfoPopoverPosition(element);
+    cancelInfoPopoverClose();
+    infoPopoverTriggerRef.current = element;
+    setInfoHoverCard({
+      row,
+      ...position,
+      pinned: true,
     });
   };
   const showTrendHoverCard = (
@@ -1252,6 +1600,49 @@ export default function GasDailyPrices({
   const clearQuickFilters = () => {
     setQuickRegionFilters([]);
   };
+  const clearActiveFilters = () => {
+    setQuickRegionFilters([]);
+    setColumnFilters({});
+    setSelectedCell(null);
+    setTrendHoverCard(null);
+  };
+  const resetPipelineView = () => {
+    setSelectedPipelineKey(defaultPipelineOptionKey);
+    setQuickRegionFilters([]);
+    setColumnFilters({});
+    setSortState(null);
+    setCashBasis(DEFAULT_CASH_BALMO_BASIS);
+    setBalmoBasis(DEFAULT_CASH_BALMO_BASIS);
+    setSelectedCell(null);
+    closeInfoPopover();
+    setTrendHoverCard(null);
+    updateGasPricingRoute("pipelines", defaultPipelineOptionKey);
+  };
+  const selectPipeline = (pipelineKey: string) => {
+    setSelectedPipelineKey(pipelineKey);
+    setSelectedCell(null);
+    closeInfoPopover();
+    setTrendHoverCard(null);
+    updateGasPricingRoute("pipelines", pipelineKey);
+  };
+  const downloadPipelineCsv = () => {
+    const header = ["Pipeline", "Market", "Region", ...columns.map((column) => column.label)];
+    const csvRows = pipelineRows.map(({ row }) => [
+      selectedPipelineLabel,
+      row.market,
+      GAS_REGION_LABELS[row.region],
+      ...columns.map((column) => {
+        const unavailable = pipelineUnavailableLabel(row, column);
+        if (unavailable) return unavailable;
+        const value = row.values[column.key] ?? null;
+        return value === null ? "" : value.toFixed(3);
+      }),
+    ]);
+    downloadCsv(
+      `ice-gas-pipeline-${csvFileSegment(selectedPipelineLabel)}-${csvFileSegment(data?.tradeDate ?? "latest")}.csv`,
+      [header, ...csvRows],
+    );
+  };
   const toggleQuickRegionFilter = (region: GasRegion | "all") => {
     if (region === "all") {
       setQuickRegionFilters([]);
@@ -1266,8 +1657,9 @@ export default function GasDailyPrices({
   const switchTab = (tab: GasPricingTab) => {
     setActiveTab(tab);
     setSelectedCell(null);
-    setSelectedInfoRow(null);
+    closeInfoPopover();
     setTrendHoverCard(null);
+    updateGasPricingRoute(tab, selectedPipeline?.key ?? selectedPipelineKey);
   };
   return (
     <div className="w-full max-w-none space-y-3">
@@ -1277,25 +1669,13 @@ export default function GasDailyPrices({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-2">
-        {[
-          { key: "matrix" as const, label: "Gas Pricing Matrix" },
-          { key: "monthlySettles" as const, label: "Monthly Settles" },
-        ].map((tab) => (
-          <button
-            key={tab.key}
-            type="button"
-            onClick={() => switchTab(tab.key)}
-            aria-pressed={activeTab === tab.key}
-            className={`rounded-md border px-3 py-2 text-sm font-semibold transition-colors ${
-              activeTab === tab.key
-                ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
-                : "border-gray-800 bg-gray-950/35 text-gray-500 hover:border-gray-700 hover:text-gray-300"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="border-b border-gray-800 pb-2">
+        <DashboardTabs
+          tabs={GAS_PRICING_TABS}
+          activeValue={activeTab}
+          onChange={switchTab}
+          ariaLabel="ICE gas cash and term tabs"
+        />
       </div>
 
       {activeTab === "matrix" && (
@@ -1339,10 +1719,10 @@ export default function GasDailyPrices({
             })}
           </div>
 
-          {quickFiltersActive && (
+          {(quickFiltersActive || columnFiltersActive) && (
             <button
               type="button"
-              onClick={clearQuickFilters}
+              onClick={clearActiveFilters}
               className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-500 transition-all duration-150 hover:border-gray-600 hover:text-gray-300"
             >
               Clear Filters
@@ -1351,7 +1731,7 @@ export default function GasDailyPrices({
         </div>
       </ControlCard>
 
-      <DataTableShell
+          <DataTableShell
         title="Gas Pricing Matrix"
         subtitle={`${data?.tradeDate ? `Latest ${data.tradeDate}` : "Latest"} | ${matrixValueLabel}`}
         className="w-full max-w-none"
@@ -1571,25 +1951,24 @@ export default function GasDailyPrices({
               )}
               {!loading &&
                 visibleRows.map((row) => {
-                  const fullyVerified = hasFullyVerifiedConfiguredSymbols(row);
+                  const symbolsAccepted = hasAcceptedConfiguredSymbols(row);
                   return (
                   <tr key={row.market} className="border-t border-gray-800 hover:bg-gray-900/60">
                     <th className="sticky left-0 z-10 whitespace-nowrap bg-[#0d1119] px-1.5 py-1.5 text-center shadow-[2px_0_0_rgba(31,41,55,0.9)]">
                       <button
                         type="button"
-                        onClick={() => {
-                          setInfoHoverCard(null);
-                          setSelectedInfoRow(row);
-                        }}
-                        onMouseEnter={(event) => showInfoHoverCard(row, fullyVerified, event.currentTarget)}
-                        onMouseLeave={() => setInfoHoverCard(null)}
-                        onFocus={(event) => showInfoHoverCard(row, fullyVerified, event.currentTarget)}
-                        onBlur={() => setInfoHoverCard(null)}
+                        onClick={(event) => toggleInfoHoverCard(row, event.currentTarget)}
+                        onMouseEnter={(event) => showInfoHoverCard(row, event.currentTarget)}
+                        onMouseLeave={scheduleInfoPopoverClose}
+                        onFocus={(event) => showInfoHoverCard(row, event.currentTarget)}
+                        onBlur={scheduleInfoPopoverClose}
                         className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-bold transition-colors ${
-                          fullyVerified
+                          symbolsAccepted
                             ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-100 hover:border-emerald-300 hover:bg-emerald-500/25"
                             : "border-red-500/50 bg-red-500/15 text-red-100 hover:border-red-300 hover:bg-red-500/25"
                         }`}
+                        aria-expanded={infoHoverCard ? gasInfoRowKey(infoHoverCard.row) === gasInfoRowKey(row) : false}
+                        aria-haspopup="dialog"
                         aria-label={`Show symbols for ${row.market}`}
                       >
                         i
@@ -1689,6 +2068,8 @@ export default function GasDailyPrices({
             </tbody>
           </table>
       </DataTableShell>
+        </div>
+      )}
 
       {trendHoverCard && (
         <div
@@ -1714,110 +2095,93 @@ export default function GasDailyPrices({
 
       {infoHoverCard && (
         <div
-          className="pointer-events-none fixed z-[70] w-[340px] rounded-lg border border-sky-900/80 bg-[#101722] p-3 text-xs shadow-2xl shadow-black/60 ring-1 ring-white/[0.03]"
+          ref={infoPopoverRef}
+          className="fixed z-[70] w-[calc(100vw-24px)] max-w-[940px] overflow-hidden rounded-lg border border-sky-900/80 bg-[#101722] text-xs shadow-2xl shadow-black/60 ring-1 ring-white/[0.03]"
           style={{ top: infoHoverCard.top, left: infoHoverCard.left }}
-          role="tooltip"
-        >
-          <div className="mb-2 truncate text-sm font-semibold text-gray-100">
-            {infoHoverCard.row.market}
-          </div>
-          <div className="space-y-1.5">
-            {gasInfoHoverRows(infoHoverCard.row, infoHoverCard.fullyVerified).map((item) => (
-              <div
-                key={item.label}
-                className="grid grid-cols-[92px_minmax(0,1fr)] gap-3 border-t border-gray-800/70 pt-1.5 first:border-t-0 first:pt-0"
-              >
-                <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                  {item.label}
-                </div>
-                <div className="min-w-0 truncate font-mono font-semibold text-gray-100" title={item.value}>
-                  {item.value}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {selectedInfoRow && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 backdrop-blur-sm sm:p-6"
           role="dialog"
-          aria-modal="true"
-          aria-label={`${selectedInfoRow.market} gas symbols`}
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) setSelectedInfoRow(null);
-          }}
+          aria-label={`${infoHoverCard.row.market} gas symbols`}
+          onMouseEnter={cancelInfoPopoverClose}
+          onMouseLeave={scheduleInfoPopoverClose}
+          onFocus={cancelInfoPopoverClose}
+          onBlur={scheduleInfoPopoverClose}
         >
-          <div className="flex max-h-[88vh] w-[min(96vw,1280px)] flex-col overflow-hidden rounded-lg border border-gray-700 bg-[#11141d] shadow-2xl shadow-black/70">
-            <div className="flex items-start justify-between gap-3 border-b border-gray-800 bg-[#151820] p-4">
-              <div className="min-w-0">
-                <div className="text-lg font-semibold text-gray-100">{selectedInfoRow.market} Symbols</div>
-                <div className="mt-1 text-xs text-gray-500">
-                  {GAS_REGION_LABELS[selectedInfoRow.region]} | Cash, BalMo, and forward curve source symbols
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedInfoRow(null)}
-                className="rounded-md border border-gray-700 bg-gray-950 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-colors hover:border-gray-500 hover:text-white"
-              >
-                Close
-              </button>
+          <div className="border-b border-gray-800 bg-[#151820] px-3 py-2.5">
+            <div className="truncate text-sm font-semibold text-gray-100">{infoHoverCard.row.market} Symbols</div>
+            <div className="mt-1 truncate text-[11px] text-gray-500">
+              {GAS_REGION_LABELS[infoHoverCard.row.region]} | Cash, BalMo, and forward curve source symbols
             </div>
-
-            <div className="overflow-auto bg-[#0d1118] p-4">
-              <table className="w-full table-auto border-collapse text-xs text-gray-200">
-                <thead className="bg-gray-950/80 text-[10px] uppercase tracking-wider text-gray-500">
-                  <tr>
-                    <th className="w-[110px] px-3 py-2 text-left font-semibold">Bucket</th>
-                    <th className="w-[130px] px-3 py-2 text-left font-semibold">Symbol</th>
-                    <th className="px-3 py-2 text-left font-semibold">Product</th>
-                    <th className="w-[170px] px-3 py-2 text-left font-semibold">ICE Status</th>
-                    <th className="w-[190px] px-3 py-2 text-left font-semibold">Source Symbols</th>
-                    <th className="w-[260px] px-3 py-2 text-left font-semibold">Formula</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-800">
-                  {selectedInfoRows.map((infoRow) => (
-                    <tr key={infoRow.bucket}>
-                      <td className="px-3 py-2 font-semibold text-gray-100">{infoRow.bucket}</td>
-                      <td className="whitespace-nowrap px-3 py-2 font-mono text-gray-300">{infoRow.symbol ?? "-"}</td>
-                      <td className="px-3 py-2 text-gray-300">
-                        <div className="font-semibold text-gray-100">{registryProductText(infoRow.entry)}</div>
-                        <div className="mt-0.5 text-[11px] text-gray-500">{registryScreenText(infoRow.entry)}</div>
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2">
-                        <div
-                          className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold ${verificationClassName(
-                            infoRow.entry,
-                          )}`}
+          </div>
+          <div className="bg-[#0d1118] p-2.5">
+            <table className="w-full table-fixed border-collapse text-[11px] text-gray-200">
+              <colgroup>
+                <col className="w-[86px]" />
+                <col className="w-[116px]" />
+                <col className="w-[230px]" />
+                <col className="w-[146px]" />
+                <col className="w-[152px]" />
+                <col className="w-[176px]" />
+              </colgroup>
+              <thead className="bg-gray-950/80 text-[10px] uppercase tracking-wider text-gray-500">
+                <tr>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">Bucket</th>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">Symbol</th>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">Product</th>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">ICE Status</th>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">Source Symbols</th>
+                  <th className="px-2.5 py-1.5 text-left font-semibold">Formula</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-800 align-top">
+                {infoPopoverRows.map((infoRow) => (
+                  <tr key={infoRow.bucket}>
+                    <td className="whitespace-nowrap px-2.5 py-1.5 font-semibold text-gray-100">{infoRow.bucket}</td>
+                    <td className="whitespace-nowrap px-2.5 py-1.5 font-mono">
+                      {infoRow.entry?.ice_product_url && infoRow.symbol ? (
+                        <a
+                          href={infoRow.entry.ice_product_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`Open ICE product for ${infoRow.symbol}`}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-sky-500/45 bg-sky-500/10 px-2 py-0.5 font-semibold text-sky-200 underline decoration-sky-300/70 underline-offset-2 transition-colors hover:border-sky-300 hover:bg-sky-500/20 hover:text-white focus:outline-none focus:ring-1 focus:ring-sky-300"
                         >
-                          {getIceGasVerificationLabel(infoRow.entry)}
-                        </div>
-                        {infoRow.entry?.ice_product_url && (
-                          <a
-                            href={infoRow.entry.ice_product_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="ml-2 text-[11px] font-semibold text-sky-300 hover:text-sky-100"
-                          >
+                          <span>{infoRow.symbol}</span>
+                          <span className="rounded border border-sky-400/30 bg-sky-300/10 px-1 text-[9px] font-bold uppercase tracking-wider text-sky-100">
                             ICE
-                          </a>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-gray-300">
-                        {infoRow.sourceSymbols.length ? infoRow.sourceSymbols.join(" + ") : "-"}
-                      </td>
-                      <td className="px-3 py-2 text-gray-400">{infoRow.formula}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="mt-3 rounded-md border border-gray-800 bg-gray-950/35 px-3 py-2 text-xs text-gray-500">
-                Verified products match ICE&apos;s public product guide. Legacy settlement symbols are kept because they are
-                present in the settlement source but absent from the current public ICE product-code CSV.
-              </div>
+                          </span>
+                        </a>
+                      ) : (
+                        <span className="text-gray-300">{infoRow.symbol ?? "-"}</span>
+                      )}
+                    </td>
+                    <td
+                      className="px-2.5 py-1.5 text-gray-300"
+                      title={`${registryProductText(infoRow.entry)} | ${registryScreenText(infoRow.entry)}`}
+                    >
+                      <div className="truncate font-semibold text-gray-100">{registryProductText(infoRow.entry)}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-gray-500">{registryScreenText(infoRow.entry)}</div>
+                    </td>
+                    <td className="whitespace-nowrap px-2.5 py-1.5">
+                      <div
+                        className={`inline-flex rounded-md border px-2 py-1 text-[11px] font-semibold ${verificationClassName(
+                          infoRow.entry,
+                        )}`}
+                      >
+                        {getIceGasVerificationLabel(infoRow.entry)}
+                      </div>
+                    </td>
+                    <td
+                      className="truncate px-2.5 py-1.5 font-mono text-gray-300"
+                      title={infoRow.sourceSymbols.length ? infoRow.sourceSymbols.join(" + ") : "-"}
+                    >
+                      {infoRow.sourceSymbols.length ? infoRow.sourceSymbols.join(" + ") : "-"}
+                    </td>
+                    <td className="px-2.5 py-1.5 leading-4 text-gray-400">{infoRow.formula}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div className="mt-2 rounded-md border border-gray-800 bg-gray-950/35 px-2.5 py-1.5 text-[11px] text-gray-500">
+              Verified ICE product links are from ICE&apos;s public product guide; legacy settlement symbols are retained for source compatibility.
             </div>
           </div>
         </div>
@@ -1899,6 +2263,367 @@ export default function GasDailyPrices({
           </div>
         </div>
       )}
+
+      {activeTab === "pipelines" && (
+        <div className="space-y-3">
+          <ControlCard title="Pipeline Filters">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+                  Filters
+                </span>
+                <span className="h-px min-w-[80px] flex-1 bg-gray-800" />
+                <span className="font-mono text-xs text-gray-500" title={selectedPipelineLabel}>
+                  {selectedPipelineDisplayLabel} | Latest {fmtDate(data?.tradeDate)} | As of{" "}
+                  {fmtDateTime(data?.metadata.dataAsOf)}
+                </span>
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                  Pipeline
+                </span>
+                {pipelineOptions.length === 0 ? (
+                  <span className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-600">
+                    No pipeline groups
+                  </span>
+                ) : (
+                  pipelineOptions.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      aria-label={`Select ${option.label} pipeline`}
+                      aria-pressed={selectedPipeline?.key === option.key}
+                      title={option.label}
+                      onClick={() => selectPipeline(option.key)}
+                      className={filterPillClass(selectedPipeline?.key === option.key)}
+                    >
+                      {option.displayLabel} ({option.marketCount})
+                    </button>
+                  ))
+                )}
+              </div>
+
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1.5 text-xs font-semibold text-gray-400">
+                  {pipelineRows.length.toLocaleString()} / {pipelineBaseRows.length.toLocaleString()} pipeline markets
+                </span>
+                <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1.5 text-xs font-semibold text-gray-400">
+                  BalMo {pipelineConfiguredBalmoCount}/{pipelineRows.length}
+                </span>
+                <span className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1.5 text-xs font-semibold text-gray-400">
+                  Futures {pipelineConfiguredCurveCount}/{pipelineRows.length}
+                </span>
+                {pipelineFiltersActive && (
+                  <button
+                    type="button"
+                    onClick={resetPipelineView}
+                    className="rounded-full border border-gray-700 bg-transparent px-3 py-1 text-xs font-semibold text-gray-500 transition-all duration-150 hover:border-gray-600 hover:text-gray-300"
+                  >
+                    Clear Filters
+                  </button>
+                )}
+              </div>
+            </div>
+          </ControlCard>
+
+          <DataTableShell
+            title={`${selectedPipelineDisplayLabel} Cash & Term`}
+            subtitle={`${data?.tradeDate ? `Latest ${data.tradeDate}` : "Latest"} | Cash ${cashBasisLabel} | BalMo ${balmoBasisLabel} | Futures settlement`}
+            className="w-full max-w-none"
+            bodyClassName="max-h-[82vh] w-full overflow-auto"
+            action={
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="rounded-md border border-gray-800 bg-gray-950/40 px-3 py-1.5 text-xs text-gray-400">
+                  {pipelineRows.length.toLocaleString()} rows
+                </div>
+                <button
+                  type="button"
+                  onClick={resetPipelineView}
+                  className="h-8 rounded-md border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={downloadPipelineCsv}
+                  disabled={pipelineRows.length === 0}
+                  className="h-8 rounded-md border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  CSV
+                </button>
+              </div>
+            }
+          >
+            <table
+              aria-label={`${selectedPipelineLabel} cash and term prices`}
+              className="table-fixed border-collapse bg-[#0d1119] text-xs text-gray-200"
+              style={{ width: pipelineTableWidth }}
+              title={`${selectedPipelineLabel} Cash & Term`}
+            >
+              <colgroup>
+                <col style={{ width: PIPELINE_INFO_COLUMN_WIDTH }} />
+                <col style={{ width: PIPELINE_MARKET_COLUMN_WIDTH }} />
+                <col style={{ width: PIPELINE_REGION_COLUMN_WIDTH }} />
+                {columns.map((column) => (
+                  <col key={column.key} style={{ width: pipelineColumnWidth(column) }} />
+                ))}
+              </colgroup>
+              <thead className="sticky top-0 z-30 bg-gray-950">
+                <tr>
+                  <th
+                    style={{ left: 0 }}
+                    className="sticky left-0 top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-center text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
+                  >
+                    Info
+                  </th>
+                  <th
+                    style={{ left: PIPELINE_INFO_COLUMN_WIDTH }}
+                    className="sticky top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSortState({
+                            key: "market",
+                            direction: sortState?.key === "market" && sortState.direction === "asc" ? "desc" : "asc",
+                          })
+                        }
+                        className={sortState?.key === "market" ? "text-sky-200" : ""}
+                        title="Sort Market"
+                      >
+                        Market {sortState?.key === "market" ? (sortState.direction === "asc" ? "A" : "D") : ""}
+                      </button>
+                      <ColumnFilterMenu
+                        label="Market"
+                        options={pipelineFilterOptions.market ?? EMPTY_FILTER_VALUES}
+                        selected={columnFilters.market ?? EMPTY_FILTER_VALUES}
+                        sortDirection={sortState?.key === "market" ? sortState.direction : null}
+                        onSort={(direction) => setSortState({ key: "market", direction })}
+                        onChange={(values) => setColumnFilters((filters) => ({ ...filters, market: values }))}
+                      />
+                    </div>
+                  </th>
+                  <th
+                    style={{ left: PIPELINE_INFO_COLUMN_WIDTH + PIPELINE_MARKET_COLUMN_WIDTH }}
+                    className="sticky top-0 z-50 whitespace-nowrap bg-gray-950 px-2 py-2 text-left text-[10px] font-bold uppercase tracking-wider text-gray-500 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSortState({
+                            key: "region",
+                            direction: sortState?.key === "region" && sortState.direction === "asc" ? "desc" : "asc",
+                          })
+                        }
+                        className={sortState?.key === "region" ? "text-sky-200" : ""}
+                        title="Sort Region"
+                      >
+                        Region {sortState?.key === "region" ? (sortState.direction === "asc" ? "A" : "D") : ""}
+                      </button>
+                      <ColumnFilterMenu
+                        label="Region"
+                        options={pipelineFilterOptions.region ?? EMPTY_FILTER_VALUES}
+                        selected={columnFilters.region ?? EMPTY_FILTER_VALUES}
+                        sortDirection={sortState?.key === "region" ? sortState.direction : null}
+                        onSort={(direction) => setSortState({ key: "region", direction })}
+                        onChange={(values) => setColumnFilters((filters) => ({ ...filters, region: values }))}
+                      />
+                    </div>
+                  </th>
+                  {columns.map((column) => {
+                    const stickyLeft = pipelineStickyLeftForColumn(column);
+                    const selectedColumnBasis =
+                      column.kind === "cash" ? cashBasis : column.kind === "balmo" ? balmoBasis : null;
+                    return (
+                      <th
+                        key={column.key}
+                        style={stickyLeft !== undefined ? { left: stickyLeft } : undefined}
+                        className={`border-l border-gray-800 px-1.5 py-2 text-center text-[10px] font-bold text-gray-100 ${
+                          column.kind === "month" ? "bg-gray-900" : "bg-gray-950"
+                        } ${
+                          stickyLeft !== undefined
+                            ? `sticky top-0 z-50 ${column.kind === "balmo" ? "shadow-[2px_0_0_rgba(31,41,55,0.9)]" : ""}`
+                            : ""
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSortState({
+                                key: column.key,
+                                direction: sortState?.key === column.key && sortState.direction === "asc" ? "desc" : "asc",
+                              })
+                            }
+                            className={`whitespace-nowrap ${sortState?.key === column.key ? "text-sky-200" : ""}`}
+                            title={`Sort ${column.label}`}
+                          >
+                            {column.label} {sortState?.key === column.key ? (sortState.direction === "asc" ? "A" : "D") : ""}
+                          </button>
+                          <ColumnFilterMenu
+                            label={column.label}
+                            options={pipelineFilterOptions[column.key] ?? EMPTY_FILTER_VALUES}
+                            selected={columnFilters[column.key] ?? EMPTY_FILTER_VALUES}
+                            sortDirection={sortState?.key === column.key ? sortState.direction : null}
+                            onSort={(direction) => setSortState({ key: column.key, direction })}
+                            onChange={(values) =>
+                              setColumnFilters((filters) => ({ ...filters, [column.key]: values }))
+                            }
+                          />
+                        </div>
+                        {selectedColumnBasis ? (
+                          <select
+                            aria-label={`${column.label} pricing field`}
+                            title={`${column.label} pricing field`}
+                            value={selectedColumnBasis}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            onClick={(event) => event.stopPropagation()}
+                            onChange={(event) => {
+                              const nextBasis = event.target.value as GasPriceBasis;
+                              if (column.kind === "cash") setCashBasis(nextBasis);
+                              if (column.kind === "balmo") setBalmoBasis(nextBasis);
+                              setSelectedCell(null);
+                              setTrendHoverCard(null);
+                            }}
+                            className="mt-1 h-6 w-full rounded border border-gray-700 bg-gray-950 px-1 text-[9px] font-semibold text-gray-300 outline-none transition-colors hover:border-gray-600 focus:border-sky-500 focus:text-gray-100"
+                          >
+                            {GAS_PRICE_FIELD_OPTIONS.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <div className="mt-0.5 text-[9px] font-semibold text-gray-500">
+                            {priceFieldLabel(column, cashBasis, balmoBasis)}
+                          </div>
+                        )}
+                      </th>
+                    );
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr>
+                    <td colSpan={columns.length + 3 || 30} className="px-3 py-10 text-center text-sm text-gray-500">
+                      Loading pipeline pricing...
+                    </td>
+                  </tr>
+                )}
+                {!loading &&
+                  pipelineRows.map(({ row }) => {
+                    const symbolsAccepted = hasAcceptedConfiguredSymbols(row);
+                    return (
+                      <tr key={row.market} className="border-t border-gray-800 hover:bg-gray-900/60">
+                        <th className="sticky left-0 z-10 whitespace-nowrap bg-[#0d1119] px-1.5 py-1.5 text-center shadow-[2px_0_0_rgba(31,41,55,0.9)]">
+                          <button
+                            type="button"
+                            onClick={(event) => toggleInfoHoverCard(row, event.currentTarget)}
+                            onMouseEnter={(event) => showInfoHoverCard(row, event.currentTarget)}
+                            onMouseLeave={scheduleInfoPopoverClose}
+                            onFocus={(event) => showInfoHoverCard(row, event.currentTarget)}
+                            onBlur={scheduleInfoPopoverClose}
+                            className={`inline-flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-bold transition-colors ${
+                              symbolsAccepted
+                                ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-100 hover:border-emerald-300 hover:bg-emerald-500/25"
+                                : "border-red-500/50 bg-red-500/15 text-red-100 hover:border-red-300 hover:bg-red-500/25"
+                            }`}
+                            aria-expanded={infoHoverCard ? gasInfoRowKey(infoHoverCard.row) === gasInfoRowKey(row) : false}
+                            aria-haspopup="dialog"
+                            aria-label={`Show symbols for ${row.market}`}
+                          >
+                            i
+                          </button>
+                        </th>
+                        <th
+                          style={{ left: PIPELINE_INFO_COLUMN_WIDTH }}
+                          className="sticky z-10 whitespace-nowrap bg-[#0d1119] px-2 py-1.5 text-left shadow-[2px_0_0_rgba(31,41,55,0.9)]"
+                        >
+                          <div className="truncate font-semibold text-gray-100" title={row.market}>
+                            {row.market}
+                          </div>
+                        </th>
+                        <td
+                          style={{ left: PIPELINE_INFO_COLUMN_WIDTH + PIPELINE_MARKET_COLUMN_WIDTH }}
+                          className="sticky z-10 whitespace-nowrap bg-[#0d1119] px-2 py-1.5 font-semibold text-gray-400 shadow-[2px_0_0_rgba(31,41,55,0.9)]"
+                        >
+                          {GAS_REGION_LABELS[row.region]}
+                        </td>
+                        {columns.map((column) => {
+                          const stickyLeft = pipelineStickyLeftForColumn(column);
+                          const isCashBalmoColumn = column.kind === "cash" || column.kind === "balmo";
+                          const value = row.values[column.key] ?? null;
+                          const valueDate = row.valueDates[column.key] ?? null;
+                          const sourceSymbol = row.symbols[column.key] ?? null;
+                          const sourceSymbols = row.sourceSymbols[column.key] ?? [];
+                          const trendPoints = isCashBalmoColumn ? row.trends[column.key] ?? [] : [];
+                          const unavailable = pipelineUnavailableLabel(row, column);
+                          const stale = Boolean(valueDate && data?.tradeDate && valueDate < data.tradeDate);
+                          const title = unavailable
+                            ? `${row.market} ${column.label}: ${unavailable}`
+                            : `${sourceSymbol ?? column.label}: ${fmtPrice(value)} (${fmtDate(valueDate)})`;
+                          return (
+                            <td
+                              key={`${row.market}-${column.key}`}
+                              style={stickyLeft !== undefined ? { left: stickyLeft } : undefined}
+                              className={`border-l border-gray-800 p-0 ${
+                                stickyLeft !== undefined
+                                  ? `sticky z-10 ${column.kind === "balmo" ? "shadow-[2px_0_0_rgba(31,41,55,0.9)]" : ""}`
+                                  : ""
+                              } ${stickyLeft !== undefined ? "bg-[#0d1119]" : "bg-slate-950/45"}`}
+                            >
+                              <button
+                                type="button"
+                                title={title}
+                                disabled={sourceSymbols.length === 0}
+                                onClick={() => setSelectedCell({ row, column })}
+                                className={`block h-full min-h-[42px] w-full whitespace-nowrap px-1.5 py-1.5 text-right font-mono text-[11px] tabular-nums transition-colors focus:outline-none focus:ring-1 focus:ring-cyan-400 ${
+                                  sourceSymbols.length === 0
+                                    ? "cursor-default text-gray-600"
+                                    : "text-gray-100 hover:bg-white/10"
+                                }`}
+                              >
+                                <div className="flex items-center justify-end gap-1 font-semibold">
+                                  <GasPriceSparkline
+                                    points={trendPoints}
+                                    onHover={(element) => showTrendHoverCard(row, column, trendPoints, element)}
+                                    onLeave={() => setTrendHoverCard(null)}
+                                  />
+                                  <span>{fmtPrice(value)}</span>
+                                </div>
+                                <div
+                                  className={`mt-0.5 text-[9px] font-semibold ${
+                                    unavailable
+                                      ? "text-gray-600"
+                                      : stale
+                                        ? "text-amber-300"
+                                        : "text-gray-500"
+                                  }`}
+                                  title={stale ? `Stale versus latest ${data?.tradeDate}` : undefined}
+                                >
+                                  {unavailable ?? fmtDate(valueDate)}
+                                </div>
+                              </button>
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                {!loading && data && pipelineRows.length === 0 && (
+                  <tr>
+                    <td colSpan={columns.length + 3} className="px-3 py-10 text-center text-sm text-gray-500">
+                      No pipeline pricing is configured.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </DataTableShell>
         </div>
       )}
 
