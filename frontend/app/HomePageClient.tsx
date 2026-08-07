@@ -23,6 +23,7 @@ import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
 import GtnPipelineBalance from "@/components/gas/GtnPipelineBalance";
 import IcePowerTermPage from "@/components/ice/IcePowerTermPage";
+import IcePowerTermReportDev from "@/components/ice/IcePowerTermReportDev";
 import IceTradeBlotter, {
   type IceTradeBlotterFreshnessSummary,
 } from "@/components/positions/IceTradeBlotter";
@@ -413,6 +414,9 @@ function parseInitialSection(
   }
   if (value === "ice-power-term" || value === "ice-pmi-curve") {
     return "ice-power-term";
+  }
+  if (value === "ice-power-term-report-dev") {
+    return "ice-power-term-report-dev";
   }
   if (value === "spark-spreads") {
     return "spark-spreads";
@@ -1105,6 +1109,14 @@ export default function HomePageClient({
         footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
+    if (activeSection === "ice-power-term-report-dev") {
+      return {
+        title: "ICE Power Term Report",
+        subtitle:
+          "One-page monthly power futures summary across PJM, ERCOT, ISO-NE, CAISO, and Mid-C.",
+        footer: "ICE Power Term Report | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
     if (activeSection === "spark-spreads") {
       return {
         title: "ICE Power Analytics",
@@ -1307,7 +1319,9 @@ export default function HomePageClient({
 
   const isHistoricalSettlements = activeSection === "pjm-historical-settlements";
   const isIcePowerPage =
-    activeSection === "ice-power-short-term" || activeSection === "ice-power-term";
+    activeSection === "ice-power-short-term" ||
+    activeSection === "ice-power-term" ||
+    activeSection === "ice-power-term-report-dev";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isSaltModelSection = activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
@@ -2085,6 +2099,9 @@ export default function HomePageClient({
           )}
           {activeSection === "ice-power-term" && (
             <IcePowerTermPage />
+          )}
+          {activeSection === "ice-power-term-report-dev" && (
+            <IcePowerTermReportDev />
           )}
           {activeSection === "gas-prices" && (
             <GasDailyPrices
