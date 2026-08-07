@@ -956,6 +956,11 @@ export default function HomePageClient({
       replaceLmpWorkspaceRoute("da", lmpWorkspaceIso);
       return;
     }
+    if (section === "pjm-term-bible") {
+      setActiveSection("pjm-historical-settlements");
+      replaceRouteState("pjm-term-bible");
+      return;
+    }
     setActiveSection(section);
     replaceRouteState(section);
   };
@@ -1024,9 +1029,9 @@ export default function HomePageClient({
     }
     if (activeSection === "pjm-historical-settlements") {
       return {
-        title: "Historical Settlements",
-        subtitle: "Actual hourly power settlements by on-peak, off-peak, and hour ending.",
-        footer: "Historical Settlements | Source: PJM hourly LMPs / Azure PostgreSQL",
+        title: "Power Product Settles",
+        subtitle: "PJM registry products mapped to month-to-date LMP-derived settlement periods.",
+        footer: "Power Product Settles | Source: PJM hourly LMPs + ICE power registry metadata / Azure PostgreSQL",
       };
     }
     if (showLocalDevFeatures && activeSection === "positions-home") {
@@ -1341,10 +1346,10 @@ export default function HomePageClient({
       };
     }
     return {
-      title: "Power LMPs",
+      title: "Power Daily Settles",
       subtitle:
         "PJM, ERCOT, ISO-NE, CAISO, MISO, SPP, and NYISO power prices, with price adders and reserve metrics in the Adders tab.",
-      footer: "Power LMPs | Source: Azure PostgreSQL and promoted reserve/adders tables",
+      footer: "Power Daily Settles | Source: Azure PostgreSQL and promoted reserve/adders tables",
     };
   }, [activeSection, saltsActiveTab, showLocalDevFeatures]);
 
@@ -1391,6 +1396,7 @@ export default function HomePageClient({
     <div className="flex min-h-screen flex-col bg-[#0f1117] text-gray-100 md:flex-row">
       <Sidebar
         activeSection={activeSection}
+        activeSectionParam={searchParams.get("section")}
         onSectionChange={handleSectionChange}
         showLocalDevFeatures={showLocalDevFeatures}
       />
@@ -2053,7 +2059,7 @@ export default function HomePageClient({
           )}
           {activeSection === "pjm-historical-settlements" && (
             <PjmHistoricalSettlements
-              initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "settlements"}
+              initialTab={searchParams.get("section") === "pjm-term-bible" ? "term-bible" : "mtd-summary"}
             />
           )}
           {showLocalDevFeatures && activeSection === "positions-home" && (
