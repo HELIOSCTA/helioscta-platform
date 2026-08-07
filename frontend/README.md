@@ -769,7 +769,8 @@ credential requirement.
 The Pricing sidebar exposes production-visible ICE power pages:
 `ICE Power Short Term` at `/?section=ice-power-short-term` and
 `ICE Power Term` at `/?section=ice-power-term`. The Reports sidebar exposes
-`ICE Term Report` at `/?section=ice-power-term-report-dev`. Legacy
+`ICE Term Report` at `/?section=ice-term-report`. Legacy
+`/?section=ice-power-term-report-dev` links alias to ICE Term Report,
 `/?section=ice-settlements` links alias to Short Term, and legacy local/dev
 `/?section=ice-pmi-curve` links alias to Term.
 
@@ -798,9 +799,10 @@ accepted for existing links. Matrix cells reuse
 charts. MISO, SPP, and NYISO are not shown until matching direct monthly
 futures are present in the active symbol registries.
 
-The ICE Term Report is a Reports-visible report page that keeps the existing
-`ice-power-term-report-dev` route id. It exposes Power and Gas tabs; direct
-links can use `/?section=ice-power-term-report-dev&tab=gas` for the Gas tab.
+The ICE Term Report is a Reports-visible report page with canonical
+`ice-term-report` route id. It exposes Power and Gas tabs; direct links can use
+`/?section=ice-term-report&tab=gas` for the Gas tab. Legacy
+`/?section=ice-power-term-report-dev` links remain accepted.
 Power reads the same `ice_python.settlements` source through
 `GET /api/ice-pmi-curve?mode=power&powerProduct=<ICE root>` and renders PMI/OPJ
 and other active ICE power roots as separate product tables. Gas reads active

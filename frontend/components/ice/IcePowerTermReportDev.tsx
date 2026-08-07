@@ -1005,7 +1005,7 @@ export default function IcePowerTermReportDev() {
   const updateReportRoute = useCallback(
     (nextTab: TermReportTab) => {
       const params = new URLSearchParams(searchParams.toString());
-      params.set("section", "ice-power-term-report-dev");
+      params.set("section", "ice-term-report");
       if (nextTab === "gas") {
         params.set("tab", "gas");
       } else {

@@ -18,7 +18,7 @@ export type ActiveSection =
   | "ice-trade-blotter"
   | "ice-power-short-term"
   | "ice-power-term"
-  | "ice-power-term-report-dev"
+  | "ice-term-report"
   | "trading-calendars"
   | "spark-spreads"
   | "map"
@@ -82,7 +82,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     label: "Reports",
     navItems: [
       { id: "power-settles-dashboard", label: "Power Settles", description: "HR & Sparks" },
-      { id: "ice-power-term-report-dev", label: "ICE Term Report", description: "Power & Gas" },
+      { id: "ice-term-report", label: "ICE Term Report", description: "Power & Gas" },
     ],
   });
 

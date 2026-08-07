@@ -419,8 +419,8 @@ function parseInitialSection(
   if (value === "trading-calendars") {
     return "trading-calendars";
   }
-  if (value === "ice-power-term-report-dev") {
-    return "ice-power-term-report-dev";
+  if (value === "ice-term-report" || value === "ice-power-term-report-dev") {
+    return "ice-term-report";
   }
   if (value === "spark-spreads") {
     return "spark-spreads";
@@ -1113,7 +1113,7 @@ export default function HomePageClient({
         footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
-    if (activeSection === "ice-power-term-report-dev") {
+    if (activeSection === "ice-term-report") {
       return {
         title: "ICE Term Report",
         subtitle:
@@ -1334,7 +1334,7 @@ export default function HomePageClient({
   const isIcePowerPage =
     activeSection === "ice-power-short-term" ||
     activeSection === "ice-power-term" ||
-    activeSection === "ice-power-term-report-dev";
+    activeSection === "ice-term-report";
   const isNavDailyPositionSheet = activeSection === "backoffice-nav-daily-position-sheet";
   const isSaltModelSection = activeSection === "salts";
   const isPjmDaModelSection = showLocalDevFeatures && activeSection === "pjm-da-model";
@@ -2113,7 +2113,7 @@ export default function HomePageClient({
           {activeSection === "ice-power-term" && (
             <IcePowerTermPage />
           )}
-          {activeSection === "ice-power-term-report-dev" && (
+          {activeSection === "ice-term-report" && (
             <IcePowerTermReportDev />
           )}
           {activeSection === "trading-calendars" && (
