@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- CommonJS hook for node --test loading TS calendar tests. */
 const fs = require("node:fs");
 const ts = require("typescript");
 
