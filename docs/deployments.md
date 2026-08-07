@@ -2844,6 +2844,103 @@ ORDER BY created_at DESC
 LIMIT 20;
 ```
 
+## helios-ercot-meteologica-forecast-hourly
+
+- Status: deployed and enabled on `helioscta-prod-vm-01`.
+- Deployed commit: `9fd6d76e4b4ba7ffc5a0e79e827cc8b7c81ac4e7`.
+- Deployment verification: DDL and indexes were applied with the production
+  writer credentials on 2026-08-07. A manual systemd service run at
+  2026-08-07 15:18 UTC succeeded, upserting 2,410 rows, writing seven
+  successful Meteologica API fetch rows, and emitting a forecast freshness
+  event with all seven content IDs. Timer enabled with next activation visible
+  in `systemctl list-timers`.
+- Workflow: ERCOT Meteologica large-surface hourly forecast refresh.
+- Runtime module:
+  `backend.orchestration.power.ercot.meteologica_forecast_hourly`.
+- Lower-level scrape module:
+  `backend.scrapes.power.ercot.meteologica_forecast_hourly`.
+- Source system: Meteologica xTraders Markets API `contents/{content_id}/data`.
+- Destination table: `meteologica.ercot_forecast_hourly`.
+- Source grain: `content_id x update_id x forecast_period_start`.
+- Feed scope: aggregate ERCOT load `1943`, solar `1840`, wind `1877`, and
+  load ForecastZones Houston `1952`, North `1954`, South `1953`, West `1955`.
+  Finer weather zones, renewable subregions, observations, normals,
+  projections, DA price feeds, and derived zone net load are intentionally
+  excluded from this backend promotion.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events` dataset
+  `ercot_meteologica_forecast_hourly`.
+- Unit files:
+  - `infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.timer`
+- Schedule: every 30 minutes at `:25` and `:55` UTC with
+  `RandomizedDelaySec=2min`.
+- Timer behavior: `Persistent=false`; current forecast snapshots should not
+  replay after VM downtime.
+- Overlap protection: service uses `/usr/bin/flock` with
+  `/tmp/helios-ercot-meteologica-forecast-hourly.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
+  `/etc/helioscta/backend.env`.
+- Application DDL applied:
+  `dbt/azure_postgres/reference_sql/ddl/power/meteologica/ercot_forecast_hourly/table_meteologica_ercot_forecast_hourly.sql`
+  and
+  `dbt/azure_postgres/reference_sql/ddl/power/meteologica/ercot_forecast_hourly/index_meteologica_ercot_forecast_hourly.sql`.
+- Safe rerun story: upsert on
+  `(content_id, update_id, forecast_period_start)`.
+- Retention: 21 days by `issue_date`; the runtime purges older rows after
+  successful upserts.
+
+Verification SQL for table freshness:
+
+```sql
+SELECT
+    content_id,
+    metric,
+    forecast_area,
+    COUNT(*) AS rows,
+    COUNT(DISTINCT update_id) AS update_count,
+    MAX(issue_date) AS latest_issue_date,
+    MIN(forecast_period_start) AS min_forecast_period_start,
+    MAX(forecast_period_start) AS max_forecast_period_start,
+    MAX(updated_at) AS latest_updated_at
+FROM meteologica.ercot_forecast_hourly
+WHERE content_id IN (1840, 1877, 1943, 1952, 1953, 1954, 1955)
+GROUP BY content_id, metric, forecast_area
+ORDER BY content_id;
+```
+
+Verification SQL for telemetry and freshness:
+
+```sql
+SELECT
+    status,
+    COUNT(*) AS fetch_count,
+    COUNT(DISTINCT content_id) AS content_count,
+    ARRAY_AGG(DISTINCT content_id ORDER BY content_id) AS content_ids,
+    SUM(COALESCE(rows_returned, 0)) AS rows_returned,
+    MAX(created_at) AS latest_created_at
+FROM ops.api_fetch_log
+WHERE pipeline_name = 'ercot_meteologica_forecast_hourly'
+  AND created_at >= now() - INTERVAL '30 minutes'
+GROUP BY status;
+
+SELECT
+    event_key,
+    business_date,
+    row_count,
+    entity_count,
+    period_count,
+    completeness_status,
+    payload -> 'content_ids' AS content_ids,
+    created_at
+FROM ops.data_availability_events
+WHERE dataset = 'ercot_meteologica_forecast_hourly'
+ORDER BY created_at DESC
+LIMIT 3;
+```
+
 ## helios-pjm-rt-fivemin-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
