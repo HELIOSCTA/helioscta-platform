@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
+import DataTableShell from "@/components/dashboard/DataTableShell";
 import PjmTermBible from "@/components/pjm/PjmTermBible";
 import type {
   MarketOption,
@@ -12,7 +14,8 @@ import type {
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 type Market = "RT_VERIFIED" | "RT_UNVERIFIED" | "DA" | "DART";
-type HistoricalTab = "settlements" | "term-bible";
+type HistoricalTab = "mtd-summary" | "term-bible" | "settlements";
+type VisibleHistoricalTab = "mtd-summary" | "term-bible";
 type ComponentKey = "total" | "energy" | "congestion" | "loss";
 type ViewMode = TermBibleMode;
 type Strip = "all" | TermPeriod;
@@ -85,6 +88,53 @@ interface HistoricalSettlementsPayload {
   };
 }
 
+interface ProductSettlesSummaryRow {
+  product: string;
+  contract: string;
+  contractCode: string | null;
+  contractType: string | null;
+  productName: string;
+  description: string | null;
+  hub: string;
+  pjmPnodeName: string;
+  market: "DA" | "RT";
+  shape: string;
+  period: TermPeriod;
+  hours: string;
+  mtdAvg: number | null;
+  obs: number;
+  hourlyObs: number;
+  expectedDays: number;
+  expectedHours: number;
+  status: "Complete" | "Partial" | "Missing" | "No hours";
+  iceProductUrl: string | null;
+  metadataStatus: string | null;
+  registrySource: string;
+  minDate: string | null;
+  maxDate: string | null;
+  asOf: string | null;
+}
+
+interface ProductSettlesSummaryPayload {
+  iso: "pjm";
+  source: string;
+  marketTimeZone: string;
+  startDate: string;
+  endDate: string;
+  component: ComponentKey;
+  rtSource: "verified" | "unverified";
+  rowCount: number;
+  rows: ProductSettlesSummaryRow[];
+  metadata: {
+    registryGeneratedAt: string | null;
+    registryProductCount: number;
+    sourceTables: {
+      da: string;
+      rt: string;
+    };
+  };
+}
+
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const CURRENT_YEAR = new Date().getUTCFullYear();
 const CURRENT_MONTH = new Date().getUTCMonth() + 1;
@@ -107,6 +157,20 @@ const MARKETS: Array<{ value: Market; label: string }> = [
   { value: "RT_UNVERIFIED", label: "RT Unverified" },
   { value: "DA", label: "DA" },
 ];
+const PRODUCT_SETTLES_TABS: Array<DashboardTabOption<VisibleHistoricalTab>> = [
+  { value: "mtd-summary", label: "MTD Summary" },
+  { value: "term-bible", label: "Term Bible" },
+];
+const SUMMARY_COMPONENTS: Array<{ value: ComponentKey; label: string }> = [
+  { value: "total", label: "Total" },
+  { value: "energy", label: "Energy" },
+  { value: "congestion", label: "Congestion" },
+  { value: "loss", label: "Loss" },
+];
+const SUMMARY_RT_SOURCES: Array<{ value: "verified" | "unverified"; label: string }> = [
+  { value: "verified", label: "Verified RT" },
+  { value: "unverified", label: "Unverified RT" },
+];
 const VIEW_OPTIONS: Array<{ value: ViewMode; label: string }> = [
   { value: "single", label: "Single" },
   { value: "spread", label: "Spread" },
@@ -122,6 +186,7 @@ const STRIP_OPTIONS: Array<{ value: Strip; label: string; shortLabel: string }> 
 const DEFAULT_END_YEAR = CURRENT_YEAR;
 const DEFAULT_COMPONENT: ComponentKey = "total";
 const DEFAULT_SCARCITY_LIMIT = 25;
+const DEFAULT_TERM_START_YEAR = 2020;
 const DEFAULT_LOCATIONS = [
   "WESTERN HUB",
   "DOMINION HUB",
@@ -137,15 +202,131 @@ const DEFAULT_LOCATIONS = [
   "WEST INT HUB",
 ] as const;
 
+type SummarySortKey =
+  | "product"
+  | "contract"
+  | "hub"
+  | "market"
+  | "shape"
+  | "mtdAvg"
+  | "obs"
+  | "status";
+type SummarySortDirection = "asc" | "desc";
+
+interface SummarySortState {
+  key: SummarySortKey;
+  direction: SummarySortDirection;
+}
+
 function fmtPrice(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${value < 0 ? "-" : ""}$${Math.abs(value).toFixed(2)}`;
+}
+
+function fmtSummaryPrice(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "--";
+  const sign = value < 0 ? "-" : "";
+  return `${sign}$${Math.abs(value).toFixed(2)}`;
+}
+
+function fmtStamp(value: string | null | undefined): string {
+  if (!value) return "--";
+  return value.replace("T", " ").slice(0, 16);
 }
 
 function marketShortLabel(market: Market): string {
   if (market === "RT_VERIFIED") return "RT Verified";
   if (market === "RT_UNVERIFIED") return "RT Unverified";
   return market;
+}
+
+function summaryMarketLabel(row: ProductSettlesSummaryRow, rtSource: "verified" | "unverified"): string {
+  if (row.market === "DA") return "DA";
+  return rtSource === "verified" ? "RT Verified" : "RT Unverified";
+}
+
+function termMarketFromSummary(row: ProductSettlesSummaryRow, rtSource: "verified" | "unverified"): MarketOption {
+  if (row.market === "DA") return "da";
+  return rtSource === "unverified" ? "rt-unverified" : "rt-verified";
+}
+
+function statusClass(status: ProductSettlesSummaryRow["status"]): string {
+  if (status === "Complete") return "border-emerald-500/40 bg-emerald-500/10 text-emerald-200";
+  if (status === "Partial") return "border-amber-500/40 bg-amber-500/10 text-amber-200";
+  if (status === "Missing") return "border-red-500/40 bg-red-500/10 text-red-200";
+  return "border-gray-700 bg-gray-950/50 text-gray-400";
+}
+
+function buildSummaryApiUrl({
+  component,
+  rtSource,
+  endDate,
+  refreshToken,
+}: {
+  component: ComponentKey;
+  rtSource: "verified" | "unverified";
+  endDate: string | null;
+  refreshToken: number;
+}): string {
+  const params = new URLSearchParams({ component, rtSource });
+  if (endDate) params.set("end", endDate);
+  if (refreshToken > 0) params.set("refresh", "1");
+  return `/api/pjm-product-settles-summary?${params.toString()}`;
+}
+
+function summaryCacheKey({
+  component,
+  rtSource,
+  endDate,
+}: {
+  component: ComponentKey;
+  rtSource: "verified" | "unverified";
+  endDate: string | null;
+}): string {
+  return ["api:pjm-product-settles-summary", component, rtSource, endDate ?? "default"].join(":");
+}
+
+function compareNullableNumbers(
+  left: number | null,
+  right: number | null,
+  direction: SummarySortDirection,
+): number {
+  if (left === null && right === null) return 0;
+  if (left === null) return direction === "asc" ? 1 : -1;
+  if (right === null) return direction === "asc" ? -1 : 1;
+  return left - right;
+}
+
+function compareSummaryRows(
+  left: ProductSettlesSummaryRow,
+  right: ProductSettlesSummaryRow,
+  sort: SummarySortState,
+): number {
+  const directionFactor = sort.direction === "asc" ? 1 : -1;
+  if (sort.key === "mtdAvg") {
+    return compareNullableNumbers(left.mtdAvg, right.mtdAvg, sort.direction) * directionFactor;
+  }
+  if (sort.key === "obs") return (left.obs - right.obs) * directionFactor;
+  const leftValue =
+    sort.key === "product" ? left.product :
+    sort.key === "contract" ? left.contract :
+    sort.key === "hub" ? left.pjmPnodeName :
+    sort.key === "market" ? left.market :
+    sort.key === "shape" ? left.period :
+    left.status;
+  const rightValue =
+    sort.key === "product" ? right.product :
+    sort.key === "contract" ? right.contract :
+    sort.key === "hub" ? right.pjmPnodeName :
+    sort.key === "market" ? right.market :
+    sort.key === "shape" ? right.period :
+    right.status;
+  return leftValue.localeCompare(rightValue) * directionFactor;
+}
+
+function sortIndicator(key: SummarySortKey, sort: SummarySortState): string {
+  if (sort.key !== key) return "";
+  return sort.direction === "asc" ? " ^" : " v";
 }
 
 function marketSlug(market: Market): string {
@@ -425,9 +606,367 @@ function TableSection({
   );
 }
 
+function SortHeader({
+  label,
+  sortKey,
+  sort,
+  align = "left",
+  onSort,
+}: {
+  label: string;
+  sortKey: SummarySortKey;
+  sort: SummarySortState;
+  align?: "left" | "right";
+  onSort: (key: SummarySortKey) => void;
+}) {
+  return (
+    <th className={`px-3 py-2 font-semibold uppercase tracking-wide ${align === "right" ? "text-right" : "text-left"}`}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={`text-[10px] text-gray-500 transition-colors hover:text-gray-300 ${align === "right" ? "text-right" : "text-left"}`}
+      >
+        {label}{sortIndicator(sortKey, sort)}
+      </button>
+    </th>
+  );
+}
+
+function ProductSettlesMtdSummary({
+  onOpenTermBible,
+}: {
+  onOpenTermBible: (filters: PjmTermBibleExternalFilters) => void;
+}) {
+  const [component, setComponent] = useState<ComponentKey>("total");
+  const [rtSource, setRtSource] = useState<"verified" | "unverified">("verified");
+  const [endDateInput, setEndDateInput] = useState("");
+  const [appliedEndDate, setAppliedEndDate] = useState<string | null>(null);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const [data, setData] = useState<ProductSettlesSummaryPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<SummarySortState>({ key: "product", direction: "asc" });
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    const forceRefresh = refreshToken > 0;
+    setLoading(true);
+    setError(null);
+
+    fetchJsonWithCache<ProductSettlesSummaryPayload>({
+      key: summaryCacheKey({ component, rtSource, endDate: appliedEndDate }),
+      url: buildSummaryApiUrl({ component, rtSource, endDate: appliedEndDate, refreshToken }),
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: forceRefresh ? "no-store" : "default",
+      forceRefresh,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setData(payload);
+        if (!appliedEndDate) setEndDateInput(payload.endDate);
+      })
+      .catch((err: Error) => {
+        if (!active || err.name === "AbortError") return;
+        setData(null);
+        setError(err.message || "Failed to load product settles summary");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [appliedEndDate, component, refreshToken, rtSource]);
+
+  const filteredRows = useMemo(() => {
+    const rows = data?.rows ?? [];
+    const needle = search.trim().toLowerCase();
+    const filtered = needle
+      ? rows.filter((row) =>
+          [
+            row.product,
+            row.contract,
+            row.productName,
+            row.hub,
+            row.pjmPnodeName,
+            row.market,
+            row.shape,
+            row.hours,
+            row.status,
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase()
+            .includes(needle),
+        )
+      : rows;
+    return [...filtered].sort((left, right) => compareSummaryRows(left, right, sort));
+  }, [data?.rows, search, sort]);
+
+  const handleSort = (key: SummarySortKey) => {
+    setSort((current) =>
+      current.key === key
+        ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
+        : { key, direction: "asc" },
+    );
+  };
+
+  const handleLoadEndDate = () => {
+    setAppliedEndDate(/^\d{4}-\d{2}-\d{2}$/.test(endDateInput) ? endDateInput : null);
+  };
+
+  const handleReset = () => {
+    setComponent("total");
+    setRtSource("verified");
+    setAppliedEndDate(null);
+    setEndDateInput("");
+    setSearch("");
+  };
+
+  const openTermBible = (row: ProductSettlesSummaryRow) => {
+    if (!data) return;
+    const endYear = Number(data.endDate.slice(0, 4));
+    const detailMonth = Number(data.endDate.slice(5, 7));
+    onOpenTermBible({
+      mode: "single",
+      month: detailMonth,
+      startYear: Math.min(DEFAULT_TERM_START_YEAR, endYear),
+      endYear,
+      hub: row.pjmPnodeName,
+      spreadFromHub: "WESTERN HUB",
+      spreadToHub: "EASTERN HUB",
+      market: termMarketFromSummary(row, data.rtSource),
+      period: row.period,
+      component: data.component,
+    });
+  };
+
+  const resetVisible =
+    component !== "total" ||
+    rtSource !== "verified" ||
+    appliedEndDate !== null ||
+    search.trim().length > 0;
+
+  return (
+    <div className="space-y-4">
+      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className={labelClass}>Component</span>
+            <select
+              value={component}
+              onChange={(event) => setComponent(event.target.value as ComponentKey)}
+              className={controlClass}
+            >
+              {SUMMARY_COMPONENTS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelClass}>RT Source</span>
+            <select
+              value={rtSource}
+              onChange={(event) => setRtSource(event.target.value as "verified" | "unverified")}
+              className={controlClass}
+            >
+              {SUMMARY_RT_SOURCES.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block">
+            <span className={labelClass}>End</span>
+            <input
+              type="date"
+              value={endDateInput}
+              onChange={(event) => setEndDateInput(event.target.value)}
+              className={controlClass}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={handleLoadEndDate}
+            className="h-10 rounded-lg border border-gray-700 bg-gray-800 px-3 text-xs font-semibold text-gray-300 transition-colors hover:bg-gray-700 hover:text-white"
+          >
+            Load
+          </button>
+          <button
+            type="button"
+            onClick={() => setRefreshToken((value) => value + 1)}
+            className="h-10 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 text-xs font-semibold text-cyan-100 transition-colors hover:border-cyan-400 hover:bg-cyan-500/20"
+          >
+            Refresh
+          </button>
+          {resetVisible && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="h-10 rounded-lg border border-gray-800 bg-gray-950/40 px-3 text-xs font-semibold text-gray-500 transition-colors hover:border-gray-700 hover:text-gray-300"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+        <div className="mt-3 flex min-h-8 flex-wrap items-center gap-2 border-t border-gray-800 pt-3 text-xs text-gray-500">
+          <Badge>{data ? `${data.startDate} to ${data.endDate}` : "MTD"}</Badge>
+          <Badge>{SUMMARY_COMPONENTS.find((item) => item.value === component)?.label ?? component}</Badge>
+          <Badge>{rtSource === "verified" ? "Verified RT" : "Unverified RT"}</Badge>
+          <Badge>{data ? `${data.rowCount} products` : "-- products"}</Badge>
+          <span>As of {fmtStamp(data?.rows.map((row) => row.asOf).filter(Boolean).sort().at(-1))}</span>
+        </div>
+      </section>
+
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {error}
+        </div>
+      )}
+
+      <DataTableShell
+        title="MTD Summary"
+        subtitle={
+          data
+            ? `${data.startDate} to ${data.endDate} | ${data.source}`
+            : "PJM product settlement summary"
+        }
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Filter products"
+              className="h-8 w-44 rounded-md border border-gray-700 bg-gray-950 px-2.5 text-xs font-semibold text-gray-200 outline-none transition-colors placeholder:text-gray-600 focus:border-gray-500"
+            />
+            <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2.5 py-1.5 text-[11px] font-semibold text-gray-500">
+              {filteredRows.length} rows
+            </span>
+          </div>
+        }
+        bodyClassName="bg-[#0d1119]"
+      >
+        <table className="w-full min-w-[1180px] border-collapse text-xs text-gray-200">
+          <thead className="bg-gray-950">
+            <tr>
+              <SortHeader label="Product" sortKey="product" sort={sort} onSort={handleSort} />
+              <SortHeader label="Contract" sortKey="contract" sort={sort} onSort={handleSort} />
+              <SortHeader label="Hub" sortKey="hub" sort={sort} onSort={handleSort} />
+              <SortHeader label="Market" sortKey="market" sort={sort} onSort={handleSort} />
+              <SortHeader label="Shape" sortKey="shape" sort={sort} onSort={handleSort} />
+              <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Hours
+              </th>
+              <SortHeader label="MTD Avg" sortKey="mtdAvg" sort={sort} align="right" onSort={handleSort} />
+              <SortHeader label="Obs" sortKey="obs" sort={sort} align="right" onSort={handleSort} />
+              <SortHeader label="Status" sortKey="status" sort={sort} onSort={handleSort} />
+              <th className="px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                ICE Link
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {loading && !data && (
+              <tr>
+                <td colSpan={10} className="px-3 py-6 text-center text-sm text-gray-500">
+                  Loading product settles...
+                </td>
+              </tr>
+            )}
+            {!loading && filteredRows.length === 0 && (
+              <tr>
+                <td colSpan={10} className="px-3 py-6 text-center text-sm text-gray-500">
+                  No product rows match the selected filters.
+                </td>
+              </tr>
+            )}
+            {filteredRows.map((row) => (
+              <tr
+                key={`${row.product}-${row.contract}-${row.market}-${row.pjmPnodeName}-${row.period}-${row.iceProductUrl ?? row.registrySource}`}
+                tabIndex={0}
+                title={`${row.productName} | ${row.registrySource}`}
+                onClick={() => openTermBible(row)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") openTermBible(row);
+                }}
+                className="cursor-pointer hover:bg-gray-900/70 focus:bg-gray-900/70 focus:outline-none"
+              >
+                <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-semibold text-gray-100">
+                  <div className="flex min-w-[88px] flex-col">
+                    <span>{row.product}</span>
+                    {row.contractCode && (
+                      <span className="text-[10px] font-medium text-gray-600">{row.contractCode}</span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-2 font-medium text-gray-300">{row.contract}</td>
+                <td className="px-3 py-2">
+                  <div className="flex min-w-[150px] flex-col">
+                    <span className="font-semibold text-gray-200">{row.pjmPnodeName}</span>
+                    <span className="text-[10px] text-gray-600">{row.hub}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 font-semibold text-gray-300">{summaryMarketLabel(row, data?.rtSource ?? rtSource)}</td>
+                <td className="px-3 py-2">
+                  <div className="flex min-w-[86px] flex-col">
+                    <span className="font-semibold text-gray-200">{row.period}</span>
+                    <span className="text-[10px] text-gray-600">{row.shape}</span>
+                  </div>
+                </td>
+                <td className="max-w-[240px] px-3 py-2 text-[11px] leading-4 text-gray-500">{row.hours}</td>
+                <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-100">
+                  {fmtSummaryPrice(row.mtdAvg)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums text-gray-300" title={`${row.hourlyObs}/${row.expectedHours} hours`}>
+                  {row.obs}/{row.expectedDays}
+                </td>
+                <td className="px-3 py-2">
+                  <span className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(row.status)}`}>
+                    {row.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  {row.iceProductUrl ? (
+                    <a
+                      href={row.iceProductUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(event) => event.stopPropagation()}
+                      className="font-semibold text-cyan-300 transition-colors hover:text-cyan-100"
+                    >
+                      ICE
+                    </a>
+                  ) : (
+                    <span className="text-gray-600">--</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </DataTableShell>
+
+      {data && (
+        <div className="rounded-lg border border-gray-800 bg-[#0d1118] px-3 py-2 text-[11px] text-gray-500">
+          Registry {fmtStamp(data.metadata.registryGeneratedAt)} | DA {data.metadata.sourceTables.da} | RT {data.metadata.sourceTables.rt}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PjmHistoricalSettlements({
   refreshToken = 0,
-  initialTab = "settlements",
+  initialTab = "mtd-summary",
 }: {
   refreshToken?: number;
   initialTab?: HistoricalTab;
@@ -448,6 +987,8 @@ export default function PjmHistoricalSettlements({
   const [data, setData] = useState<HistoricalSettlementsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pinnedTermBibleFilters, setPinnedTermBibleFilters] =
+    useState<PjmTermBibleExternalFilters | null>(null);
 
   const effectiveStartYear = Math.min(startYear, endYear);
   const effectiveEndYear = Math.max(startYear, endYear);
@@ -471,7 +1012,7 @@ export default function PjmHistoricalSettlements({
     return bounds;
   }, [data]);
 
-  const termBibleFilters = useMemo<PjmTermBibleExternalFilters>(
+  const historicalTermBibleFilters = useMemo<PjmTermBibleExternalFilters>(
     () => ({
       mode: view,
       month,
@@ -486,6 +1027,7 @@ export default function PjmHistoricalSettlements({
     }),
     [effectiveEndYear, effectiveStartYear, fromLocation, location, market, month, strip, toLocation, view],
   );
+  const termBibleFilters = pinnedTermBibleFilters ?? historicalTermBibleFilters;
 
   useEffect(() => {
     if (activeTab !== "settlements") {
@@ -590,11 +1132,60 @@ export default function PjmHistoricalSettlements({
     }
   }, [initialTab]);
 
+  const activeVisibleTab: VisibleHistoricalTab =
+    activeTab === "term-bible" ? "term-bible" : "mtd-summary";
+  const handleVisibleTabChange = (nextTab: VisibleHistoricalTab) => {
+    if (nextTab === "term-bible") {
+      setStrip((currentStrip) => (currentStrip === "all" ? "5x16" : currentStrip));
+    }
+    setActiveTab(nextTab);
+  };
+  const handleOpenTermBible = (filters: PjmTermBibleExternalFilters) => {
+    setPinnedTermBibleFilters(filters);
+    setView(filters.mode);
+    setMonth(filters.month);
+    setStartYear(filters.startYear);
+    setEndYear(filters.endYear);
+    setLocation(filters.hub);
+    setFromLocation(filters.spreadFromHub);
+    setToLocation(filters.spreadToHub);
+    setStrip(filters.period);
+    setMarket(
+      filters.market === "da"
+        ? "DA"
+        : filters.market === "rt-unverified"
+          ? "RT_UNVERIFIED"
+          : "RT_VERIFIED",
+    );
+    setActiveTab("term-bible");
+  };
+
+  if (activeTab !== "settlements") {
+    return (
+      <div className="space-y-4">
+        <div className="rounded-lg border border-gray-800 bg-[#12141d] p-2 shadow-xl shadow-black/20">
+          <DashboardTabs
+            tabs={PRODUCT_SETTLES_TABS}
+            activeValue={activeVisibleTab}
+            onChange={handleVisibleTabChange}
+            ariaLabel="Power Product Settles views"
+          />
+        </div>
+
+        {activeTab === "mtd-summary" ? (
+          <ProductSettlesMtdSummary onOpenTermBible={handleOpenTermBible} />
+        ) : (
+          <PjmTermBible externalFilters={termBibleFilters} />
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="inline-flex rounded-lg border border-gray-800 bg-[#0a0f16] p-1 shadow-xl shadow-black/20">
         {[
-          { key: "settlements", label: "Historical Settlements" },
+          { key: "settlements", label: "Settlement Blocks" },
           { key: "term-bible", label: "Term Bible" },
         ].map((tab) => {
           const selected = activeTab === tab.key;
@@ -627,7 +1218,7 @@ export default function PjmHistoricalSettlements({
         <div className="space-y-4">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.32em] text-gray-600">
-              Historical Settlements
+              Power Product Settles
             </p>
             <h2 className="mt-2 text-xl font-semibold text-gray-100">
               {displayLocation} {MONTHS.find((item) => item.value === month)?.label} {marketShortLabel(market)}
@@ -795,10 +1386,6 @@ export default function PjmHistoricalSettlements({
         </div>
       </section>
 
-      {activeTab === "term-bible" ? (
-        <PjmTermBible tableOnly hideControls externalFilters={termBibleFilters} />
-      ) : (
-        <>
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
           {error}
@@ -939,8 +1526,6 @@ export default function PjmHistoricalSettlements({
               </tbody>
             </table>
           </TableSection>
-        </>
-      )}
         </>
       )}
     </div>

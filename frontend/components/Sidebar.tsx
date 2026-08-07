@@ -48,6 +48,7 @@ export type ActiveSection =
 
 interface SidebarProps {
   activeSection: ActiveSection;
+  activeSectionParam?: string | null;
   onSectionChange: (section: ActiveSection) => void;
   showLocalDevFeatures: boolean;
 }
@@ -57,6 +58,8 @@ interface NavItem {
   key?: string;
   label: string;
   description?: string;
+  routeSection?: string;
+  child?: boolean;
   disabled?: boolean;
 }
 
@@ -66,7 +69,12 @@ interface TopSection {
   navItems: NavItem[];
 }
 
-function isItemActive(item: NavItem, activeSection: ActiveSection): boolean {
+function isItemActive(
+  item: NavItem,
+  activeSection: ActiveSection,
+  activeSectionParam?: string | null,
+): boolean {
+  if (item.routeSection && activeSectionParam === item.routeSection) return true;
   if (!item.id) return false;
   if (item.id === activeSection) return true;
   if (item.id === "pjm-historical-settlements" && activeSection === "pjm-term-bible") {
@@ -104,8 +112,22 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     key: "power",
     label: "Power",
     navItems: [
-      { id: "pjm-da-lmps", label: "LMPs", description: "HR & Sparks" },
-      { id: "pjm-historical-settlements", label: "Historical Settlements" },
+      { id: "pjm-da-lmps", label: "Power Daily Settles", description: "HR & Sparks" },
+      { id: "pjm-historical-settlements", label: "Power Product Settles" },
+      {
+        id: "pjm-historical-settlements",
+        key: "pjm-product-settles-mtd",
+        label: "MTD Summary",
+        routeSection: "pjm-historical-settlements",
+        child: true,
+      },
+      {
+        id: "pjm-term-bible",
+        key: "pjm-product-settles-term-bible",
+        label: "Term Bible",
+        routeSection: "pjm-term-bible",
+        child: true,
+      },
       { id: "pjm-forecasts", label: "Forecasts" },
       { id: "pjm-load-growth", label: "Load Growth" },
       { id: "pjm-ops-summary", label: "Ops Sum" },
@@ -176,6 +198,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
 
 export default function Sidebar({
   activeSection,
+  activeSectionParam,
   onSectionChange,
   showLocalDevFeatures,
 }: SidebarProps) {
@@ -186,13 +209,13 @@ export default function Sidebar({
 
   useEffect(() => {
     const activeTopSection = getSections(showLocalDevFeatures).find((section) =>
-      section.navItems.some((item) => isItemActive(item, activeSection)),
+      section.navItems.some((item) => isItemActive(item, activeSection, activeSectionParam)),
     );
     if (!activeTopSection) return;
     setExpandedSections((current) =>
       current[activeTopSection.key] ? current : { ...current, [activeTopSection.key]: true },
     );
-  }, [activeSection, showLocalDevFeatures]);
+  }, [activeSection, activeSectionParam, showLocalDevFeatures]);
 
   const toggleSection = (key: string) => {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -239,7 +262,7 @@ export default function Sidebar({
               {isExpanded && (
                 <div className="ml-1 mt-0.5 space-y-0.5 pb-1">
                   {section.navItems.map((item) => {
-                    const isActive = isItemActive(item, activeSection);
+                    const isActive = isItemActive(item, activeSection, activeSectionParam);
                     const itemKey = item.id ?? item.key ?? item.label;
                     return (
                       <button
@@ -247,7 +270,9 @@ export default function Sidebar({
                         onClick={() => !item.disabled && handleSectionChange(item.id)}
                         disabled={item.disabled}
                         title={item.disabled ? `${item.label} is not available yet` : undefined}
-                        className={`w-full rounded-lg border px-3 py-2.5 text-left transition-all duration-100 ${
+                        className={`rounded-lg border text-left transition-all duration-100 ${
+                          item.child ? "ml-3 w-[calc(100%-0.75rem)] px-3 py-2" : "w-full px-3 py-2.5"
+                        } ${
                           item.disabled
                             ? "cursor-not-allowed border-transparent"
                             : isActive
