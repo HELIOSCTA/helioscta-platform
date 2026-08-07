@@ -1,4 +1,10 @@
 import { observedJsonRoute } from "@/lib/server/apiObservability";
+import {
+  POWER_FORECAST_DEFAULT_NET_LOAD_AREA,
+  POWER_FORECAST_ISO_TABS,
+  type PowerForecastIso,
+  type PowerForecastSourceMode,
+} from "@/lib/powerForecasts";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -20,6 +26,9 @@ const ROUTE_CONFIG = {
 interface WarmTarget {
   name: string;
   path: string;
+  iso?: PowerForecastIso;
+  source?: PowerForecastSourceMode;
+  type?: ForecastWarmType;
   extractDates?: boolean;
   extractAreas?: boolean;
 }
@@ -32,37 +41,53 @@ interface WarmResult {
   durationMs: number;
   payloadBytes: number;
   dataAsOf: string | null;
+  iso?: PowerForecastIso;
+  source?: PowerForecastSourceMode;
+  type?: ForecastWarmType;
   forecastDates?: string[];
   areas?: string[];
   error?: string;
 }
 
-const EXPLORER_TARGETS: WarmTarget[] = [
-  {
-    name: "pjm-load-explorer",
-    path: "/api/pjm-forecast-explorer",
+type ForecastWarmType = "load" | "netLoad";
+
+const FORECAST_WARM_TYPES: ForecastWarmType[] = ["load", "netLoad"];
+const FORECAST_SOURCES_BY_ISO: Record<PowerForecastIso, PowerForecastSourceMode[]> = {
+  pjm: ["pjm", "meteologica"],
+  ercot: ["meteologica"],
+  isone: ["meteologica"],
+  caiso: ["meteologica"],
+  miso: ["meteologica"],
+  spp: ["meteologica"],
+  nyiso: ["meteologica"],
+};
+
+function typeSlug(type: ForecastWarmType): string {
+  return type === "netLoad" ? "net-load" : "load";
+}
+
+function explorerTarget(
+  iso: PowerForecastIso,
+  source: PowerForecastSourceMode,
+  type: ForecastWarmType,
+): WarmTarget {
+  const params = new URLSearchParams({ iso, source, type });
+  return {
+    name: `${iso}-${source}-${typeSlug(type)}-explorer`,
+    path: `/api/power-forecast-explorer?${params.toString()}`,
+    iso,
+    source,
+    type,
     extractDates: true,
     extractAreas: true,
-  },
-  {
-    name: "meteologica-load-explorer",
-    path: "/api/pjm-meteologica-forecast-explorer",
-    extractDates: true,
-    extractAreas: true,
-  },
-  {
-    name: "pjm-net-load-explorer",
-    path: "/api/pjm-net-load-forecast-explorer?source=pjm",
-    extractDates: true,
-    extractAreas: true,
-  },
-  {
-    name: "meteologica-net-load-explorer",
-    path: "/api/pjm-net-load-forecast-explorer?source=meteologica",
-    extractDates: true,
-    extractAreas: true,
-  },
-];
+  };
+}
+
+const EXPLORER_TARGETS: WarmTarget[] = POWER_FORECAST_ISO_TABS.flatMap((tab) =>
+  FORECAST_SOURCES_BY_ISO[tab.key].flatMap((source) =>
+    FORECAST_WARM_TYPES.map((type) => explorerTarget(tab.key, source, type)),
+  ),
+);
 
 function isVercelDeployment(): boolean {
   return process.env.VERCEL === "1" || Boolean(process.env.VERCEL_ENV) || Boolean(process.env.VERCEL_URL);
@@ -134,11 +159,19 @@ function extractError(payload: unknown, fallback: string): string {
   return typeof message === "string" && message.trim() ? message.slice(0, 300) : fallback;
 }
 
-function compareTarget(name: string, source: "pjm" | "meteologica", type: "load" | "netLoad", area: string, dates: string[]): WarmTarget | null {
+function compareTarget(
+  name: string,
+  iso: PowerForecastIso,
+  source: PowerForecastSourceMode,
+  type: ForecastWarmType,
+  area: string,
+  dates: string[],
+): WarmTarget | null {
   const [baseDate, compareDate] = dates;
   if (!baseDate || !compareDate) return null;
 
   const params = new URLSearchParams({
+    iso,
     source,
     type,
     area,
@@ -147,7 +180,10 @@ function compareTarget(name: string, source: "pjm" | "meteologica", type: "load"
   });
   return {
     name,
-    path: `/api/pjm-forecast-date-compare?${params.toString()}`,
+    path: `/api/power-forecast-date-compare?${params.toString()}`,
+    iso,
+    source,
+    type,
   };
 }
 
@@ -157,14 +193,21 @@ function areaSlug(area: string): string {
 
 function compareTargetsForAreas(
   namePrefix: string,
-  source: "pjm" | "meteologica",
-  type: "load" | "netLoad",
+  iso: PowerForecastIso,
+  source: PowerForecastSourceMode,
+  type: ForecastWarmType,
   areas: string[],
   dates: string[],
 ): WarmTarget[] {
   return Array.from(new Set(areas))
-    .map((area) => compareTarget(`${namePrefix}-${areaSlug(area)}`, source, type, area, dates))
+    .map((area) => compareTarget(`${namePrefix}-${areaSlug(area)}`, iso, source, type, area, dates))
     .filter((target): target is WarmTarget => Boolean(target));
+}
+
+function defaultAreaForTarget(result: WarmResult): string {
+  if (!result.iso) return "RTO";
+  if (result.type === "load" && result.source === "pjm") return "RTO_COMBINED";
+  return POWER_FORECAST_DEFAULT_NET_LOAD_AREA[result.iso];
 }
 
 async function fetchWarmTarget(request: Request, target: WarmTarget): Promise<WarmResult> {
@@ -201,6 +244,9 @@ async function fetchWarmTarget(request: Request, target: WarmTarget): Promise<Wa
       durationMs: roundMs(nowMs() - startedAt),
       payloadBytes: new TextEncoder().encode(text).length,
       dataAsOf,
+      ...(target.iso ? { iso: target.iso } : {}),
+      ...(target.source ? { source: target.source } : {}),
+      ...(target.type ? { type: target.type } : {}),
       ...(forecastDates ? { forecastDates } : {}),
       ...(areas ? { areas } : {}),
       ...(response.ok ? {} : { error: extractError(payload, response.statusText || "Request failed") }),
@@ -214,6 +260,9 @@ async function fetchWarmTarget(request: Request, target: WarmTarget): Promise<Wa
       durationMs: roundMs(nowMs() - startedAt),
       payloadBytes: 0,
       dataAsOf: null,
+      ...(target.iso ? { iso: target.iso } : {}),
+      ...(target.source ? { source: target.source } : {}),
+      ...(target.type ? { type: target.type } : {}),
       error: error instanceof Error ? error.message : "Unknown warm request error",
     };
   } finally {
@@ -243,46 +292,19 @@ async function warmTargets(
   return results;
 }
 
-function byName(results: WarmResult[], name: string): WarmResult | undefined {
-  return results.find((result) => result.name === name);
-}
-
 function derivedCompareTargets(explorerResults: WarmResult[]): WarmTarget[] {
-  const pjmLoadExplorer = byName(explorerResults, "pjm-load-explorer");
-  const meteologicaLoadExplorer = byName(explorerResults, "meteologica-load-explorer");
-  const pjmNetLoadExplorer = byName(explorerResults, "pjm-net-load-explorer");
-  const meteologicaNetLoadExplorer = byName(explorerResults, "meteologica-net-load-explorer");
-
-  return [
-    ...compareTargetsForAreas(
-      "pjm-load-compare",
-      "pjm",
-      "load",
-      pjmLoadExplorer?.areas?.length ? pjmLoadExplorer.areas : ["RTO_COMBINED"],
-      pjmLoadExplorer?.forecastDates ?? [],
-    ),
-    ...compareTargetsForAreas(
-      "meteologica-load-compare",
-      "meteologica",
-      "load",
-      meteologicaLoadExplorer?.areas?.length ? meteologicaLoadExplorer.areas : ["RTO"],
-      meteologicaLoadExplorer?.forecastDates ?? [],
-    ),
-    ...compareTargetsForAreas(
-      "pjm-net-load-compare",
-      "pjm",
-      "netLoad",
-      pjmNetLoadExplorer?.areas?.length ? pjmNetLoadExplorer.areas : ["RTO"],
-      pjmNetLoadExplorer?.forecastDates ?? [],
-    ),
-    ...compareTargetsForAreas(
-      "meteologica-net-load-compare",
-      "meteologica",
-      "netLoad",
-      meteologicaNetLoadExplorer?.areas?.length ? meteologicaNetLoadExplorer.areas : ["RTO"],
-      meteologicaNetLoadExplorer?.forecastDates ?? [],
-    ),
-  ];
+  return explorerResults.flatMap((result) => {
+    if (!result.iso || !result.source || !result.type) return [];
+    const areas = result.areas?.length ? result.areas : [defaultAreaForTarget(result)];
+    return compareTargetsForAreas(
+      `${result.iso}-${result.source}-${typeSlug(result.type)}-compare`,
+      result.iso,
+      result.source,
+      result.type,
+      areas,
+      result.forecastDates ?? [],
+    );
+  });
 }
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {

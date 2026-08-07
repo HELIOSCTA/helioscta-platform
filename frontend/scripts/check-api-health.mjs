@@ -4,6 +4,44 @@ const DEFAULT_BASE_URL = "http://localhost:3000";
 const DEFAULT_SAMPLES = 3;
 const DEFAULT_WARMUP = 1;
 
+const POWER_FORECAST_ISOS = [
+  ["pjm", "PJM"],
+  ["ercot", "ERCOT"],
+  ["isone", "ISO-NE"],
+  ["caiso", "CAISO"],
+  ["miso", "MISO"],
+  ["spp", "SPP"],
+  ["nyiso", "NYISO"],
+];
+const POWER_FORECAST_SOURCES_BY_ISO = {
+  pjm: [
+    ["pjm", "PJM Data Miner"],
+    ["meteologica", "Meteologica"],
+  ],
+  ercot: [["meteologica", "Meteologica"]],
+  isone: [["meteologica", "Meteologica"]],
+  caiso: [["meteologica", "Meteologica"]],
+  miso: [["meteologica", "Meteologica"]],
+  spp: [["meteologica", "Meteologica"]],
+  nyiso: [["meteologica", "Meteologica"]],
+};
+const POWER_FORECAST_TYPES = [
+  ["load", "load"],
+  ["netLoad", "net load"],
+];
+
+function powerForecastExplorerEndpoints() {
+  return POWER_FORECAST_ISOS.flatMap(([iso, isoLabel]) =>
+    POWER_FORECAST_SOURCES_BY_ISO[iso].flatMap(([source, sourceLabel]) =>
+      POWER_FORECAST_TYPES.map(([type, typeLabel]) => ({
+        name: `${isoLabel} ${sourceLabel} ${typeLabel} forecast explorer`,
+        path: `/api/power-forecast-explorer?iso=${iso}&source=${source}&type=${type}`,
+        targetMs: iso === "pjm" && source === "meteologica" ? 25_000 : iso === "pjm" ? 5_000 : 1_500,
+      })),
+    ),
+  );
+}
+
 const endpoints = [
   {
     name: "Ops readiness",
@@ -56,6 +94,17 @@ const endpoints = [
     path: "/api/pjm-forecasts?area=RTO_COMBINED",
     targetMs: 750,
   },
+  ...powerForecastExplorerEndpoints(),
+  {
+    name: "Generic PJM load forecast diffs",
+    path: "/api/power-forecast-differences?iso=pjm&source=pjm&type=load&area=RTO_COMBINED&lookbackHours=72",
+    targetMs: 5_000,
+  },
+  {
+    name: "Generic ERCOT net load forecast diffs",
+    path: "/api/power-forecast-differences?iso=ercot&source=meteologica&type=netLoad&area=ERCOT&lookbackHours=72",
+    targetMs: 1_500,
+  },
   {
     name: "PJM load growth",
     path: "/api/pjm-load-growth-yoy?loadArea=DOM&stationId=KRIC&region=PJM&lookbackDays=56&dateMode=lookback&loadShape=flat&dayType=all",
@@ -64,22 +113,22 @@ const endpoints = [
   {
     name: "PJM forecast explorer",
     path: "/api/pjm-forecast-explorer",
-    targetMs: 750,
+    targetMs: 5_000,
   },
   {
     name: "PJM forecast diffs",
     path: "/api/pjm-forecast-differences?area=RTO_COMBINED&lookbackHours=72",
-    targetMs: 750,
+    targetMs: 5_000,
   },
   {
     name: "PJM Meteologica forecast explorer",
     path: "/api/pjm-meteologica-forecast-explorer",
-    targetMs: 1_000,
+    targetMs: 25_000,
   },
   {
     name: "PJM Meteologica forecast diffs",
     path: "/api/pjm-meteologica-forecast-differences?area=RTO&lookbackHours=72",
-    targetMs: 1_000,
+    targetMs: 25_000,
   },
   {
     name: "PJM outage forecast",

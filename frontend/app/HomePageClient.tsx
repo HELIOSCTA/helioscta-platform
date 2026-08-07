@@ -59,6 +59,7 @@ import PjmForecasts, {
   type NetLoadForecastStatistic,
   type ForecastSourceMode,
   type ForecastType,
+  type PowerForecastIso,
   type PjmForecastsFreshnessSummary,
 } from "@/components/pjm/PjmForecasts";
 import PjmForecastReports, {
@@ -794,10 +795,14 @@ export default function HomePageClient({
     searchParams.get("section"),
     showLocalDevFeatures,
   );
-  const initialForecastSourceMode =
+  const initialForecastIso: PowerForecastIso =
+    parsePjmLmpIsoParam(searchParams.get("forecastIso") ?? searchParams.get("iso")) ?? "pjm";
+  const requestedInitialForecastSourceMode =
     parseForecastSourceModeParam(searchParams.get("forecastSource")) ??
     parseForecastSourceModeParam(searchParams.get("source")) ??
     "pjm";
+  const initialForecastSourceMode =
+    initialForecastIso === "pjm" ? requestedInitialForecastSourceMode : "meteologica";
   const initialForecastMode =
     parseForecastModeParam(searchParams.get("forecastMode")) ??
     parseForecastModeParam(searchParams.get("mode")) ??
@@ -1237,7 +1242,7 @@ export default function HomePageClient({
       return {
         title: "Forecasts",
         subtitle:
-          "PJM load and net-load forecasts by source, with outright vintages and compare-day overlays.",
+          "Multi-ISO load and net-load forecasts, with outright vintages and compare-day overlays.",
         footer:
           "Forecasts | Sources: PJM Data Miner + Meteologica hourly forecasts / Azure PostgreSQL",
       };
@@ -1893,9 +1898,9 @@ export default function HomePageClient({
                     value: pjmForecastsFreshness.status,
                     className: pjmForecastsFreshness.statusClass,
                   },
-                  { label: "Forecast Area", value: pjmForecastsFreshness.targetDateLabel },
+                  { label: "Forecast Selection", value: pjmForecastsFreshness.targetDateLabel },
                   { label: "Latest Forecast Day", value: pjmForecastsFreshness.latestDateLabel },
-                  { label: "Source Update", value: pjmForecastsFreshness.latestUpdateLabel },
+                  { label: "Latest Issue", value: pjmForecastsFreshness.latestUpdateLabel },
                 ]}
                 open={pjmForecastsFreshnessOpen}
                 onToggle={() => setPjmForecastsFreshnessOpen((open) => !open)}
@@ -2163,6 +2168,7 @@ export default function HomePageClient({
           )}
           {activeSection === "pjm-forecasts" && (
             <PjmForecasts
+              initialIso={initialForecastIso}
               initialForecastType={initialForecastType}
               initialMode={initialForecastMode}
               initialSourceMode={initialForecastSourceMode}

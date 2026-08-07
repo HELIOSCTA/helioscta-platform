@@ -55,6 +55,18 @@
       "maxDuration": 30,
       "regions": ["sfo1"]
     },
+    "app/api/power-forecast-explorer/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/power-forecast-differences/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
+    "app/api/power-forecast-date-compare/route.ts": {
+      "maxDuration": 30,
+      "regions": ["sfo1"]
+    },
     "app/api/pjm-outages/route.ts": {
       "maxDuration": 30,
       "regions": ["sfo1"]
