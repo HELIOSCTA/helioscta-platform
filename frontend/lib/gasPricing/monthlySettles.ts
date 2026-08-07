@@ -13,6 +13,11 @@ export interface GasMonthlySettlesColumn {
   label: string;
 }
 
+export interface GasMonthlySettlesTrendPoint {
+  date: string | null;
+  value: number | null;
+}
+
 export interface GasMonthlySettlesCell {
   rowKey: string;
   columnKey: string;
@@ -26,6 +31,7 @@ export interface GasMonthlySettlesCell {
   contractMonth: string | null;
   pointType: GasMonthlySettlesPointType;
   dateBasis: GasMonthlySettlesDateBasis;
+  priceTrend: GasMonthlySettlesTrendPoint[];
 }
 
 export interface GasMonthlySettlesRow {
