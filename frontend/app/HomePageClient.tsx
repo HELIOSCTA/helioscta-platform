@@ -1115,10 +1115,10 @@ export default function HomePageClient({
     }
     if (activeSection === "ice-power-term-report-dev") {
       return {
-        title: "ICE Power Term Report",
+        title: "ICE Term Report",
         subtitle:
-          "One-page monthly power futures summary across PJM, ERCOT, ISO-NE, CAISO, and Mid-C.",
-        footer: "ICE Power Term Report | Source: ice_python.settlements / Azure PostgreSQL",
+          "One-page monthly futures summary across ICE power and gas markets.",
+        footer: "ICE Term Report | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
     if (activeSection === "trading-calendars") {

@@ -1,18 +1,23 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import ControlCard from "@/components/dashboard/ControlCard";
+import DashboardTabs, { type DashboardTabOption } from "@/components/dashboard/DashboardTabs";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import {
   ICE_POWER_TERM_MARKETS,
   ICE_POWER_TERM_PRODUCTS,
   ICE_POWER_TERM_PRODUCTS_BY_MARKET,
-  type IcePowerTermMarket,
-  type IcePowerTermProduct,
 } from "@/lib/icePowerTerm/products";
+import { DAILY_GAS_MARKETS } from "@/lib/gasPricing/iceGasRegistry";
+import {
+  GAS_REGION_LABELS,
+  GAS_REGION_ORDER,
+  type GasRegion,
+} from "@/lib/gasPricing/dailyGasPriceView";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
 interface TrendPoint {
@@ -54,9 +59,35 @@ interface IcePmiCurvePayload {
 }
 
 interface ProductLoadResult {
-  product: IcePowerTermProduct;
+  product: ReportProduct;
   payload: IcePmiCurvePayload | null;
   error: string | null;
+}
+
+type TermReportTab = "power" | "gas";
+
+interface ReportMarket {
+  id: string;
+  label: string;
+}
+
+interface ReportProduct {
+  root: string;
+  market: string;
+  title: string;
+  subtitle: string;
+  requestParam: "powerProduct" | "gasProduct";
+  mode: "power" | "gas";
+  productLabel?: string;
+}
+
+interface ReportConfig {
+  tab: TermReportTab;
+  title: string;
+  markets: ReportMarket[];
+  products: ReportProduct[];
+  productsByMarket: Record<string, ReportProduct[]>;
+  primaryProducts: ReportProduct[];
 }
 
 interface MarketCell {
@@ -79,8 +110,8 @@ interface SummaryRow {
 }
 
 interface SummaryProductGroup {
-  market: IcePowerTermMarket;
-  product: IcePowerTermProduct;
+  market: ReportMarket;
+  product: ReportProduct;
   rows: SummaryRow[];
 }
 
@@ -88,9 +119,75 @@ const API_CACHE_TTL_MS = 5 * 60 * 1000;
 const LOOKBACK_DAYS = 7;
 const PRODUCT_LOAD_CONCURRENCY = 3;
 const SUMMARY_ROWS_PER_MARKET_LIMIT = 6;
-const PRIMARY_ICE_POWER_TERM_PRODUCTS = ICE_POWER_TERM_MARKETS.map(
-  (market) => ICE_POWER_TERM_PRODUCTS_BY_MARKET[market.id][0],
-).filter((product): product is IcePowerTermProduct => Boolean(product));
+const REPORT_TABS: Array<DashboardTabOption<TermReportTab>> = [
+  { value: "power", label: "Power" },
+  { value: "gas", label: "Gas" },
+];
+const POWER_REPORT_PRODUCTS: ReportProduct[] = ICE_POWER_TERM_PRODUCTS.map((product) => ({
+  ...product,
+  requestParam: "powerProduct",
+  mode: "power",
+}));
+const POWER_REPORT_MARKETS: ReportMarket[] = ICE_POWER_TERM_MARKETS;
+const POWER_REPORT_PRODUCTS_BY_MARKET = Object.fromEntries(
+  ICE_POWER_TERM_MARKETS.map((market) => [
+    market.id,
+    (ICE_POWER_TERM_PRODUCTS_BY_MARKET[market.id] ?? []).map((product) => ({
+      ...product,
+      requestParam: "powerProduct" as const,
+      mode: "power" as const,
+    })),
+  ]),
+) as Record<string, ReportProduct[]>;
+const PRIMARY_POWER_REPORT_PRODUCTS = POWER_REPORT_MARKETS.map(
+  (market) => POWER_REPORT_PRODUCTS_BY_MARKET[market.id]?.[0],
+).filter((product): product is ReportProduct => Boolean(product));
+const GAS_REPORT_PRODUCTS: ReportProduct[] = DAILY_GAS_MARKETS.filter(
+  (market) => Boolean(market.futuresProduct),
+).map((market) => ({
+  root: market.futuresProduct!,
+  market: market.region,
+  title: `${market.market} Monthly Matrix`,
+  subtitle:
+    market.curveStyle === "basis"
+      ? `${market.market} all-in monthly futures from HNG plus ${market.futuresProduct} basis.`
+      : `${market.market} fixed-price monthly futures.`,
+  requestParam: "gasProduct",
+  mode: "gas",
+  productLabel: market.curveStyle === "basis" ? `HNG + ${market.futuresProduct}` : market.futuresProduct!,
+}));
+const GAS_REPORT_MARKETS: ReportMarket[] = GAS_REGION_ORDER.filter((region) =>
+  GAS_REPORT_PRODUCTS.some((product) => product.market === region),
+).map((region) => ({ id: region, label: GAS_REGION_LABELS[region as GasRegion] }));
+const GAS_REPORT_PRODUCTS_BY_MARKET = Object.fromEntries(
+  GAS_REPORT_MARKETS.map((market) => [
+    market.id,
+    GAS_REPORT_PRODUCTS.filter((product) => product.market === market.id),
+  ]),
+) as Record<string, ReportProduct[]>;
+const PRIMARY_GAS_REPORT_PRODUCTS = GAS_REPORT_MARKETS.map(
+  (market) => GAS_REPORT_PRODUCTS_BY_MARKET[market.id]?.[0],
+).filter((product): product is ReportProduct => Boolean(product));
+const REPORT_CONFIGS: Record<TermReportTab, ReportConfig> = {
+  power: {
+    tab: "power",
+    title: "ICE Power Term Report",
+    markets: POWER_REPORT_MARKETS,
+    products: POWER_REPORT_PRODUCTS,
+    productsByMarket: POWER_REPORT_PRODUCTS_BY_MARKET,
+    primaryProducts: PRIMARY_POWER_REPORT_PRODUCTS,
+  },
+  gas: {
+    tab: "gas",
+    title: "ICE Gas Term Report",
+    markets: GAS_REPORT_MARKETS,
+    products: GAS_REPORT_PRODUCTS,
+    productsByMarket: GAS_REPORT_PRODUCTS_BY_MARKET,
+    primaryProducts: PRIMARY_GAS_REPORT_PRODUCTS,
+  },
+};
+const ALL_REPORT_PRODUCTS = [...POWER_REPORT_PRODUCTS, ...GAS_REPORT_PRODUCTS];
+const ALL_REPORT_PRODUCT_COUNT = ALL_REPORT_PRODUCTS.length;
 const MONTHS = [
   { strip: "Jan", stripOrder: 1 },
   { strip: "Feb", stripOrder: 2 },
@@ -192,17 +289,17 @@ function latestLoadedDataAsOf(results: ProductLoadResult[]): string | null {
     .at(-1) ?? null;
 }
 
-function filterStatus(results: ProductLoadResult[], loading: boolean): string {
+function filterStatus(results: ProductLoadResult[], loading: boolean, totalProducts: number): string {
   const loadedCount = results.filter((result) => result.payload).length;
   const dataAsOf = latestLoadedDataAsOf(results);
   const loadLabel = loading
-    ? `Loading ${loadedCount}/${ICE_POWER_TERM_PRODUCTS.length}`
-    : `${loadedCount}/${ICE_POWER_TERM_PRODUCTS.length} roots loaded`;
+    ? `Loading ${loadedCount}/${totalProducts}`
+    : `${loadedCount}/${totalProducts} roots loaded`;
   return dataAsOf ? `${loadLabel} / as of ${dataAsOf}` : loadLabel;
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "Failed to load ICE power term data";
+  return error instanceof Error ? error.message : "Failed to load ICE term data";
 }
 
 async function mapWithConcurrency<T, R>(
@@ -450,55 +547,96 @@ function TrendSparkline({
   );
 }
 
-function LoadStatusPill({ results, loading }: { results: ProductLoadResult[]; loading: boolean }) {
+function LoadStatusPill({
+  results,
+  loading,
+  totalProducts,
+}: {
+  results: ProductLoadResult[];
+  loading: boolean;
+  totalProducts: number;
+}) {
   const loadedCount = results.filter((result) => result.payload).length;
   const errorCount = results.filter((result) => result.error).length;
   const statusClass =
     errorCount > 0
       ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
-      : loadedCount === ICE_POWER_TERM_PRODUCTS.length
+      : loadedCount === totalProducts
         ? "border-emerald-500/35 bg-emerald-500/10 text-emerald-200"
         : "border-gray-700 bg-gray-950/50 text-gray-400";
 
   return (
     <span className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${statusClass}`}>
-      {loading ? "Loading" : `${loadedCount}/${ICE_POWER_TERM_PRODUCTS.length} roots loaded`}
+      {loading ? "Loading" : `${loadedCount}/${totalProducts} roots loaded`}
     </span>
   );
 }
 
 function SummaryTable({
-  groups,
+  powerGroups,
+  gasGroups,
   loading,
   results,
+  totalProducts,
 }: {
-  groups: SummaryProductGroup[];
+  powerGroups: SummaryProductGroup[];
+  gasGroups: SummaryProductGroup[];
   loading: boolean;
   results: ProductLoadResult[];
+  totalProducts: number;
 }) {
   const dataAsOf = latestLoadedDataAsOf(results);
 
   return (
     <DataTableShell
       title="Summary"
-      subtitle="Top active forwards by absolute 7d price move within each ISO primary root"
+      subtitle="Top active forwards by absolute 7d price move, with Power first and Gas second."
       className="p-2 sm:p-3"
       action={
         <>
           <span className="rounded-md border border-sky-500/30 bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-100">
             7d = last {LOOKBACK_DAYS} ICE settlement dates ending as of {dataAsOf ?? "-"}
           </span>
-          <LoadStatusPill results={results} loading={loading} />
+          <LoadStatusPill results={results} loading={loading} totalProducts={totalProducts} />
         </>
       }
       bodyClassName="border-gray-800 bg-[#0d1119]"
     >
-      <div className="flex flex-wrap items-start gap-1.5 p-1.5">
-        {groups.map((group) => (
-          <SummaryProductBlock key={`${group.market.id}-${group.product.root}`} group={group} loading={loading} />
-        ))}
+      <div className="space-y-3 p-1.5">
+        <SummaryCommodityRow label="Power" groups={powerGroups} loading={loading} />
+        <SummaryCommodityRow label="Gas" groups={gasGroups} loading={loading} />
       </div>
     </DataTableShell>
+  );
+}
+
+function SummaryCommodityRow({
+  label,
+  groups,
+  loading,
+}: {
+  label: string;
+  groups: SummaryProductGroup[];
+  loading: boolean;
+}) {
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center gap-2 px-1">
+        <span className="text-[10px] font-bold uppercase tracking-widest text-gray-500">
+          {label}
+        </span>
+        <span className="h-px flex-1 bg-gray-800" />
+      </div>
+      <div className="flex flex-wrap items-start gap-1.5">
+        {groups.map((group) => (
+          <SummaryProductBlock
+            key={`${label}-${group.market.id}-${group.product.root}`}
+            group={group}
+            loading={loading}
+          />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -519,7 +657,7 @@ function SummaryProductBlock({
           className="rounded border border-sky-500/30 bg-sky-500/10 px-1 py-px text-[9px] font-semibold text-sky-100"
           title={group.product.title}
         >
-          {group.product.root}
+          {group.product.productLabel ?? group.product.root}
         </span>
       </div>
       <table className="w-max border-collapse text-xs text-gray-200 whitespace-nowrap">
@@ -527,7 +665,7 @@ function SummaryProductBlock({
           <tr>
             <th className="px-1.5 py-1 text-left font-semibold">Contract</th>
             <th className="w-[48px] px-1 py-1 text-right font-semibold">Last</th>
-            <th className="w-[46px] px-1 py-1 text-right font-semibold">Δ7d</th>
+            <th className="w-[46px] px-1 py-1 text-right font-semibold">7d</th>
             <th className="w-[52px] px-0.5 py-1 text-left font-semibold">Price</th>
             <th className="w-[52px] px-0.5 py-1 text-left font-semibold">Vol</th>
           </tr>
@@ -588,9 +726,9 @@ function MarketSection({
   currentYear,
   loading,
 }: {
-  market: IcePowerTermMarket;
-  products: IcePowerTermProduct[];
-  payloads: Map<IcePowerTermProduct["root"], IcePmiCurvePayload>;
+  market: ReportMarket;
+  products: ReportProduct[];
+  payloads: Map<ReportProduct["root"], IcePmiCurvePayload>;
   matrixYears: number[];
   currentYear: number;
   loading: boolean;
@@ -627,7 +765,7 @@ function MarketProductTable({
   currentYear,
   loading,
 }: {
-  product: IcePowerTermProduct;
+  product: ReportProduct;
   payload: IcePmiCurvePayload | null;
   matrixYears: number[];
   currentYear: number;
@@ -644,7 +782,7 @@ function MarketProductTable({
     >
       <div className="flex items-center justify-between gap-2 border-b border-gray-800 bg-gray-950/85 px-2 py-1">
         <span className="text-xs font-semibold text-sky-100" title={product.title}>
-          {product.root}
+          {product.productLabel ?? product.root}
         </span>
         <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-600">
           Monthly
@@ -753,13 +891,15 @@ function buildSummaryGroups({
   results,
   matrixYears,
   currentYear,
+  config,
 }: {
   results: ProductLoadResult[];
   matrixYears: number[];
   currentYear: number;
+  config: ReportConfig;
 }): SummaryProductGroup[] {
   const rowsByProduct = new Map(
-    PRIMARY_ICE_POWER_TERM_PRODUCTS.map((product) => [product.root, [] as SummaryRow[]]),
+    config.primaryProducts.map((product) => [product.root, [] as SummaryRow[]]),
   );
 
   for (const result of results) {
@@ -807,8 +947,8 @@ function buildSummaryGroups({
     }
   }
 
-  return ICE_POWER_TERM_MARKETS.flatMap((market) => {
-    const product = ICE_POWER_TERM_PRODUCTS_BY_MARKET[market.id][0];
+  return config.markets.flatMap((market) => {
+    const product = config.productsByMarket[market.id]?.[0];
     if (!product) return [];
 
     return [
@@ -836,23 +976,51 @@ function ErrorStrip({ results }: { results: ProductLoadResult[] }) {
   );
 }
 
+function parseReportTab(value: string | null): TermReportTab {
+  return value === "gas" ? "gas" : "power";
+}
+
 export default function IcePowerTermReportDev() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const initialTradeDate = parseTradeDate(searchParams.get("tradeDate"));
+  const [activeTab, setActiveTab] = useState<TermReportTab>(() => parseReportTab(searchParams.get("tab")));
   const currentYear = useMemo(() => new Date().getUTCFullYear(), []);
   const matrixYears = useMemo(
     () => Array.from({ length: 3 }, (_, index) => currentYear + index),
     [currentYear],
   );
+  const activeConfig = REPORT_CONFIGS[activeTab];
   const [selectedTradeDate, setSelectedTradeDate] = useState<string | null>(
     () => initialTradeDate,
   );
   const [tradeDateInput, setTradeDateInput] = useState(() => initialTradeDate ?? "");
   const [refreshToken, setRefreshToken] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [results, setResults] = useState<ProductLoadResult[]>(
-    ICE_POWER_TERM_PRODUCTS.map((product) => ({ product, payload: null, error: null })),
+  const [results, setResults] = useState<ProductLoadResult[]>(() =>
+    ALL_REPORT_PRODUCTS.map((product) => ({ product, payload: null, error: null })),
   );
+
+  const updateReportRoute = useCallback(
+    (nextTab: TermReportTab) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("section", "ice-power-term-report-dev");
+      if (nextTab === "gas") {
+        params.set("tab", "gas");
+      } else {
+        params.delete("tab");
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  useEffect(() => {
+    const routedTab = parseReportTab(searchParams.get("tab"));
+    setActiveTab((current) => (current === routedTab ? current : routedTab));
+  }, [searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -861,13 +1029,14 @@ export default function IcePowerTermReportDev() {
     const forceRefresh = refreshToken > 0;
 
     setLoading(true);
+    setResults(ALL_REPORT_PRODUCTS.map((product) => ({ product, payload: null, error: null })));
     mapWithConcurrency(
-      ICE_POWER_TERM_PRODUCTS,
+      ALL_REPORT_PRODUCTS,
       PRODUCT_LOAD_CONCURRENCY,
       async (product) => {
         const params = new URLSearchParams({
-          mode: "power",
-          powerProduct: product.root,
+          mode: product.mode,
+          [product.requestParam]: product.root,
           currentYear: String(currentYear),
           endYear: String(endYear),
           tradingDays: String(LOOKBACK_DAYS),
@@ -875,14 +1044,15 @@ export default function IcePowerTermReportDev() {
         });
         if (selectedTradeDate) params.set("tradeDate", selectedTradeDate);
         if (forceRefresh) params.set("refresh", "1");
+        if (product.mode === "gas") params.set("reportVersion", "gas-v2");
 
         try {
           const payload = await fetchJsonWithCache<IcePmiCurvePayload>({
-            key: `api:ice-power-term-report-dev:${product.root}:${currentYear}:${endYear}:${LOOKBACK_DAYS}:${tradeDateKey}`,
+            key: `api:ice-term-report:v2:${product.mode}:${product.root}:${currentYear}:${endYear}:${LOOKBACK_DAYS}:${tradeDateKey}`,
             url: `/api/ice-pmi-curve?${params.toString()}`,
             ttlMs: API_CACHE_TTL_MS,
             signal: controller.signal,
-            cacheMode: forceRefresh ? "no-store" : "default",
+            cacheMode: forceRefresh || product.mode === "gas" ? "no-store" : "default",
             forceRefresh,
           });
           return { product, payload, error: null };
@@ -903,7 +1073,7 @@ export default function IcePowerTermReportDev() {
       .catch((error) => {
         if (!controller.signal.aborted) {
           setResults(
-            ICE_POWER_TERM_PRODUCTS.map((product) => ({
+            ALL_REPORT_PRODUCTS.map((product) => ({
               product,
               payload: null,
               error: errorMessage(error),
@@ -929,11 +1099,20 @@ export default function IcePowerTermReportDev() {
       ),
     [results],
   );
-  const summaryGroups = useMemo(
-    () => buildSummaryGroups({ results, matrixYears, currentYear }),
+  const powerSummaryGroups = useMemo(
+    () => buildSummaryGroups({ results, matrixYears, currentYear, config: REPORT_CONFIGS.power }),
     [currentYear, matrixYears, results],
   );
-  const statusText = filterStatus(results, loading);
+  const gasSummaryGroups = useMemo(
+    () => buildSummaryGroups({ results, matrixYears, currentYear, config: REPORT_CONFIGS.gas }),
+    [currentYear, matrixYears, results],
+  );
+  const statusText = filterStatus(results, loading, ALL_REPORT_PRODUCT_COUNT);
+
+  const handleTabChange = (nextTab: TermReportTab) => {
+    setActiveTab(nextTab);
+    updateReportRoute(nextTab);
+  };
 
   const handleTradeDateSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -951,7 +1130,7 @@ export default function IcePowerTermReportDev() {
 
   return (
     <div className="w-full space-y-4">
-      <ControlCard title="ICE Power Term Report">
+      <ControlCard title="ICE Term Report">
         <div className="space-y-3">
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
@@ -992,13 +1171,32 @@ export default function IcePowerTermReportDev() {
         </div>
       </ControlCard>
 
-      <SummaryTable groups={summaryGroups} loading={loading} results={results} />
+      <SummaryTable
+        powerGroups={powerSummaryGroups}
+        gasGroups={gasSummaryGroups}
+        loading={loading}
+        results={results}
+        totalProducts={ALL_REPORT_PRODUCT_COUNT}
+      />
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <DashboardTabs
+          tabs={REPORT_TABS}
+          activeValue={activeTab}
+          onChange={handleTabChange}
+          ariaLabel="ICE term report tabs"
+        />
+        <span className="text-xs tabular-nums text-gray-500">
+          Showing {activeConfig.title} detail tables
+        </span>
+      </div>
+
       <ErrorStrip results={results} />
-      {ICE_POWER_TERM_MARKETS.map((market) => (
+      {activeConfig.markets.map((market) => (
         <MarketSection
           key={market.id}
           market={market}
-          products={ICE_POWER_TERM_PRODUCTS_BY_MARKET[market.id]}
+          products={activeConfig.productsByMarket[market.id] ?? []}
           payloads={payloads}
           matrixYears={matrixYears}
           currentYear={currentYear}
