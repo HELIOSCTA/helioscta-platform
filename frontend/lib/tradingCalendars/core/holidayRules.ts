@@ -6,9 +6,34 @@ import {
   makeCalendarDate,
   nthWeekdayOfMonth,
 } from "./dates";
-import type { CalendarHoliday } from "./types";
+import type { CalendarHoliday, CalendarTradingStatus } from "./types";
 
 export const US_FEDERAL_HOLIDAY_SOURCE = "U.S. federal holiday rules";
+
+function combineText(left?: string, right?: string): string | undefined {
+  if (!left) return right;
+  if (!right || left === right) return left;
+  return `${left}; ${right}`;
+}
+
+function combineTradingStatus(
+  left?: CalendarTradingStatus,
+  right?: CalendarTradingStatus
+): CalendarTradingStatus | undefined {
+  if (!left) return right;
+  if (!right || left === right) return left;
+  if (left === "closed" || right === "closed") return "closed";
+  if (left === "non-trading" || right === "non-trading") return "non-trading";
+  if (left === "modified" || right === "modified") return "modified";
+  if (left === "special" || right === "special") return "special";
+  return "open";
+}
+
+function combineIsTradingDay(left?: boolean, right?: boolean): boolean | undefined {
+  if (left === false || right === false) return false;
+  if (left === true || right === true) return true;
+  return undefined;
+}
 
 function fixedActualAndObserved(
   year: number,
@@ -40,11 +65,13 @@ export function sortUniqueHolidays(holidays: CalendarHoliday[]): CalendarHoliday
 
     byDate.set(holiday.date, {
       date: holiday.date,
-      name:
-        existing.name === holiday.name
-          ? existing.name
-          : `${existing.name}; ${holiday.name}`,
-      source: existing.source ?? holiday.source,
+      name: combineText(existing.name, holiday.name) ?? holiday.name,
+      source: combineText(existing.source, holiday.source),
+      sourceUrl: existing.sourceUrl ?? holiday.sourceUrl,
+      category: combineText(existing.category, holiday.category),
+      tradingStatus: combineTradingStatus(existing.tradingStatus, holiday.tradingStatus),
+      isTradingDay: combineIsTradingDay(existing.isTradingDay, holiday.isTradingDay),
+      notes: combineText(existing.notes, holiday.notes),
     });
   }
 
