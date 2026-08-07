@@ -47,6 +47,14 @@ import {
   fmtSignedMw,
 } from "@/components/pjm/forecastShared";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
+import {
+  POWER_FORECAST_DEFAULT_NET_LOAD_AREA,
+  effectivePowerForecastSource,
+  powerForecastIsoLabel,
+  powerForecastSourceLabel,
+  type PowerForecastIso,
+  type PowerForecastSourceMode,
+} from "@/lib/powerForecasts";
 
 interface MetricSummary {
   netFlatAvg: number | null;
@@ -84,12 +92,15 @@ interface NetLoadExplorerCell extends MetricSummary {
 }
 
 interface NetLoadExplorerPayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
+  isoLabel?: string;
   area: string;
   areas: string[];
   source: string;
   sourceMode: ForecastSourceMode;
   sourceLabel: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   formula: string;
   coverageNote: string;
   asOf: string | null;
@@ -111,7 +122,8 @@ interface NetLoadVintageCurve extends MetricSummary {
 }
 
 interface NetLoadDifferencesPayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
+  isoLabel?: string;
   area: string;
   areas?: string[];
   forecastDate: string;
@@ -121,6 +133,8 @@ interface NetLoadDifferencesPayload {
   source: string;
   sourceMode: ForecastSourceMode;
   sourceLabel: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   formula: string;
   coverageNote: string;
   rowCount: number;
@@ -148,7 +162,8 @@ interface NetLoadDateCompareHour {
 }
 
 interface NetLoadDateComparePayload {
-  iso: "pjm";
+  iso: PowerForecastIso;
+  isoLabel?: string;
   area: string;
   baseDate: string;
   compareDate: string;
@@ -157,6 +172,8 @@ interface NetLoadDateComparePayload {
   sourceMode: ForecastSourceMode;
   sourceLabel: string;
   source: string;
+  forecastTimeBasis?: string;
+  issueTimeBasis?: string;
   formula: string;
   completeHourCount: number;
   latestUpdate: string | null;
@@ -173,7 +190,7 @@ export interface PjmNetLoadForecastFreshnessSummary {
 }
 
 export type ComponentKey = "load" | "wind" | "solar" | "netLoad";
-export type ForecastSourceMode = "pjm" | "meteologica";
+export type ForecastSourceMode = PowerForecastSourceMode;
 type AreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 export type NetLoadForecastTab = "outright" | "compareDay";
 export type StatisticKey = "peak" | "onPeak" | "offPeak" | "flat";
@@ -218,7 +235,7 @@ const FORECAST_SOURCE_TABS: Array<{
   label: string;
   scope: string;
 }> = [
-  { key: "pjm", label: "PJM", scope: "Data Miner load, wind, solar" },
+  { key: "pjm", label: "PJM Data Miner", scope: "PJM only" },
   { key: "meteologica", label: "Meteologica", scope: "Load, wind, solar" },
 ];
 const NET_LOAD_FORECAST_TABS: Array<{
@@ -348,7 +365,7 @@ function statisticLabel(statistic: StatisticKey): string {
 }
 
 function sourceLabel(sourceMode: ForecastSourceMode): string {
-  return FORECAST_SOURCE_TABS.find((item) => item.key === sourceMode)?.label ?? sourceMode;
+  return powerForecastSourceLabel(sourceMode);
 }
 
 function changeWindowHours(key: ChangeWindowKey): number {
@@ -440,23 +457,39 @@ function componentHeatCellStyle(
   };
 }
 
-function buildExplorerUrl(sourceMode: ForecastSourceMode, refresh: boolean): string {
-  const params = new URLSearchParams({ source: sourceMode });
+function buildExplorerUrl({
+  iso,
+  sourceMode,
+  refresh,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+  refresh: boolean;
+}): string {
+  const params = new URLSearchParams({ iso, source: sourceMode, type: "netLoad" });
   if (refresh) params.set("refresh", "1");
-  return `/api/pjm-net-load-forecast-explorer?${params.toString()}`;
+  return `/api/power-forecast-explorer?${params.toString()}`;
 }
 
-function buildExplorerCacheKey(sourceMode: ForecastSourceMode): string {
-  return `api:pjm-net-load-forecast-explorer:${sourceMode}`;
+function buildExplorerCacheKey({
+  iso,
+  sourceMode,
+}: {
+  iso: PowerForecastIso;
+  sourceMode: ForecastSourceMode;
+}): string {
+  return ["api:power-forecast-explorer", iso, sourceMode, "netLoad"].join(":");
 }
 
 function buildDiffUrl({
+  iso,
   sourceMode,
   area,
   forecastDate,
   lookbackHours,
   refresh,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   forecastDate: string;
@@ -464,29 +497,35 @@ function buildDiffUrl({
   refresh: boolean;
 }): string {
   const params = new URLSearchParams({
+    iso,
     source: sourceMode,
+    type: "netLoad",
     area,
     date: forecastDate,
     lookbackHours: String(lookbackHours),
   });
   if (refresh) params.set("refresh", "1");
-  return `/api/pjm-net-load-forecast-differences?${params.toString()}`;
+  return `/api/power-forecast-differences?${params.toString()}`;
 }
 
 function buildDiffCacheKey({
+  iso,
   sourceMode,
   area,
   forecastDate,
   lookbackHours,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   forecastDate: string;
   lookbackHours: number;
 }): string {
   return [
-    "api:pjm-net-load-forecast-differences",
+    "api:power-forecast-differences",
+    iso,
     sourceMode,
+    "netLoad",
     area,
     forecastDate,
     lookbackHours,
@@ -494,12 +533,14 @@ function buildDiffCacheKey({
 }
 
 function buildCompareUrl({
+  iso,
   sourceMode,
   area,
   baseDate,
   compareDate,
   refresh,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   baseDate: string;
@@ -507,29 +548,35 @@ function buildCompareUrl({
   refresh: boolean;
 }): string {
   const params = new URLSearchParams({
+    iso,
     source: sourceMode,
+    type: "netLoad",
     area,
     baseDate,
     compareDate,
   });
   if (refresh) params.set("refresh", "1");
-  return `/api/pjm-net-load-forecast-date-compare?${params.toString()}`;
+  return `/api/power-forecast-date-compare?${params.toString()}`;
 }
 
 function buildCompareCacheKey({
+  iso,
   sourceMode,
   area,
   baseDate,
   compareDate,
 }: {
+  iso: PowerForecastIso;
   sourceMode: ForecastSourceMode;
   area: string;
   baseDate: string;
   compareDate: string;
 }): string {
   return [
-    "api:pjm-net-load-forecast-date-compare",
+    "api:power-forecast-date-compare",
+    iso,
     sourceMode,
+    "netLoad",
     area,
     baseDate,
     compareDate,
@@ -612,7 +659,7 @@ function freshnessFromPayload(
     statusClass: payload.asOf
       ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
       : "border-yellow-500/40 bg-yellow-500/10 text-yellow-200",
-    summary: `${payload.sourceLabel} net load | ${areaLabel} | ${payload.cellCount.toLocaleString()} cells | ${payload.rowCount.toLocaleString()} vintages`,
+    summary: `${payload.isoLabel ?? payload.iso.toUpperCase()} | ${payload.sourceLabel} net load | ${areaLabel} | ${payload.cellCount.toLocaleString()} cells | ${payload.rowCount.toLocaleString()} vintages`,
     targetDateLabel: areaLabel,
     latestDateLabel: fmtDate(payload.forecastDates.at(-1)),
     latestUpdateLabel: fmtDateTime(payload.asOf),
@@ -751,6 +798,7 @@ function SectionCard({
 }
 
 export default function PjmNetLoadForecast({
+  iso = "pjm",
   refreshToken = 0,
   onFreshnessChange,
   sourceMode: controlledSourceMode,
@@ -777,6 +825,7 @@ export default function PjmNetLoadForecast({
   embedded = false,
   filterControlsPlacement = "internal",
 }: {
+  iso?: PowerForecastIso;
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmNetLoadForecastFreshnessSummary) => void;
   sourceMode?: ForecastSourceMode;
@@ -805,9 +854,12 @@ export default function PjmNetLoadForecast({
 }) {
   const [internalSourceMode, setInternalSourceMode] = useState<ForecastSourceMode>("pjm");
   const [internalActiveTab, setInternalActiveTab] = useState<NetLoadForecastTab>("outright");
-  const sourceMode = controlledSourceMode ?? internalSourceMode;
+  const requestedSourceMode = controlledSourceMode ?? internalSourceMode;
+  const sourceMode = effectivePowerForecastSource(iso, requestedSourceMode);
+  const isoLabel = powerForecastIsoLabel(iso);
+  const defaultArea = POWER_FORECAST_DEFAULT_NET_LOAD_AREA[iso];
   const activeTab = controlledActiveTab ?? internalActiveTab;
-  const previousSourceMode = useRef(sourceMode);
+  const previousForecastSourceKey = useRef(`${iso}|${sourceMode}`);
   const setSourceMode = useCallback(
     (nextSourceMode: ForecastSourceMode) => {
       startTransition(() => {
@@ -927,10 +979,11 @@ export default function PjmNetLoadForecast({
   );
 
   useEffect(() => {
-    if (previousSourceMode.current === sourceMode) return;
-    previousSourceMode.current = sourceMode;
+    const nextKey = `${iso}|${sourceMode}`;
+    if (previousForecastSourceKey.current === nextKey) return;
+    previousForecastSourceKey.current = nextKey;
     setSelectedForecastDate(null);
-    setSelectedArea("RTO");
+    setSelectedArea(defaultArea);
     setSelectedComponent("netLoad");
     setSelectedStatistic("peak");
     setExplorerData(null);
@@ -946,6 +999,8 @@ export default function PjmNetLoadForecast({
     setCompareRampingEnabled(false);
     setFocusedCompareChart(null);
   }, [
+    defaultArea,
+    iso,
     setCompareBaseDate,
     setCompareRampingEnabled,
     setCompareTargetDate,
@@ -986,8 +1041,8 @@ export default function PjmNetLoadForecast({
     setExplorerError(null);
 
     fetchJsonWithCache<NetLoadExplorerPayload>({
-      key: buildExplorerCacheKey(sourceMode),
-      url: buildExplorerUrl(sourceMode, refreshToken > 0),
+      key: buildExplorerCacheKey({ iso, sourceMode }),
+      url: buildExplorerUrl({ iso, sourceMode, refresh: refreshToken > 0 }),
       ttlMs: API_CACHE_TTL_MS,
       cacheMode: refreshToken > 0 ? "no-store" : "default",
       forceRefresh: refreshToken > 0,
@@ -1017,7 +1072,7 @@ export default function PjmNetLoadForecast({
     return () => {
       active = false;
     };
-  }, [refreshToken, onFreshnessChange, sourceMode]);
+  }, [iso, refreshToken, onFreshnessChange, sourceMode]);
 
   useEffect(() => {
     if (!selectedForecastDate) return;
@@ -1028,12 +1083,14 @@ export default function PjmNetLoadForecast({
 
     fetchJsonWithCache<NetLoadDifferencesPayload>({
       key: buildDiffCacheKey({
+        iso,
         sourceMode,
         area: selectedArea,
         forecastDate: selectedForecastDate,
         lookbackHours,
       }),
       url: buildDiffUrl({
+        iso,
         sourceMode,
         area: selectedArea,
         forecastDate: selectedForecastDate,
@@ -1064,7 +1121,7 @@ export default function PjmNetLoadForecast({
     return () => {
       active = false;
     };
-  }, [lookbackHours, refreshToken, selectedArea, selectedForecastDate, sourceMode]);
+  }, [iso, lookbackHours, refreshToken, selectedArea, selectedForecastDate, sourceMode]);
 
   useEffect(() => {
     if (!explorerData) return;
@@ -1188,12 +1245,14 @@ export default function PjmNetLoadForecast({
       areas.map((area) =>
         fetchJsonWithCache<NetLoadDateComparePayload>({
           key: buildCompareCacheKey({
+            iso,
             sourceMode,
             area,
             baseDate: compareBaseDate,
             compareDate: compareTargetDate,
           }),
           url: buildCompareUrl({
+            iso,
             sourceMode,
             area,
             baseDate: compareBaseDate,
@@ -1245,6 +1304,7 @@ export default function PjmNetLoadForecast({
     activeTab,
     compareBaseDate,
     compareTargetDate,
+    iso,
     refreshToken,
     sourceMode,
     visibleAreas,
@@ -1258,9 +1318,11 @@ export default function PjmNetLoadForecast({
     [explorerData],
   );
   const selectedWindow = CHANGE_WINDOWS.find((item) => item.key === changeWindow) ?? CHANGE_WINDOWS[2];
-  const explorerSubtitle = `${sourceLabel(sourceMode)} | ${statisticLabel(selectedStatistic)} by area/component | ${
+  const forecastHourBasis = sourceMode === "meteologica" ? "source-local hours" : "PJM/EPT hours";
+  const issueBasis = sourceMode === "meteologica" ? "UTC issues" : "PJM/EPT issues";
+  const explorerSubtitle = `${isoLabel} | ${sourceLabel(sourceMode)} | ${statisticLabel(selectedStatistic)} by area/component | ${
     viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"
-  } | complete load, wind, and solar hours only`;
+  } | ${forecastHourBasis} | complete load, wind, and solar hours only`;
   const compareDateOptions = useMemo(() => explorerData?.forecastDates ?? [], [explorerData]);
   useEffect(() => {
     onCompareDateOptionsChange?.(compareDateOptions);
@@ -1283,11 +1345,14 @@ export default function PjmNetLoadForecast({
     compareBaseDate,
     compareTargetDate,
   )})`;
-  const compareSubtitle = `${sourceLabel(sourceMode)} | ${compareDataList.length}/${
+  const compareSubtitle = `${isoLabel} | ${sourceLabel(sourceMode)} | ${compareDataList.length}/${
     visibleAreaCount || visibleAreas.length
-  } regions loaded | ${compareBaseLegend} vs ${compareTargetLegend}`;
+  } regions loaded | ${compareBaseLegend} vs ${compareTargetLegend} | ${forecastHourBasis}`;
   const compareRenewableVintageNote =
     "Solar and wind use the latest non-null forecast at or before the selected load issue.";
+  const standaloneSourceTabs = FORECAST_SOURCE_TABS.filter(
+    (tab) => iso === "pjm" || tab.key === "meteologica",
+  );
 
   const detailRows = useMemo<DetailTableRow[]>(() => {
     if (!diffData) return [];
@@ -2015,7 +2080,8 @@ export default function PjmNetLoadForecast({
                 {compareRampingEnabled ? " Ramp" : ""} Compare Day
               </h2>
               <p className="mt-1 text-xs text-gray-500">
-                {sourceLabel(sourceMode)} | {compareBaseLegend} vs {compareTargetLegend}
+                {isoLabel} | {sourceLabel(sourceMode)} | {compareBaseLegend} vs {compareTargetLegend} |{" "}
+                {forecastHourBasis}
               </p>
             </div>
             <button
@@ -2046,10 +2112,11 @@ export default function PjmNetLoadForecast({
             <h2 className="text-sm font-semibold text-gray-100">Net Load Forecast Explorer</h2>
             {explorerData && (
               <p className="mt-1 text-xs text-gray-500">
-                {explorerData.sourceLabel} | {openAreaCount}/{visibleAreaCount} regions open |{" "}
+                {explorerData.isoLabel ?? isoLabel} | {explorerData.sourceLabel} |{" "}
+                {openAreaCount}/{visibleAreaCount} regions open |{" "}
                 {dates.length} dates | {statisticLabel(selectedStatistic)} over complete component
                 hours | {viewMode === "change" ? `change vs ${selectedWindow.label}` : "latest issue"} |{" "}
-                {explorerData.formula}
+                {forecastHourBasis} | {explorerData.formula}
               </p>
             )}
           </div>
@@ -2476,9 +2543,9 @@ export default function PjmNetLoadForecast({
                 {selectedArea} {componentLabel(selectedComponent)} Vintages
               </h2>
               <p className="mt-1 text-xs text-gray-500">
-                {sourceLabel(sourceMode)} | {selectedArea} | {fmtDate(selectedForecastDate)} |
+                {isoLabel} | {sourceLabel(sourceMode)} | {selectedArea} | {fmtDate(selectedForecastDate)} |
                 matrix statistic {statisticLabel(selectedStatistic)} | {lookbackHours} hour
-                lookback
+                lookback | {issueBasis}
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -2526,9 +2593,9 @@ export default function PjmNetLoadForecast({
               <>
                 <PlotCard
                   title={`${componentLabel(selectedComponent)} Forecast Vintages`}
-                  subtitle={`${diffData.sourceLabel} | ${diffData.area}: ${
+                  subtitle={`${diffData.isoLabel ?? isoLabel} | ${diffData.sourceLabel} | ${diffData.area}: ${
                     diffData.forecastDate
-                  } | as of ${fmtDateTime(diffData.asOf)}`}
+                  } | ${issueBasis} ${fmtDateTime(diffData.asOf)} | ${forecastHourBasis}`}
                   series={lookbackSeries}
                   hiddenSeries={hiddenSeries}
                   onToggleSeries={toggleSeries}
@@ -2563,7 +2630,7 @@ export default function PjmNetLoadForecast({
                 Source
               </span>
               <div className="grid gap-2 md:grid-cols-2" role="tablist" aria-label="Forecast source">
-                {FORECAST_SOURCE_TABS.map((tab) => (
+                {standaloneSourceTabs.map((tab) => (
                   <button
                     key={tab.key}
                     type="button"
