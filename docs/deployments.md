@@ -2941,6 +2941,81 @@ ORDER BY created_at DESC
 LIMIT 3;
 ```
 
+## helios-main-zone-meteologica-forecast-hourly
+
+- Status: promoted for VM deployment; DDL, service smokes, and timer enablement
+  should run after this branch is pulled on `helioscta-prod-vm-01`.
+- Workflow: focused CAISO, ISO-NE, MISO, NYISO, and SPP Meteologica hourly
+  load, solar, and wind forecast refreshes.
+- Runtime modules:
+  - `backend.orchestration.power.caiso.meteologica_forecast_hourly`
+  - `backend.orchestration.power.isone.meteologica_forecast_hourly`
+  - `backend.orchestration.power.miso.meteologica_forecast_hourly`
+  - `backend.orchestration.power.nyiso.meteologica_forecast_hourly`
+  - `backend.orchestration.power.spp.meteologica_forecast_hourly`
+- Lower-level scrape modules:
+  - `backend.scrapes.power.caiso.meteologica_forecast_hourly`
+  - `backend.scrapes.power.isone.meteologica_forecast_hourly`
+  - `backend.scrapes.power.miso.meteologica_forecast_hourly`
+  - `backend.scrapes.power.nyiso.meteologica_forecast_hourly`
+  - `backend.scrapes.power.spp.meteologica_forecast_hourly`
+- Source system: Meteologica xTraders Markets API `contents/{content_id}/data`.
+- Destination tables:
+  - `meteologica.caiso_forecast_hourly`
+  - `meteologica.isone_forecast_hourly`
+  - `meteologica.miso_forecast_hourly`
+  - `meteologica.nyiso_forecast_hourly`
+  - `meteologica.spp_forecast_hourly`
+- Source grain: `content_id x update_id x forecast_period_start`.
+- Feed scope: 66 focused content IDs covering CAISO, ISO-NE, MISO, NYISO, and
+  aggregate SPP load/solar/wind surfaces from the promotion plan. Excluded:
+  SPP utility/LSE loads, SPP reserve/WEIS renewable zones, MISO LRZ and
+  state/province wind subregions, CAISO adjacent BA-style loads, prices,
+  normals, observations, hydro, potential, projections, long-term feeds, and
+  `l48`.
+- API telemetry: `ops.api_fetch_log`.
+- Data freshness output: `ops.data_availability_events` datasets
+  `caiso_meteologica_forecast_hourly`, `isone_meteologica_forecast_hourly`,
+  `miso_meteologica_forecast_hourly`, `nyiso_meteologica_forecast_hourly`, and
+  `spp_meteologica_forecast_hourly`.
+- Unit files:
+  - `infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-caiso-meteologica-forecast-hourly.timer`
+  - `infrastructure/systemd/helios-isone-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-isone-meteologica-forecast-hourly.timer`
+  - `infrastructure/systemd/helios-miso-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-miso-meteologica-forecast-hourly.timer`
+  - `infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-nyiso-meteologica-forecast-hourly.timer`
+  - `infrastructure/systemd/helios-spp-meteologica-forecast-hourly.service`
+  - `infrastructure/systemd/helios-spp-meteologica-forecast-hourly.timer`
+- Schedule:
+  - CAISO: every 30 minutes at `:00` and `:30` UTC.
+  - ISO-NE: every 30 minutes at `:05` and `:35` UTC.
+  - MISO: every 30 minutes at `:10` and `:40` UTC.
+  - NYISO: every 30 minutes at `:15` and `:45` UTC.
+  - SPP: every 30 minutes at `:28` and `:58` UTC.
+- Timer behavior: `Persistent=false`; current forecast snapshots should not
+  replay after VM downtime. Each timer uses `RandomizedDelaySec=2min`.
+- Overlap protection: each service uses `/usr/bin/flock` with the matching
+  `/tmp/helios-<iso>-meteologica-forecast-hourly.lock`.
+- Database role: `helios_admin` through `AZURE_POSTGRES_WRITER_*`.
+- Required VM credentials:
+  `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO` in
+  `/etc/helioscta/backend.env`.
+- Application DDL required before first run:
+  `dbt/azure_postgres/reference_sql/ddl/power/meteologica/<iso>_forecast_hourly/table_meteologica_<iso>_forecast_hourly.sql`
+  and
+  `dbt/azure_postgres/reference_sql/ddl/power/meteologica/<iso>_forecast_hourly/index_meteologica_<iso>_forecast_hourly.sql`.
+- Safe rerun story: upsert on
+  `(content_id, update_id, forecast_period_start)`.
+- Retention: 21 days by `issue_date`; the runtime purges older rows after
+  successful upserts.
+- Local verification:
+  `python -m pytest backend\tests\test_meteologica_forecast_hourly_common.py backend\tests\test_main_zone_meteologica_forecast_hourly.py backend\tests\test_pjm_meteologica_forecast_hourly.py backend\tests\test_pjm_meteologica_forecast_hourly_orchestration.py backend\tests\test_ercot_meteologica_forecast_hourly.py backend\tests\test_ercot_meteologica_forecast_hourly_orchestration.py`.
+- Post-deployment verification SQL:
+  `dbt/azure_postgres/reference_sql/ddl/power/meteologica/<iso>_forecast_hourly/verify_<iso>_meteologica_forecast_hourly.sql`.
+
 ## helios-pjm-rt-fivemin-hrl-lmps
 
 - Status: deployed; timer enabled and latest manual run succeeded.
