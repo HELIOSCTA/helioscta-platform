@@ -26,6 +26,8 @@ type DateMode = "lookback" | "range" | "month-years";
 type LoadAreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
 type LoadGrowthIso = "pjm";
 type LoadGrowthTab = "single-area" | "forecast-area-scan";
+type SeasonSummarySeason = "current" | "summer" | "winter" | "spring-shoulder" | "fall-shoulder";
+type SeasonSummaryRegionFilter = "all" | "RTO" | "WEST" | "MIDATL" | "BGE" | "PEPCO" | "SOUTH";
 interface ForecastAreaScanPreset {
   area: string;
   label: string;
@@ -143,6 +145,69 @@ interface PjmLoadGrowthYoyPayload {
     loadForecastEvaluatedAtEpt: string | null;
     weatherForecastIssuedAtUtc: string | null;
   }>;
+}
+
+type SeasonSummaryStatus = "ok" | "partial" | "missing";
+
+interface SeasonSummaryShape {
+  status: SeasonSummaryStatus;
+  normalizedCurrentMw: number | null;
+  normalizedLastYearMw: number | null;
+  deltaMw: number | null;
+  deltaPct: number | null;
+  currentFitDays: number;
+  lastYearFitDays: number;
+  evaluationDays: number;
+  currentFitDegree: number | null;
+  lastYearFitDegree: number | null;
+  error: string | null;
+}
+
+interface SeasonSummaryRow {
+  region: Exclude<SeasonSummaryRegionFilter, "all">;
+  loadArea: string;
+  wxHub: string;
+  stationId: string;
+  stationName: string;
+  status: SeasonSummaryStatus;
+  error: string | null;
+  shapes: {
+    pk: SeasonSummaryShape;
+    onPk: SeasonSummaryShape;
+    offPk: SeasonSummaryShape;
+  };
+}
+
+interface PjmLoadGrowthSeasonSummaryPayload {
+  iso: "PJM";
+  source: string;
+  selected: {
+    season: Exclude<SeasonSummarySeason, "current">;
+    requestedSeason: SeasonSummarySeason;
+    seasonLabel: string;
+    weatherMetric: WeatherMetric;
+    weatherMetricLabel: string;
+    asOfDate: string;
+  };
+  windows: {
+    cy: {
+      start: string;
+      end: string;
+      endExclusive: string;
+    };
+    ly: {
+      start: string;
+      end: string;
+      endExclusive: string;
+    };
+  };
+  rows: SeasonSummaryRow[];
+  summary: {
+    rowCount: number;
+    okRowCount: number;
+    partialRowCount: number;
+    missingRowCount: number;
+  };
 }
 
 interface FitMetricRow {
@@ -264,6 +329,13 @@ const LOAD_GROWTH_TABS: Array<{ value: LoadGrowthTab; label: string }> = [
 const LOAD_GROWTH_ISOS: Array<{ value: LoadGrowthIso; label: string }> = [
   { value: "pjm", label: "PJM" },
 ];
+const SEASON_SUMMARY_SEASONS: Array<{ value: SeasonSummarySeason; label: string }> = [
+  { value: "current", label: "Current" },
+  { value: "summer", label: "Summer" },
+  { value: "winter", label: "Winter" },
+  { value: "spring-shoulder", label: "Spring Shoulder" },
+  { value: "fall-shoulder", label: "Fall Shoulder" },
+];
 const FORECAST_AREA_SCAN_PRESETS: ForecastAreaScanPreset[] = [
   { area: "RTO", label: "RTO", stationId: "PJM" },
   { area: "WEST", label: "WEST", stationId: "KPIT" },
@@ -271,6 +343,15 @@ const FORECAST_AREA_SCAN_PRESETS: ForecastAreaScanPreset[] = [
   { area: "BC", label: "BGE", stationId: "KBWI" },
   { area: "PEPCO", label: "PEPCO", stationId: "KDCA" },
   { area: "SOUTH", label: "SOUTH", stationId: "KRIC" },
+];
+const SEASON_SUMMARY_REGION_FILTERS: Array<{ value: SeasonSummaryRegionFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "RTO", label: "RTO" },
+  { value: "WEST", label: "WEST" },
+  { value: "MIDATL", label: "MIDATL" },
+  { value: "BGE", label: "BGE" },
+  { value: "PEPCO", label: "PEPCO" },
+  { value: "SOUTH", label: "SOUTH" },
 ];
 const LOAD_AREA_GROUPS: Array<{ key: LoadAreaGroupKey; label: string }> = [
   { key: "rto", label: "RTO" },
@@ -339,6 +420,11 @@ function fmtPct(value: number | null | undefined): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+function fmtSignedShortMw(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "-";
+  return `${value >= 0 ? "+" : ""}${Math.round(value).toLocaleString()}`;
+}
+
 function fmtTemp(value: number | null | undefined): string {
   if (value === null || value === undefined || !Number.isFinite(value)) return "-";
   return `${Math.round(value)}F`;
@@ -362,6 +448,25 @@ function fmtTooltipDate(value: string | null | undefined): string {
 function fmtDateTime(value: string | null | undefined): string {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
+}
+
+function deltaClassName(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "text-gray-500";
+  if (value > 0) return "text-emerald-300";
+  if (value < 0) return "text-red-300";
+  return "text-gray-300";
+}
+
+function seasonSummaryStatusClass(status: SeasonSummaryStatus): string {
+  if (status === "ok") return "border-emerald-500/35 bg-emerald-500/10 text-emerald-200";
+  if (status === "partial") return "border-amber-500/35 bg-amber-500/10 text-amber-200";
+  return "border-red-500/35 bg-red-500/10 text-red-200";
+}
+
+function seasonSummaryStatusLabel(status: SeasonSummaryStatus): string {
+  if (status === "ok") return "OK";
+  if (status === "partial") return "Partial";
+  return "Missing";
 }
 
 function todayIsoDate(): string {
@@ -820,6 +925,34 @@ function yoyCacheKey({
   ].join(":");
 }
 
+function buildSeasonSummaryApiUrl({
+  season,
+  weatherMetric,
+  refresh,
+}: {
+  season: SeasonSummarySeason;
+  weatherMetric: WeatherMetric;
+  refresh: boolean;
+}): string {
+  const params = new URLSearchParams({
+    iso: "PJM",
+    season,
+    weatherMetric,
+  });
+  if (refresh) params.set("refresh", "1");
+  return `/api/pjm-load-growth-season-summary?${params.toString()}`;
+}
+
+function seasonSummaryCacheKey({
+  season,
+  weatherMetric,
+}: {
+  season: SeasonSummarySeason;
+  weatherMetric: WeatherMetric;
+}): string {
+  return ["api:pjm-load-growth-season-summary", season, weatherMetric].join(":");
+}
+
 function statusClass(status: string): string {
   if (status === "Limited") return "border-amber-500/40 bg-amber-500/10 text-amber-100";
   if (status === "No overlap") return "border-orange-500/40 bg-orange-500/10 text-orange-100";
@@ -949,6 +1082,8 @@ export default function PjmLoadGrowth({
   const [scanDateMode, setScanDateMode] = useState<DateMode>(DEFAULT_DATE_MODE);
   const [scanSelectedMonths, setScanSelectedMonths] = useState<string[]>(DEFAULT_MONTHS);
   const [scanSelectedYears, setScanSelectedYears] = useState<string[]>(DEFAULT_YEARS);
+  const [scanSummarySeason, setScanSummarySeason] = useState<SeasonSummarySeason>("current");
+  const [scanSummaryRegionFilter, setScanSummaryRegionFilter] = useState<SeasonSummaryRegionFilter>("all");
   const [hiddenDailyFitSeries, setHiddenDailyFitSeries] = useState<Set<string>>(() => new Set());
   const [openTables, setOpenTables] = useState<Record<LoadGrowthTableKey, boolean>>({
     dailyFitStats: true,
@@ -961,6 +1096,9 @@ export default function PjmLoadGrowth({
   const [scanPayloads, setScanPayloads] = useState<Record<string, PjmLoadGrowthYoyPayload>>({});
   const [scanErrors, setScanErrors] = useState<Record<string, string>>({});
   const [scanLoading, setScanLoading] = useState(false);
+  const [seasonSummaryData, setSeasonSummaryData] = useState<PjmLoadGrowthSeasonSummaryPayload | null>(null);
+  const [seasonSummaryLoading, setSeasonSummaryLoading] = useState(false);
+  const [seasonSummaryError, setSeasonSummaryError] = useState<string | null>(null);
   const normalizedYears = useMemo(() => normalizeCompareYears(selectedYears), [selectedYears]);
   const normalizedScanYears = useMemo(() => normalizeCompareYears(scanSelectedYears), [scanSelectedYears]);
   const selectedComparisonYear = Number(normalizedYears.at(-1) ?? new Date().getFullYear());
@@ -1166,6 +1304,51 @@ export default function PjmLoadGrowth({
     scanSelectedMonths,
   ]);
 
+  useEffect(() => {
+    if (activeTab !== "forecast-area-scan") {
+      setSeasonSummaryLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setSeasonSummaryLoading(true);
+    setSeasonSummaryError(null);
+
+    fetchJsonWithCache<PjmLoadGrowthSeasonSummaryPayload>({
+      key: seasonSummaryCacheKey({
+        season: scanSummarySeason,
+        weatherMetric: scanWeatherMetric,
+      }),
+      url: buildSeasonSummaryApiUrl({
+        season: scanSummarySeason,
+        weatherMetric: scanWeatherMetric,
+        refresh: refreshToken > 0,
+      }),
+      ttlMs: API_CACHE_TTL_MS,
+      signal: controller.signal,
+      cacheMode: refreshToken > 0 ? "no-store" : "default",
+      forceRefresh: refreshToken > 0,
+    })
+      .then((payload) => {
+        if (!active) return;
+        setSeasonSummaryData(payload);
+      })
+      .catch((err: Error) => {
+        if (!active || err.name === "AbortError") return;
+        setSeasonSummaryError(err.message || "Failed to load seasonal summary");
+        setSeasonSummaryData(null);
+      })
+      .finally(() => {
+        if (active) setSeasonSummaryLoading(false);
+      });
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [activeTab, refreshToken, scanSummarySeason, scanWeatherMetric]);
+
   const selectedMetric = metricConfig(weatherMetric);
   const scanSelectedMetric = metricConfig(scanWeatherMetric);
   const dailyFit = useMemo(
@@ -1230,6 +1413,8 @@ export default function PjmLoadGrowth({
   const editDialogTitle = activeTab === "forecast-area-scan" ? "Edit Forecast Area Scan" : "Edit Single Area View";
   const activeViewLabel = LOAD_GROWTH_TABS.find((tab) => tab.value === activeTab)?.label ?? "Forecast Area Scan";
   const selectedIsoLabel = LOAD_GROWTH_ISOS.find((iso) => iso.value === selectedIso)?.label ?? selectedIso.toUpperCase();
+  const scanSummarySeasonLabel =
+    SEASON_SUMMARY_SEASONS.find((season) => season.value === scanSummarySeason)?.label ?? "Current";
   const filterStatusText =
     activeTab === "forecast-area-scan"
       ? `${loadedScanPresetCount}/${FORECAST_AREA_SCAN_PRESETS.length} presets${
@@ -1242,6 +1427,7 @@ export default function PjmLoadGrowth({
           selectedIsoLabel,
           activeViewLabel,
           `${FORECAST_AREA_SCAN_PRESETS.length} fixed areas`,
+          `${scanSummarySeasonLabel} season`,
           scanSelectedMetric.label,
           scanSelectedShapeLabel,
           scanSelectedDayTypeLabel,
@@ -1259,6 +1445,40 @@ export default function PjmLoadGrowth({
           dateSelectionLabel,
           `Highlight ${plotLookbackDays}d`,
         ];
+  const filteredSeasonSummaryRows = useMemo(() => {
+    const rows = seasonSummaryData?.rows ?? [];
+    if (scanSummaryRegionFilter === "all") return rows;
+    return rows.filter((row) => row.region === scanSummaryRegionFilter);
+  }, [scanSummaryRegionFilter, seasonSummaryData]);
+  const seasonSummarySubtitle = seasonSummaryData
+    ? `${seasonSummaryData.selected.seasonLabel} | CY ${fmtDate(seasonSummaryData.windows.cy.start)} to ${fmtDate(
+        seasonSummaryData.windows.cy.end,
+      )} | LY ${fmtDate(seasonSummaryData.windows.ly.start)} to ${fmtDate(seasonSummaryData.windows.ly.end)} | ${
+        seasonSummaryData.selected.weatherMetricLabel
+      } | ${seasonSummaryData.summary.okRowCount}/${seasonSummaryData.summary.rowCount} complete`
+    : `${scanSummarySeasonLabel} season | ${scanSelectedMetric.label}`;
+  const seasonSummaryAction = (
+    <div className="flex flex-wrap items-center justify-end gap-1.5" aria-label="Season summary region filter">
+      {SEASON_SUMMARY_REGION_FILTERS.map((option) => {
+        const active = scanSummaryRegionFilter === option.value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            aria-pressed={active}
+            onClick={() => setScanSummaryRegionFilter(option.value)}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+              active
+                ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+            }`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
   const dailyFitSummary = {
     averageDiff: dailyFit?.growthBands[0]?.averageDiff,
     averageGrowthPct: dailyFit?.growthBands[0]?.averageGrowthPct,
@@ -1755,6 +1975,113 @@ export default function PjmLoadGrowth({
     );
   };
 
+  const renderSeasonSummaryMetricCells = (shape: SeasonSummaryShape) => (
+    <>
+      <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(shape.normalizedCurrentMw)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{fmtShortMw(shape.normalizedLastYearMw)}</td>
+      <td className={`px-3 py-2 text-right tabular-nums ${deltaClassName(shape.deltaMw)}`}>
+        {fmtSignedShortMw(shape.deltaMw)}
+      </td>
+      <td className={`px-3 py-2 text-right tabular-nums ${deltaClassName(shape.deltaPct)}`}>
+        {fmtPct(shape.deltaPct)}
+      </td>
+    </>
+  );
+
+  const renderSeasonSummaryTable = () => {
+    if (seasonSummaryError) {
+      return (
+        <div className="bg-[#0d1119] p-4 text-sm text-red-200">
+          {seasonSummaryError}
+        </div>
+      );
+    }
+
+    if (seasonSummaryLoading && !seasonSummaryData) {
+      return (
+        <div className="bg-[#0d1119] p-4 text-sm text-gray-500">
+          Loading weather-normalized seasonal summary...
+        </div>
+      );
+    }
+
+    if (!filteredSeasonSummaryRows.length) {
+      return (
+        <div className="bg-[#0d1119] p-4 text-sm text-gray-500">
+          No seasonal summary rows are available for this selection.
+        </div>
+      );
+    }
+
+    return (
+      <table className="w-full min-w-[1680px] border-collapse bg-[#0d1119] text-[11px] text-gray-200">
+        <thead className="sticky top-0 z-10 bg-gray-950 text-gray-500">
+          <tr>
+            {[
+              "Region",
+              "Wx Hub",
+              "PK Norm CY",
+              "PK Norm LY",
+              "PK Delta MW",
+              "PK Delta %",
+              "OnPK Norm CY",
+              "OnPK Norm LY",
+              "OnPK Delta MW",
+              "OnPK Delta %",
+              "OffPk Norm CY",
+              "OffPk Norm LY",
+              "OffPk Delta MW",
+              "OffPk Delta %",
+              "Fit Days",
+            ].map((label) => (
+              <th
+                key={label}
+                className="px-3 py-2 text-right font-semibold uppercase tracking-wide first:sticky first:left-0 first:z-20 first:bg-gray-950 first:text-left"
+              >
+                {label}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-gray-800">
+          {filteredSeasonSummaryRows.map((row) => (
+            <tr key={row.region} className="group hover:bg-gray-900/60">
+              <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 text-left group-hover:bg-gray-900">
+                <div className="flex min-w-[110px] flex-wrap items-center gap-1.5">
+                  <span className="font-semibold text-gray-200">{row.region}</span>
+                  <span
+                    className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${seasonSummaryStatusClass(
+                      row.status,
+                    )}`}
+                    title={row.error ?? undefined}
+                  >
+                    {seasonSummaryStatusLabel(row.status)}
+                  </span>
+                </div>
+                {row.loadArea !== row.region && (
+                  <div className="mt-0.5 text-[10px] tabular-nums text-gray-600">{row.loadArea}</div>
+                )}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums text-gray-300" title={row.stationName}>
+                {row.wxHub}
+              </td>
+              {renderSeasonSummaryMetricCells(row.shapes.pk)}
+              {renderSeasonSummaryMetricCells(row.shapes.onPk)}
+              {renderSeasonSummaryMetricCells(row.shapes.offPk)}
+              <td className="px-3 py-2 text-right tabular-nums text-gray-400">
+                <span title="CY/LY fit days by shape">
+                  PK {row.shapes.pk.currentFitDays}/{row.shapes.pk.lastYearFitDays} | On{" "}
+                  {row.shapes.onPk.currentFitDays}/{row.shapes.onPk.lastYearFitDays} | Off{" "}
+                  {row.shapes.offPk.currentFitDays}/{row.shapes.offPk.lastYearFitDays}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
   return (
     <div className="space-y-4">
       <ControlCard title="Load Growth">
@@ -1878,6 +2205,25 @@ export default function PjmLoadGrowth({
                       ))}
                     </select>
                   </label>
+
+                  {activeTab === "forecast-area-scan" && (
+                    <label className="block">
+                      <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                        Summary Season
+                      </span>
+                      <select
+                        value={scanSummarySeason}
+                        onChange={(event) => setScanSummarySeason(event.target.value as SeasonSummarySeason)}
+                        className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                      >
+                        {SEASON_SUMMARY_SEASONS.map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
 
                   {controlDateMode === "range" && (
                     <>
@@ -2319,22 +2665,33 @@ export default function PjmLoadGrowth({
         </>
       )}
       {activeTab === "forecast-area-scan" && (
-        <PlotCard
-          title="Forecast Area Scan"
-          subtitle={`${loadedScanPresetCount}/${FORECAST_AREA_SCAN_PRESETS.length} presets loaded${
-            scanErrorCount ? ` | ${scanErrorCount} error${scanErrorCount === 1 ? "" : "s"}` : ""
-          } | ISO PJM | ${scanSelectedShapeLabel} ${scanSelectedDayTypeLabel} | ${scanSelectedMetric.label} | ${scanDateSelectionLabel}`}
-          series={scanDailyFitSeries}
-          hiddenSeries={hiddenDailyFitSeries}
-          onToggleSeries={toggleDailyFitSeries}
-          onShowAll={() => setHiddenDailyFitSeries(new Set())}
-          onHideAll={() =>
-            setHiddenDailyFitSeries(new Set<string>(DAILY_FIT_SERIES_KEYS))
-          }
-          focusedChildren={renderForecastAreaScanGrid("h-[300px]")}
-        >
-          {renderForecastAreaScanGrid("h-[220px]")}
-        </PlotCard>
+        <>
+          <DataTableShell
+            title="Weather-Normalized Season Summary"
+            subtitle={seasonSummarySubtitle}
+            action={seasonSummaryAction}
+            bodyClassName="max-h-[420px] overflow-y-auto"
+          >
+            {renderSeasonSummaryTable()}
+          </DataTableShell>
+
+          <PlotCard
+            title="Forecast Area Scan"
+            subtitle={`${loadedScanPresetCount}/${FORECAST_AREA_SCAN_PRESETS.length} presets loaded${
+              scanErrorCount ? ` | ${scanErrorCount} error${scanErrorCount === 1 ? "" : "s"}` : ""
+            } | ISO PJM | ${scanSelectedShapeLabel} ${scanSelectedDayTypeLabel} | ${scanSelectedMetric.label} | ${scanDateSelectionLabel}`}
+            series={scanDailyFitSeries}
+            hiddenSeries={hiddenDailyFitSeries}
+            onToggleSeries={toggleDailyFitSeries}
+            onShowAll={() => setHiddenDailyFitSeries(new Set())}
+            onHideAll={() =>
+              setHiddenDailyFitSeries(new Set<string>(DAILY_FIT_SERIES_KEYS))
+            }
+            focusedChildren={renderForecastAreaScanGrid("h-[300px]")}
+          >
+            {renderForecastAreaScanGrid("h-[220px]")}
+          </PlotCard>
+        </>
       )}
     </div>
   );

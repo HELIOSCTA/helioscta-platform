@@ -19,3 +19,4 @@ require.extensions[".ts"] = function loadTs(module, filename) {
 };
 
 require("../lib/tradingCalendars/tradingCalendars.test.ts");
+require("../lib/pjmLoadGrowthSeasonSummary.test.ts");
