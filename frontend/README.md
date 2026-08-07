@@ -88,6 +88,7 @@ GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%2
 GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified&metric=heat-rate&gasHub=gas_m3
 GET /api/power-lmp-settles?iso=pjm&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified&metric=spark-spread&gasHub=gas_m3&sparkHeatRate=7
 GET /api/power-lmp-settles?iso=miso&start=YYYY-MM-DD&end=YYYY-MM-DD&hub=INDIANA.HUB&component=total&rtSource=unverified&metric=heat-rate&gasHub=gas_chicago
+GET /api/trading-calendars?calendar=all&year=YYYY&includeObserved=1
 GET /api/pjm-da-lmps?date=YYYY-MM-DD
 GET /api/pjm-rt-lmps?date=YYYY-MM-DD&source=unverified
 GET /api/pjm-lmp-settles?start=YYYY-MM-DD&end=YYYY-MM-DD&hub=WESTERN%20HUB&component=total&rtSource=unverified

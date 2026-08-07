@@ -19,11 +19,13 @@ export type ActiveSection =
   | "ice-power-short-term"
   | "ice-power-term"
   | "ice-term-report"
+  | "trading-calendars"
   | "spark-spreads"
   | "map"
   | "noms"
   | "criterion-noms"
   | "gtn-balance"
+  | "gas-ebb-transco"
   | "gas-prices"
   | "gas-outright"
   | "salts"
@@ -87,13 +89,14 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
 
   sections.push({
     key: "pricing",
-    label: "Pricing",
+    label: "ICE Pricing",
     navItems: [
       { id: "ice-power-short-term", label: "ICE Power Short Term" },
       { id: "ice-power-term", label: "ICE Power Term" },
       { id: "spark-spreads", label: "ICE Power Analytics" },
       { id: "gas-prices", label: "ICE Gas Cash & Term" },
       { id: "gas-outright", label: "ICE Gas Analytics" },
+      { id: "trading-calendars", label: "Trading Calendars", description: "Exchange holiday registry" },
     ],
   });
 
@@ -154,6 +157,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         { id: "noms", label: "Gas Noms" },
         { id: "criterion-noms", label: "Criterion Noms", description: "PJM-state plant noms" },
         { id: "gtn-balance", label: "GTN Balance" },
+        { id: "gas-ebb-transco", label: "Transco EBB" },
         { id: "pjm-generation", label: "PJM Generation" },
         { id: "pjm-weather", label: "Weather" },
         { id: "pjm-forecast-reports", label: "Forecast Reports" },

@@ -22,6 +22,7 @@ import GenscapeMapExplorer from "@/components/gas/GenscapeMapExplorer";
 import GenscapeNomsDashboard from "@/components/gas/GenscapeNomsDashboard";
 import type { GenscapeNomsFreshnessSummary } from "@/components/gas/GenscapeNomsReport";
 import GtnPipelineBalance from "@/components/gas/GtnPipelineBalance";
+import GasEbbTranscoDashboard from "@/components/gas/GasEbbTranscoDashboard";
 import IcePowerTermPage from "@/components/ice/IcePowerTermPage";
 import IcePowerTermReportDev from "@/components/ice/IcePowerTermReportDev";
 import IceTradeBlotter, {
@@ -113,6 +114,7 @@ import BackOfficePositionsTrades from "@/components/backoffice/BackOfficePositio
 import BackOfficeMonitor from "@/components/backoffice/BackOfficeMonitor";
 import BackOfficeTradePipeline from "@/components/backoffice/BackOfficeTradePipeline";
 import BackOfficeNavDailyPositionSheet from "@/components/backoffice/BackOfficeNavDailyPositionSheet";
+import TradingCalendarsDashboard from "@/components/calendar/TradingCalendarsDashboard";
 
 const DEFAULT_PJM_DA_LMPS_FRESHNESS: PjmDaLmpsFreshnessSummary = {
   status: "Unknown",
@@ -416,6 +418,9 @@ function parseInitialSection(
   if (value === "ice-power-term" || value === "ice-pmi-curve") {
     return "ice-power-term";
   }
+  if (value === "trading-calendars") {
+    return "trading-calendars";
+  }
   if (value === "ice-term-report" || value === "ice-power-term-report-dev") {
     return "ice-term-report";
   }
@@ -433,6 +438,9 @@ function parseInitialSection(
   }
   if (showLocalDevFeatures && value === "gtn-balance") {
     return "gtn-balance";
+  }
+  if (showLocalDevFeatures && value === "gas-ebb-transco") {
+    return "gas-ebb-transco";
   }
   if (value === "gas-prices") {
     return "gas-prices";
@@ -1122,6 +1130,15 @@ export default function HomePageClient({
         footer: "ICE Term Report | Source: ice_python.settlements / Azure PostgreSQL",
       };
     }
+    if (activeSection === "trading-calendars") {
+      return {
+        title: "Trading Calendars",
+        subtitle:
+          "Code-owned NERC, ICE, and promoted ISO market-date calendars for settlement and trade-date context.",
+        footer:
+          "Trading Calendars | Sources: code-owned registry, ICE holiday-hours calendars, and promoted ISO market-date contracts",
+      };
+    }
     if (activeSection === "spark-spreads") {
       return {
         title: "ICE Power Analytics",
@@ -1158,6 +1175,15 @@ export default function HomePageClient({
         subtitle:
           "Date-addressable GTN pipeline balance from Criterion nominations with auditable point mappings.",
         footer: "GTN Balance | Source: Criterion Snowflake PRODUCTION.PIPELINES",
+      };
+    }
+    if (showLocalDevFeatures && activeSection === "gas-ebb-transco") {
+      return {
+        title: "DEV / Transco EBB",
+        subtitle:
+          "Williams Transco current notices and derived outage rows for outage triage, with general Transco market context.",
+        footer:
+          "Transco EBB | Sources: gas_ebbs.notices, gas_ebbs.planned_outages, and ICE gas prices / Azure PostgreSQL",
       };
     }
     if (activeSection === "gas-prices") {
@@ -1347,6 +1373,7 @@ export default function HomePageClient({
   const usesGasMarketEyebrow =
     activeSection === "gas-prices" ||
     activeSection === "gas-outright" ||
+    (showLocalDevFeatures && activeSection === "gas-ebb-transco") ||
     isSaltModelSection;
   const usesBackOfficeEyebrow = isBackOfficeSection(activeSection);
   const isGtnResearchViewerReplica =
@@ -2102,11 +2129,17 @@ export default function HomePageClient({
           {showLocalDevFeatures && activeSection === "gtn-balance" && (
             <GtnPipelineBalance initialDate={initialGtnBalanceDate} />
           )}
+          {showLocalDevFeatures && activeSection === "gas-ebb-transco" && (
+            <GasEbbTranscoDashboard />
+          )}
           {activeSection === "ice-power-term" && (
             <IcePowerTermPage />
           )}
           {activeSection === "ice-term-report" && (
             <IcePowerTermReportDev />
+          )}
+          {activeSection === "trading-calendars" && (
+            <TradingCalendarsDashboard />
           )}
           {activeSection === "gas-prices" && (
             <GasDailyPrices
