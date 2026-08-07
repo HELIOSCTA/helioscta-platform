@@ -19,6 +19,8 @@ import {
   parsePowerLmpMetricMode,
   powerLmpGasHubConfig,
 } from "@/lib/powerLmpHeatRate";
+import { NERC_OFF_PEAK_CALENDAR } from "@/lib/tradingCalendars";
+import type { CalendarDate } from "@/lib/tradingCalendars";
 
 export type PowerIso = "pjm" | "ercot" | "isone" | "caiso" | "miso" | "spp" | "nyiso";
 export type PowerLmpProduct = "da" | "rt";
@@ -164,6 +166,7 @@ export const POWER_SETTLES_EMAIL_REPORT_ISOS: PowerIso[] = [
   ...POWER_SETTLES_DASHBOARD_ISOS,
 ];
 const POWER_SETTLES_DEFAULT_TIME_ZONE = "America/Denver";
+const NERC_POWER_OFFPEAK_CALENDAR_ID = "nerc-power-offpeak";
 
 const PEAK_WINDOW_BY_ISO: Record<PowerIso, { start: number; end: number }> = {
   pjm: { start: 8, end: 23 },
@@ -241,6 +244,29 @@ export interface PowerLmpHeatRateMetadata {
 
 export type PjmHeatRateGasHourMetadata = PowerLmpHeatRateGasHourMetadata;
 export type PjmHeatRateMetadata = PowerLmpHeatRateMetadata;
+
+export interface PowerLmpCalendarDayMetadata {
+  calendarId: "nerc-power-offpeak";
+  calendarLabel: string;
+  source: string | null;
+  sourceHref: string;
+  date: string;
+  year: number;
+  isWeekend: boolean;
+  isNercHoliday: boolean;
+  holidayName: string | null;
+}
+
+export interface PowerLmpCalendarRangeMetadata {
+  calendarId: "nerc-power-offpeak";
+  calendarLabel: string;
+  source: string | null;
+  sourceHref: string;
+  startDate: string;
+  endDate: string;
+  years: number[];
+  dates: PowerLmpCalendarDayMetadata[];
+}
 
 type PowerSettlesDashboardStatus = "ok" | "partial" | "missing";
 export type PowerSettlesDashboardRtSourceStatus = "requested" | "fallback" | "single-source";
@@ -431,6 +457,52 @@ function dateRange(start: string, end: string): string[] {
     cursor.setUTCDate(cursor.getUTCDate() + 1);
   }
   return out;
+}
+
+function tradingCalendarHref(year: number): string {
+  const params = new URLSearchParams({
+    section: "trading-calendars",
+    calendar: NERC_POWER_OFFPEAK_CALENDAR_ID,
+    year: String(year),
+  });
+  return `/?${params.toString()}`;
+}
+
+function powerLmpCalendarDayMetadata(date: string): PowerLmpCalendarDayMetadata {
+  const calendarDate = date as CalendarDate;
+  const holiday = NERC_OFF_PEAK_CALENDAR.getHoliday(calendarDate);
+  const year = Number(date.slice(0, 4));
+
+  return {
+    calendarId: NERC_POWER_OFFPEAK_CALENDAR_ID,
+    calendarLabel: NERC_OFF_PEAK_CALENDAR.label,
+    source: NERC_OFF_PEAK_CALENDAR.source ?? null,
+    sourceHref: tradingCalendarHref(year),
+    date,
+    year,
+    isWeekend: NERC_OFF_PEAK_CALENDAR.isWeekend(calendarDate),
+    isNercHoliday: holiday !== null,
+    holidayName: holiday?.name ?? null,
+  };
+}
+
+function powerLmpCalendarRangeMetadata(dates: string[]): PowerLmpCalendarRangeMetadata {
+  const calendarDates = dates.map(powerLmpCalendarDayMetadata);
+  const years = Array.from(new Set(calendarDates.map((date) => date.year))).sort(
+    (left, right) => left - right,
+  );
+  const sourceYear = years.at(-1) ?? new Date().getUTCFullYear();
+
+  return {
+    calendarId: NERC_POWER_OFFPEAK_CALENDAR_ID,
+    calendarLabel: NERC_OFF_PEAK_CALENDAR.label,
+    source: NERC_OFF_PEAK_CALENDAR.source ?? null,
+    sourceHref: tradingCalendarHref(sourceYear),
+    startDate: calendarDates[0]?.date ?? "",
+    endDate: calendarDates.at(-1)?.date ?? "",
+    years,
+    dates: calendarDates,
+  };
 }
 
 function offsetIsoDate(value: string, days: number): string {
@@ -1445,6 +1517,7 @@ export async function buildPowerLmpsPayload({
   const lmpSource = sourceTableFor({ iso, product, rtSource });
   const source =
     metric === "heat-rate" ? `${lmpSource} / ice_python_next_day_gas` : lmpSource;
+  const calendarMetadata = powerLmpCalendarDayMetadata(targetDate);
   const payload = {
     iso,
     isoLabel: config.label,
@@ -1456,6 +1529,10 @@ export async function buildPowerLmpsPayload({
     asOf,
     source,
     rtSource: product === "rt" ? rtSource : undefined,
+    calendarMetadata,
+    isWeekend: calendarMetadata.isWeekend,
+    isNercHoliday: calendarMetadata.isNercHoliday,
+    holidayName: calendarMetadata.holidayName,
     hubs: config.hubs.map((hub) =>
       summarizeHub(
         iso,
@@ -2386,8 +2463,9 @@ export async function buildPowerLmpSettlesPayload({
     rtByDate.set(row.market_date, item);
   }
 
-  const rows = dateRange(startDate, endDate).map((date) => {
-    const jsDate = new Date(`${date}T00:00:00Z`);
+  const calendarMetadata = powerLmpCalendarRangeMetadata(dateRange(startDate, endDate));
+  const rows = calendarMetadata.dates.map((calendarDay) => {
+    const date = calendarDay.date;
     const da = daByDate.get(date);
     const rt = rtByDate.get(date);
     const gasHourly =
@@ -2396,9 +2474,10 @@ export async function buildPowerLmpSettlesPayload({
     return {
       date,
       hub: selectedHub,
-      isWeekend: jsDate.getUTCDay() === 0 || jsDate.getUTCDay() === 6,
-      isNercHoliday: false,
-      holidayName: null,
+      calendarMetadata: calendarDay,
+      isWeekend: calendarDay.isWeekend,
+      isNercHoliday: calendarDay.isNercHoliday,
+      holidayName: calendarDay.holidayName,
       daHourly: da?.values ?? emptyHours(),
       rtHourly: rt?.values ?? emptyHours(),
       daAsOf: da?.asOf ?? null,
@@ -2418,6 +2497,7 @@ export async function buildPowerLmpSettlesPayload({
     component: selectedComponent,
     rtSource,
     rowCount: rows.length,
+    calendarMetadata,
     summary: {
       rowCount: rows.length,
       latestDate: rows.at(-1)?.date ?? null,

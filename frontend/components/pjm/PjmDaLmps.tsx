@@ -81,6 +81,29 @@ interface PjmHeatRateMetadata {
   hourly: PjmHeatRateGasHourMetadata[];
 }
 
+interface LmpCalendarDayMetadata {
+  calendarId: "nerc-power-offpeak";
+  calendarLabel: string;
+  source: string | null;
+  sourceHref: string;
+  date: string;
+  year: number;
+  isWeekend: boolean;
+  isNercHoliday: boolean;
+  holidayName: string | null;
+}
+
+interface LmpCalendarRangeMetadata {
+  calendarId: "nerc-power-offpeak";
+  calendarLabel: string;
+  source: string | null;
+  sourceHref: string;
+  startDate: string;
+  endDate: string;
+  years: number[];
+  dates: LmpCalendarDayMetadata[];
+}
+
 interface HubLmpSummary {
   hub: string;
   onPeakAvg: number | null;
@@ -104,6 +127,10 @@ interface PjmLmpsPayload {
   asOf: string | null;
   source: string;
   rtSource?: RtLmpSource;
+  calendarMetadata?: LmpCalendarDayMetadata;
+  isWeekend?: boolean;
+  isNercHoliday?: boolean;
+  holidayName?: string | null;
   hubs: HubLmpSummary[];
 }
 
@@ -118,6 +145,8 @@ export interface PjmDaLmpsFreshnessSummary {
 
 const HOURS = Array.from({ length: 24 }, (_, index) => index + 1);
 const API_CACHE_TTL_MS = 5 * 60 * 1000;
+const API_CACHE_SCHEMA_VERSION = "lmp-calendar-v1";
+const NERC_POWER_OFFPEAK_CALENDAR_ID = "nerc-power-offpeak";
 
 export type ComponentKey = "energy" | "congestion" | "loss" | "total";
 export type ComponentSelection = ComponentKey | "all";
@@ -224,6 +253,7 @@ interface PjmLmpSettleDayRow {
   isWeekend: boolean;
   isNercHoliday: boolean;
   holidayName: string | null;
+  calendarMetadata?: LmpCalendarDayMetadata;
   // 24-element arrays indexed by hour-ending (HE1 at index 0 … HE24 at index 23),
   // carrying the selected component's value for that hour.
   daHourly: Array<number | string | null>;
@@ -245,6 +275,7 @@ interface PjmLmpSettlesPayload {
   sparkHeatRate?: number;
   source?: string;
   heatRateMetadata?: PjmHeatRateMetadata;
+  calendarMetadata?: LmpCalendarRangeMetadata;
   rowCount: number;
   summary: {
     rowCount: number;
@@ -619,6 +650,7 @@ function buildLmpsCacheKey({
   if (metricMode === "heat-rate" && product !== "dart") {
     return [
       "api:power",
+      API_CACHE_SCHEMA_VERSION,
       iso,
       product,
       "lmps",
@@ -628,7 +660,9 @@ function buildLmpsCacheKey({
       gasHub,
     ].join(":");
   }
-  return `api:power-${iso}-${product}-lmps:${product === "rt" ? rtSource : "hourly"}:${date ?? "latest"}`;
+  return `api:${API_CACHE_SCHEMA_VERSION}:power-${iso}-${product}-lmps:${
+    product === "rt" ? rtSource : "hourly"
+  }:${date ?? "latest"}`;
 }
 
 function buildSettlesApiUrl({
@@ -807,6 +841,133 @@ function settleDayTypeLabels(day: {
   if (day.isWeekend) labels.push(SETTLE_DAY_TYPE_LABELS.weekend);
   if (day.isNercHoliday) labels.push(SETTLE_DAY_TYPE_LABELS.holiday);
   return labels;
+}
+
+function calendarYearFromDate(date: string | null | undefined): number | null {
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const year = Number(date.slice(0, 4));
+  return Number.isFinite(year) ? year : null;
+}
+
+function tradingCalendarHref(year: number): string {
+  return `/?section=trading-calendars&calendar=${NERC_POWER_OFFPEAK_CALENDAR_ID}&year=${year}`;
+}
+
+function calendarDisplayInfo(day: {
+  date?: string | null;
+  calendarMetadata?: LmpCalendarDayMetadata | null;
+  isWeekend?: boolean | null;
+  isNercHoliday?: boolean | null;
+  holidayName?: string | null;
+} | null | undefined): LmpCalendarDayMetadata | null {
+  if (!day) return null;
+  const metadata = day.calendarMetadata;
+  if (metadata) return metadata;
+  const date = day.date ?? null;
+  const year = calendarYearFromDate(date);
+  if (!date || year === null) return null;
+
+  return {
+    calendarId: NERC_POWER_OFFPEAK_CALENDAR_ID,
+    calendarLabel: "NERC Power Off-Peak",
+    source: null,
+    sourceHref: tradingCalendarHref(year),
+    date,
+    year,
+    isWeekend: day.isWeekend === true,
+    isNercHoliday: day.isNercHoliday === true,
+    holidayName: day.holidayName ?? null,
+  };
+}
+
+function payloadCalendarDay(payload: PjmLmpsPayload | null | undefined): LmpCalendarDayMetadata | null {
+  if (!payload) return null;
+  return calendarDisplayInfo({
+    date: payload.targetDate,
+    calendarMetadata: payload.calendarMetadata,
+    isWeekend: payload.isWeekend,
+    isNercHoliday: payload.isNercHoliday,
+    holidayName: payload.holidayName,
+  });
+}
+
+function calendarDateLabel(
+  date: string | null | undefined,
+  day: LmpCalendarDayMetadata | null | undefined,
+): string {
+  if (!date) return "-";
+  if (day?.isNercHoliday) return `${date} / ${day.holidayName ?? "NERC holiday"}`;
+  if (day?.isWeekend) return `${date} / Weekend`;
+  return date;
+}
+
+function calendarSourceYear(
+  metadata: LmpCalendarDayMetadata | LmpCalendarRangeMetadata | null | undefined,
+  fallbackDate: string | null | undefined,
+): number | null {
+  if (!metadata) return calendarYearFromDate(fallbackDate);
+  if ("year" in metadata) return metadata.year;
+  return metadata.years.at(-1) ?? calendarYearFromDate(fallbackDate);
+}
+
+function TradingCalendarSourceLink({
+  year,
+  href,
+}: {
+  year: number | null;
+  href?: string | null;
+}) {
+  if (year === null) return null;
+  return (
+    <a
+      href={href ?? tradingCalendarHref(year)}
+      className="rounded-md border border-gray-800 bg-gray-950/40 px-2.5 py-1 text-[11px] font-semibold text-gray-400 transition-colors hover:border-sky-500/50 hover:text-sky-100"
+    >
+      Trading Calendars
+    </a>
+  );
+}
+
+function CalendarDayBadge({
+  day,
+  compact = false,
+}: {
+  day: LmpCalendarDayMetadata | null | undefined;
+  compact?: boolean;
+}) {
+  if (!day?.isWeekend && !day?.isNercHoliday) return null;
+  const holiday = day?.isNercHoliday === true;
+  const label = holiday ? (compact ? "H" : day?.holidayName ?? "NERC") : compact ? "W" : "Weekend";
+  const title = holiday ? day?.holidayName ?? "NERC holiday" : "Weekend";
+  const toneClass = holiday
+    ? "border-amber-500/40 bg-amber-500/10 text-amber-200"
+    : "border-slate-500/40 bg-slate-500/10 text-slate-300";
+
+  return (
+    <span
+      title={title}
+      className={`inline-flex items-center justify-center rounded-md border font-bold ${toneClass} ${
+        compact ? "h-5 min-w-5 px-1 text-[10px]" : "px-2 py-0.5 text-[11px]"
+      }`}
+    >
+      {label}
+    </span>
+  );
+}
+
+function CalendarDateCell({
+  date,
+  day,
+}: {
+  date: string;
+  day: LmpCalendarDayMetadata | null | undefined;
+}) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="tabular-nums">{date}</span>
+      <CalendarDayBadge day={day} compact />
+    </span>
+  );
 }
 
 function settleFilterValue(
@@ -1114,6 +1275,7 @@ function buildDartPayload(
   rtSource: RtLmpSource
 ): PjmLmpsPayload {
   const targetDate = daPayload.targetDate;
+  const calendarMetadata = daPayload.calendarMetadata ?? rtPayload.calendarMetadata;
   const hubNames = daPayload.hubs.map((hub) => hub.hub);
   const hubs = hubNames.map((hubName) =>
     buildDartHub(
@@ -1135,6 +1297,13 @@ function buildDartPayload(
     asOf: maxStamp(daPayload.asOf, rtPayload.asOf),
     source: `${iso}.dart_lmps`,
     rtSource,
+    calendarMetadata,
+    isWeekend:
+      calendarMetadata?.isWeekend ?? daPayload.isWeekend ?? rtPayload.isWeekend,
+    isNercHoliday:
+      calendarMetadata?.isNercHoliday ?? daPayload.isNercHoliday ?? rtPayload.isNercHoliday,
+    holidayName:
+      calendarMetadata?.holidayName ?? daPayload.holidayName ?? rtPayload.holidayName ?? null,
     hubs,
   };
 }
@@ -2291,10 +2460,10 @@ export default function PjmDaLmps({
     fetchJsonWithCache<PjmLmpSettlesPayload>({
       key:
         valueMetricMode === "heat-rate"
-          ? `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:heat-rate:${activeGasHub}`
+          ? `power-lmp-settles:${API_CACHE_SCHEMA_VERSION}:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:heat-rate:${activeGasHub}`
           : valueMetricMode === "spark-spread"
-            ? `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:total:${rtSource}:spark-spread:${activeGasHub}:${sparkHeatRate.toFixed(1)}`
-          : `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}`,
+            ? `power-lmp-settles:${API_CACHE_SCHEMA_VERSION}:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:total:${rtSource}:spark-spread:${activeGasHub}:${sparkHeatRate.toFixed(1)}`
+          : `power-lmp-settles:${API_CACHE_SCHEMA_VERSION}:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}`,
       url,
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
@@ -2365,7 +2534,7 @@ export default function PjmDaLmps({
     setSettlesPowerLoading(true);
     setSettlesPowerError(null);
     fetchJsonWithCache<PjmLmpSettlesPayload>({
-      key: `power-lmp-settles:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:power-input`,
+      key: `power-lmp-settles:${API_CACHE_SCHEMA_VERSION}:${activeIso}:${settlesStartDate}:${settlesEndDate}:${selectedHub}:${effectiveSettlesComponent}:${rtSource}:power-input`,
       url,
       ttlMs: API_CACHE_TTL_MS,
       signal: controller.signal,
@@ -2897,6 +3066,7 @@ export default function PjmDaLmps({
           isWeekend: row.isWeekend,
           isNercHoliday: row.isNercHoliday,
           holidayName: row.holidayName,
+          calendarMetadata: row.calendarMetadata,
           hourly,
           onPeak: periods.onPeak,
           offPeak: periods.offPeak,
@@ -3547,6 +3717,17 @@ export default function PjmDaLmps({
   const powerHubSelectionTitle = showGasHubSelector
     ? "Power Hub Selection"
     : "Hub Selection";
+  const singleCalendarDay = payloadCalendarDay(data);
+  const compareBaseCalendarDay = payloadCalendarDay(compareBaseData);
+  const compareCalendarDay = payloadCalendarDay(compareData);
+  const singleCalendarSourceYear = calendarSourceYear(singleCalendarDay, data.targetDate);
+  const compareCalendarSourceYear =
+    calendarSourceYear(compareCalendarDay, compareDate) ??
+    calendarSourceYear(compareBaseCalendarDay, compareBaseDate);
+  const settlesCalendarSourceYear = calendarSourceYear(
+    settlesData?.calendarMetadata,
+    settlesEndDate || data.targetDate,
+  );
 
   return (
     <div className="space-y-4">
@@ -3603,7 +3784,16 @@ export default function PjmDaLmps({
 
       {activeView === "daily-settles" && (
         <>
-          <SectionCard title="Date Range" subtitle="Inclusive market dates">
+          <SectionCard
+            title="Date Range"
+            subtitle="Inclusive market dates"
+            action={
+              <TradingCalendarSourceLink
+                year={settlesCalendarSourceYear}
+                href={settlesData?.calendarMetadata?.sourceHref}
+              />
+            }
+          >
             <div className="flex flex-wrap items-center gap-2">
               <input
                 type="date"
@@ -3796,7 +3986,13 @@ export default function PjmDaLmps({
                     displayedSettleDays.map((day) => (
                       <tr
                         key={day.date}
-                        className={day.isNercHoliday ? "bg-amber-500/[0.06]" : "hover:bg-gray-900/40"}
+                        className={
+                          day.isNercHoliday
+                            ? "bg-amber-500/[0.06] hover:bg-amber-500/[0.08]"
+                            : day.isWeekend
+                              ? "bg-slate-500/[0.04] hover:bg-slate-500/[0.07]"
+                              : "hover:bg-gray-900/40"
+                        }
                       >
                         <td className="sticky left-0 z-10 w-20 bg-[#0d1119] px-2 py-2 text-center">
                           {day.isNercHoliday ? (
@@ -3820,7 +4016,10 @@ export default function PjmDaLmps({
                           )}
                         </td>
                         <td className="sticky left-20 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
-                          {day.date}
+                          <CalendarDateCell
+                            date={day.date}
+                            day={calendarDisplayInfo(day)}
+                          />
                         </td>
                         <SettleCell
                           value={day.onPeak}
@@ -3954,7 +4153,16 @@ export default function PjmDaLmps({
 
       {activeView === "single-day" && (
         <>
-      <SectionCard title="Date Selection" subtitle="Market date">
+      <SectionCard
+        title="Date Selection"
+        subtitle="Market date"
+        action={
+          <TradingCalendarSourceLink
+            year={singleCalendarSourceYear}
+            href={singleCalendarDay?.sourceHref}
+          />
+        }
+      >
         <div className="flex flex-wrap items-center gap-2">
           <input
             type="date"
@@ -3977,6 +4185,7 @@ export default function PjmDaLmps({
           >
             Latest
           </button>
+          <CalendarDayBadge day={singleCalendarDay} />
         </div>
       </SectionCard>
 
@@ -4042,7 +4251,7 @@ export default function PjmDaLmps({
 
       <PlotCard
         title={`${selected?.hub ?? "Hub"} Plot`}
-        subtitle={`Hourly ${activeProductLabel} components | ${metricUnitLabel(valueMetricMode)}`}
+        subtitle={`Hourly ${activeProductLabel} components | ${calendarDateLabel(data.targetDate, singleCalendarDay)} | ${metricUnitLabel(valueMetricMode)}`}
         series={singlePlotSeries}
         hiddenSeries={hiddenPlotSeries}
         onToggleSeries={togglePlotSeries}
@@ -4055,7 +4264,7 @@ export default function PjmDaLmps({
 
       <SectionCard
         title="Hourly Table"
-        subtitle={`Hourly component values | ${metricUnitLabel(valueMetricMode)}`}
+        subtitle={`Hourly component values | ${calendarDateLabel(data.targetDate, singleCalendarDay)} | ${metricUnitLabel(valueMetricMode)}`}
         action={tableDisplayAction}
       >
         <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
@@ -4088,7 +4297,7 @@ export default function PjmDaLmps({
               {visibleComponentRows.map((row) => (
                 <tr key={row.key} className="hover:bg-gray-900/60">
                   <td className="sticky left-0 z-10 bg-[#0d1119] px-3 py-2 font-medium text-gray-300">
-                    {data.targetDate}
+                    <CalendarDateCell date={data.targetDate} day={singleCalendarDay} />
                   </td>
                   <td className="px-3 py-2 font-medium text-gray-300">{selected?.hub}</td>
                   <td className="px-3 py-2 font-semibold text-gray-100">
@@ -4165,7 +4374,16 @@ export default function PjmDaLmps({
 
       {activeView === "compare-dates" && (
         <>
-          <SectionCard title="Date Selection" subtitle={`Compare ${activeProductLabel} across dates`}>
+          <SectionCard
+            title="Date Selection"
+            subtitle={`Compare ${activeProductLabel} across dates`}
+            action={
+              <TradingCalendarSourceLink
+                year={compareCalendarSourceYear}
+                href={compareCalendarDay?.sourceHref ?? compareBaseCalendarDay?.sourceHref}
+              />
+            }
+          >
             <div className="grid gap-3 lg:grid-cols-[repeat(2,minmax(0,220px))] lg:items-end">
               <label className="block">
                 <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -4177,6 +4395,9 @@ export default function PjmDaLmps({
                   onChange={(event) => setCompareBaseDate(event.target.value)}
                   className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                 />
+                <span className="mt-1 flex min-h-5 items-center gap-1.5">
+                  <CalendarDayBadge day={compareBaseCalendarDay} compact />
+                </span>
               </label>
               <label className="block">
                 <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -4188,6 +4409,9 @@ export default function PjmDaLmps({
                   onChange={(event) => setCompareDate(event.target.value)}
                   className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                 />
+                <span className="mt-1 flex min-h-5 items-center gap-1.5">
+                  <CalendarDayBadge day={compareCalendarDay} compact />
+                </span>
               </label>
             </div>
           </SectionCard>
@@ -4252,7 +4476,7 @@ export default function PjmDaLmps({
           ) : (
             <PlotCard
               title={`${selectedHub} Comparison`}
-              subtitle={`${compareConfig.label}: ${compareBaseDate || "-"} vs ${compareDate || "-"} | ${metricUnitLabel(valueMetricMode)}`}
+              subtitle={`${compareConfig.label}: ${calendarDateLabel(compareBaseDate, compareBaseCalendarDay)} vs ${calendarDateLabel(compareDate, compareCalendarDay)} | ${metricUnitLabel(valueMetricMode)}`}
               series={compareSeries}
               hiddenSeries={hiddenCompareSeries}
               onToggleSeries={toggleCompareSeries}
@@ -4266,7 +4490,7 @@ export default function PjmDaLmps({
 
           <SectionCard
             title="Comparison Table"
-            subtitle={`${compareConfig.label} by hour | ${metricUnitLabel(valueMetricMode)}`}
+            subtitle={`${compareConfig.label} by hour | ${calendarDateLabel(compareBaseDate, compareBaseCalendarDay)} vs ${calendarDateLabel(compareDate, compareCalendarDay)} | ${metricUnitLabel(valueMetricMode)}`}
             action={tableDisplayAction}
           >
             <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0d1119]">
@@ -4309,11 +4533,16 @@ export default function PjmDaLmps({
                         {row.key === "base" ? "Reference" : row.key === "compare" ? "Compare" : "Delta"}
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-300">
-                        {row.key === "base"
-                          ? compareBaseDate
-                          : row.key === "compare"
-                            ? compareDate
-                            : `${compareBaseDate} - ${compareDate}`}
+                        {row.key === "base" ? (
+                          <CalendarDateCell
+                            date={compareBaseDate || "-"}
+                            day={compareBaseCalendarDay}
+                          />
+                        ) : row.key === "compare" ? (
+                          <CalendarDateCell date={compareDate || "-"} day={compareCalendarDay} />
+                        ) : (
+                          `${compareBaseDate} - ${compareDate}`
+                        )}
                       </td>
                       <td className="px-3 py-2 font-medium text-gray-300">{selectedHub}</td>
                       <td className="px-3 py-2 font-semibold text-gray-100">
