@@ -404,6 +404,41 @@ sudo systemctl start helios-pjm-meteologica-forecast-hourly.service
 sudo systemctl enable --now helios-pjm-meteologica-forecast-hourly.timer
 ```
 
+## ERCOT Meteologica Hourly Forecasts
+
+The ERCOT Meteologica forecast workflow has its own timer:
+
+```text
+helios-ercot-meteologica-forecast-hourly.service
+helios-ercot-meteologica-forecast-hourly.timer
+```
+
+It runs `backend.orchestration.power.ercot.meteologica_forecast_hourly` and
+upserts the seven promoted large ERCOT forecast surfaces into
+`meteologica.ercot_forecast_hourly`: aggregate ERCOT load, solar, and wind,
+plus Houston, North, South, and West load ForecastZones. The workflow writes
+Meteologica API telemetry to `ops.api_fetch_log`, emits forecast freshness
+events to `ops.data_availability_events`, and purges forecast issues older
+than 21 days after successful upserts. The timer runs every 30 minutes at
+`:25` and `:55` UTC with `Persistent=false` and `RandomizedDelaySec=2min`.
+The service uses `flock` with
+`/tmp/helios-ercot-meteologica-forecast-hourly.lock`.
+
+Do not enable this timer until `/etc/helioscta/backend.env` contains
+`XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the
+`meteologica.ercot_forecast_hourly` table/index application DDL has been
+applied with `helios_admin`.
+
+After those prerequisites are complete:
+
+```bash
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl start helios-ercot-meteologica-forecast-hourly.service
+sudo systemctl enable --now helios-ercot-meteologica-forecast-hourly.timer
+```
+
 ## RT Unverified Hourly LMPs
 
 The overnight unverified hourly RT price workflow has its own timer:
@@ -1211,6 +1246,8 @@ sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consum
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-eia-nat-gas-consumption-end-use-monthly.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-settlement-point-prices.timer /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.service /etc/systemd/system/
+sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-meteologica-forecast-hourly.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.service /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-load-batch.timer /etc/systemd/system/
 sudo cp /opt/helioscta-platform/infrastructure/systemd/helios-ercot-congestion-batch.service /etc/systemd/system/
@@ -1269,6 +1306,7 @@ sudo systemctl enable --now helios-eia-930-daily-generation-by-fuel.timer
 sudo systemctl enable --now helios-eia-weekly-underground-storage.timer
 sudo systemctl enable --now helios-eia-nat-gas-consumption-end-use-monthly.timer
 sudo systemctl enable --now helios-ercot-settlement-point-prices.timer
+sudo systemctl enable --now helios-ercot-meteologica-forecast-hourly.timer
 sudo systemctl enable --now helios-ercot-load-batch.timer
 sudo systemctl enable --now helios-ercot-congestion-batch.timer
 sudo systemctl enable --now helios-ercot-renewables-batch.timer
@@ -1328,6 +1366,7 @@ sudo systemctl start helios-eia-930-daily-generation-by-fuel.service
 sudo systemctl start helios-eia-930-daily-region-data.service
 sudo systemctl start helios-eia-weekly-underground-storage.service
 sudo systemctl start helios-ercot-settlement-point-prices.service
+sudo systemctl start helios-ercot-meteologica-forecast-hourly.service
 sudo systemctl start helios-ercot-load-batch.service
 sudo systemctl start helios-ercot-congestion-batch.service
 sudo systemctl start helios-ercot-renewables-batch.service
@@ -1512,6 +1551,14 @@ journalctl -u helios-ercot-dam-stlmnt-pnt-prices.service -n 200 --no-pager
 systemctl status helios-ercot-settlement-point-prices.service
 systemctl status helios-ercot-settlement-point-prices.timer
 journalctl -u helios-ercot-settlement-point-prices.service -n 200 --no-pager
+```
+
+For the ERCOT Meteologica forecast refresh:
+
+```bash
+systemctl status helios-ercot-meteologica-forecast-hourly.service
+systemctl status helios-ercot-meteologica-forecast-hourly.timer
+journalctl -u helios-ercot-meteologica-forecast-hourly.service -n 200 --no-pager
 ```
 
 For CAISO LMPs:

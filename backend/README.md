@@ -453,6 +453,20 @@ keep DA price rows to a 14-day forward horizon from each source issue, and
 purge older rows after successful upserts. Hydro is excluded from v1 because
 no PJM hydro forecast content ID is promoted.
 
+The promoted ERCOT Meteologica forecast runtime module is
+`backend.scrapes.power.ercot.meteologica_forecast_hourly`, with orchestration
+at `backend.orchestration.power.ercot.meteologica_forecast_hourly`. The
+scheduled orchestration writes the seven promoted large forecast surfaces into
+`meteologica.ercot_forecast_hourly`: aggregate ERCOT load, solar, and wind,
+plus Houston, North, South, and West load ForecastZones. It logs Meteologica
+API telemetry to `ops.api_fetch_log` and emits forecast freshness events to
+`ops.data_availability_events` under
+`ercot_meteologica_forecast_hourly`. The source grain is
+`content_id x update_id x forecast_period_start`; safe reruns upsert by that
+key. Scheduled runs retain 21 days of forecast issue history by `issue_date`.
+Finer weather zones, renewable subregions, observations, normals, projections,
+and DA price feeds are excluded from the ERCOT v1 scope.
+
 The PJM Meteologica DA price runtime module is
 `backend.scrapes.power.pjm.meteologica_da_price_forecast`, with orchestration
 at `backend.orchestration.power.pjm.meteologica_da_price_forecast` for manual

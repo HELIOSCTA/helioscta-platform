@@ -1,0 +1,12 @@
+[Unit]
+Description=Half-hourly HeliosCTA ERCOT Meteologica hourly forecast refresh timer
+
+[Timer]
+OnCalendar=*:25,55
+Persistent=false
+RandomizedDelaySec=2min
+AccuracySec=1min
+Unit=helios-ercot-meteologica-forecast-hourly.service
+
+[Install]
+WantedBy=timers.target
