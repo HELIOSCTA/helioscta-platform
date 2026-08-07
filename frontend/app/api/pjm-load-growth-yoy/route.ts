@@ -13,6 +13,21 @@ const MAX_LOOKBACK_DAYS = 120;
 const MAX_DATE_RANGE_DAYS = 120;
 const MAX_MONTH_COUNT = 12;
 const MIN_AREA_RECENT_ROWS = 14 * 24;
+const MIN_LOOKBACK_DAYS = 7;
+const LOAD_AREA_ALIASES: Record<string, string> = {
+  "BG&E/MIDATL": "BC",
+  BGE: "BC",
+  MID_ATLANTIC_REGION: "MIDATL",
+  "PEPCO/MIDATL": "PEPCO",
+  SOUTHERN_REGION: "SOUTH",
+  WESTERN_REGION: "WEST",
+};
+const WEST_LOAD_AREA_MEMBERS = ["AEP", "AP", "ATSI", "DAY", "DEOK", "DUQ", "EKPC"];
+const SOUTH_LOAD_AREA_MEMBERS = ["DOM"];
+const LOAD_AREA_MEMBER_GROUPS: Record<string, string[]> = {
+  WEST: WEST_LOAD_AREA_MEMBERS,
+  SOUTH: SOUTH_LOAD_AREA_MEMBERS,
+};
 const ROUTE_CONFIG = {
   route: "/api/pjm-load-growth-yoy",
   cacheHeader: CACHE_HEADER,
@@ -101,7 +116,7 @@ function parseIdentifier(value: string | null, fallback: string): string {
 function parseLookbackDays(value: string | null): number {
   const parsed = Number(value);
   if (!Number.isInteger(parsed)) return DEFAULT_LOOKBACK_DAYS;
-  return Math.min(Math.max(parsed, 14), MAX_LOOKBACK_DAYS);
+  return Math.min(Math.max(parsed, MIN_LOOKBACK_DAYS), MAX_LOOKBACK_DAYS);
 }
 
 function parseLoadShape(value: string | null): LoadShape {
@@ -180,6 +195,7 @@ function isoDate(value: string | null | undefined): string | null {
 function forecastAreaForLoadArea(loadArea: string): string {
   const map: Record<string, string> = {
     AECO: "AE/MIDATL",
+    BGE: "BG&E/MIDATL",
     BC: "BG&E/MIDATL",
     CE: "COMED",
     DAY: "DAYTON",
@@ -189,17 +205,30 @@ function forecastAreaForLoadArea(loadArea: string): string {
     JC: "JCP&L/MIDATL",
     ME: "METED/MIDATL",
     MIDATL: "MID_ATLANTIC_REGION",
+    MID_ATLANTIC_REGION: "MID_ATLANTIC_REGION",
     PE: "PECO/MIDATL",
     PLCO: "PPL/MIDATL",
     PN: "PENELEC/MIDATL",
     PS: "PSE&G/MIDATL",
     PJM: "RTO_COMBINED",
+    PEPCO: "PEPCO/MIDATL",
     RTO: "RTO_COMBINED",
     SOUTH: "SOUTHERN_REGION",
+    SOUTHERN_REGION: "SOUTHERN_REGION",
     UGI: "UGI/MIDATL",
     WEST: "WESTERN_REGION",
+    WESTERN_REGION: "WESTERN_REGION",
   };
   return map[loadArea] ?? loadArea;
+}
+
+function canonicalLoadArea(loadArea: string): string {
+  return LOAD_AREA_ALIASES[loadArea] ?? loadArea;
+}
+
+function loadAreaMembers(loadArea: string, availableAreas: Set<string>): string[] {
+  const candidateAreas = LOAD_AREA_MEMBER_GROUPS[loadArea] ?? [loadArea];
+  return candidateAreas.filter((area) => availableAreas.has(area));
 }
 
 async function loadAreas(): Promise<AreaRow[]> {
@@ -269,7 +298,8 @@ with params as (
     $9::date as requested_start,
     $10::date as requested_end,
     $11::int[] as selected_months,
-    $12::int[] as selected_years
+    $12::int[] as selected_years,
+    $13::text[] as load_areas
 ),
 range_bounds as (
   select
@@ -360,6 +390,7 @@ load_candidates as (
   select
     d.anchor_dt,
     d.period,
+    m.load_area,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
     'metered_unverified' as source,
@@ -369,12 +400,13 @@ load_candidates as (
   join comparison_dates d
     on m.datetime_beginning_ept >= d.selected_dt
    and m.datetime_beginning_ept < d.selected_dt + interval '1 day'
-  where m.load_area = p.load_area
+  where m.load_area = any(p.load_areas)
     and m.is_verified = false
   union all
   select
     d.anchor_dt,
     d.period,
+    p.load_area,
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
@@ -384,17 +416,23 @@ load_candidates as (
   join comparison_dates d
     on p.datetime_beginning_ept >= d.selected_dt
    and p.datetime_beginning_ept < d.selected_dt + interval '1 day'
-  where p.load_area = prm.load_area
+  where p.load_area = any(prm.load_areas)
 ),
 load_hourly as (
-  select *
+  select
+    anchor_dt,
+    period,
+    datetime_beginning_ept,
+    sum(load_mw) as load_mw,
+    case when min(priority) = 1 then 'metered_unverified' else 'prelim' end as source
   from (
     select
       *,
-      row_number() over (partition by anchor_dt, period, datetime_beginning_ept order by priority) as rn
+      row_number() over (partition by anchor_dt, period, load_area, datetime_beginning_ept order by priority) as rn
     from load_candidates
   ) ranked
   where rn = 1
+  group by anchor_dt, period, datetime_beginning_ept
 ),
 weather_hourly as (
   select
@@ -548,7 +586,8 @@ with params as (
     $9::date as requested_start,
     $10::date as requested_end,
     $11::int[] as selected_months,
-    $12::int[] as selected_years
+    $12::int[] as selected_years,
+    $13::text[] as load_areas
 ),
 range_bounds as (
   select
@@ -563,6 +602,7 @@ window_base as (
     station_id,
     region,
     lookback_days,
+    load_areas,
     load_shape,
     day_type,
     case
@@ -586,13 +626,14 @@ load_candidates as (
   select
     m.datetime_beginning_ept::date as anchor_dt,
     'current'::text as period,
+    m.load_area,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
     'metered_unverified' as source,
     1 as priority
   from pjm.hrl_load_metered m
   cross join windows w
-  where m.load_area = w.load_area
+  where m.load_area = any(w.load_areas)
     and m.is_verified = false
     and m.datetime_beginning_ept >= w.current_start
     and m.datetime_beginning_ept < w.current_end
@@ -600,13 +641,14 @@ load_candidates as (
   select
     (m.datetime_beginning_ept + interval '1 year')::date as anchor_dt,
     'last_year'::text as period,
+    m.load_area,
     m.datetime_beginning_ept,
     m.mw::float8 as load_mw,
     'metered_unverified' as source,
     1 as priority
   from pjm.hrl_load_metered m
   cross join windows w
-  where m.load_area = w.load_area
+  where m.load_area = any(w.load_areas)
     and m.is_verified = false
     and m.datetime_beginning_ept >= w.last_year_start
     and m.datetime_beginning_ept < w.last_year_end
@@ -614,38 +656,46 @@ load_candidates as (
   select
     p.datetime_beginning_ept::date as anchor_dt,
     'current'::text as period,
+    p.load_area,
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
     3 as priority
   from pjm.hrl_load_prelim p
   cross join windows w
-  where p.load_area = w.load_area
+  where p.load_area = any(w.load_areas)
     and p.datetime_beginning_ept >= w.current_start
     and p.datetime_beginning_ept < w.current_end
   union all
   select
     (p.datetime_beginning_ept + interval '1 year')::date as anchor_dt,
     'last_year'::text as period,
+    p.load_area,
     p.datetime_beginning_ept,
     p.prelim_load_avg_hourly::float8 as load_mw,
     'prelim' as source,
     3 as priority
   from pjm.hrl_load_prelim p
   cross join windows w
-  where p.load_area = w.load_area
+  where p.load_area = any(w.load_areas)
     and p.datetime_beginning_ept >= w.last_year_start
     and p.datetime_beginning_ept < w.last_year_end
 ),
 load_hourly as (
-  select *
+  select
+    anchor_dt,
+    period,
+    datetime_beginning_ept,
+    sum(load_mw) as load_mw,
+    case when min(priority) = 1 then 'metered_unverified' else 'prelim' end as source
   from (
     select
       *,
-      row_number() over (partition by anchor_dt, period, datetime_beginning_ept order by priority) as rn
+      row_number() over (partition by anchor_dt, period, load_area, datetime_beginning_ept order by priority) as rn
     from load_candidates
   ) ranked
   where rn = 1
+  group by anchor_dt, period, datetime_beginning_ept
 ),
 weather_hourly as (
   select
@@ -808,7 +858,8 @@ with params as (
     $7::date as requested_start,
     $8::date as requested_end,
     $9::int[] as selected_months,
-    $10::int[] as selected_years
+    $10::int[] as selected_years,
+    $11::text[] as load_areas
 ),
 range_bounds as (
   select
@@ -857,6 +908,7 @@ windows as (
     p.load_area,
     p.station_id,
     p.region,
+    p.load_areas,
     min(t.target_dt)::date as current_start,
     (max(t.target_dt) + interval '1 day')::date as current_end,
     min(
@@ -877,7 +929,7 @@ windows as (
     )::date as last_year_end
   from params p
   left join target_dates t on true
-  group by p.load_area, p.station_id, p.region, p.date_mode, p.selected_years
+  group by p.load_area, p.station_id, p.region, p.load_areas, p.date_mode, p.selected_years
 ),
 load_coverage as (
   select
@@ -889,14 +941,14 @@ load_coverage as (
     join windows w
       on m.datetime_beginning_ept >= w.last_year_start
      and m.datetime_beginning_ept < w.current_end
-    where m.load_area = $1
+    where m.load_area = any(w.load_areas)
     union all
     select p.datetime_beginning_ept
     from pjm.hrl_load_prelim p
     join windows w
       on p.datetime_beginning_ept >= w.last_year_start
      and p.datetime_beginning_ept < w.current_end
-    where p.load_area = $1
+    where p.load_area = any(w.load_areas)
   ) l
 ),
 weather_coverage as (
@@ -1040,7 +1092,7 @@ order by forecast_date
 
 export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const { searchParams } = new URL(request.url);
-  const requestedLoadArea = parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA);
+  const requestedLoadArea = canonicalLoadArea(parseIdentifier(searchParams.get("loadArea"), DEFAULT_LOAD_AREA));
   const requestedStationId = parseIdentifier(searchParams.get("stationId"), DEFAULT_STATION_ID);
   const region = parseIdentifier(searchParams.get("region"), DEFAULT_REGION);
   const lookbackDays = parseLookbackDays(searchParams.get("lookbackDays"));
@@ -1055,11 +1107,17 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
   const selectedYears = parseYears(searchParams.get("years"));
   const [areaRows, stationRows] = await Promise.all([loadAreas(), weatherStations(region)]);
   const areaNames = areaRows.map((row) => row.load_area);
-  const loadArea = areaNames.includes(requestedLoadArea)
+  const areaNameSet = new Set(areaNames);
+  const requestedLoadAreaMembers = loadAreaMembers(requestedLoadArea, areaNameSet);
+  const loadArea = requestedLoadAreaMembers.length
     ? requestedLoadArea
-    : areaNames.includes(DEFAULT_LOAD_AREA)
+    : areaNameSet.has(DEFAULT_LOAD_AREA)
       ? DEFAULT_LOAD_AREA
       : areaNames[0] ?? requestedLoadArea;
+  const selectedLoadAreaMembers =
+    loadArea === requestedLoadArea && requestedLoadAreaMembers.length
+      ? requestedLoadAreaMembers
+      : loadAreaMembers(loadArea, areaNameSet);
   const forecastLoadArea = forecastAreaForLoadArea(loadArea);
   const stationIds = stationRows.map((row) => row.station_id);
   const stationId = stationIds.includes(requestedStationId)
@@ -1080,6 +1138,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     endDate,
     selectedMonths,
     selectedYears,
+    selectedLoadAreaMembers,
   ];
   const coverageParams = [
     loadArea,
@@ -1092,6 +1151,7 @@ export const GET = observedJsonRoute(ROUTE_CONFIG, async (request: Request) => {
     endDate,
     selectedMonths,
     selectedYears,
+    selectedLoadAreaMembers,
   ];
   const forecastParams = [forecastLoadArea, stationId, region, loadShape, dayType];
 

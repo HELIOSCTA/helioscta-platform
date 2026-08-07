@@ -11,7 +11,9 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import ControlCard from "@/components/dashboard/ControlCard";
 import DataTableShell from "@/components/dashboard/DataTableShell";
+import DashboardTabs from "@/components/dashboard/DashboardTabs";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
 import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import MultiSelect from "@/components/ui/MultiSelect";
@@ -22,6 +24,13 @@ type LoadShape = "flat" | "onpeak" | "offpeak" | "peak";
 type DayType = "all" | "weekdays" | "weekends";
 type DateMode = "lookback" | "range" | "month-years";
 type LoadAreaGroupKey = "rto" | "west" | "midatl" | "south" | "other";
+type LoadGrowthIso = "pjm";
+type LoadGrowthTab = "single-area" | "forecast-area-scan";
+interface ForecastAreaScanPreset {
+  area: string;
+  label: string;
+  stationId: string;
+}
 type LoadGrowthTableKey =
   | "dailyFitStats"
   | "dailyGrowthBands"
@@ -211,9 +220,9 @@ const DEFAULT_AREA = "RTO";
 const DEFAULT_REGION = "PJM";
 const DEFAULT_WEATHER_STATION = "PJM";
 const DEFAULT_LOOKBACK_DAYS = 56;
-const DEFAULT_PLOT_LOOKBACK_DAYS = 10;
-const DEFAULT_LOAD_SHAPE: LoadShape = "flat";
-const DEFAULT_DAY_TYPE: DayType = "all";
+const DEFAULT_PLOT_LOOKBACK_DAYS = 7;
+const DEFAULT_LOAD_SHAPE: LoadShape = "onpeak";
+const DEFAULT_DAY_TYPE: DayType = "weekdays";
 const DEFAULT_DATE_MODE: DateMode = "range";
 const DEFAULT_MONTH = new Date().getMonth() + 1;
 const DEFAULT_MONTHS = [String(DEFAULT_MONTH)];
@@ -222,6 +231,9 @@ const DEFAULT_END = addDaysIsoDate(todayIsoDate(), -1);
 const DEFAULT_START = addDaysIsoDate(DEFAULT_END, -(DEFAULT_LOOKBACK_DAYS - 1));
 const STATION_NAME_FALLBACK: Record<string, string> = {
   PJM: "PJM",
+  KPIT: "Pittsburgh",
+  KPHL: "Philadelphia",
+  KBWI: "Baltimore",
   KRIC: "Richmond",
   KDCA: "Washington",
 };
@@ -245,6 +257,21 @@ const DATE_MODES: Array<{ key: DateMode; label: string }> = [
   { key: "range", label: "Date Range" },
   { key: "month-years", label: "Month + Years" },
 ];
+const LOAD_GROWTH_TABS: Array<{ value: LoadGrowthTab; label: string }> = [
+  { value: "forecast-area-scan", label: "Forecast Area Scan" },
+  { value: "single-area", label: "Single Area" },
+];
+const LOAD_GROWTH_ISOS: Array<{ value: LoadGrowthIso; label: string }> = [
+  { value: "pjm", label: "PJM" },
+];
+const FORECAST_AREA_SCAN_PRESETS: ForecastAreaScanPreset[] = [
+  { area: "RTO", label: "RTO", stationId: "PJM" },
+  { area: "WEST", label: "WEST", stationId: "KPIT" },
+  { area: "MIDATL", label: "MIDATL", stationId: "KPHL" },
+  { area: "BC", label: "BGE", stationId: "KBWI" },
+  { area: "PEPCO", label: "PEPCO", stationId: "KDCA" },
+  { area: "SOUTH", label: "SOUTH", stationId: "KRIC" },
+];
 const LOAD_AREA_GROUPS: Array<{ key: LoadAreaGroupKey; label: string }> = [
   { key: "rto", label: "RTO" },
   { key: "west", label: "West" },
@@ -253,7 +280,7 @@ const LOAD_AREA_GROUPS: Array<{ key: LoadAreaGroupKey; label: string }> = [
   { key: "other", label: "Other" },
 ];
 const WEST_LOAD_AREAS = new Set(["AEP", "AP", "ATSI", "COMED", "DAYTON", "DEOK", "DUQ", "DUQUESNE", "EKPC", "WEST", "WESTERN_REGION"]);
-const MIDATL_LOAD_AREAS = new Set(["AECO", "BGE", "DPL", "JCPL", "METED", "MIDATL", "MID_ATLANTIC_REGION", "PECO", "PEPCO", "PPL", "PSEG", "RECO"]);
+const MIDATL_LOAD_AREAS = new Set(["AECO", "BC", "BGE", "DPL", "JCPL", "METED", "MIDATL", "MID_ATLANTIC_REGION", "PECO", "PEPCO", "PPL", "PSEG", "RECO"]);
 const SOUTH_LOAD_AREAS = new Set(["DOM", "DOMINION", "SOUTH", "SOUTHERN_REGION"]);
 const MONTHS = [
   { value: 1, label: "Jan" },
@@ -685,6 +712,28 @@ function buildDailyFit(data: PjmLoadGrowthYoyPayload | null, metric: WeatherMetr
   };
 }
 
+function maxFinite(values: Array<number | null | undefined>): number | null {
+  const numericValues = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return numericValues.length ? Math.max(...numericValues) : null;
+}
+
+function forecastGrowthPct(point: DailyFitPoint, fit: DailyFitResult | null): number | null {
+  if (!fit?.lastYearFit.coeffs) return null;
+  if (!Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const lastYearFitValue = evalPoly(fit.lastYearFit.coeffs, point.x);
+  if (!Number.isFinite(lastYearFitValue) || Math.abs(lastYearFitValue) < Number.EPSILON) return null;
+  return ((point.y - lastYearFitValue) / lastYearFitValue) * 100;
+}
+
+function forecastScanSummary(payload: PjmLoadGrowthYoyPayload, fit: DailyFitResult | null) {
+  return {
+    matchedDays: payload.summary.matchedDays,
+    forecastDays: payload.forecastDaily.length,
+    maxForecastMw: maxFinite(payload.forecastDaily.map((row) => row.forecastLoadMw)),
+    maxForecastGrowthPct: maxFinite((fit?.forecastPoints ?? []).map((point) => forecastGrowthPct(point, fit))),
+  };
+}
+
 function buildYoyApiUrl({
   area,
   weatherStation,
@@ -826,6 +875,47 @@ function monthSelectionLabel(months: string[]): string {
   return labels.length <= 3 ? labels.join(", ") : `${labels.length} months`;
 }
 
+function buildDailyFitSeriesStyles(
+  currentComparisonYear: number,
+  priorComparisonYear: number,
+): Record<DailyFitSeriesKey, Omit<PlotSeries, "key">> {
+  const currentYearColor = seasonalYearColor(currentComparisonYear);
+  const priorYearColor = seasonalYearColor(priorComparisonYear);
+
+  return {
+    currentYear: {
+      label: `${currentComparisonYear} Actual`,
+      color: currentYearColor,
+      defaultVisible: true,
+    },
+    lastYear: {
+      label: `${priorComparisonYear} Actual`,
+      color: priorYearColor,
+      defaultVisible: true,
+    },
+    forecast: {
+      label: "Forecast",
+      color: currentYearColor,
+      defaultVisible: true,
+    },
+    lookback: {
+      label: "Lookback",
+      color: currentYearColor,
+      defaultVisible: true,
+    },
+    currentFit: {
+      label: `${currentComparisonYear} Fit`,
+      color: currentYearColor,
+      defaultVisible: true,
+    },
+    lastYearFit: {
+      label: `${priorComparisonYear} Fit`,
+      color: priorYearColor,
+      defaultVisible: true,
+    },
+  };
+}
+
 export default function PjmLoadGrowth({
   refreshToken = 0,
   onFreshnessChange,
@@ -833,6 +923,9 @@ export default function PjmLoadGrowth({
   refreshToken?: number;
   onFreshnessChange?: (freshness: PjmLoadGrowthFreshnessSummary) => void;
 }) {
+  const [selectedIso, setSelectedIso] = useState<LoadGrowthIso>("pjm");
+  const [activeTab, setActiveTab] = useState<LoadGrowthTab>("forecast-area-scan");
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [area, setArea] = useState(DEFAULT_AREA);
   const [rangeStartMmDd, setRangeStartMmDd] = useState(monthDayFromIsoDate(DEFAULT_START));
   const [rangeEndMmDd, setRangeEndMmDd] = useState(monthDayFromIsoDate(DEFAULT_END));
@@ -846,7 +939,16 @@ export default function PjmLoadGrowth({
   const [dateMode, setDateMode] = useState<DateMode>(DEFAULT_DATE_MODE);
   const [selectedMonths, setSelectedMonths] = useState<string[]>(DEFAULT_MONTHS);
   const [selectedYears, setSelectedYears] = useState<string[]>(DEFAULT_YEARS);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [scanRangeStartMmDd, setScanRangeStartMmDd] = useState(monthDayFromIsoDate(DEFAULT_START));
+  const [scanRangeEndMmDd, setScanRangeEndMmDd] = useState(monthDayFromIsoDate(DEFAULT_END));
+  const [scanWeatherMetric, setScanWeatherMetric] = useState<WeatherMetric>("feelsLikeF");
+  const [scanLookbackDays, setScanLookbackDays] = useState(DEFAULT_LOOKBACK_DAYS);
+  const [scanPlotLookbackDays, setScanPlotLookbackDays] = useState(DEFAULT_PLOT_LOOKBACK_DAYS);
+  const [scanLoadShape, setScanLoadShape] = useState<LoadShape>(DEFAULT_LOAD_SHAPE);
+  const [scanDayType, setScanDayType] = useState<DayType>(DEFAULT_DAY_TYPE);
+  const [scanDateMode, setScanDateMode] = useState<DateMode>(DEFAULT_DATE_MODE);
+  const [scanSelectedMonths, setScanSelectedMonths] = useState<string[]>(DEFAULT_MONTHS);
+  const [scanSelectedYears, setScanSelectedYears] = useState<string[]>(DEFAULT_YEARS);
   const [hiddenDailyFitSeries, setHiddenDailyFitSeries] = useState<Set<string>>(() => new Set());
   const [openTables, setOpenTables] = useState<Record<LoadGrowthTableKey, boolean>>({
     dailyFitStats: true,
@@ -856,58 +958,41 @@ export default function PjmLoadGrowth({
   const [yoyData, setYoyData] = useState<PjmLoadGrowthYoyPayload | null>(null);
   const [yoyLoading, setYoyLoading] = useState(true);
   const [yoyError, setYoyError] = useState<string | null>(null);
+  const [scanPayloads, setScanPayloads] = useState<Record<string, PjmLoadGrowthYoyPayload>>({});
+  const [scanErrors, setScanErrors] = useState<Record<string, string>>({});
+  const [scanLoading, setScanLoading] = useState(false);
   const normalizedYears = useMemo(() => normalizeCompareYears(selectedYears), [selectedYears]);
+  const normalizedScanYears = useMemo(() => normalizeCompareYears(scanSelectedYears), [scanSelectedYears]);
   const selectedComparisonYear = Number(normalizedYears.at(-1) ?? new Date().getFullYear());
+  const scanSelectedComparisonYear = Number(normalizedScanYears.at(-1) ?? new Date().getFullYear());
   const plottedYears = useMemo(
     () => normalizeCompareYears(yoyData?.selected.years.map(String) ?? normalizedYears),
     [normalizedYears, yoyData],
   );
   const currentComparisonYear = Number(plottedYears.at(-1) ?? selectedComparisonYear);
   const priorComparisonYear = Number(plottedYears[0] ?? currentComparisonYear - 1);
+  const scanCurrentComparisonYear = scanSelectedComparisonYear;
+  const scanPriorComparisonYear = Number(normalizedScanYears[0] ?? scanCurrentComparisonYear - 1);
   const dailyFitSeriesStyles = useMemo<Record<DailyFitSeriesKey, Omit<PlotSeries, "key">>>(() => {
-    const currentYearColor = seasonalYearColor(currentComparisonYear);
-    const priorYearColor = seasonalYearColor(priorComparisonYear);
-
-    return {
-      currentYear: {
-        label: `${currentComparisonYear} Actual`,
-        color: currentYearColor,
-        defaultVisible: true,
-      },
-      lastYear: {
-        label: `${priorComparisonYear} Actual`,
-        color: priorYearColor,
-        defaultVisible: true,
-      },
-      forecast: {
-        label: "Forecast",
-        color: currentYearColor,
-        defaultVisible: true,
-      },
-      lookback: {
-        label: "Lookback",
-        color: currentYearColor,
-        defaultVisible: true,
-      },
-      currentFit: {
-        label: `${currentComparisonYear} Fit`,
-        color: currentYearColor,
-        defaultVisible: true,
-      },
-      lastYearFit: {
-        label: `${priorComparisonYear} Fit`,
-        color: priorYearColor,
-        defaultVisible: true,
-      },
-    };
+    return buildDailyFitSeriesStyles(currentComparisonYear, priorComparisonYear);
   }, [currentComparisonYear, priorComparisonYear]);
+  const scanDailyFitSeriesStyles = useMemo<Record<DailyFitSeriesKey, Omit<PlotSeries, "key">>>(() => {
+    return buildDailyFitSeriesStyles(scanCurrentComparisonYear, scanPriorComparisonYear);
+  }, [scanCurrentComparisonYear, scanPriorComparisonYear]);
   const dailyFitSeries = useMemo<PlotSeries[]>(
     () => DAILY_FIT_SERIES_KEYS.map((key) => ({ key, ...dailyFitSeriesStyles[key] })),
     [dailyFitSeriesStyles],
   );
+  const scanDailyFitSeries = useMemo<PlotSeries[]>(
+    () => DAILY_FIT_SERIES_KEYS.map((key) => ({ key, ...scanDailyFitSeriesStyles[key] })),
+    [scanDailyFitSeriesStyles],
+  );
   const rangeDates = rangeDatesFromMonthDays(selectedComparisonYear, rangeStartMmDd, rangeEndMmDd);
+  const scanRangeDates = rangeDatesFromMonthDays(scanSelectedComparisonYear, scanRangeStartMmDd, scanRangeEndMmDd);
   const effectiveStartDate = dateMode === "range" ? rangeDates.startDate : DEFAULT_START;
   const effectiveEndDate = dateMode === "range" ? rangeDates.endDate : DEFAULT_END;
+  const scanEffectiveStartDate = scanDateMode === "range" ? scanRangeDates.startDate : DEFAULT_START;
+  const scanEffectiveEndDate = scanDateMode === "range" ? scanRangeDates.endDate : DEFAULT_END;
 
   useEffect(() => {
     let active = true;
@@ -994,11 +1079,111 @@ export default function PjmLoadGrowth({
     weatherStation,
   ]);
 
+  useEffect(() => {
+    if (activeTab !== "forecast-area-scan") {
+      setScanLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setScanLoading(true);
+    setScanPayloads({});
+    setScanErrors({});
+
+    const loadScanPresets = async () => {
+      const nextPayloads: Record<string, PjmLoadGrowthYoyPayload> = {};
+      const nextErrors: Record<string, string> = {};
+
+      for (const preset of FORECAST_AREA_SCAN_PRESETS) {
+        if (!active) return;
+        try {
+          const payload = await fetchJsonWithCache<PjmLoadGrowthYoyPayload>({
+            key: yoyCacheKey({
+              area: preset.area,
+              weatherStation: preset.stationId,
+              region,
+              lookbackDays: scanLookbackDays,
+              dateMode: scanDateMode,
+              startDate: scanEffectiveStartDate,
+              endDate: scanEffectiveEndDate,
+              months: scanSelectedMonths,
+              years: normalizedScanYears,
+              loadShape: scanLoadShape,
+              dayType: scanDayType,
+            }),
+            url: buildYoyApiUrl({
+              area: preset.area,
+              weatherStation: preset.stationId,
+              region,
+              lookbackDays: scanLookbackDays,
+              dateMode: scanDateMode,
+              startDate: scanEffectiveStartDate,
+              endDate: scanEffectiveEndDate,
+              months: scanSelectedMonths,
+              years: normalizedScanYears,
+              loadShape: scanLoadShape,
+              dayType: scanDayType,
+              refresh: refreshToken > 0,
+            }),
+            ttlMs: API_CACHE_TTL_MS,
+            signal: controller.signal,
+            cacheMode: refreshToken > 0 ? "no-store" : "default",
+            forceRefresh: refreshToken > 0,
+          });
+          nextPayloads[preset.area] = payload;
+          delete nextErrors[preset.area];
+        } catch (err) {
+          if (err instanceof Error && err.name === "AbortError") return;
+          nextErrors[preset.area] = err instanceof Error ? err.message : "Failed to load scan area";
+        }
+
+        if (!active) return;
+        setScanPayloads({ ...nextPayloads });
+        setScanErrors({ ...nextErrors });
+      }
+
+      if (active) setScanLoading(false);
+    };
+
+    void loadScanPresets();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [
+    activeTab,
+    normalizedScanYears,
+    refreshToken,
+    region,
+    scanDateMode,
+    scanDayType,
+    scanEffectiveEndDate,
+    scanEffectiveStartDate,
+    scanLoadShape,
+    scanLookbackDays,
+    scanSelectedMonths,
+  ]);
+
   const selectedMetric = metricConfig(weatherMetric);
+  const scanSelectedMetric = metricConfig(scanWeatherMetric);
   const dailyFit = useMemo(
     () => buildDailyFit(yoyData, weatherMetric, plotLookbackDays),
     [plotLookbackDays, weatherMetric, yoyData],
   );
+  const scanFits = useMemo(() => {
+    const nextFits = new Map<string, DailyFitResult | null>();
+    FORECAST_AREA_SCAN_PRESETS.forEach((preset) => {
+      nextFits.set(
+        preset.area,
+        buildDailyFit(scanPayloads[preset.area] ?? null, scanWeatherMetric, scanPlotLookbackDays),
+      );
+    });
+    return nextFits;
+  }, [scanPayloads, scanPlotLookbackDays, scanWeatherMetric]);
+  const loadedScanPresetCount = FORECAST_AREA_SCAN_PRESETS.filter((preset) => scanPayloads[preset.area]).length;
+  const scanErrorCount = Object.keys(scanErrors).length;
   const sharedAreas = useMemo(
     () => (yoyData?.availableAreas.length ? yoyData.availableAreas : [{ area, rowCount: 0, minEpt: null, maxEpt: null }]),
     [area, yoyData],
@@ -1029,15 +1214,51 @@ export default function PjmLoadGrowth({
           region: yoyData.selected.region,
         }
       : { stationId: weatherStation, stationName: weatherStation, region });
-  const selectedStationName = stationDisplayName(selectedStation, false);
   const selectedStationLabel = stationDisplayName(selectedStation);
   const selectedShapeLabel = LOAD_SHAPES.find((item) => item.key === loadShape)?.label ?? "Flat";
   const selectedDayTypeLabel = DAY_TYPES.find((item) => item.key === dayType)?.label ?? "All Days";
+  const scanSelectedShapeLabel = LOAD_SHAPES.find((item) => item.key === scanLoadShape)?.label ?? "Flat";
+  const scanSelectedDayTypeLabel = DAY_TYPES.find((item) => item.key === scanDayType)?.label ?? "All Days";
   const dateSelectionLabel =
     dateMode === "month-years"
       ? `${monthSelectionLabel(selectedMonths)} ${selectedYears.join(" vs ")}`
       : `${rangeDates.startMmDd} to ${rangeDates.endMmDd} ${normalizedYears.join(" vs ")}`;
-  const plotLookbackLabel = `Highlight ${plotLookbackDays}d`;
+  const scanDateSelectionLabel =
+    scanDateMode === "month-years"
+      ? `${monthSelectionLabel(scanSelectedMonths)} ${scanSelectedYears.join(" vs ")}`
+      : `${scanRangeDates.startMmDd} to ${scanRangeDates.endMmDd} ${normalizedScanYears.join(" vs ")}`;
+  const editDialogTitle = activeTab === "forecast-area-scan" ? "Edit Forecast Area Scan" : "Edit Single Area View";
+  const activeViewLabel = LOAD_GROWTH_TABS.find((tab) => tab.value === activeTab)?.label ?? "Forecast Area Scan";
+  const selectedIsoLabel = LOAD_GROWTH_ISOS.find((iso) => iso.value === selectedIso)?.label ?? selectedIso.toUpperCase();
+  const filterStatusText =
+    activeTab === "forecast-area-scan"
+      ? `${loadedScanPresetCount}/${FORECAST_AREA_SCAN_PRESETS.length} presets${
+          scanErrorCount ? ` / ${scanErrorCount} error${scanErrorCount === 1 ? "" : "s"}` : ""
+        }`
+      : `${area} / ${selectedStationLabel}`;
+  const summaryChips =
+    activeTab === "forecast-area-scan"
+      ? [
+          selectedIsoLabel,
+          activeViewLabel,
+          `${FORECAST_AREA_SCAN_PRESETS.length} fixed areas`,
+          scanSelectedMetric.label,
+          scanSelectedShapeLabel,
+          scanSelectedDayTypeLabel,
+          scanDateSelectionLabel,
+          `Highlight ${scanPlotLookbackDays}d`,
+        ]
+      : [
+          selectedIsoLabel,
+          activeViewLabel,
+          area,
+          selectedStationLabel,
+          selectedMetric.label,
+          selectedShapeLabel,
+          selectedDayTypeLabel,
+          dateSelectionLabel,
+          `Highlight ${plotLookbackDays}d`,
+        ];
   const dailyFitSummary = {
     averageDiff: dailyFit?.growthBands[0]?.averageDiff,
     averageGrowthPct: dailyFit?.growthBands[0]?.averageGrowthPct,
@@ -1045,6 +1266,17 @@ export default function PjmLoadGrowth({
     lastYearR2: dailyFit?.lastYearFit.stats.rSquared,
     currentMae: dailyFit?.currentFit.stats.mae,
   };
+  const controlDateMode = activeTab === "forecast-area-scan" ? scanDateMode : dateMode;
+  const controlRangeDates = activeTab === "forecast-area-scan" ? scanRangeDates : rangeDates;
+  const controlRangeStartMmDd = activeTab === "forecast-area-scan" ? scanRangeStartMmDd : rangeStartMmDd;
+  const controlRangeEndMmDd = activeTab === "forecast-area-scan" ? scanRangeEndMmDd : rangeEndMmDd;
+  const controlLookbackDays = activeTab === "forecast-area-scan" ? scanLookbackDays : lookbackDays;
+  const controlPlotLookbackDays = activeTab === "forecast-area-scan" ? scanPlotLookbackDays : plotLookbackDays;
+  const controlLoadShape = activeTab === "forecast-area-scan" ? scanLoadShape : loadShape;
+  const controlDayType = activeTab === "forecast-area-scan" ? scanDayType : dayType;
+  const controlWeatherMetric = activeTab === "forecast-area-scan" ? scanWeatherMetric : weatherMetric;
+  const controlSelectedMonths = activeTab === "forecast-area-scan" ? scanSelectedMonths : selectedMonths;
+  const controlSelectedYears = activeTab === "forecast-area-scan" ? scanSelectedYears : selectedYears;
 
   const toggleDailyFitSeries = (key: string) => {
     setHiddenDailyFitSeries((prev) => {
@@ -1060,10 +1292,62 @@ export default function PjmLoadGrowth({
   };
 
   const applyDataLookback = (days: number) => {
+    if (activeTab === "forecast-area-scan") {
+      setScanDateMode("range");
+      setScanLookbackDays(days);
+      setScanRangeEndMmDd(monthDayFromIsoDate(DEFAULT_END));
+      setScanRangeStartMmDd(monthDayFromIsoDate(addDaysIsoDate(DEFAULT_END, -(days - 1))));
+      return;
+    }
     setDateMode("range");
     setLookbackDays(days);
     setRangeEndMmDd(monthDayFromIsoDate(DEFAULT_END));
     setRangeStartMmDd(monthDayFromIsoDate(addDaysIsoDate(DEFAULT_END, -(days - 1))));
+  };
+
+  const setControlDateMode = (nextDateMode: DateMode) => {
+    if (activeTab === "forecast-area-scan") setScanDateMode(nextDateMode);
+    else setDateMode(nextDateMode);
+  };
+
+  const setControlRangeStart = (value: string | ((current: string) => string)) => {
+    if (activeTab === "forecast-area-scan") setScanRangeStartMmDd(value);
+    else setRangeStartMmDd(value);
+  };
+
+  const setControlRangeEnd = (value: string | ((current: string) => string)) => {
+    if (activeTab === "forecast-area-scan") setScanRangeEndMmDd(value);
+    else setRangeEndMmDd(value);
+  };
+
+  const setControlSelectedMonths = (months: string[]) => {
+    if (activeTab === "forecast-area-scan") setScanSelectedMonths(months);
+    else setSelectedMonths(months);
+  };
+
+  const setControlSelectedYears = (years: string[]) => {
+    if (activeTab === "forecast-area-scan") setScanSelectedYears(years);
+    else setSelectedYears(years);
+  };
+
+  const setControlPlotLookbackDays = (days: number) => {
+    if (activeTab === "forecast-area-scan") setScanPlotLookbackDays(days);
+    else setPlotLookbackDays(days);
+  };
+
+  const setControlLoadShape = (nextLoadShape: LoadShape) => {
+    if (activeTab === "forecast-area-scan") setScanLoadShape(nextLoadShape);
+    else setLoadShape(nextLoadShape);
+  };
+
+  const setControlDayType = (nextDayType: DayType) => {
+    if (activeTab === "forecast-area-scan") setScanDayType(nextDayType);
+    else setDayType(nextDayType);
+  };
+
+  const setControlWeatherMetric = (nextWeatherMetric: WeatherMetric) => {
+    if (activeTab === "forecast-area-scan") setScanWeatherMetric(nextWeatherMetric);
+    else setWeatherMetric(nextWeatherMetric);
   };
 
   const renderTooltipRow = (label: string, value: string, color?: string) => (
@@ -1134,7 +1418,10 @@ export default function PjmLoadGrowth({
     );
   };
 
-  const renderDailyFitTooltip = ({ active, payload }: ChartTooltipProps) => {
+  const renderDailyFitTooltip = (
+    { active, payload }: ChartTooltipProps,
+    metric = selectedMetric,
+  ) => {
     if (!active || !payload?.length) return null;
     const point = payload[0]?.payload ?? {};
     const header =
@@ -1150,7 +1437,7 @@ export default function PjmLoadGrowth({
       `${header}${hourEnding}`,
       <>
         {renderTooltipRow("Load Source", typeof point.loadSourceDetail === "string" ? point.loadSourceDetail : "-")}
-        {renderTooltipRow(selectedMetric.label, weatherValue, selectedMetric.color)}
+        {renderTooltipRow(metric.label, weatherValue, metric.color)}
         {renderTooltipRow("Load", loadValue, "#38bdf8")}
       </>,
     );
@@ -1160,6 +1447,8 @@ export default function PjmLoadGrowth({
     heightClass: string,
     fit: DailyFitResult | null = dailyFit,
     hiddenSeries: Set<string> = hiddenDailyFitSeries,
+    seriesStyles: Record<DailyFitSeriesKey, Omit<PlotSeries, "key">> = dailyFitSeriesStyles,
+    metric = selectedMetric,
   ) => (
     <div className={`${heightClass} overflow-hidden rounded-md border border-gray-800 bg-[#0d1119]`}>
       <ResponsiveContainer width="100%" height="100%">
@@ -1168,13 +1457,13 @@ export default function PjmLoadGrowth({
           <XAxis
             type="number"
             dataKey="x"
-            name={selectedMetric.label}
-            unit={selectedMetric.unit}
+            name={metric.label}
+            unit={metric.unit}
             domain={["auto", "auto"]}
             tick={{ fill: CHART_TICK_COLOR, fontSize: 10 }}
             tickLine={false}
             axisLine={{ stroke: CHART_AXIS_COLOR }}
-            label={{ value: `${selectedMetric.label} (${selectedMetric.unit})`, position: "insideBottom", offset: -18, fill: CHART_TICK_COLOR, fontSize: 10 }}
+            label={{ value: `${metric.label} (${metric.unit})`, position: "insideBottom", offset: -18, fill: CHART_TICK_COLOR, fontSize: 10 }}
           />
           <YAxis
             type="number"
@@ -1189,13 +1478,13 @@ export default function PjmLoadGrowth({
           />
           <Tooltip
             cursor={{ strokeDasharray: "3 3" }}
-            content={(props) => renderDailyFitTooltip(props as unknown as ChartTooltipProps)}
+            content={(props) => renderDailyFitTooltip(props as unknown as ChartTooltipProps, metric)}
           />
           {!hiddenSeries.has("currentYear") && (
             <Scatter
-              name={dailyFitSeriesStyles.currentYear.label}
+              name={seriesStyles.currentYear.label}
               data={fit?.currentPoints ?? []}
-              fill={dailyFitSeriesStyles.currentYear.color}
+              fill={seriesStyles.currentYear.color}
               shape="square"
               fillOpacity={0.72}
               isAnimationActive={false}
@@ -1203,9 +1492,9 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("lastYear") && (
             <Scatter
-              name={dailyFitSeriesStyles.lastYear.label}
+              name={seriesStyles.lastYear.label}
               data={fit?.lastYearPoints ?? []}
-              fill={dailyFitSeriesStyles.lastYear.color}
+              fill={seriesStyles.lastYear.color}
               shape="square"
               fillOpacity={0.64}
               isAnimationActive={false}
@@ -1213,17 +1502,17 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("forecast") && (
             <Scatter
-              name={dailyFitSeriesStyles.forecast.label}
+              name={seriesStyles.forecast.label}
               data={fit?.forecastPoints ?? []}
               fill="none"
-              stroke={dailyFitSeriesStyles.forecast.color}
+              stroke={seriesStyles.forecast.color}
               isAnimationActive={false}
               shape={(props: unknown) => {
                 const point = props as { cx?: number; cy?: number };
                 const cx = point.cx ?? 0;
                 const cy = point.cy ?? 0;
                 const size = 7;
-                const forecastColor = dailyFitSeriesStyles.forecast.color;
+                const forecastColor = seriesStyles.forecast.color;
                 const trianglePath = `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`;
                 return (
                   <g>
@@ -1251,10 +1540,10 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("lookback") && (
             <Scatter
-              name={dailyFitSeriesStyles.lookback.label}
+              name={seriesStyles.lookback.label}
               data={fit?.lookbackPoints ?? []}
               fill="none"
-              stroke={dailyFitSeriesStyles.lookback.color}
+              stroke={seriesStyles.lookback.color}
               isAnimationActive={false}
               shape={(props: unknown) => {
                 const point = props as { cx?: number; cy?: number; payload?: { size?: number } };
@@ -1265,7 +1554,7 @@ export default function PjmLoadGrowth({
                     cy={point.cy}
                     r={radius}
                     fill="none"
-                    stroke={dailyFitSeriesStyles.lookback.color}
+                    stroke={seriesStyles.lookback.color}
                     strokeWidth={2}
                     opacity={0.95}
                   />
@@ -1275,20 +1564,20 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("currentFit") && (
             <Scatter
-              name={dailyFitSeriesStyles.currentFit.label}
+              name={seriesStyles.currentFit.label}
               data={fit?.currentFit.line ?? []}
               fill="none"
-              line={{ stroke: dailyFitSeriesStyles.currentFit.color, strokeWidth: 2.5 }}
+              line={{ stroke: seriesStyles.currentFit.color, strokeWidth: 2.5 }}
               shape={() => null}
               isAnimationActive={false}
             />
           )}
           {!hiddenSeries.has("lastYearFit") && (
             <Scatter
-              name={dailyFitSeriesStyles.lastYearFit.label}
+              name={seriesStyles.lastYearFit.label}
               data={fit?.lastYearFit.line ?? []}
               fill="none"
-              line={{ stroke: dailyFitSeriesStyles.lastYearFit.color, strokeWidth: 2.5 }}
+              line={{ stroke: seriesStyles.lastYearFit.color, strokeWidth: 2.5 }}
               shape={() => null}
               isAnimationActive={false}
             />
@@ -1298,67 +1587,275 @@ export default function PjmLoadGrowth({
     </div>
   );
 
-  const renderDailyFitPanel = (heightClass: string) => (
+  const renderDailyFitPanel = (
+    heightClass: string,
+    fit: DailyFitResult | null = dailyFit,
+    summary = dailyFitSummary,
+    seriesStyles: Record<DailyFitSeriesKey, Omit<PlotSeries, "key">> = dailyFitSeriesStyles,
+    metric = selectedMetric,
+  ) => (
     <div className="space-y-3">
-      {renderDailyFitSummaryStrip()}
-      {renderDailyFitChart(heightClass)}
+      {renderDailyFitSummaryStrip(summary)}
+      {renderDailyFitChart(heightClass, fit, hiddenDailyFitSeries, seriesStyles, metric)}
     </div>
   );
 
+  const renderForecastAreaScanSlot = (
+    preset: ForecastAreaScanPreset,
+    chartHeightClass: string,
+  ) => {
+    const payload = scanPayloads[preset.area] ?? null;
+    const fit = scanFits.get(preset.area) ?? null;
+    const error = scanErrors[preset.area] ?? null;
+    const requestedStationLabel = stationDisplayName({
+      stationId: preset.stationId,
+      stationName: STATION_NAME_FALLBACK[preset.stationId] ?? preset.stationId,
+    });
+
+    if (error) {
+      return (
+        <article key={preset.area} className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-sm font-semibold text-red-100">{preset.label}</h3>
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-red-200">
+                Error
+              </span>
+              <span className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-0.5 text-[10px] font-semibold text-gray-400">
+                Wx {requestedStationLabel}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-red-200">{error}</div>
+        </article>
+      );
+    }
+
+    if (scanLoading && !payload) {
+      return (
+        <article key={preset.area} className="min-h-[250px] rounded-md border border-gray-800 bg-[#0d1119] p-3">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-300">{preset.label}</h3>
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <span className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
+                Loading
+              </span>
+              <span className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-0.5 text-[10px] font-semibold text-gray-400">
+                Wx {requestedStationLabel}
+              </span>
+            </div>
+          </div>
+          <div className="mt-16 text-center text-xs text-gray-600">Loading scan area...</div>
+        </article>
+      );
+    }
+
+    if (!payload) {
+      return (
+        <article key={preset.area} className="min-h-[250px] rounded-md border border-gray-800 bg-[#0d1119] p-3">
+          <div className="flex items-start justify-between gap-2">
+            <h3 className="text-sm font-semibold text-gray-300">{preset.label}</h3>
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <span className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600">
+                Waiting
+              </span>
+              <span className="rounded-md border border-gray-800 bg-gray-950/60 px-2 py-0.5 text-[10px] font-semibold text-gray-400">
+                Wx {requestedStationLabel}
+              </span>
+            </div>
+          </div>
+          <div className="mt-16 text-center text-xs text-gray-600">No scan payload loaded.</div>
+        </article>
+      );
+    }
+
+    const summary = forecastScanSummary(payload, fit);
+    const growthClassName =
+      summary.maxForecastGrowthPct === null
+        ? "text-gray-500"
+        : summary.maxForecastGrowthPct >= 0
+          ? "text-emerald-300"
+          : "text-red-300";
+    const returnedStation = {
+      stationId: payload.selected.stationId,
+      stationName: payload.selected.stationName,
+    };
+    const returnedStationLabel = stationDisplayName(returnedStation);
+    const stationMatchesPreset = payload.selected.stationId === preset.stationId;
+    const areaMatchesPreset = payload.selected.loadArea === preset.area;
+
+    return (
+      <article key={preset.area} className="min-w-0 rounded-md border border-gray-800 bg-[#0d1119] p-3">
+        <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold text-gray-100">{preset.label}</h3>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              <span
+                className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold ${
+                  stationMatchesPreset
+                    ? "border-cyan-500/30 bg-cyan-500/10 text-cyan-100"
+                    : "border-amber-500/35 bg-amber-500/10 text-amber-100"
+                }`}
+                title={
+                  stationMatchesPreset
+                    ? `Preset station ${preset.stationId}`
+                    : `Requested ${preset.stationId}; API returned ${payload.selected.stationId}`
+                }
+              >
+                Wx {returnedStationLabel}
+              </span>
+              {!stationMatchesPreset && (
+                <span className="rounded-md border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">
+                  Requested {preset.stationId}
+                </span>
+              )}
+              {!areaMatchesPreset && (
+                <span className="rounded-md border border-amber-500/35 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-100">
+                  Area {payload.selected.loadArea}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 text-[11px] tabular-nums text-gray-500">
+              {summary.matchedDays.toLocaleString()} matched / {summary.forecastDays.toLocaleString()} forecast
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-right">
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Max Forecast</div>
+              <div className="mt-0.5 text-xs font-semibold tabular-nums text-gray-100">
+                {fmtMw(summary.maxForecastMw)}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Max Fcst Growth</div>
+              <div className={`mt-0.5 text-xs font-semibold tabular-nums ${growthClassName}`}>
+                {fmtPct(summary.maxForecastGrowthPct)}
+              </div>
+            </div>
+          </div>
+        </div>
+        {renderDailyFitChart(
+          chartHeightClass,
+          fit,
+          hiddenDailyFitSeries,
+          scanDailyFitSeriesStyles,
+          scanSelectedMetric,
+        )}
+      </article>
+    );
+  };
+
+  const renderForecastAreaScanGrid = (chartHeightClass: string) => {
+    return (
+      <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-3">
+        {FORECAST_AREA_SCAN_PRESETS.map((preset) =>
+          renderForecastAreaScanSlot(preset, chartHeightClass),
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-4">
-      <section className="rounded-lg border border-gray-800 bg-[#12141d] p-3 shadow-xl shadow-black/20 sm:p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-gray-100">Edit Load Growth View</h2>
-          <button
-            type="button"
-            onClick={() => setSettingsOpen(true)}
-            className="rounded-md border border-gray-700 bg-gray-800 px-3 py-2 text-xs font-semibold text-gray-200 transition-colors hover:bg-gray-700 hover:text-white"
-          >
-            Edit View
-          </button>
-        </div>
-        <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2">
-          {[
-            area,
-            selectedStationName,
-            selectedMetric.label,
-            selectedShapeLabel,
-            selectedDayTypeLabel,
-            dateSelectionLabel,
-            plotLookbackLabel,
-          ].filter((label): label is string => Boolean(label)).map((label) => (
-            <span
-              key={label}
-              className="rounded-md border border-gray-800 bg-gray-950/50 px-2.5 py-1 text-xs font-semibold text-gray-300"
-            >
-              {label}
+      <ControlCard title="Load Growth">
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-widest text-gray-500">
+              Filters
             </span>
-          ))}
+            <span className="h-px flex-1 bg-gray-800" />
+            <span className="text-xs text-gray-500">{filterStatusText}</span>
+          </div>
+
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                ISO
+              </div>
+              <div className="flex flex-wrap items-center gap-2" aria-label="Load growth ISO filter">
+                {LOAD_GROWTH_ISOS.map((iso) => {
+                  const active = selectedIso === iso.value;
+                  return (
+                    <button
+                      key={iso.value}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => setSelectedIso(iso.value)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition-all duration-150 ${
+                        active
+                          ? "border-sky-500/55 bg-sky-500/15 text-sky-100"
+                          : "border-gray-700 bg-transparent text-gray-500 hover:border-gray-600 hover:text-gray-300"
+                      }`}
+                    >
+                      {iso.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                View
+              </div>
+              <DashboardTabs
+                tabs={LOAD_GROWTH_TABS}
+                activeValue={activeTab}
+                onChange={setActiveTab}
+                ariaLabel="Load growth view"
+                variant="secondary"
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2 border-t border-gray-800/70 pt-3">
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-200 transition-colors hover:bg-gray-700 hover:text-white"
+            >
+              Edit View
+            </button>
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {summaryChips.map((label) => (
+                <span
+                  key={label}
+                  className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1 text-[11px] font-semibold text-gray-300"
+                >
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
-      </section>
+      </ControlCard>
 
       {settingsOpen && (
         <div
           className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-6"
           role="dialog"
           aria-modal="true"
-          aria-label="Edit load growth view"
+          aria-label={editDialogTitle}
           onMouseDown={() => setSettingsOpen(false)}
         >
           <div
             className="w-full max-w-5xl rounded-lg border border-gray-700 bg-[#12141d] shadow-2xl"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
-              <h2 className="text-sm font-semibold text-gray-100">Edit Load Growth View</h2>
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(false)}
-                className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-gray-700 hover:text-white"
-              >
-                Done
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-800 px-4 py-3">
+              <h2 className="text-sm font-semibold text-gray-100">{editDialogTitle}</h2>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span className="rounded-md border border-gray-800 bg-gray-950/50 px-2 py-1 text-[11px] font-semibold text-gray-400">
+                  {selectedIso.toUpperCase()}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen(false)}
+                  className="rounded-md border border-gray-700 bg-gray-800 px-3 py-1.5 text-xs font-semibold text-gray-300 hover:bg-gray-700 hover:text-white"
+                >
+                  Done
+                </button>
+              </div>
             </div>
 
             <div className="space-y-5 p-4">
@@ -1370,8 +1867,8 @@ export default function PjmLoadGrowth({
                       Date View
                     </span>
                     <select
-                      value={dateMode}
-                      onChange={(event) => setDateMode(event.target.value as DateMode)}
+                      value={controlDateMode}
+                      onChange={(event) => setControlDateMode(event.target.value as DateMode)}
                       className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                     >
                       {DATE_MODES.map((item) => (
@@ -1382,7 +1879,7 @@ export default function PjmLoadGrowth({
                     </select>
                   </label>
 
-                  {dateMode === "range" && (
+                  {controlDateMode === "range" && (
                     <>
                       <label className="block">
                         <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
@@ -1393,9 +1890,9 @@ export default function PjmLoadGrowth({
                           inputMode="numeric"
                           maxLength={5}
                           placeholder="06-01"
-                          value={rangeStartMmDd}
-                          onChange={(event) => setRangeStartMmDd(event.target.value)}
-                          onBlur={() => setRangeStartMmDd((value) => normalizeMonthDay(value, rangeDates.startMmDd))}
+                          value={controlRangeStartMmDd}
+                          onChange={(event) => setControlRangeStart(event.target.value)}
+                          onBlur={() => setControlRangeStart((value) => normalizeMonthDay(value, controlRangeDates.startMmDd))}
                           className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                         />
                       </label>
@@ -1409,9 +1906,9 @@ export default function PjmLoadGrowth({
                           inputMode="numeric"
                           maxLength={5}
                           placeholder="07-31"
-                          value={rangeEndMmDd}
-                          onChange={(event) => setRangeEndMmDd(event.target.value)}
-                          onBlur={() => setRangeEndMmDd((value) => normalizeMonthDay(value, rangeDates.endMmDd))}
+                          value={controlRangeEndMmDd}
+                          onChange={(event) => setControlRangeEnd(event.target.value)}
+                          onBlur={() => setControlRangeEnd((value) => normalizeMonthDay(value, controlRangeDates.endMmDd))}
                           className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                         />
                       </label>
@@ -1419,8 +1916,8 @@ export default function PjmLoadGrowth({
                       <MultiSelect
                         label="Years"
                         options={YEAR_OPTIONS}
-                        selected={selectedYears}
-                        onChange={(years) => setSelectedYears(normalizeCompareYears(years))}
+                        selected={controlSelectedYears}
+                        onChange={(years) => setControlSelectedYears(normalizeCompareYears(years))}
                         width="w-full"
                         maxSelected={2}
                       />
@@ -1430,7 +1927,7 @@ export default function PjmLoadGrowth({
                         Quick Lookback
                       </span>
                       <select
-                        value={lookbackDays}
+                        value={controlLookbackDays}
                         onChange={(event) => applyDataLookback(Number(event.target.value))}
                         className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                       >
@@ -1444,13 +1941,13 @@ export default function PjmLoadGrowth({
                     </>
                   )}
 
-                  {dateMode === "month-years" && (
+                  {controlDateMode === "month-years" && (
                     <>
                       <MultiSelect
                         label="Months"
                         options={MONTH_OPTIONS}
-                        selected={selectedMonths}
-                        onChange={(months) => setSelectedMonths(normalizeMonthSelection(months))}
+                        selected={controlSelectedMonths}
+                        onChange={(months) => setControlSelectedMonths(normalizeMonthSelection(months))}
                         placeholder="Select months"
                         width="w-full"
                       />
@@ -1458,8 +1955,8 @@ export default function PjmLoadGrowth({
                       <MultiSelect
                         label="Years"
                         options={YEAR_OPTIONS}
-                        selected={selectedYears}
-                        onChange={(years) => setSelectedYears(normalizeCompareYears(years))}
+                        selected={controlSelectedYears}
+                        onChange={(years) => setControlSelectedYears(normalizeCompareYears(years))}
                         width="w-full"
                         maxSelected={2}
                       />
@@ -1473,11 +1970,11 @@ export default function PjmLoadGrowth({
                       Plot Highlight
                     </span>
                     <select
-                      value={plotLookbackDays}
-                      onChange={(event) => setPlotLookbackDays(Number(event.target.value))}
+                      value={controlPlotLookbackDays}
+                      onChange={(event) => setControlPlotLookbackDays(Number(event.target.value))}
                       className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                     >
-                      {[5, 10, 14, 21, 28, 56].map((days) => (
+                      {[5, 7, 10, 14, 21, 28, 56].map((days) => (
                         <option key={days} value={days}>
                           {days} days
                         </option>
@@ -1487,37 +1984,58 @@ export default function PjmLoadGrowth({
                 </div>
               </div>
 
+              {activeTab === "forecast-area-scan" && (
+                <div>
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Scan Scope</div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs font-semibold text-cyan-100">
+                      ISO PJM
+                    </span>
+                    {FORECAST_AREA_SCAN_PRESETS.map((preset) => (
+                      <span
+                        key={preset.area}
+                        className="rounded-md border border-gray-800 bg-gray-950/50 px-2.5 py-1 text-xs font-semibold text-gray-300"
+                      >
+                        {preset.label} / {preset.stationId}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Load</div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
-                <label className="block md:col-span-2">
-                  <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    Load Area
-                  </div>
-                  <select
-                    value={area}
-                    onChange={(event) => setArea(event.target.value)}
-                    className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-                  >
-                    {groupedLoadAreas.map((group) => (
-                      <optgroup key={group.key} label={group.label}>
-                        {group.areas.map((item) => (
-                          <option key={item.area} value={item.area}>
-                            {`${item.area} - ${group.label}`}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </label>
+                {activeTab === "single-area" && (
+                  <label className="block md:col-span-2">
+                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                      Load Area
+                    </div>
+                    <select
+                      value={area}
+                      onChange={(event) => setArea(event.target.value)}
+                      className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                    >
+                      {groupedLoadAreas.map((group) => (
+                        <optgroup key={group.key} label={group.label}>
+                          {group.areas.map((item) => (
+                            <option key={item.area} value={item.area}>
+                              {`${item.area} - ${group.label}`}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 <label className="block">
                   <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
                     Load Shape
                   </span>
                   <select
-                    value={loadShape}
-                    onChange={(event) => setLoadShape(event.target.value as LoadShape)}
+                    value={controlLoadShape}
+                    onChange={(event) => setControlLoadShape(event.target.value as LoadShape)}
                     className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                   >
                     {LOAD_SHAPES.map((item) => (
@@ -1536,8 +2054,8 @@ export default function PjmLoadGrowth({
                     Days
                   </span>
                   <select
-                    value={dayType}
-                    onChange={(event) => setDayType(event.target.value as DayType)}
+                    value={controlDayType}
+                    onChange={(event) => setControlDayType(event.target.value as DayType)}
                     className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                   >
                     {DAY_TYPES.map((item) => (
@@ -1556,30 +2074,32 @@ export default function PjmLoadGrowth({
               <div>
                 <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">Weather</div>
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4 xl:items-end">
-                <label className="block">
-                  <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                    Weather Station
-                  </span>
-                  <select
-                    value={weatherStation}
-                    onChange={(event) => setWeatherStation(event.target.value)}
-                    className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
-                  >
-                    {sharedStations.map((station) => (
-                      <option key={station.stationId} value={station.stationId}>
-                        {stationDisplayName(station)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                {activeTab === "single-area" && (
+                  <label className="block">
+                    <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                      Weather Station
+                    </span>
+                    <select
+                      value={weatherStation}
+                      onChange={(event) => setWeatherStation(event.target.value)}
+                      className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
+                    >
+                      {sharedStations.map((station) => (
+                        <option key={station.stationId} value={station.stationId}>
+                          {stationDisplayName(station)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
 
                 <label className="block">
                   <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-gray-500">
                     Weather Metric
                   </span>
                   <select
-                    value={weatherMetric}
-                    onChange={(event) => setWeatherMetric(event.target.value as WeatherMetric)}
+                    value={controlWeatherMetric}
+                    onChange={(event) => setControlWeatherMetric(event.target.value as WeatherMetric)}
                     className="w-full rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-sm text-gray-200 focus:border-gray-500 focus:outline-none"
                   >
                     {WEATHER_METRICS.map((item) => (
@@ -1599,22 +2119,22 @@ export default function PjmLoadGrowth({
         </div>
       )}
 
-      {yoyError && (
+      {activeTab === "single-area" && yoyError && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-200">
           {yoyError}
         </div>
       )}
-      {yoyLoading && (
+      {activeTab === "single-area" && yoyLoading && (
         <div className="rounded-lg border border-gray-800 bg-gray-950/40 p-4 text-sm text-gray-500">
           Loading daily load-growth data...
         </div>
       )}
-      {yoyData && !yoyLoading && yoyData.daily.length === 0 && (
+      {activeTab === "single-area" && yoyData && !yoyLoading && yoyData.daily.length === 0 && (
         <div className="rounded-lg border border-gray-800 bg-[#12141d] p-6 text-sm text-gray-500 shadow-xl shadow-black/20">
           No paired daily load-weather rows are available for this selection.
         </div>
       )}
-      {yoyData && !yoyLoading && yoyData.daily.length > 0 && (
+      {activeTab === "single-area" && yoyData && !yoyLoading && yoyData.daily.length > 0 && (
         <>
               <PlotCard
                 title={`${yoyData.selected.loadArea}. Load per ${selectedMetric.label}`}
@@ -1797,6 +2317,24 @@ export default function PjmLoadGrowth({
                 </table>
               </DataTableShell>
         </>
+      )}
+      {activeTab === "forecast-area-scan" && (
+        <PlotCard
+          title="Forecast Area Scan"
+          subtitle={`${loadedScanPresetCount}/${FORECAST_AREA_SCAN_PRESETS.length} presets loaded${
+            scanErrorCount ? ` | ${scanErrorCount} error${scanErrorCount === 1 ? "" : "s"}` : ""
+          } | ISO PJM | ${scanSelectedShapeLabel} ${scanSelectedDayTypeLabel} | ${scanSelectedMetric.label} | ${scanDateSelectionLabel}`}
+          series={scanDailyFitSeries}
+          hiddenSeries={hiddenDailyFitSeries}
+          onToggleSeries={toggleDailyFitSeries}
+          onShowAll={() => setHiddenDailyFitSeries(new Set())}
+          onHideAll={() =>
+            setHiddenDailyFitSeries(new Set<string>(DAILY_FIT_SERIES_KEYS))
+          }
+          focusedChildren={renderForecastAreaScanGrid("h-[300px]")}
+        >
+          {renderForecastAreaScanGrid("h-[220px]")}
+        </PlotCard>
       )}
     </div>
   );
