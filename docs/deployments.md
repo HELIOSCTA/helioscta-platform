@@ -2943,8 +2943,10 @@ LIMIT 3;
 
 ## helios-main-zone-meteologica-forecast-hourly
 
-- Status: promoted for VM deployment; DDL, service smokes, and timer enablement
-  should run after this branch is pulled on `helioscta-prod-vm-01`.
+- Status: promoted for VM deployment; production DDL and indexes were applied
+  with `helios_admin` on `2026-08-07` at approximately `16:53 UTC`. Service
+  smokes and timer enablement are still pending after this branch is pulled on
+  `helioscta-prod-vm-01`.
 - Workflow: focused CAISO, ISO-NE, MISO, NYISO, and SPP Meteologica hourly
   load, solar, and wind forecast refreshes.
 - Runtime modules:
