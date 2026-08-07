@@ -45,7 +45,8 @@ export interface IcePowerRegistryEntry {
   settlement_source?: string | null;
   settlement_source_key?: string | null;
   settlement_priority?: number | null;
-  source_table: string;
+  source_table?: string | null;
+  pjm_source_table?: string | null;
   source_registry: string;
   metadata_status: string;
   active?: boolean | null;
