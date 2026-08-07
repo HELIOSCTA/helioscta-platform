@@ -2943,10 +2943,20 @@ LIMIT 3;
 
 ## helios-main-zone-meteologica-forecast-hourly
 
-- Status: promoted for VM deployment; production DDL and indexes were applied
-  with `helios_admin` on `2026-08-07` at approximately `16:53 UTC`. Service
-  smokes and timer enablement are still pending after this branch is pulled on
-  `helioscta-prod-vm-01`.
+- Status: deployed and enabled on `helioscta-prod-vm-01` on `2026-08-07`.
+- Deployed commit: `a26d902b17ada02491ea2eeb149f544a1c26dafb`.
+- Deployment verification: production DDL and indexes were applied with
+  `helios_admin` at approximately `16:53 UTC`. The VM checkout was switched to
+  `codex/main-zone-meteologica-forecasts`, unit files were installed under
+  `/etc/systemd/system/`, `systemd-analyze verify` passed for all five
+  service/timer pairs, `daemon-reload` completed, and manual service runs
+  succeeded at approximately `16:57 UTC`.
+- Data verification: manual runs loaded all expected content IDs with no
+  unexpected IDs: CAISO `4,459` rows across `13` content IDs, ISO-NE `6,525`
+  rows across `19`, MISO `4,116` rows across `12`, NYISO `6,522` rows across
+  `19`, and SPP `1,029` rows across `3`. Each workflow wrote successful
+  `ops.api_fetch_log` rows and emitted a matching freshness event in
+  `ops.data_availability_events`.
 - Workflow: focused CAISO, ISO-NE, MISO, NYISO, and SPP Meteologica hourly
   load, solar, and wind forecast refreshes.
 - Runtime modules:
