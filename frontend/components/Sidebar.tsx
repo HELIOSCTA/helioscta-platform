@@ -18,6 +18,7 @@ export type ActiveSection =
   | "ice-trade-blotter"
   | "ice-power-short-term"
   | "ice-power-term"
+  | "trading-calendars"
   | "spark-spreads"
   | "map"
   | "noms"
@@ -85,13 +86,14 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
 
   sections.push({
     key: "pricing",
-    label: "Pricing",
+    label: "ICE Pricing",
     navItems: [
       { id: "ice-power-short-term", label: "ICE Power Short Term" },
       { id: "ice-power-term", label: "ICE Power Term" },
       { id: "spark-spreads", label: "ICE Power Analytics" },
       { id: "gas-prices", label: "ICE Gas Cash & Term" },
       { id: "gas-outright", label: "ICE Gas Analytics" },
+      { id: "trading-calendars", label: "Trading Calendars", description: "Exchange holiday registry" },
     ],
   });
 

@@ -43,7 +43,9 @@ export function buildNercOffPeakDays(year: number): CalendarHoliday[] {
 }
 
 export const NERC_OFF_PEAK_CALENDAR = createTradingCalendar({
-  calendarId: "nerc-off-peak-days",
+  calendarId: "nerc-power-offpeak",
+  label: "NERC Power Off-Peak",
+  category: "Power",
   description: "NERC holiday set used for power on-peak/off-peak classification.",
   source: NERC_OFF_PEAK_CALENDAR_SOURCE,
   weekendDays: [0, 6],

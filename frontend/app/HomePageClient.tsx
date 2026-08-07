@@ -111,6 +111,7 @@ import BackOfficePositionsTrades from "@/components/backoffice/BackOfficePositio
 import BackOfficeMonitor from "@/components/backoffice/BackOfficeMonitor";
 import BackOfficeTradePipeline from "@/components/backoffice/BackOfficeTradePipeline";
 import BackOfficeNavDailyPositionSheet from "@/components/backoffice/BackOfficeNavDailyPositionSheet";
+import TradingCalendarsDashboard from "@/components/calendar/TradingCalendarsDashboard";
 
 const DEFAULT_PJM_DA_LMPS_FRESHNESS: PjmDaLmpsFreshnessSummary = {
   status: "Unknown",
@@ -413,6 +414,9 @@ function parseInitialSection(
   }
   if (value === "ice-power-term" || value === "ice-pmi-curve") {
     return "ice-power-term";
+  }
+  if (value === "trading-calendars") {
+    return "trading-calendars";
   }
   if (value === "spark-spreads") {
     return "spark-spreads";
@@ -1103,6 +1107,15 @@ export default function HomePageClient({
         subtitle:
           "Market-level monthly power futures matrices with contract detail history.",
         footer: "ICE Power Term | Source: ice_python.settlements / Azure PostgreSQL",
+      };
+    }
+    if (activeSection === "trading-calendars") {
+      return {
+        title: "Trading Calendars",
+        subtitle:
+          "Code-owned NERC, ICE, and promoted ISO market-date calendars for settlement and trade-date context.",
+        footer:
+          "Trading Calendars | Sources: code-owned registry, ICE holiday-hours calendars, and promoted ISO market-date contracts",
       };
     }
     if (activeSection === "spark-spreads") {
@@ -2085,6 +2098,9 @@ export default function HomePageClient({
           )}
           {activeSection === "ice-power-term" && (
             <IcePowerTermPage />
+          )}
+          {activeSection === "trading-calendars" && (
+            <TradingCalendarsDashboard />
           )}
           {activeSection === "gas-prices" && (
             <GasDailyPrices

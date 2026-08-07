@@ -32,6 +32,7 @@ function holidaysForRange(config: TradingCalendarConfig, startYear: number, endY
 
 export function createTradingCalendar(config: TradingCalendarConfig): TradingCalendar {
   const weekendDays = new Set<DayOfWeek>(config.weekendDays ?? DEFAULT_WEEKEND_DAYS);
+  const weekendsAreTradingDays = config.weekendsAreTradingDays ?? false;
 
   function getHoliday(date: CalendarDate): CalendarHoliday | null {
     const normalizedDate = assertCalendarDate(date);
@@ -47,7 +48,10 @@ export function createTradingCalendar(config: TradingCalendarConfig): TradingCal
   }
 
   function isTradingDay(date: CalendarDate): boolean {
-    return !isWeekendDate(date) && getHoliday(date) === null;
+    if (!weekendsAreTradingDays && isWeekendDate(date)) return false;
+    const holiday = getHoliday(date);
+    if (!holiday) return true;
+    return holiday.isTradingDay === true;
   }
 
   function walkTradingDay(date: CalendarDate, direction: 1 | -1): CalendarDate {
@@ -63,10 +67,18 @@ export function createTradingCalendar(config: TradingCalendarConfig): TradingCal
 
   return {
     calendarId: config.calendarId,
+    label: config.label ?? config.calendarId,
+    category: config.category,
     description: config.description,
     source: config.source,
+    sourceUrl: config.sourceUrl,
+    coverageStartYear: config.coverageStartYear,
+    coverageEndYear: config.coverageEndYear,
+    notes: config.notes,
     getHolidays: (startYear, endYear) => holidaysForRange(config, startYear, endYear),
+    getEvents: (startYear, endYear) => holidaysForRange(config, startYear, endYear),
     getHoliday,
+    getEvent: getHoliday,
     isHoliday: (date) => getHoliday(date) !== null,
     isWeekend: isWeekendDate,
     isTradingDay,
@@ -76,7 +88,9 @@ export function createTradingCalendar(config: TradingCalendarConfig): TradingCal
       dateRange(startDate, endDate).filter((date) => isTradingDay(date)),
     getNonTradingDays: (startYear, endYear) =>
       holidaysForRange(config, startYear, endYear).filter(
-        (holiday) => !weekendDays.has(getDayOfWeek(holiday.date))
+        (holiday) =>
+          holiday.isTradingDay !== true &&
+          (weekendsAreTradingDays || !weekendDays.has(getDayOfWeek(holiday.date)))
       ),
   };
 }
