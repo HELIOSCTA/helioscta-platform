@@ -65,7 +65,7 @@ def test_pjm_meteologica_orchestration_emits_freshness(monkeypatch):
         {
             "database": "helios_prod",
             "run_mode": "scheduled",
-            "retention_days": 90,
+            "retention_days": 21,
             "metadata": {"triggered_by": "pjm_meteologica_forecast_hourly"},
         }
     ]

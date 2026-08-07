@@ -448,7 +448,7 @@ runs the PJM Meteologica DA price refresh. Both legs log Meteologica API
 telemetry to `ops.api_fetch_log` and emit forecast freshness events to
 `ops.data_availability_events`. The source grain is
 `content_id x update_id x forecast_period_start`; safe reruns upsert by that
-key. Scheduled runs retain 90 days of forecast issue history in the hot tables,
+key. Scheduled runs retain 21 days of forecast issue history in the hot tables,
 keep DA price rows to a 14-day forward horizon from each source issue, and
 purge older rows after successful upserts. Hydro is excluded from v1 because
 no PJM hydro forecast content ID is promoted.

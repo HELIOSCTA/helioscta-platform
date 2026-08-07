@@ -387,7 +387,7 @@ telemetry to `ops.api_fetch_log` and emit forecast freshness events to
 `ops.data_availability_events`. The timer runs every 30 minutes at `:20` and
 `:50` UTC with `Persistent=false` and `RandomizedDelaySec=2min`. The service
 uses `flock` with `/tmp/helios-pjm-meteologica-forecast-hourly.lock`.
-Successful runs purge forecast issues older than 90 days from the hot tables.
+Successful runs purge forecast issues older than 21 days from the hot tables.
 
 Do not enable this timer until `/etc/helioscta/backend.env` contains
 `XTRADERS_API_USERNAME_ISO` and `XTRADERS_API_PASSWORD_ISO`, and the

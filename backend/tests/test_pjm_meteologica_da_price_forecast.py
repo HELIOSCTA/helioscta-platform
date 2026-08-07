@@ -191,7 +191,7 @@ def test_pjm_meteologica_da_price_pull_uses_split_source_tables(monkeypatch):
     monkeypatch.setattr(
         forecast,
         "purge_old_rows",
-        lambda table_name, retention_days=90, database=None: purges.append(
+        lambda table_name, retention_days=21, database=None: purges.append(
             (table_name, retention_days)
         )
         or 0,
@@ -214,8 +214,8 @@ def test_pjm_meteologica_da_price_pull_uses_split_source_tables(monkeypatch):
         ("usa_pjm_western_hub_da_power_price_forecast_hourly", 14),
     ]
     assert sorted(purges) == [
-        ("usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly", 90),
-        ("usa_pjm_western_hub_da_power_price_forecast_hourly", 90),
+        ("usa_pjm_western_hub_da_power_price_forecast_ecmwf_ens_hourly", 21),
+        ("usa_pjm_western_hub_da_power_price_forecast_hourly", 21),
     ]
 
 
@@ -242,7 +242,7 @@ def test_pjm_meteologica_da_price_retention_uses_issue_date(monkeypatch):
         "schema": "meteologica",
         "table_name": "usa_pjm_western_hub_da_power_price_forecast_hourly",
         "timestamp_column": "issue_date",
-        "retention_days": 90,
+        "retention_days": 21,
         "database": "helios_prod",
     }
 

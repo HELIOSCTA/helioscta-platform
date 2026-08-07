@@ -21,7 +21,7 @@ TARGET_SCHEMA = "meteologica"
 TARGET_TABLE = "pjm_forecast_hourly"
 TARGET_TABLE_FQN = f"{TARGET_SCHEMA}.{TARGET_TABLE}"
 PRIMARY_KEY = ["content_id", "update_id", "forecast_period_start"]
-DEFAULT_RETENTION_DAYS = 90
+DEFAULT_RETENTION_DAYS = 21
 
 METRIC_LOAD = "load"
 METRIC_SOLAR = "solar"

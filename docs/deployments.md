@@ -2715,7 +2715,7 @@ FROM pjm.hourly_wind_power_forecast;
 - Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(content_id, update_id, forecast_period_start)`.
-- Retention: 90 days by `issue_date` in the hot tables; the runtime purges
+- Retention: 21 days by `issue_date` in the hot tables; the runtime purges
   older rows after successful upserts. DA price rows are also limited to 14
   days forward from each source issue timestamp in the source timezone.
 
@@ -2795,7 +2795,7 @@ LIMIT 20;
 - Application DDL required before first run is managed outside this repo.
 - Safe rerun story: upsert on
   `(content_id, update_id, forecast_period_start)` in each source table.
-- Retention: 90 days by `issue_date` in both hot tables; the runtime purges
+- Retention: 21 days by `issue_date` in both hot tables; the runtime purges
   older rows after successful upserts.
 - Forecast horizon: 14 days forward from each source issue timestamp in the
   source timezone; out-of-horizon rows are filtered on ingest and purged after

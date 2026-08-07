@@ -20,7 +20,7 @@ from backend.utils.ops_logging import redact_secrets
 API_SCRAPE_NAME = "pjm_meteologica_da_price_forecast"
 SOURCE_SYSTEM = "meteologica"
 TARGET_SCHEMA = "meteologica"
-DEFAULT_RETENTION_DAYS = 90
+DEFAULT_RETENTION_DAYS = 21
 DEFAULT_FORECAST_HORIZON_DAYS = 14
 PRIMARY_KEY = ["content_id", "update_id", "forecast_period_start"]
 

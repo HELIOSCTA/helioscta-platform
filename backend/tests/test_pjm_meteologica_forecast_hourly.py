@@ -121,7 +121,7 @@ def test_pjm_meteologica_pull_uses_one_canonical_upsert_path(monkeypatch):
     monkeypatch.setattr(
         forecast,
         "_purge_old_rows",
-        lambda retention_days=90, database=None: purges.append(retention_days) or 0,
+        lambda retention_days=21, database=None: purges.append(retention_days) or 0,
     )
 
     df = forecast.main(
@@ -133,12 +133,12 @@ def test_pjm_meteologica_pull_uses_one_canonical_upsert_path(monkeypatch):
     assert df is not None
     assert len(df) == 1
     assert len(upserts) == 1
-    assert purges == [90]
+    assert purges == [21]
     assert calls[0]["kwargs"]["content_id"] == 2706
     assert calls[0]["kwargs"]["target_table"] == "meteologica.pjm_forecast_hourly"
 
 
-def test_pjm_meteologica_retention_purge_uses_90_day_default(monkeypatch):
+def test_pjm_meteologica_retention_purge_uses_21_day_default(monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_purge_rows_older_than(**kwargs):
@@ -158,6 +158,6 @@ def test_pjm_meteologica_retention_purge_uses_90_day_default(monkeypatch):
         "schema": "meteologica",
         "table_name": "pjm_forecast_hourly",
         "timestamp_column": "issue_date",
-        "retention_days": 90,
+        "retention_days": 21,
         "database": "helios_prod",
     }
