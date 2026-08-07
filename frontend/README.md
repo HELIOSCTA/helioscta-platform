@@ -765,10 +765,10 @@ credential requirement.
 
 ## ICE Power Source Contract
 
-The Pricing sidebar exposes three production-visible ICE power pages:
+The Pricing sidebar exposes production-visible ICE power pages:
 `ICE Power Short Term` at `/?section=ice-power-short-term` and
-`ICE Power Term` at `/?section=ice-power-term`, plus
-`ICE Power Term Report` at `/?section=ice-power-term-report-dev`. Legacy
+`ICE Power Term` at `/?section=ice-power-term`. The Reports sidebar exposes
+`ICE Term Report` at `/?section=ice-power-term-report-dev`. Legacy
 `/?section=ice-settlements` links alias to Short Term, and legacy local/dev
 `/?section=ice-pmi-curve` links alias to Term.
 
@@ -797,11 +797,16 @@ accepted for existing links. Matrix cells reuse
 charts. MISO, SPP, and NYISO are not shown until matching direct monthly
 futures are present in the active symbol registries.
 
-The ICE Power Term Report is a Pricing-visible report page that keeps the
-existing `ice-power-term-report-dev` route id. It reads the same
-`ice_python.settlements` source through the existing
-`GET /api/ice-pmi-curve?mode=power&powerProduct=<ICE root>` route and renders
-PMI/OPJ and other active ICE power roots as separate product tables.
+The ICE Term Report is a Reports-visible report page that keeps the existing
+`ice-power-term-report-dev` route id. It exposes Power and Gas tabs; direct
+links can use `/?section=ice-power-term-report-dev&tab=gas` for the Gas tab.
+Power reads the same `ice_python.settlements` source through
+`GET /api/ice-pmi-curve?mode=power&powerProduct=<ICE root>` and renders PMI/OPJ
+and other active ICE power roots as separate product tables. Gas reads active
+monthly futures roots from `frontend/lib/gasPricing/ice_gas_registry.json`
+through `GET /api/ice-pmi-curve?mode=gas&gasProduct=<ICE root>`. Fixed-price
+gas markets use their root directly, and basis markets render all-in monthly
+prices as `HNG + <basis root>` to match the Gas Cash & Term convention.
 
 The copied trade-level matching routes still expect the legacy
 `ice_trade_blotter.ice_trade_blotter` relation and are not exposed in the UI

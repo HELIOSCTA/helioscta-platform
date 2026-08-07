@@ -81,6 +81,7 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     label: "Reports",
     navItems: [
       { id: "power-settles-dashboard", label: "Power Settles", description: "HR & Sparks" },
+      { id: "ice-power-term-report-dev", label: "ICE Term Report", description: "Power & Gas" },
     ],
   });
 
@@ -90,7 +91,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     navItems: [
       { id: "ice-power-short-term", label: "ICE Power Short Term" },
       { id: "ice-power-term", label: "ICE Power Term" },
-      { id: "ice-power-term-report-dev", label: "ICE Power Term Report" },
       { id: "spark-spreads", label: "ICE Power Analytics" },
       { id: "gas-prices", label: "ICE Gas Cash & Term" },
       { id: "gas-outright", label: "ICE Gas Analytics" },
