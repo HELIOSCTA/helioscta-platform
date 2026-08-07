@@ -101,6 +101,8 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
     navItems: [
       { id: "pjm-da-lmps", label: "LMPs", description: "HR & Sparks" },
       { id: "pjm-historical-settlements", label: "Historical Settlements" },
+      { id: "pjm-forecasts", label: "Forecasts" },
+      { id: "pjm-load-growth", label: "Load Growth" },
       { id: "pjm-ops-summary", label: "Ops Sum" },
       {
         id: "pjm-outages",
@@ -112,8 +114,6 @@ function getSections(showLocalDevFeatures: boolean): TopSection[] {
         label: "Constraints",
         description: "Constraints + transmission outages",
       },
-      { id: "pjm-forecasts", label: "Forecasts" },
-      { id: "pjm-load-growth", label: "Load Growth" },
       { id: "eia-generation", label: "EIA Dashboard", description: "EIA-930 fuel mix + gas burn" },
     ],
   });

@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import DataTableShell from "@/components/dashboard/DataTableShell";
 import PlotCard, { type PlotSeries } from "@/components/dashboard/PlotCard";
+import { seasonalYearColor } from "@/components/spark/seasonalColors";
 import MultiSelect from "@/components/ui/MultiSelect";
 import { fetchJsonWithCache } from "@/lib/clientJsonCache";
 
@@ -270,14 +271,18 @@ const MONTHS = [
 ];
 const YEAR_OPTIONS = Array.from({ length: 8 }, (_, index) => String(new Date().getFullYear() - index)).sort();
 const MONTH_OPTIONS = MONTHS.map((month) => ({ value: String(month.value), label: month.label }));
-const DAILY_FIT_SERIES: PlotSeries[] = [
-  { key: "currentYear", label: "Current Year", color: "#ef4444", defaultVisible: true },
-  { key: "lastYear", label: "Last Year", color: "#a855f7", defaultVisible: true },
-  { key: "forecast", label: "Forecast", color: "#22c55e", defaultVisible: true },
-  { key: "lookback", label: "Lookback", color: "#7dd3fc", defaultVisible: true },
-  { key: "currentFit", label: "Current Fit", color: "#ef4444", defaultVisible: true },
-  { key: "lastYearFit", label: "Last Year Fit", color: "#a855f7", defaultVisible: true },
-];
+const DAILY_FIT_SERIES_KEYS = [
+  "currentYear",
+  "lastYear",
+  "forecast",
+  "lookback",
+  "currentFit",
+  "lastYearFit",
+] as const;
+type DailyFitSeriesKey = (typeof DAILY_FIT_SERIES_KEYS)[number];
+const CHART_GRID_COLOR = "#1f2937";
+const CHART_TICK_COLOR = "#d1d5db";
+const CHART_AXIS_COLOR = "#374151";
 const DEFAULT_FRESHNESS: PjmLoadGrowthFreshnessSummary = {
   status: "Unknown",
   statusClass: "border-gray-700 bg-gray-900 text-gray-400",
@@ -852,8 +857,55 @@ export default function PjmLoadGrowth({
   const [yoyLoading, setYoyLoading] = useState(true);
   const [yoyError, setYoyError] = useState<string | null>(null);
   const normalizedYears = useMemo(() => normalizeCompareYears(selectedYears), [selectedYears]);
-  const currentComparisonYear = Number(normalizedYears.at(-1) ?? new Date().getFullYear());
-  const rangeDates = rangeDatesFromMonthDays(currentComparisonYear, rangeStartMmDd, rangeEndMmDd);
+  const selectedComparisonYear = Number(normalizedYears.at(-1) ?? new Date().getFullYear());
+  const plottedYears = useMemo(
+    () => normalizeCompareYears(yoyData?.selected.years.map(String) ?? normalizedYears),
+    [normalizedYears, yoyData],
+  );
+  const currentComparisonYear = Number(plottedYears.at(-1) ?? selectedComparisonYear);
+  const priorComparisonYear = Number(plottedYears[0] ?? currentComparisonYear - 1);
+  const dailyFitSeriesStyles = useMemo<Record<DailyFitSeriesKey, Omit<PlotSeries, "key">>>(() => {
+    const currentYearColor = seasonalYearColor(currentComparisonYear);
+    const priorYearColor = seasonalYearColor(priorComparisonYear);
+
+    return {
+      currentYear: {
+        label: `${currentComparisonYear} Actual`,
+        color: currentYearColor,
+        defaultVisible: true,
+      },
+      lastYear: {
+        label: `${priorComparisonYear} Actual`,
+        color: priorYearColor,
+        defaultVisible: true,
+      },
+      forecast: {
+        label: "Forecast",
+        color: currentYearColor,
+        defaultVisible: true,
+      },
+      lookback: {
+        label: "Lookback",
+        color: currentYearColor,
+        defaultVisible: true,
+      },
+      currentFit: {
+        label: `${currentComparisonYear} Fit`,
+        color: currentYearColor,
+        defaultVisible: true,
+      },
+      lastYearFit: {
+        label: `${priorComparisonYear} Fit`,
+        color: priorYearColor,
+        defaultVisible: true,
+      },
+    };
+  }, [currentComparisonYear, priorComparisonYear]);
+  const dailyFitSeries = useMemo<PlotSeries[]>(
+    () => DAILY_FIT_SERIES_KEYS.map((key) => ({ key, ...dailyFitSeriesStyles[key] })),
+    [dailyFitSeriesStyles],
+  );
+  const rangeDates = rangeDatesFromMonthDays(selectedComparisonYear, rangeStartMmDd, rangeEndMmDd);
   const effectiveStartDate = dateMode === "range" ? rangeDates.startDate : DEFAULT_START;
   const effectiveEndDate = dateMode === "range" ? rangeDates.endDate : DEFAULT_END;
 
@@ -1016,20 +1068,71 @@ export default function PjmLoadGrowth({
 
   const renderTooltipRow = (label: string, value: string, color?: string) => (
     <div key={label} className="mt-1 flex items-center justify-between gap-6">
-      <span className="flex items-center gap-2 text-gray-600">
+      <span className="flex items-center gap-2 text-gray-400">
         {color && <span className="h-2 w-2 rounded-sm" style={{ backgroundColor: color }} />}
         {label}
       </span>
-      <span className="font-semibold tabular-nums text-gray-950">{value}</span>
+      <span className="font-semibold tabular-nums text-gray-100">{value}</span>
     </div>
   );
 
-  const renderWhiteTooltip = (header: string, rows: ReactNode) => (
-    <div className="rounded-md border border-gray-300 bg-white px-3 py-2 text-xs text-gray-900 shadow-xl">
-      <div className="border-b border-gray-200 pb-1 font-semibold tabular-nums text-gray-950">{header}</div>
+  const renderDarkTooltip = (header: string, rows: ReactNode) => (
+    <div className="rounded-md border border-gray-700 bg-gray-900 px-3 py-2 text-xs text-gray-200 shadow-xl">
+      <div className="border-b border-gray-700 pb-1 font-semibold tabular-nums text-gray-100">{header}</div>
       {rows}
     </div>
   );
+
+  const renderDailyFitSummaryStrip = (
+    summary: {
+      averageDiff: number | undefined;
+      averageGrowthPct: number | null | undefined;
+      currentR2: number | null | undefined;
+      lastYearR2: number | null | undefined;
+      currentMae: number | null | undefined;
+    } = dailyFitSummary,
+  ) => {
+    const metrics = [
+      {
+        label: "Avg Fit Diff",
+        value: fmtMw(summary.averageDiff),
+        valueClassName: (summary.averageDiff ?? 0) >= 0 ? "text-emerald-300" : "text-red-300",
+      },
+      {
+        label: "Avg Growth",
+        value: fmtPct(summary.averageGrowthPct),
+        valueClassName: (summary.averageGrowthPct ?? 0) >= 0 ? "text-emerald-300" : "text-red-300",
+      },
+      {
+        label: "Current R2",
+        value: fmtNumber(summary.currentR2, 2),
+        valueClassName: "text-gray-100",
+      },
+      {
+        label: "Last Year R2",
+        value: fmtNumber(summary.lastYearR2, 2),
+        valueClassName: "text-gray-100",
+      },
+      {
+        label: "Current MAE",
+        value: fmtMw(summary.currentMae),
+        valueClassName: "text-gray-100",
+      },
+    ];
+
+    return (
+      <div className="grid gap-x-5 gap-y-2 border-b border-gray-800/70 pb-3 text-[11px] sm:grid-cols-2 xl:grid-cols-5">
+        {metrics.map((metric) => (
+          <div key={metric.label} className="min-w-0">
+            <div className="font-bold uppercase tracking-wider text-gray-500">{metric.label}</div>
+            <div className={`mt-0.5 text-sm font-semibold tabular-nums ${metric.valueClassName}`}>
+              {metric.value}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   const renderDailyFitTooltip = ({ active, payload }: ChartTooltipProps) => {
     if (!active || !payload?.length) return null;
@@ -1043,7 +1146,7 @@ export default function PjmLoadGrowth({
     const hourEnding = typeof point.hourEnding === "number" ? ` HE${String(point.hourEnding).padStart(2, "0")}` : "";
     const weatherValue = typeof point.x === "number" ? fmtTemp(point.x) : "-";
     const loadValue = typeof point.y === "number" ? fmtMw(point.y) : "-";
-    return renderWhiteTooltip(
+    return renderDarkTooltip(
       `${header}${hourEnding}`,
       <>
         {renderTooltipRow("Load Source", typeof point.loadSourceDetail === "string" ? point.loadSourceDetail : "-")}
@@ -1056,102 +1159,103 @@ export default function PjmLoadGrowth({
   const renderDailyFitChart = (
     heightClass: string,
     fit: DailyFitResult | null = dailyFit,
-    summary: {
-      averageDiff: number | undefined;
-      averageGrowthPct: number | null | undefined;
-      currentR2: number | null | undefined;
-      lastYearR2: number | null | undefined;
-      currentMae: number | null | undefined;
-    } = dailyFitSummary,
     hiddenSeries: Set<string> = hiddenDailyFitSeries,
   ) => (
-    <div className={`${heightClass} relative min-h-[420px] overflow-hidden rounded-md border border-gray-800 bg-[#0d1119]`}>
-      <div className="pointer-events-none absolute left-3 right-3 top-3 z-10 grid grid-cols-5 gap-2">
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Avg Fit Diff</div>
-          <div className={`mt-0.5 text-lg font-semibold tabular-nums ${(summary.averageDiff ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-            {fmtMw(summary.averageDiff)}
-          </div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Avg Growth</div>
-          <div className={`mt-0.5 text-lg font-semibold tabular-nums ${(summary.averageGrowthPct ?? 0) >= 0 ? "text-emerald-300" : "text-red-300"}`}>
-            {fmtPct(summary.averageGrowthPct)}
-          </div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Current R2</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtNumber(summary.currentR2, 2)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Last Year R2</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtNumber(summary.lastYearR2, 2)}</div>
-        </div>
-        <div className="rounded-md border border-gray-700/80 bg-gray-950/90 px-3 py-2">
-          <div className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Current MAE</div>
-          <div className="mt-0.5 text-lg font-semibold tabular-nums text-gray-100">{fmtMw(summary.currentMae)}</div>
-        </div>
-      </div>
+    <div className={`${heightClass} overflow-hidden rounded-md border border-gray-800 bg-[#0d1119]`}>
       <ResponsiveContainer width="100%" height="100%">
-        <ScatterChart margin={{ top: 96, right: 28, bottom: 30, left: 12 }}>
-          <CartesianGrid stroke="rgba(148, 163, 184, 0.12)" />
+        <ScatterChart margin={{ top: 18, right: 28, bottom: 30, left: 12 }}>
+          <CartesianGrid stroke={CHART_GRID_COLOR} />
           <XAxis
             type="number"
             dataKey="x"
             name={selectedMetric.label}
             unit={selectedMetric.unit}
             domain={["auto", "auto"]}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
+            tick={{ fill: CHART_TICK_COLOR, fontSize: 10 }}
             tickLine={false}
-            axisLine={{ stroke: "#334155" }}
-            label={{ value: `${selectedMetric.label} (${selectedMetric.unit})`, position: "insideBottom", offset: -18, fill: "#94a3b8", fontSize: 11 }}
+            axisLine={{ stroke: CHART_AXIS_COLOR }}
+            label={{ value: `${selectedMetric.label} (${selectedMetric.unit})`, position: "insideBottom", offset: -18, fill: CHART_TICK_COLOR, fontSize: 10 }}
           />
           <YAxis
             type="number"
             dataKey="y"
             name="Load"
             domain={["auto", "auto"]}
-            tick={{ fill: "#94a3b8", fontSize: 11 }}
+            tick={{ fill: CHART_TICK_COLOR, fontSize: 10 }}
             tickLine={false}
-            axisLine={{ stroke: "#334155" }}
+            axisLine={{ stroke: CHART_AXIS_COLOR }}
             tickFormatter={(value) => `${Math.round(Number(value) / 1000)}k`}
-            label={{ value: "Load (MW)", angle: -90, position: "insideLeft", fill: "#94a3b8", fontSize: 11 }}
+            label={{ value: "Load (MW)", angle: -90, position: "insideLeft", fill: CHART_TICK_COLOR, fontSize: 10 }}
           />
           <Tooltip
             cursor={{ strokeDasharray: "3 3" }}
             content={(props) => renderDailyFitTooltip(props as unknown as ChartTooltipProps)}
           />
           {!hiddenSeries.has("currentYear") && (
-            <Scatter name="Current Year" data={fit?.currentPoints ?? []} fill="#ef4444" shape="square" fillOpacity={0.72} />
+            <Scatter
+              name={dailyFitSeriesStyles.currentYear.label}
+              data={fit?.currentPoints ?? []}
+              fill={dailyFitSeriesStyles.currentYear.color}
+              shape="square"
+              fillOpacity={0.72}
+              isAnimationActive={false}
+            />
           )}
           {!hiddenSeries.has("lastYear") && (
-            <Scatter name="Last Year" data={fit?.lastYearPoints ?? []} fill="#a855f7" shape="square" fillOpacity={0.64} />
+            <Scatter
+              name={dailyFitSeriesStyles.lastYear.label}
+              data={fit?.lastYearPoints ?? []}
+              fill={dailyFitSeriesStyles.lastYear.color}
+              shape="square"
+              fillOpacity={0.64}
+              isAnimationActive={false}
+            />
           )}
           {!hiddenSeries.has("forecast") && (
             <Scatter
-              name="Forecast"
+              name={dailyFitSeriesStyles.forecast.label}
               data={fit?.forecastPoints ?? []}
+              fill="none"
+              stroke={dailyFitSeriesStyles.forecast.color}
+              isAnimationActive={false}
               shape={(props: unknown) => {
                 const point = props as { cx?: number; cy?: number };
                 const cx = point.cx ?? 0;
                 const cy = point.cy ?? 0;
                 const size = 7;
+                const forecastColor = dailyFitSeriesStyles.forecast.color;
+                const trianglePath = `M ${cx} ${cy - size} L ${cx + size} ${cy + size} L ${cx - size} ${cy + size} Z`;
                 return (
-                  <path
-                    d={`M ${cx} ${cy - size} L ${cx + size} ${cy} L ${cx} ${cy + size} L ${cx - size} ${cy} Z`}
-                    fill="#22c55e"
-                    stroke="#dcfce7"
-                    strokeWidth={1.2}
-                    opacity={0.9}
-                  />
+                  <g>
+                    <path
+                      d={trianglePath}
+                      fill="none"
+                      stroke="#0d1119"
+                      strokeLinejoin="round"
+                      strokeWidth={4.5}
+                      opacity={0.95}
+                    />
+                    <path
+                      d={trianglePath}
+                      fill={forecastColor}
+                      fillOpacity={0.14}
+                      stroke={forecastColor}
+                      strokeLinejoin="round"
+                      strokeWidth={1.7}
+                      opacity={0.95}
+                    />
+                  </g>
                 );
               }}
             />
           )}
           {!hiddenSeries.has("lookback") && (
             <Scatter
-              name="Lookback"
+              name={dailyFitSeriesStyles.lookback.label}
               data={fit?.lookbackPoints ?? []}
+              fill="none"
+              stroke={dailyFitSeriesStyles.lookback.color}
+              isAnimationActive={false}
               shape={(props: unknown) => {
                 const point = props as { cx?: number; cy?: number; payload?: { size?: number } };
                 const radius = (point.payload?.size ?? 12) / 2;
@@ -1160,9 +1264,9 @@ export default function PjmLoadGrowth({
                     cx={point.cx}
                     cy={point.cy}
                     r={radius}
-                    fill="#7dd3fc"
-                    stroke="#ef4444"
-                    strokeWidth={1.5}
+                    fill="none"
+                    stroke={dailyFitSeriesStyles.lookback.color}
+                    strokeWidth={2}
                     opacity={0.95}
                   />
                 );
@@ -1171,24 +1275,33 @@ export default function PjmLoadGrowth({
           )}
           {!hiddenSeries.has("currentFit") && (
             <Scatter
-              name="Current Year Fit"
+              name={dailyFitSeriesStyles.currentFit.label}
               data={fit?.currentFit.line ?? []}
               fill="none"
-              line={{ stroke: "#ef4444", strokeWidth: 2.5 }}
+              line={{ stroke: dailyFitSeriesStyles.currentFit.color, strokeWidth: 2.5 }}
               shape={() => null}
+              isAnimationActive={false}
             />
           )}
           {!hiddenSeries.has("lastYearFit") && (
             <Scatter
-              name="Last Year Fit"
+              name={dailyFitSeriesStyles.lastYearFit.label}
               data={fit?.lastYearFit.line ?? []}
               fill="none"
-              line={{ stroke: "#a855f7", strokeWidth: 2.5 }}
+              line={{ stroke: dailyFitSeriesStyles.lastYearFit.color, strokeWidth: 2.5 }}
               shape={() => null}
+              isAnimationActive={false}
             />
           )}
         </ScatterChart>
       </ResponsiveContainer>
+    </div>
+  );
+
+  const renderDailyFitPanel = (heightClass: string) => (
+    <div className="space-y-3">
+      {renderDailyFitSummaryStrip()}
+      {renderDailyFitChart(heightClass)}
     </div>
   );
 
@@ -1506,16 +1619,16 @@ export default function PjmLoadGrowth({
               <PlotCard
                 title={`${yoyData.selected.loadArea}. Load per ${selectedMetric.label}`}
                 subtitle={`${selectedShapeLabel} ${selectedDayTypeLabel} | ${selectedStationLabel} | ${fmtDate(yoyData.windows.currentStart)} to ${fmtDate(yoyData.windows.currentEndExclusive)} | ${dateSelectionLabel} | ${yoyData.forecastDaily.length} forecast days`}
-                series={DAILY_FIT_SERIES}
+                series={dailyFitSeries}
                 hiddenSeries={hiddenDailyFitSeries}
                 onToggleSeries={toggleDailyFitSeries}
                 onShowAll={() => setHiddenDailyFitSeries(new Set())}
                 onHideAll={() =>
-                  setHiddenDailyFitSeries(new Set(DAILY_FIT_SERIES.map((series) => series.key)))
+                  setHiddenDailyFitSeries(new Set<string>(DAILY_FIT_SERIES_KEYS))
                 }
-                focusedChildren={renderDailyFitChart("h-[72vh]")}
+                focusedChildren={renderDailyFitPanel("h-[calc(92vh_-_12rem)]")}
               >
-                {renderDailyFitChart("h-[520px]")}
+                {renderDailyFitPanel("h-[360px]")}
               </PlotCard>
 
               <DataTableShell
